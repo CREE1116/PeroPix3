@@ -78,8 +78,9 @@ export function MaskEditor({
   image: string;
   mask: string;
   strength: number;
-  /** ★타일 인페인트를 쓸 수 있는 그림인가 — **워크스페이스 파일**이어야 한다
-   *  (서버가 그 파일을 열어 자른다). 밖에서 떨군 그림에는 경로가 없어 못 쓴다. */
+  /** ★「인페인트+」를 **쓸 수 있는** 그림인가 — 워크스페이스 파일이어야 한다
+   *  (서버가 그 파일을 열어 자른다). 밖에서 떨군 그림에는 경로가 없어 못 쓴다.
+   *  ★쓸 수 있다는 것이지 **켜졌다는 뜻이 아니다** — 켜는 것은 사용자다 (아래 스위치). */
   tile?: boolean;
   onCancel: () => void;
   /** rect 는 **원본 좌표계**의 크롭 사각형 — 없으면 지금까지의 인페인트 그대로다 */
@@ -96,6 +97,8 @@ export function MaskEditor({
   const painted = useRef(new Set<string>());
   /** 크롭 사각형 (판 좌표계). ★원본이 1MP 를 넘을 때만 뜻이 있다 */
   const [rect, setRect] = useState<Rect | null>(null);
+  /** 「인페인트+」 스위치 — 이 창에서 켜고 끈다 */
+  const [plus, setPlus] = useState(false);
   /** 원본 픽셀 크기 — 판은 64 배수로 맞춰져 있어 좌표를 되돌릴 때 쓴다 */
   const natural = useRef({ w: 0, h: 0 });
   const dragRect = useRef<{ x: number; y: number; rx: number; ry: number } | null>(null);
@@ -214,8 +217,11 @@ export function MaskEditor({
     lastCell.current = cell;
   };
 
-  /** 타일이 필요한 그림인가 — ★원본이 1MP 이하면 자를 이유가 없다 (통째로 보내도 같다) */
-  const needTile = !!tile && natural.current.w * natural.current.h > TILE_MAX_PX;
+  /** 「인페인트+」를 **고를 수 있나** — 원본이 1MP 이하면 자를 이유가 없다 (통째로 보내도 같다) */
+  const canTile = !!tile && natural.current.w * natural.current.h > TILE_MAX_PX;
+  /** ★켜져 있나 — **기본은 꺼짐**이다. 끄면 공홈과 같은 기본 인페인트로 나간다
+   *  (사용자 지시 2026-08-13: 타일이 기본을 대체하면 안 된다) */
+  const needTile = canTile && plus;
 
   /** 칠한 자리를 보고 사각형을 다시 잡는다.
    *
@@ -232,6 +238,16 @@ export function MaskEditor({
     if (inside) return;
     setRect(autoRect(bbox, size.w, size.h));
   };
+
+  // 켜면 그 자리에서 사각형을 잡아 준다 (끄면 지운다)
+  useEffect(() => {
+    if (!canTile) return;
+    if (!plus) return setRect(null);
+    const bbox = paintedBBox(painted.current);
+    setRect(bbox ? autoRect(bbox, size.w, size.h) : autoRect(
+      { x: size.w / 2 - 256, y: size.h / 2 - 256, w: 512, h: 512 }, size.w, size.h));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plus, canTile, size.w, size.h]);
 
   /** 사각형 크기를 다음 후보로 — 중심을 지킨 채 바꾼다 (익스텐션의 `;`/`'` 자리) */
   const cycleSize = () => {
@@ -409,6 +425,21 @@ export function MaskEditor({
             />
             <span style={{ width: 30, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{str}</span>
           </label>
+          {canTile && (
+            <button
+              data-mask-plus
+              data-on={plus ? "" : undefined}
+              onClick={() => setPlus((v) => !v)}
+              title={t("imgIn.plusHint")}
+              style={{
+                ...btn,
+                background: plus ? "var(--accent)" : "var(--panel)",
+                color: plus ? "var(--accent-on)" : "var(--ink-soft)",
+              }}
+            >
+              {t("imgIn.plus")}
+            </button>
+          )}
           {needTile && rect && (
             <button data-mask-size onClick={cycleSize} style={btn} title={t("imgIn.tileHint")}>
               {rect.w}×{rect.h}

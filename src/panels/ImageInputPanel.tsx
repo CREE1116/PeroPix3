@@ -9,6 +9,7 @@ import {
   type BaseMode,
 } from "../store/imageInput";
 import { MaskEditor } from "../components/MaskEditor";
+import { fitSizeToBase } from "../store/gen";
 import { VibeCache } from "./VibeCache";
 
 /** 이미지 입력 — Vibe Transfer · Precise Reference · 베이스 이미지.
@@ -193,7 +194,11 @@ export function ImageInputPanel() {
             <Pick
               label={t("imgIn.basePick")}
               data-add="base"
-              onFile={async (f) => s.setBase(await fileToBase64(f), f.name)}
+              onFile={async (f) => {
+                const b64 = await fileToBase64(f);
+                s.setBase(b64, f.name);
+                await fitSizeToBase(b64);
+              }}
             />
           </>
         )}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useI18n } from "../i18n";
-import { useGen } from "../store/gen";
+import { useGen, fitSizeToBase } from "../store/gen";
 import { useImageInput } from "../store/imageInput";
 import { useUi } from "../store/ui";
 import { toast } from "../store/toast";
@@ -85,6 +85,8 @@ export function ImageActions({
       // ★워크스페이스 파일이면 **경로도 함께** 넘긴다 — 타일 인페인트가 그 파일을 서버에서
       //   열어 사각형 안만 잘라 보낸다 (밖에서 떨군 그림에는 경로가 없다)
       s.setBase(b64, name, upscale ?? null);
+      // ★공홈처럼 **해상도를 그림에 맞춘다** — 안 맞추면 전송 직전 리샘플이 그림을 늘린다
+      await fitSizeToBase(b64);
       s.patchBase({ baseMode: mode });
       if (mode === "inpaint") return setMaskOn(true); // 마스크부터 칠하고 나서 넘어간다
       useUi.getState().setMode("generate");

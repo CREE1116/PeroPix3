@@ -6,6 +6,9 @@ import { allCells, allScenes, useWs } from "./workspace";
 import { useQueue } from "./queue";
 import { useImageInput } from "./imageInput";
 import { useUi } from "./ui";
+import { sizeForBase } from "../lib/baseSize";
+import { toast } from "./toast";
+import { t } from "../i18n";
 
 /** 시드를 언제 새로 뽑나 (아래 `GenParams.seed_mode` 주석) */
 export type SeedMode = "fixed" | "round" | "scene";
@@ -73,6 +76,27 @@ export const randomSeed = () => Math.floor(Math.random() * 4294967295);
 /** ★NAI 는 64 배수 해상도만 받는다. 식은 `lib/align.ts` 하나뿐이다 —
  *  화면과 서버가 다른 식을 쓰면 표시 해상도·Anlas 가 실제 청구와 어긋난다. */
 export { alignTo64 } from "../lib/align";
+
+/** 베이스 그림을 넣었을 때 **해상도를 그 그림에 맞춘다** — 공홈이 하는 그대로다
+ *  (`lib/baseSize` 머리 주석). 잠그지 않는다: 값만 채우고 사용자가 바꿀 수 있다.
+ *
+ *  ★이 단계가 없으면 전송 직전 리샘플이 **비율을 무시하고 늘려** 그림이 눌린다.
+ *    3.0 에 통째로 빠져 있던 자리다 (실측 2026-08-13).
+ *  ★바꿨으면 **알린다** — 말없이 숫자가 바뀌면 사용자가 자기가 고른 값을 잃었다고 느낀다. */
+export async function fitSizeToBase(b64: string): Promise<void> {
+  const size = await new Promise<{ w: number; h: number } | null>((res) => {
+    const im = new Image();
+    im.onload = () => res({ w: im.naturalWidth, h: im.naturalHeight });
+    im.onerror = () => res(null);
+    im.src = "data:image/png;base64," + b64;
+  });
+  if (!size) return;
+  const cur = useGen.getState().params;
+  const next = sizeForBase(size.w, size.h, { width: cur.width, height: cur.height });
+  if (!next) return;
+  useGen.setState({ params: { ...useGen.getState().params, ...next } });
+  toast(t("imgIn.sizeFitted", { w: String(next.width), h: String(next.height) }));
+}
 
 const DEFAULT_PARAMS: GenParams = {
   model: "nai-diffusion-4-5-full",

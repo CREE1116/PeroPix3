@@ -60,7 +60,13 @@ type S = {
    *  있으면 서버가 그 파일을 열어 **사각형 안만** 잘라 보내고 결과를 그 자리에 되붙인다.
    *  밖에서 떨군 그림에는 없다 (그때는 지금까지의 인페인트 그대로다). */
   baseFrom: { ws: string; file: string } | null;
-  /** 크롭 사각형 (원본 좌표계). 마스크를 칠하면 자동으로 잡히고 손으로 옮길 수 있다 */
+  /** ★「인페인트+」 — **켜야 타일 경로를 탄다** (사용자 지시 2026-08-13).
+   *
+   *  끄면 **공홈과 같은 기본 인페인트**다: 그림 전체를 보내고 요청 크기로 그린다.
+   *  켜면 사각형 안만 잘라 보내고 결과를 그 자리에 되붙인다 — 원본 해상도가 지켜지고
+   *  요청이 1MP 이하라 값이 안 나간다. **기본을 대체하는 것이 아니라 얹는 기능이다.** */
+  tilePlus: boolean;
+  /** 크롭 사각형 (원본 좌표계). 「인페인트+」를 켜면 칠한 자리에 맞춰 자동으로 잡힌다 */
   tileRect: { x: number; y: number; w: number; h: number } | null;
 
   setVibeOn: (v: boolean) => void;
@@ -75,6 +81,7 @@ type S = {
 
   setBase: (image: string, name: string, from?: { ws: string; file: string } | null) => void;
   setTileRect: (r: { x: number; y: number; w: number; h: number } | null) => void;
+  setTilePlus: (v: boolean) => void;
   clearBase: () => void;
   patchBase: (p: Partial<Pick<S, "baseMode" | "baseStrength" | "baseInpaintStrength" | "baseNoise" | "baseMask">>) => void;
 
@@ -98,6 +105,7 @@ export const useImageInput = create<S>((set, get) => ({
   baseNoise: 0,
   baseMask: "",
   baseFrom: null,
+  tilePlus: false,
   tileRect: null,
 
   // ★바이브와 레퍼런스는 **동시에 못 쓴다** (NAI 제약, v2 index.html:18366). 켜면 다른 쪽을 끈다
@@ -128,10 +136,13 @@ export const useImageInput = create<S>((set, get) => ({
   removeRef: (i) => set((s) => ({ refs: s.refs.filter((_, k) => k !== i) })),
 
   setBase: (image, name, from = null) =>
-    set({ baseImage: image, baseName: name, baseMask: "", baseFrom: from, tileRect: null }),
+    set({ baseImage: image, baseName: name, baseMask: "", baseFrom: from,
+          tileRect: null, tilePlus: false }),
   clearBase: () =>
-    set({ baseImage: "", baseName: "", baseMask: "", baseMode: "img2img", baseFrom: null, tileRect: null }),
+    set({ baseImage: "", baseName: "", baseMask: "", baseMode: "img2img",
+          baseFrom: null, tileRect: null, tilePlus: false }),
   setTileRect: (r) => set({ tileRect: r }),
+  setTilePlus: (v) => set({ tilePlus: v, ...(v ? null : { tileRect: null }) }),
   patchBase: (p) => set(p),
 
   payload() {
@@ -148,10 +159,9 @@ export const useImageInput = create<S>((set, get) => ({
       base_noise: s.baseNoise,
       // ★마스크는 인페인트일 때만 보낸다 — i2i 로 되돌려 놓고 마스크가 남아 있으면 엉뚱하게 인페인트가 된다
       base_mask: s.baseMode === "inpaint" ? s.baseMask : "",
-      // ★타일 인페인트는 **둘 다 있을 때만** 탄다 (파일 경로 + 사각형). 서버가 그때만
-      //   잘라 보내고 되붙인다 — 하나라도 없으면 지금까지의 인페인트 그대로다
-      inpaint_from: s.baseMode === "inpaint" && s.tileRect ? (s.baseFrom?.file ?? "") : "",
-      inpaint_rect: s.baseMode === "inpaint" && s.baseFrom ? s.tileRect : null,
+      // ★「인페인트+」를 **켰을 때만** 타일 경로를 탄다. 끄면 공홈과 같은 기본 인페인트다
+      inpaint_from: s.baseMode === "inpaint" && s.tilePlus && s.tileRect ? (s.baseFrom?.file ?? "") : "",
+      inpaint_rect: s.baseMode === "inpaint" && s.tilePlus && s.baseFrom ? s.tileRect : null,
     };
   },
 }));
