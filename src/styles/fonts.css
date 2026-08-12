@@ -1,0 +1,26 @@
+/* 한글 본문 폰트 — **전부 번들한다.** 데스크톱 앱이라 CDN 을 못 쓴다 (오프라인에서도 같은 모양).
+ *
+ * ★넷 다 재배포가 허용된 것만 골랐다 (확인 2026-08-04):
+ *     Pretendard      SIL OFL 1.1   github.com/orioncactus/pretendard
+ *     Spoqa Han Sans  SIL OFL 1.1   spoqa.github.io/spoqa-han-sans (npm 패키지는 MIT 고지)
+ *     Gothic A1       OFL-1.1       @fontsource/gothic-a1
+ *     Noto Sans KR    OFL-1.1       @fontsource/noto-sans-kr
+ *
+ * ★고르는 것은 사용자다 — `useUi.font` 가 `--font-sans` 를 갈아 끼운다 (store/ui.ts).
+ *   비교해 보려고 넣은 것이라, 하나로 정해지면 나머지 import 를 지우면 된다.
+ * ★굵기는 400·500·700 만 넣는다. 화면이 쓰는 것이 그 셋뿐인데 전 굵기를 넣으면
+ *   번들만 몇 배로 커진다.
+ */
+
+/* 가변 폰트 한 벌 — 굵기 45~920 을 한 파일이 다 덮는다 */
+@import "pretendard/dist/web/variable/pretendardvariable.css";
+
+@import "spoqa-han-sans/css/SpoqaHanSansNeo.css";
+
+@import "@fontsource/gothic-a1/400.css";
+@import "@fontsource/gothic-a1/500.css";
+@import "@fontsource/gothic-a1/700.css";
+
+@import "@fontsource/noto-sans-kr/400.css";
+@import "@fontsource/noto-sans-kr/500.css";
+@import "@fontsource/noto-sans-kr/700.css";

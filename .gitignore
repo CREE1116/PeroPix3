@@ -1,0 +1,33 @@
+node_modules/
+dist/
+logs/
+src-tauri/target/
+*.local
+.DS_Store
+__pycache__/
+
+data/
+
+workspaces/
+qa-sandbox/share/
+
+_tmp/
+
+# ── 개발 중에만 쓰는 것 (사용자 지시 2026-08-13) ──────────────────
+# ★깃헙에 올라가는 것은 **앱 구동에 필요한 것뿐**이다. 아래는 디스크에 그대로 있고
+#   추적만 안 한다 — 조사·목업·지침·테스트 하네스는 배포물이 아니다.
+docs/
+design/
+gallery/
+qa/
+test/
+_archive/
+CLAUDE.md
+.mcp.json
+dev.bat
+stop.bat
+test.bat
+tsconfig.tsbuildinfo
+backend/test_*.py
+*.test.ts
+*.test.tsx

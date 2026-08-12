@@ -1,0 +1,984 @@
+import { create } from "zustand";
+import { api } from "../lib/backend";
+import { usePrompt, defaultBase, defaultUc, type Char, type Thumb } from "./prompt";
+import { t } from "../i18n";
+import { makeBlock, parseSegs, type Block } from "../lib/blocks";
+import { convertSingleTab, wrapSetTabInCard } from "../lib/sceneCards";
+export { takesOf, type Rec } from "../lib/takes";
+import type { Rec } from "../lib/takes";
+
+/** 워크스페이스 = 작업 상태 + 생성 이미지 저장소의 단위 (schema.md).
+ *  카드·블록 저장소는 공용이라 여기 없다. */
+
+/** 탭이 들고 있는 프롬프트 — ★**서브 탭마다 스타일·캐릭터가 다르다** (사용자 결정 2026-08-03).
+ *  v2 의 "캐릭터 리스트 프리셋"을 이것이 대신한다: 조합을 파일로 저장하는 대신
+ *  탭에 얹어 두고 탭째로 쓴다. */
+export type TabPrompt = {
+  base: Block[];
+  baseUc: Block[];
+  style?: { ref: string | null; name: string; color: [string, string]; thumb?: Thumb | null };
+  chars?: Char[];
+};
+
+/** 슬롯(세트 탭의 칸) — v2 의 슬롯 그대로. `locked` 는 생성에서 뺀다.
+ *
+ *  ★**프롬프트와 같은 자료형**이다 (사용자 지시 2026-08-07): 포즈 하나가 싱글의 캐릭터 카드처럼
+ *    **블록 목록**을 들고, 블록을 계속 덧붙여 쓴다. 그래서 조작도 그쪽과 같다 —
+ *    칩 드래그·칩 휠 가중치·Enter 로 다음 블록·태그 자동완성이 전부 그대로 먹는다.
+ *  ★옛 형식(`tags`·`extra` 문자열)은 **읽을 때 한 번** 블록으로 옮긴다 (`slotBlocks`).
+ *    자료형에는 남겨 두지 않는다 — 두 벌을 들고 있으면 어느 쪽이 진짜인지 알 수 없다. */
+export type Slot = {
+  id: string;
+  name: string;
+  blocks: Block[];
+  /** 접어 두면 머리만 남는다 (블록과 같은 규칙) */
+  open?: boolean;
+  locked?: boolean;
+  /** ★옛 **싱글 탭**에서 옮겨 온 씬 (2026-08-11). 그 탭의 결과는 `cell`·`cell_id` 가 없어서
+   *  이 표식이 있어야 `takesOf` 가 찾아간다. 새로 만드는 씬에는 없다 — 옛 그림이 새 씬에
+   *  달라붙으면 안 되기 때문이다. */
+  fromSingle?: boolean;
+};
+
+/** 옛 슬롯을 블록으로 — 문자열 태그 한 줄이 블록 하나가 된다.
+ *  ★`extra` 는 색을 달리한 블록으로 살린다. 아무것도 잃지 않는다. */
+export function slotBlocks(c: {
+  blocks?: Block[];
+  tags?: string;
+  extra?: string;
+}): Block[] {
+  if (Array.isArray(c.blocks)) return c.blocks;
+  const out: Block[] = [];
+  if (c.tags?.trim()) out.push(makeBlock(t("slots.blockTags"), [], { open: true, tags: parseSegs(c.tags) }));
+  if (c.extra?.trim())
+    out.push(
+      // ★옛 「추가」 칸은 **같은 뜻의 블록**으로 옮긴다 (카드에 안 담기는 자리)
+      makeBlock(t("slots.extra"), [], {
+        open: true,
+        extra: true,
+        color: "amber",
+        tags: parseSegs(c.extra),
+      }),
+    );
+  return out;
+}
+
+/** 씬 세트 카드 — **탭에 얹는 단위** (사용자 결정 2026-08-11).
+ *
+ *  씬 칸(옛 이름 「타임라인」)은 **그릇**이고, 그 위에 이 카드를 얹는다. 카드가 씬(`cells`)을
+ *  담고, 공통 접두는 **카드의 것**이다 (탭이 아니라) — 카드마다 다른 접두를 쓰기 때문이다.
+ *
+ *  ★**씬 번호(`cellSeq`)는 카드가 아니라 탭이 발급한다.** 결과 레코드는 `cell_id` 로만
+ *    묶이므로(`takesOf`), 카드마다 번호를 새로 매기면 두 카드의 `c1` 이 같은 결과를 물어
+ *    **한 카드의 그림이 다른 카드에 나타난다.** 번호는 탭 안에서 유일해야 한다. */
+export type SceneCard = {
+  id: string;
+  name: string;
+  /** 덱의 씬 세트 카드에서 왔으면 그 id (없으면 이 탭에서 만든 것) */
+  srcId?: string;
+  /** 배너 그라데이션 — 없으면 이름에서 뽑는다(`colorOf`) */
+  color?: [string, string];
+  /** 이 카드의 모든 씬 앞에 붙는 공통 접두 (v2 프리셋의 prefix) */
+  prefix?: string;
+  /** ★카드째 잠근다 — 옛 「전체 잠금」이 이 자리로 왔다 (사용자 결정 2026-08-11).
+   *  잠긴 카드의 씬은 생성에서 빠진다. 씬 하나하나의 `locked` 와 **함께** 걸린다. */
+  locked?: boolean;
+  cells: Slot[];
+};
+
+export type CanvasTab =
+  | { id: string; kind: "single"; name: string; prompt?: TabPrompt; idOnly?: boolean }
+  | {
+      id: string;
+      kind: "set";
+      name: string;
+      /** 얹어 둔 씬 세트 카드들. 옛 탭은 `cells` 를 직접 들었다 (`migrate` 가 감싼다) */
+      cards: SceneCard[];
+      /** 씬 번호 발급기 — ★**절대 줄지 않고, 탭 하나에 하나다.** 지운 번호는 결번으로 둔다.
+       *  결과를 씬 id 로 묶으므로, 번호를 물려주면 **옛 결과가 새 씬에 달라붙는다.**
+       *  없으면(옛 세션) 지금 있는 씬의 최대 번호 + 1 로 본다. */
+      cellSeq?: number;
+      /** 카드 번호 발급기 — 같은 이유로 줄지 않는다 */
+      cardSeq?: number;
+      prompt?: TabPrompt;
+      /** ★**자기 id 가 박힌 레코드만** 갖는다. 새로 만든 탭에 붙는다 — 이름 폴백이 없으면
+       *  같은 이름의 옛 탭 결과를 물고 오지 않는다 (아래 `takesOf` 주석). */
+      idOnly?: boolean;
+      /** 어느 캐릭터의 포즈세트인가. 옛 세트 탭에는 없다 (`migrate` 가 채운다) */
+      charId?: string;
+      /** ★씬 프롬프트가 **payload 의 어디로 들어가나** — `"base"`(top-level prompt) 또는
+       *  캐릭터 id(`characterPrompts[]`). 없으면 base 다.
+       *  ★**탭에 하나뿐이다** (사용자 결정 2026-08-11): 카드마다 두지 않는다. 캐릭터가 둘인
+       *    것은 "한 이미지에 두 사람"이지 "카드마다 다른 사람"이 아니다. */
+      sceneDest?: string;
+    };
+
+/** ★멀티의 **캐릭터** — 프롬프트(생김새·그림체)를 든다 (사용자 결정 2026-08-04).
+ *
+ *  포즈세트 탭은 **슬롯만** 갖는다. 같은 인물로 여러 포즈세트를 돌리는 것이 멀티의 쓰임이라,
+ *  프롬프트가 포즈세트마다 따로면 인물을 고칠 때마다 세트 수만큼 고쳐야 한다
+ *  (페로픽스파이 `Character.base` 와 같은 자리).
+ *  ★싱글은 그대로 **탭이** 프롬프트를 갖는다 — 거기엔 캐릭터 층이 없다. */
+export type WsChar = { id: string; name: string; prompt?: TabPrompt };
+
+/** 세트 탭의 **모든 씬** — 카드 순서대로 편다.
+ *  ★`tab.cells` 를 직접 읽던 자리는 전부 이걸로 온다. 카드 층이 생겨도 "이 탭의 씬 목록"이
+ *    필요한 곳(장 수 세기·번호 매기기·큐)은 하나도 안 바뀌기 때문이다. */
+export const allCells = (tab: Extract<CanvasTab, { kind: "set" }>): Slot[] =>
+  tab.cards.flatMap((k) => k.cells);
+
+/** 씬 하나와 그것이 속한 카드 — **생성은 카드의 접두가 필요하다** */
+export const allScenes = (
+  tab: Extract<CanvasTab, { kind: "set" }>,
+): { card: SceneCard; cell: Slot }[] =>
+  tab.cards.flatMap((k) => k.cells.map((c) => ({ card: k, cell: c })));
+
+/** 그 씬이 든 카드를 찾는다 (없으면 null) */
+export const cardOfCell = (
+  tab: Extract<CanvasTab, { kind: "set" }>,
+  cellId: string,
+): SceneCard | null => tab.cards.find((k) => k.cells.some((c) => c.id === cellId)) ?? null;
+
+export type Spec = {
+  version: number;
+  id: string;
+  name: string;
+  /** ★레거시 — 예전엔 워크스페이스가 프롬프트를 하나만 들었다. 지금은 **탭이 든다**.
+   *  옛 워크스페이스를 열 때 탭에 아직 프롬프트가 없으면 여기서 씨앗을 얻는다 (`migrate`). */
+  prompt: TabPrompt;
+  params: Record<string, unknown>;
+  tabs: CanvasTab[];
+  activeTab: string;
+  /** 멀티의 캐릭터들. 옛 워크스페이스에는 없다 (`migrate` 가 만든다) */
+  chars?: WsChar[];
+  activeChar?: string;
+  selection: { deleted: string[]; starred: string[] };
+};
+
+export type WsInfo = { name: string; id?: string | null; updatedAt?: string | null };
+
+type S = {
+  list: WsInfo[];
+  current: string;
+  /** 열어 둔 워크스페이스 이름들 (탭 줄). 내용은 활성 것만 메모리에 있다 */
+  openWs: string[];
+  spec: Spec | null;
+  records: Rec[];
+  loading: boolean;
+
+  init: () => Promise<void>;
+  close: () => void;
+  open: (name: string) => Promise<void>;
+  /** 탭을 닫는다. 활성 탭을 닫으면 옆 탭으로, 마지막이면 게이트로 */
+  closeWs: (name: string) => Promise<void>;
+  create: (name?: string) => Promise<void>;
+  rename: (name: string) => Promise<void>;
+  remove: (name: string) => Promise<void>;
+  save: () => Promise<void>;
+  addRecord: (r: Rec) => void;
+
+  /** ★비파괴 선별 — 파일을 지우지 않고 목록에만 넣는다 (PeroPixfy 의 deletions 방식).
+   *  원본이 살아 있어야 되돌릴 수 있다. */
+  setSelection: (kind: "deleted" | "starred", files: string[], on: boolean) => void;
+  /** 선별을 되돌린다 (Ctrl+Z). ★되돌릴 것이 없으면 false 를 준다 —
+   *  부르는 쪽이 그때만 브라우저 기본 동작에 넘길 수 있게. */
+  undoSelection: () => boolean;
+  canUndoSelection: () => boolean;
+  toggleStar: (file: string) => void;
+  toggleDeleted: (file: string) => void;
+  isStarred: (file: string) => boolean;
+  /** 고른 그림을 **다른 워크스페이스로 복사**한다 (원본은 그대로 — 보던 화면이 안 흐트러진다) */
+  /** 고른 그림을 **같은 워크스페이스의 다른 싱글 탭**으로 복사한다 (원본은 그대로).
+   *  ★페로픽스파이의 '워크스페이스 간 복제' 가 여기서는 탭 사이 복제다 (사용자 정정 2026-08-05) */
+  copyTo: (files: string[], tab: { name: string; id: string }) => Promise<number>;
+  /** ★지우기 = **휴지통으로 이동**. 파일이 실제로 자리에서 없어지고, `Ctrl+Z` 로 되돌아온다.
+   *  비우는 것은 앱을 켤 때 (24시간 지난 것) — `backend/trash.py` 머리 주석. */
+  deleteFiles: (files: string[]) => Promise<void>;
+  isDeleted: (file: string) => boolean;
+  activeTab: () => CanvasTab | undefined;
+  setActiveTab: (id: string) => void;
+  /** 셀은 이름만(빈 태그) 또는 이름+태그로 준다 — 포즈세트 카드가 후자다 */
+  addSetTab: (name: string, cells: (string | { name: string; tags?: string; blocks?: Block[] })[]) => void;
+  /** 싱글 그룹에 서브 탭을 하나 더 (저장소 구분용) */
+  addSingleTab: (name?: string) => void;
+  closeTab: (id: string) => void;
+  renameTab: (id: string, name: string) => void;
+
+  /** 탭의 필드를 갈아 끼운다 (슬롯 목록·공통 접두).
+   *  ★예전엔 SlotStrip 이 `useWs.setState` 로 스토어를 직접 만졌다 — 저장 예약이 컴포넌트에
+   *    흩어져 있어 어디서 무엇이 저장되는지 알 수 없었다. 창구를 여기 하나로 모은다. */
+  setTab: (id: string, patch: Partial<Extract<CanvasTab, { kind: "set" }>>) => void;
+  /** 씬을 하나 더한다. `from` 을 주면 그 씬의 복제, `after` 를 주면 **그 카드 안에서** 그 뒤에.
+   *  ★번호는 탭의 `cellSeq` 가 발급한다 — 컴포넌트가 id 를 만들지 않고, 카드가 여럿이어도
+   *    번호는 탭 안에서 유일하다 (결과가 `cell_id` 로 묶이므로).
+   *  ★`cardId` 를 안 주면 **첫 카드**에 붙는다. */
+  addSlot: (
+    tabId: string,
+    opts?: { cardId?: string; after?: number; from?: Slot; name?: string },
+  ) => void;
+
+  // ── 씬 세트 카드 (탭에 얹는 단위) ──
+  /** 카드를 얹는다. `cells` 를 주면 덱에서 떨군 것, 없으면 씬 하나짜리 새 카드 */
+  addCard: (
+    tabId: string,
+    card?: { name?: string; srcId?: string; color?: [string, string]; prefix?: string; cells?: Slot[] },
+  ) => void;
+  /** 카드를 뺀다. ★확인을 받지 않는다 — `Ctrl+Z` 로 되돌린다 (사용자 결정 2026-08-11) */
+  removeCard: (tabId: string, cardId: string) => void;
+  /** 카드의 필드를 갈아 끼운다 (이름·공통 접두·씬 목록) */
+  setCard: (tabId: string, cardId: string, patch: Partial<SceneCard>) => void;
+
+  // ── 캐릭터 (멀티 전용) ──
+  activeCharOf: () => WsChar | undefined;
+  switchChar: (id: string) => void;
+  addChar: (name?: string) => void;
+  renameChar: (id: string, name: string) => void;
+  removeChar: (id: string) => void;
+};
+
+const newSpec = (name: string): Spec => ({
+  version: 1,
+  id: "ws_" + Date.now().toString(36),
+  name,
+  prompt: { base: [], baseUc: [] },
+  params: {},
+  tabs: [{ id: "tab_single", kind: "single", name: t("tabs.single") }],
+  activeTab: "tab_single",
+  selection: { deleted: [], starred: [] },
+});
+
+/** 옛 워크스페이스를 새 구조로 옮긴다 — **탭에 프롬프트가 없으면 spec.prompt 를 씨앗으로.**
+ *  ★조용히 버리지 않는다. 예전 워크스페이스의 프롬프트가 사라지면 사용자가 알아챌 방법이 없다. */
+function migrate(spec: Spec): Spec {
+  let changed = false;
+  // ★카드 층 이전 (2026-08-11). 옛 세트 탭은 `cells`·`prefix` 를 **직접** 들었다.
+  //   그것을 **카드 한 장**으로 감싼다 — 아무것도 안 잃고, 열면 지금까지와 똑같이 보인다.
+  //   ★`cellSeq` 는 **탭에 그대로 둔다** (카드로 내리지 않는다) — 씬 번호는 탭 안에서
+  //     유일해야 결과(`cell_id`)가 안 섞인다. 위 `SceneCard` 주석 참조.
+  spec = {
+    ...spec,
+    tabs: spec.tabs.map((tb) => {
+      // ★싱글 탭은 **씬 탭으로 옮긴다** (싱글/멀티 구분 폐기). 그림이 안 사라지게
+      //   옮겨 온 씬에 `fromSingle` 이 박힌다 — `takesOf` 가 그것으로 찾아간다.
+      const conv = convertSingleTab(tb as never);
+      if (conv) {
+        changed = true;
+        return conv as unknown as CanvasTab;
+      }
+      // ★감싸는 규칙은 `lib/sceneCards.ts` 에 있다 — 사용자 데이터를 건드리는 자리라
+      //   따로 떼어 회귀 테스트를 붙였다 (`sceneCards.test.ts`)
+      const wrapped = wrapSetTabInCard(tb as never);
+      if (!wrapped) return tb;
+      changed = true;
+      return wrapped as unknown as CanvasTab;
+    }),
+  };
+  // ★슬롯을 블록으로 (2026-08-07). 옛 세션은 문자열 태그를 들고 있다 — 열 때 한 번 옮긴다.
+  //   ★카드 층이 생기면서 **카드마다** 돈다 (`cells` 는 이제 카드 안에 있다).
+  const label = t("slots.extra");
+  spec = {
+    ...spec,
+    tabs: spec.tabs.map((tb) => {
+      if (tb.kind !== "set") return tb;
+      let touched = false;
+      const cards = tb.cards.map((k) => {
+        if (!k.cells.every((c) => Array.isArray(c.blocks))) {
+          touched = true;
+          return {
+            ...k,
+            cells: k.cells.map((c) => ({ ...c, blocks: slotBlocks(c), tags: undefined, extra: undefined })),
+          };
+        }
+        // ★같은 날 한 판 앞의 이관이 「추가」를 **평범한 블록으로** 옮겨 놓았다
+        //   (`extra` 표식을 만들기 전에 내보냈다). 그대로 두면 카드에 딸려 들어간다.
+        //   이름으로 한 번만 되살린다 — 지나고 나면 표식이 박혀 다시 걸리지 않는다.
+        if (!k.cells.some((c) => c.blocks.some((b) => b.label === label && b.extra === undefined)))
+          return k;
+        touched = true;
+        return {
+          ...k,
+          cells: k.cells.map((c) => ({
+            ...c,
+            blocks: c.blocks.map((b) =>
+              b.label === label && b.extra === undefined ? { ...b, extra: true } : b,
+            ),
+          })),
+        };
+      });
+      if (!touched) return tb;
+      changed = true;
+      return { ...tb, cards };
+    }),
+  };
+  const tabs = spec.tabs.map((t) => {
+    if (t.prompt) return t;
+    changed = true;
+    // 싱글 탭만 씨앗을 받는다 — 세트 탭까지 같은 프롬프트를 복제하면 "왜 다 같지"가 된다
+    return t.kind === "single"
+      ? { ...t, prompt: spec.prompt ?? { base: defaultBase(), baseUc: defaultUc() } }
+      : { ...t, prompt: { base: defaultBase(), baseUc: defaultUc() } };
+  });
+  // ★캐릭터 층 이전 (2026-08-04). 세트 탭이 들고 있던 프롬프트를 **캐릭터로 올린다** —
+  //   탭마다 하나씩 만들어 담으므로 **아무것도 잃지 않는다.** 이름은 그 탭 이름을 쓴다.
+  let chars = spec.chars ?? [];
+  let tabs2 = tabs;
+  const orphan = tabs2.filter((t) => t.kind === "set" && !t.charId);
+  if (orphan.length || !chars.length) {
+    const made: WsChar[] = [];
+    tabs2 = tabs2.map((t) => {
+      if (t.kind !== "set" || t.charId) return t;
+      const c: WsChar = {
+        id: "ch_" + Math.random().toString(36).slice(2, 8),
+        name: t.name,
+        prompt: t.prompt ?? { base: defaultBase(), baseUc: defaultUc() },
+      };
+      made.push(c);
+      return { ...t, charId: c.id };
+    });
+    if (made.length) {
+      chars = [...chars, ...made];
+      changed = true;
+    }
+  }
+  if (!chars.length) {
+    chars = [{ id: "ch_1", name: t("chars.first"), prompt: { base: defaultBase(), baseUc: defaultUc() } }];
+    changed = true;
+  }
+  const activeChar = spec.activeChar && chars.some((c) => c.id === spec.activeChar)
+    ? spec.activeChar
+    : chars[0].id;
+  if (activeChar !== spec.activeChar) changed = true;
+  return changed ? { ...spec, tabs: tabs2, chars, activeChar } : spec;
+}
+
+/** 선별 되돌리기 스택 — **서버에 저장하지 않는다.**
+ *
+ *  ★spec 안에 넣지 않는 이유: spec 은 통째로 서버에 PUT 되는 것이라, 되돌리기 이력이
+ *    끼면 워크스페이스 파일이 이력으로 불어난다. 되돌리기는 이 세션의 것이다.
+ *  ★범위는 **선별(숨김·별표)뿐이다** (사용자 결정 2026-08-03). 태그 입력·슬롯 삭제·탭 닫기는
+ *    안 들어간다 — 입력칸에 커서가 있으면 Ctrl+Z 를 브라우저에 넘겨 글자 되돌리기가 살아 있게 한다.
+ *  워크스페이스를 옮기면 비운다 (다른 워크스페이스의 파일을 되살리면 안 된다). */
+/** 되돌림 한 칸. ★`trashed` 가 있으면 **파일도** 제자리로 돌려야 한다 (지우기였다는 뜻) */
+type SelUndo = {
+  kind: "deleted" | "starred";
+  before: string[];
+  trashed?: { file: string; at: string }[];
+};
+let undoStack: SelUndo[] = [];
+const UNDO_MAX = 50;
+
+/** 슬롯 id 에서 번호를 읽는다 (`c3` -> 3). 발급기가 없는 옛 탭을 이어 받을 때만 쓴다. */
+function maxCellNum(cells: Slot[]): number {
+  let max = -1;
+  for (const c of cells) {
+    const m = /^c(\d+)$/.exec(c.id);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return max;
+}
+
+/** 지금 편집기에 있는 것을 담는다 (자리를 떠나기 직전에 부른다).
+ *  ★**멀티면 캐릭터에, 싱글이면 탭에** 담는다 — 프롬프트의 주인이 다르다. */
+function stash(spec: Spec, tabId: string): Spec {
+  const snap = usePrompt.getState().snapshot();
+  const tab = spec.tabs.find((t) => t.id === tabId);
+  if (tab?.kind === "set") {
+    const cid = tab.charId ?? spec.activeChar;
+    if (!cid) return spec;
+    return { ...spec, chars: (spec.chars ?? []).map((c) => (c.id === cid ? { ...c, prompt: snap } : c)) };
+  }
+  return { ...spec, tabs: spec.tabs.map((t) => (t.id === tabId ? { ...t, prompt: snap } : t)) };
+}
+
+/** 그 탭에서 편집기에 꺼내 놓을 프롬프트 — 멀티는 캐릭터 것이다 */
+export function promptOf(spec: Spec, tab: CanvasTab | undefined): TabPrompt {
+  const fallback = { base: defaultBase(), baseUc: defaultUc() };
+  if (!tab) return spec.prompt ?? fallback;
+  if (tab.kind === "set") {
+    const cid = tab.charId ?? spec.activeChar;
+    return (spec.chars ?? []).find((c) => c.id === cid)?.prompt ?? fallback;
+  }
+  return tab.prompt ?? fallback;
+}
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** ★밀린 저장을 **지금** 흘려보낸다. 워크스페이스를 바꾸기 전에 반드시 부른다 —
+ *  저장은 400ms 디바운스인데 `save()` 는 **터질 때의** current/spec 을 읽는다. 편집 직후
+ *  탭을 바꾸면 그 편집이 어디에도 안 써진다 (탭이 생기며 자주 밟게 된 자리). */
+async function flushSave(get: () => S) {
+  if (!saveTimer) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  await get().save();
+}
+
+/** 열어 둔 워크스페이스 이름들 — ★**이름만** 담는다. 내용은 활성 것 하나만 메모리에 있다. */
+const TABS_KEY = "peropix.openWs";
+const loadTabs = (): string[] => {
+  try {
+    const v = JSON.parse(localStorage.getItem(TABS_KEY) || "[]");
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string").slice(0, 20) : [];
+  } catch {
+    return [];
+  }
+};
+const saveTabs = (v: string[]) => {
+  try {
+    localStorage.setItem(TABS_KEY, JSON.stringify(v));
+  } catch {
+    /* 저장 못 해도 이번 실행에는 그대로 돈다 */
+  }
+};
+
+/** 마지막으로 **보고 있던** 워크스페이스 — 켜면 여기로 돌아온다 (사용자 지시 2026-08-08).
+ *
+ *  ★열린 탭 목록(`openWs`)과 **다른 정보**라 키를 따로 둔다. 탭 순서를 안 건드리고
+ *    활성만 옮길 수 있어야 하는데, "목록의 마지막 = 활성"으로 겸하면 탭을 누를 때마다
+ *    순서가 흔들린다. */
+const ACTIVE_KEY = "peropix.activeWs";
+const loadActive = (): string => {
+  try {
+    return localStorage.getItem(ACTIVE_KEY) || "";
+  } catch {
+    return "";
+  }
+};
+const saveActive = (v: string) => {
+  try {
+    if (v) localStorage.setItem(ACTIVE_KEY, v);
+    else localStorage.removeItem(ACTIVE_KEY);
+  } catch {
+    /* 저장 못 해도 이번 실행에는 그대로 돈다 */
+  }
+};
+
+export const useWs = create<S>((set, get) => ({
+  list: [],
+  current: "",
+  openWs: loadTabs(),
+  spec: null,
+  records: [],
+  loading: true,
+
+  /** 목록을 읽고 **마지막에 보던 워크스페이스를 그대로 연다** (사용자 지시 2026-08-08).
+   *
+   *  ★첫 화면(고르는 화면)은 없앴다 — 켜면 하던 자리가 바로 보여야 한다. 고르는 창구는
+   *    탭 줄의 「+」가 띄우는 모달 하나뿐이다.
+   *  ★열어 뒀던 탭 중 **없어진 것은 조용히 뺀다** — 지운 워크스페이스가 탭으로 남으면
+   *    눌러도 404 만 난다. */
+  async init() {
+    const { items } = await api<{ items: WsInfo[] }>("/api/workspaces");
+    const alive = new Set(items.map((x) => x.name));
+    const tabs = get().openWs.filter((n) => alive.has(n));
+    if (tabs.length !== get().openWs.length) saveTabs(tabs);
+    set({ list: items, openWs: tabs });
+
+    const want = loadActive();
+    // 없어졌으면 옆 탭 → 그것도 없으면 **가장 최근에 고친 것**
+    const recent = [...items].sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
+    const pick = (alive.has(want) && want) || tabs[tabs.length - 1] || recent[0]?.name || "";
+    if (!pick) {
+      set({ loading: false }); // 진짜 첫 실행 — 만들 때까지 모달이 뜬다
+      return;
+    }
+    try {
+      await get().open(pick);
+    } catch {
+      set({ loading: false }); // 여는 데 실패해도 앱은 뜬다 (모달에서 다시 고른다)
+    }
+  },
+
+  /** 열어 둔 워크스페이스가 하나도 없는 상태로 (마지막 탭을 닫았거나 지웠을 때).
+   *  ★돌아갈 첫 화면은 없다 — 앱이 빈 셸 + 고르기 모달을 띄운다. */
+  close() {
+    undoStack = [];
+    saveActive("");
+    set({ current: "", spec: null, records: [] });
+  },
+
+  /** 탭을 닫는다. 활성 탭을 닫으면 옆 탭으로, 마지막이면 게이트로.
+   *  ★내용은 어차피 활성 것 하나뿐이라 "닫는다"는 목록에서 빼는 것이 전부다. */
+  async closeWs(name) {
+    const tabs = get().openWs.filter((x) => x !== name);
+    saveTabs(tabs);
+    set({ openWs: tabs });
+    if (get().current !== name) return;
+    await flushSave(get); // ★밀린 편집을 먼저 쓴다
+    if (tabs.length) await get().open(tabs[tabs.length - 1]);
+    else get().close();
+  },
+
+  async open(name) {
+    if (get().current === name) return;
+    await flushSave(get); // ★밀린 편집을 먼저 쓴다 (아래 flushSave 주석)
+    set({ loading: true });
+    const r = await api<{ spec: Spec | null; records: Rec[] }>(
+      `/api/workspaces/${encodeURIComponent(name)}`,
+    );
+    const spec = migrate(r.spec ?? newSpec(name));
+    undoStack = []; // ★다른 워크스페이스의 파일을 되살리면 안 된다
+    const tabs = get().openWs.includes(name) ? get().openWs : [...get().openWs, name];
+    saveTabs(tabs);
+    saveActive(name); // 켤 때 여기로 돌아온다
+    set({ current: name, spec, records: r.records ?? [], loading: false, openWs: tabs });
+    // ★AI 파일 도구의 기준을 알려 준다 — 백엔드는 어느 워크스페이스를 보고 있는지 모른다
+    //   (사용자 지시 2026-08-08: 정리는 워크스페이스 안에서만)
+    void api("/api/agent/workspace", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }).catch(() => {});
+    // ★프롬프트는 **탭이** 들고 있다 — 활성 탭의 것을 편집기로 밀어 넣는다
+    const tab = spec.tabs.find((t) => t.id === spec.activeTab) ?? spec.tabs[0];
+    usePrompt.getState().load(promptOf(spec, tab));
+  },
+
+  async create(input?: string) {
+    const base = (input ?? t("gate.newWorkspace")).trim() || t("gate.newWorkspace");
+    const names = new Set(get().list.map((x) => x.name));
+    let name = base;
+    for (let i = 2; names.has(name); i++) name = `${base} ${i}`;
+    const spec = newSpec(name);
+    // 새 워크스페이스는 기본 블록으로 시작한다 — 이전 작업을 물고 오지 않는다
+    spec.prompt = { base: defaultBase(), baseUc: defaultUc() };
+    await api(`/api/workspaces/${encodeURIComponent(name)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ spec }),
+    });
+    const { items } = await api<{ items: WsInfo[] }>("/api/workspaces");
+    set({ list: items });
+    await get().open(name);
+  },
+
+  async rename(name) {
+    const cur = get().current;
+    if (!name.trim() || name === cur) return;
+    const r = await api<{ name: string }>(
+      `/api/workspaces/${encodeURIComponent(cur)}/rename`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      },
+    );
+    const spec = get().spec;
+    if (spec) spec.name = r.name;
+    const { items } = await api<{ items: WsInfo[] }>("/api/workspaces");
+    // ★탭도 새 이름으로 — 옛 이름이 탭에 남으면 눌러도 없는 워크스페이스를 부른다
+    const tabs = get().openWs.map((n) => (n === cur ? r.name : n));
+    saveTabs(tabs);
+    saveActive(r.name);
+    set({ list: items, current: r.name, openWs: tabs });
+    await get().save();
+  },
+
+  async remove(name) {
+    await api(`/api/workspaces/${encodeURIComponent(name)}`, { method: "DELETE" });
+    const { items } = await api<{ items: WsInfo[] }>("/api/workspaces");
+    set({ list: items });
+    // ★지운 것은 탭에서도 뺀다 — 남겨 두면 눌러도 없는 워크스페이스를 부른다
+    const tabs = get().openWs.filter((n) => n !== name);
+    if (tabs.length !== get().openWs.length) {
+      saveTabs(tabs);
+      set({ openWs: tabs });
+    }
+    if (get().current !== name) return;
+    if (tabs.length) await get().open(tabs[tabs.length - 1]);
+    else get().close();
+  },
+
+  async save() {
+    const { current, spec } = get();
+    if (!current || !spec) return;
+    // ★편집기 내용은 **활성 탭에** 담는다 (예전엔 spec.prompt 하나였다).
+    //   spec.prompt 는 옛 워크스페이스를 여는 씨앗으로만 남는다 — 여기서 더 쓰지 않는다.
+    const next = stash(spec, spec.activeTab);
+    set({ spec: next });
+    await api(`/api/workspaces/${encodeURIComponent(current)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ spec: next }),
+    });
+  },
+
+  addRecord(r) {
+    // ★파일 경로가 곧 신원이다 — 같은 파일을 두 번 담지 않는다.
+    //   두 갈래로 같은 그림이 들어온다: (a) 워크스페이스를 열 때 서버가 돌려주는 저장된 기록,
+    //   (b) WebSocket `sync` 복원. 큐 스토어의 `seen` 은 **메모리에만** 있어서 새로고침하면
+    //   비고, 그러면 서버 기록 위에 복원분이 통째로 겹쳐 쌓였다.
+    //   실측(2026-08-03): 6장짜리 탭에서 React 가 `key` 중복을 6건 뱉었다.
+    if (get().records.some((x) => x.file === r.file)) return;
+    set({ records: [...get().records, r] });
+  },
+
+  /** 여러 장을 한 번에 켜고 끈다 — `이것만 남기기`·범위 선택이 쓴다.
+   *
+   *  ★한 장씩 `toggle` 을 반복하면 그때마다 spec 이 새로 만들어지고 저장이 예약된다.
+   *    20장을 정리하면 스무 번 저장이 나간다. 한 번에 바꾼다. */
+  setSelection(kind, files, on) {
+    const spec = get().spec;
+    if (!spec || files.length === 0) return;
+    const cur = spec.selection[kind];
+    const touched = new Set(files);
+    const next = on
+      ? [...cur, ...files.filter((f) => !cur.includes(f))]
+      : cur.filter((f) => !touched.has(f));
+    if (next.length === cur.length && on) return;
+    undoStack.push({ kind, before: cur });
+    if (undoStack.length > UNDO_MAX) undoStack.shift();
+    set({ spec: { ...spec, selection: { ...spec.selection, [kind]: next } } });
+    queueSave(get);
+  },
+
+  undoSelection() {
+    const spec = get().spec;
+    const last = undoStack.pop();
+    if (!spec || !last) return false;
+    set({ spec: { ...spec, selection: { ...spec.selection, [last.kind]: last.before } } });
+    queueSave(get);
+    // ★지운 것이면 **파일도 제자리로** 돌린다 (표시만 되돌리면 깨진 칸이 된다)
+    if (last.trashed?.length) {
+      const ws = get().current;
+      void api(`/api/workspaces/${encodeURIComponent(ws)}/restore`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entries: last.trashed }),
+      }).catch(() => undefined);
+    }
+    return true;
+  },
+
+  canUndoSelection: () => undoStack.length > 0,
+
+  toggleStar(file) {
+    get().setSelection("starred", [file], !get().isStarred(file));
+  },
+
+  toggleDeleted(file) {
+    get().setSelection("deleted", [file], !get().isDeleted(file));
+  },
+
+  isStarred: (file) => !!get().spec?.selection.starred.includes(file),
+
+  async copyTo(files, tab) {
+    const { current } = get();
+    if (!current || !files.length || !tab?.name) return 0;
+    const r = await api<{ copied: string[] }>(`/api/workspaces/${encodeURIComponent(current)}/copy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ files, tab: tab.name, tab_id: tab.id }),
+    });
+    // 복사한 만큼 레코드가 늘었으니 다시 읽는다 (받는 탭에서 바로 보이게)
+    if (r.copied.length) await get().open(current);
+    return r.copied.length;
+  },
+
+  async deleteFiles(files) {
+    const { current, spec } = get();
+    if (!current || !spec || !files.length) return;
+    const r = await api<{ moved: { file: string; at: string }[] }>(
+      `/api/workspaces/${encodeURIComponent(current)}/trash`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ files }) },
+    );
+    // ★목록에서도 뺀다 — 파일은 없어졌지만 레코드는 남아 있어서, 표시를 안 하면 깨진 칸이 된다
+    const cur = spec.selection.deleted;
+    undoStack.push({ kind: "deleted", before: cur, trashed: r.moved });
+    if (undoStack.length > UNDO_MAX) undoStack.shift();
+    const next = [...new Set([...cur, ...files])];
+    set({ spec: { ...spec, selection: { ...spec.selection, deleted: next } } });
+    queueSave(get);
+  },
+  isDeleted: (file) => !!get().spec?.selection.deleted.includes(file),
+
+  activeTab: () => get().spec?.tabs.find((t) => t.id === get().spec!.activeTab),
+
+  setActiveTab(id) {
+    const spec = get().spec;
+    if (!spec || spec.activeTab === id) return;
+    // ★떠나는 탭에 지금 편집기 내용을 담고, 오는 탭의 것을 꺼낸다.
+    //   이 순서를 지키지 않으면 탭을 옮길 때마다 앞 탭의 프롬프트가 덮인다.
+    const stashed = stash(spec, spec.activeTab);
+    const next = stashed.tabs.find((t) => t.id === id);
+    set({ spec: { ...stashed, activeTab: id } });
+    usePrompt.getState().load(promptOf(stashed, next));
+    queueSave(get);
+  },
+
+  addSingleTab(name) {
+    const spec = get().spec;
+    if (!spec) return;
+    const id = "tab_" + Date.now().toString(36);
+    const base = (name ?? t("tabs.single")).trim() || t("tabs.single");
+    const used = new Set(spec.tabs.map((x) => x.name));
+    let nm = base;
+    for (let i = 2; used.has(nm); i++) nm = `${base} ${i}`;
+    const stashed = stash(spec, spec.activeTab);
+    const tab: CanvasTab = { id, kind: "single", name: nm, idOnly: true, prompt: usePrompt.getState().snapshot() };
+    set({ spec: { ...stashed, tabs: [...stashed.tabs, tab], activeTab: id } });
+    queueSave(get);
+  },
+
+  addSetTab(name, cells) {
+    const spec = get().spec;
+    if (!spec) return;
+    const id = "tab_" + Date.now().toString(36);
+    // ★이름이 겹치면 번호를 붙인다 (싱글 탭과 같은 규칙). 탭 이름이 곧 **저장 폴더**라
+    //   겹치면 다른 탭의 그림이 같은 폴더에 섞인다.
+    const used = new Set(spec.tabs.map((x) => x.name));
+    let nm = name;
+    for (let i = 2; used.has(nm); i++) nm = `${name} ${i}`;
+    const tab: CanvasTab = {
+      id,
+      kind: "set",
+      name: nm,
+      idOnly: true,
+      charId: spec.activeChar,
+      // ★씬은 **카드 한 장**에 담겨 얹힌다 (2026-08-11). 카드 이름은 탭 이름을 물려받는다 —
+      //   덱에서 떨군 씬 세트라면 그 카드 이름이 곧 이 탭 이름이라 같은 값이다.
+      cards: [
+        {
+          id: "k1",
+          name: nm,
+          cells: cells.map((c, i) =>
+            typeof c === "string"
+              ? { id: `c${i}`, name: c, blocks: [] }
+              : { id: `c${i}`, name: c.name, blocks: slotBlocks(c) },
+          ),
+        },
+      ],
+      cellSeq: cells.length,
+      cardSeq: 1,
+      // 새 탭은 **지금 편집기 내용을 물려받는다** — 카드를 떨궈 만든 탭이 빈 프롬프트로
+      // 시작하면 바로 생성이 안 돼 한 번 더 손이 간다
+      prompt: usePrompt.getState().snapshot(),
+    };
+    const stashed = stash(spec, spec.activeTab);
+    set({ spec: { ...stashed, tabs: [...stashed.tabs, tab], activeTab: id } });
+    queueSave(get);
+  },
+
+  // ── 캐릭터 ──────────────────────────────────────────────
+  activeCharOf: () => {
+    const sp = get().spec;
+    return sp?.chars?.find((c) => c.id === sp.activeChar);
+  },
+
+  switchChar(id) {
+    const spec = get().spec;
+    if (!spec || spec.activeChar === id) return;
+    // ★지금 편집기 내용을 **떠나는 캐릭터에** 담고 옮긴다 (탭 전환과 같은 순서)
+    const stashed = stash(spec, spec.activeTab);
+    // 그 캐릭터의 포즈세트 중 하나를 연다. 없으면 하나 만든다.
+    const mine = stashed.tabs.filter((x) => x.kind === "set" && x.charId === id);
+    let next = { ...stashed, chars: stashed.chars, activeChar: id };
+    if (mine.length) {
+      next = { ...next, activeTab: mine[0].id };
+    } else {
+      const tid = "tab_" + Date.now().toString(36);
+      next = {
+        ...next,
+        tabs: [
+          ...next.tabs,
+          {
+            id: tid,
+            kind: "set",
+            name: t("tabs.newSet"),
+            charId: id,
+            idOnly: true,
+            cards: [
+              {
+                id: "k1",
+                name: t("tabs.newSet"),
+                cells: [{ id: "c0", name: t("tabs.posePrefix", { n: 1 }), blocks: [] }],
+              },
+            ],
+            cellSeq: 1,
+            cardSeq: 1,
+          },
+        ],
+        activeTab: tid,
+      };
+    }
+    set({ spec: next });
+    usePrompt.getState().load(promptOf(next, next.tabs.find((x) => x.id === next.activeTab)));
+    queueSave(get);
+  },
+
+  addChar(name) {
+    const spec = get().spec;
+    if (!spec) return;
+    const used = new Set((spec.chars ?? []).map((c) => c.name));
+    const bases = (name ?? t("chars.newName")).trim() || t("chars.newName");
+    let nm = bases;
+    for (let i = 2; used.has(nm); i++) nm = `${bases} ${i}`;
+    const id = "ch_" + Date.now().toString(36);
+    // ★새 캐릭터는 **빈 프롬프트**로 시작한다 — 앞 캐릭터를 물려받으면 둘이 같은 인물이 된다
+    const stashed = stash(spec, spec.activeTab);
+    set({
+      spec: {
+        ...stashed,
+        chars: [...(stashed.chars ?? []), { id, name: nm, prompt: { base: defaultBase(), baseUc: defaultUc() } }],
+      },
+    });
+    get().switchChar(id);
+  },
+
+  renameChar(id, name) {
+    const spec = get().spec;
+    if (!spec || !name.trim()) return;
+    set({
+      spec: { ...spec, chars: (spec.chars ?? []).map((c) => (c.id === id ? { ...c, name: name.trim() } : c)) },
+    });
+    queueSave(get);
+  },
+
+  removeChar(id) {
+    const spec = get().spec;
+    if (!spec) return;
+    const chars = (spec.chars ?? []).filter((c) => c.id !== id);
+    // ★마지막 캐릭터는 지우지 않는다 — 멀티에 설 자리가 없어진다
+    if (!chars.length) return;
+    // 그 캐릭터의 포즈세트도 함께 사라진다 (그림 파일은 그대로 남는다)
+    const tabs = spec.tabs.filter((x) => !(x.kind === "set" && x.charId === id));
+    const nextChar = spec.activeChar === id ? chars[0].id : spec.activeChar;
+    const mine = tabs.filter((x) => x.kind === "set" && x.charId === nextChar);
+    const activeTab = tabs.some((x) => x.id === spec.activeTab)
+      ? spec.activeTab
+      : (mine[0]?.id ?? tabs[0].id);
+    const next = { ...spec, chars, tabs, activeChar: nextChar, activeTab };
+    set({ spec: next });
+    usePrompt.getState().load(promptOf(next, tabs.find((x) => x.id === activeTab)));
+    queueSave(get);
+  },
+
+  closeTab(id) {
+    const spec = get().spec;
+    if (!spec) return;
+    const target = spec.tabs.find((x) => x.id === id);
+    // ★싱글이 하나도 없는 워크스페이스를 만들지 않는다 — 돌아갈 자리가 사라진다
+    if (target?.kind === "single" && spec.tabs.filter((x) => x.kind === "single").length <= 1) return;
+    const tabs = spec.tabs.filter((t) => t.id !== id);
+    const wasActive = spec.activeTab === id;
+    // ★닫으면 **같은 층에 머문다.** `tabs[0]` 로 가면 싱글을 지웠는데 첫 탭이 세트일 때
+    //   멀티로 튕긴다 (사용자 지적 2026-08-04). 같은 층이 남아 있으면 그중 **가장 가까운 것**을 연다.
+    const wasAt = spec.tabs.findIndex((t) => t.id === id);
+    const sameKind = tabs.filter((t) => t.kind === target?.kind);
+    const neighbour =
+      sameKind.length === 0
+        ? tabs[0]
+        : sameKind.reduce((best, t) => {
+            const at = spec.tabs.findIndex((x) => x.id === t.id);
+            const bestAt = spec.tabs.findIndex((x) => x.id === best.id);
+            return Math.abs(at - wasAt) < Math.abs(bestAt - wasAt) ? t : best;
+          });
+    const nextActive = wasActive ? neighbour.id : spec.activeTab;
+    set({ spec: { ...spec, tabs, activeTab: nextActive } });
+    // ★활성 탭을 닫았으면 **새 탭의 프롬프트를 편집기로 꺼낸다.**
+    //   안 하면 편집기 안은 닫힌 탭의 내용 그대로인데 activeTab 만 바뀌어,
+    //   0.4초 뒤 도는 자동 저장이 `stash(spec, activeTab)` 로 그것을 **옆 탭에 써 넣는다.**
+    //   화면상으론 탭 하나를 닫은 것으로만 보여서, 옆 탭을 열기 전엔 유실을 알 수 없다.
+    if (wasActive) {
+      const next = tabs.find((t) => t.id === nextActive);
+      usePrompt.getState().load(promptOf(spec, next));
+    }
+    queueSave(get);
+  },
+
+  setTab(id, patch) {
+    const spec = get().spec;
+    if (!spec) return;
+    set({
+      spec: {
+        ...spec,
+        tabs: spec.tabs.map((x) => (x.id === id && x.kind === "set" ? { ...x, ...patch } : x)),
+      },
+    });
+    queueSave(get);
+  },
+
+  addSlot(tabId, opts = {}) {
+    const spec = get().spec;
+    const tab = spec?.tabs.find((x) => x.id === tabId);
+    if (!spec || tab?.kind !== "set" || !tab.cards.length) return;
+    const card = tab.cards.find((k) => k.id === opts.cardId) ?? tab.cards[0];
+    // ★발급기가 없는 옛 탭은 지금 있는 최대 번호 + 1 부터 이어 받는다.
+    //   ★탭 전체에서 센다 — 카드마다 세면 두 카드가 같은 번호를 갖는다
+    const seq = tab.cellSeq ?? maxCellNum(allCells(tab)) + 1;
+    const cell: Slot = opts.from
+      ? { ...opts.from, id: `c${seq}`, name: opts.name ?? opts.from.name }
+      : {
+          id: `c${seq}`,
+          name: opts.name ?? t("slots.newName", { n: card.cells.length + 1 }),
+          blocks: [],
+        };
+    const at = opts.after === undefined ? card.cells.length : opts.after + 1;
+    const cells = [...card.cells.slice(0, at), cell, ...card.cells.slice(at)];
+    get().setTab(tabId, {
+      cards: tab.cards.map((k) => (k.id === card.id ? { ...k, cells } : k)),
+      cellSeq: seq + 1,
+    });
+  },
+
+  addCard(tabId, card = {}) {
+    const spec = get().spec;
+    const tab = spec?.tabs.find((x) => x.id === tabId);
+    if (!spec || tab?.kind !== "set") return;
+    const cseq = (tab.cardSeq ?? tab.cards.length) + 1;
+    const seq = tab.cellSeq ?? maxCellNum(allCells(tab)) + 1;
+    const cells = card.cells?.length
+      ? // 덱에서 떨군 카드 — ★씬 번호는 **이 탭이 새로 발급한다.** 카드에 실려 온 id 를
+        //   그대로 쓰면 이미 있는 씬과 겹쳐 결과가 섞인다
+        card.cells.map((c, i) => ({ ...c, id: `c${seq + i}` }))
+      : [{ id: `c${seq}`, name: t("slots.newName", { n: 1 }), blocks: [] }];
+    get().setTab(tabId, {
+      cards: [
+        ...tab.cards,
+        {
+          id: `k${cseq}`,
+          name: card.name ?? t("tabs.newSet"),
+          srcId: card.srcId,
+          color: card.color,
+          prefix: card.prefix,
+          cells,
+        },
+      ],
+      cardSeq: cseq,
+      cellSeq: seq + cells.length,
+    });
+  },
+
+  removeCard(tabId, cardId) {
+    const spec = get().spec;
+    const tab = spec?.tabs.find((x) => x.id === tabId);
+    if (!spec || tab?.kind !== "set") return;
+    get().setTab(tabId, { cards: tab.cards.filter((k) => k.id !== cardId) });
+  },
+
+  setCard(tabId, cardId, patch) {
+    const spec = get().spec;
+    const tab = spec?.tabs.find((x) => x.id === tabId);
+    if (!spec || tab?.kind !== "set") return;
+    get().setTab(tabId, {
+      cards: tab.cards.map((k) => (k.id === cardId ? { ...k, ...patch } : k)),
+    });
+  },
+
+  renameTab(id, name) {
+    const spec = get().spec;
+    if (!spec || !name.trim()) return;
+    set({
+      spec: { ...spec, tabs: spec.tabs.map((t) => (t.id === id ? { ...t, name } : t)) },
+    });
+    queueSave(get);
+  },
+}));
+
+/** 편집이 잦으므로 디바운스 저장 — 매 키 입력마다 파일을 쓰지 않는다. */
+function queueSave(get: () => S) {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => get().save(), 400);
+}
+
+export const scheduleSave = () => queueSave(useWs.getState as () => S);

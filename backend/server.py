@@ -1,0 +1,1588 @@
+"""PeroPix 3.0 백엔드.
+
+v2.x 의 backend.py 에서 NAI·검열·인프라 계열을 옮겨오는 자리다.
+4단계: 워크스페이스 + 저장 (spec/records 분리, work/ · output/).
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import contextlib
+import base64
+import io
+import json
+import math
+import os
+import traceback
+import uuid
+from datetime import datetime
+from pathlib import Path
+
+from fastapi import File, UploadFile, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from PIL import Image
+from pydantic import BaseModel
+
+import censor
+import files
+import gallery
+import imgutil
+import keep
+import genqueue
+import cliagent
+import secretstore
+import llm as llm_mod
+import agent as agent_mod
+from agent import App, Tools
+from chats import Chats
+import meta
+import guide as guide_mod
+import tools
+import trash
+import migrate_thumbs
+import nai
+import vibe as vibe_mod
+from cards import KINDS, Cards
+from blocklib import BlockLib
+import thumbs
+from thumbs import Pins
+from workspace import Store, safe_name
+
+# MCP 설정에 적어 줄 **지금 이 서버의 포트** (--port 로 바뀐다)
+# ★리로드 모드에서는 워커가 `main()` 을 안 거치고 모듈만 다시 읽는다 — 포트를 환경에서 받는다
+CURRENT_PORT = int(os.environ.get("PEROPIX_BACKEND_PORT") or 8770)
+APP_VERSION = "3.0.0-dev"
+APP_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = APP_DIR / "data"
+WS_ROOT = APP_DIR / "workspaces"
+# ★옛 이름(`outputs/`)에서 한 번 옮긴다 — 안에 든 것은 생성물이 아니라 **워크스페이스**다
+#   (사용자 결정 2026-08-08). tid 해시에 최상위 이름이 안 들어가므로 커버는 안 깨진다.
+_OLD_ROOT = APP_DIR / "outputs"
+if _OLD_ROOT.exists() and not WS_ROOT.exists():
+    # ★실패해도 앱은 떠야 한다 — 폴더를 누가 붙들고 있으면(탐색기·백신·다른 인스턴스)
+    #   rename 은 그냥 거부된다. 그때는 **옛 자리로 계속 돈다**. 다음에 다시 시도한다.
+    try:
+        _OLD_ROOT.rename(WS_ROOT)
+        print(f"[워크스페이스] {_OLD_ROOT.name}/ -> {WS_ROOT.name}/ 로 옮김")
+    except OSError as e:
+        WS_ROOT = _OLD_ROOT
+        print(f"[워크스페이스] 옮기지 못했습니다 ({e}). 이번에는 {_OLD_ROOT.name}/ 로 돕니다.")
+CONFIG_PATH = DATA_DIR / "config.json"
+
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+store = Store(WS_ROOT)
+# ★카드는 워크스페이스 밖에 있다 — 어느 워크스페이스에서 만들어도 전부에서 보인다
+cards = Cards(DATA_DIR / "cards")
+# ★블록 저장소도 카드와 같은 자리다 — 공용이고 워크스페이스를 안 가린다
+blocklib = BlockLib(DATA_DIR / "blocks.json")
+# ★꽂은 그림의 **유일한** 창고. 배너·카드 앞면·덱 커버가 전부 여기를 tid 로 가리킨다
+pins = Pins(DATA_DIR / "thumbs")
+# ★AI 대화 — 카드와 같은 **공용** 저장소 (워크스페이스를 넘나들며 시킬 수 있다)
+# ★AI 대화는 **앱 전체에 하나**다 (사용자 결정 2026-08-08 — 갈랐다가 되돌렸다, chats.py 머리 주석).
+#   대신 대화마다 "어디서 시작했는지"를 적어 목록에서 출처가 보인다.
+chats = Chats(DATA_DIR / "chats")
+# ★Vibe 인코딩 캐시 — **Anlas 가 걸린 자리**다 (vibe.py 머리 주석). 지우면 다시 지불한다.
+vibes = vibe_mod.VibeCache(DATA_DIR / "vibe-cache")
+# ★앱이 들고 있는 사용자 지침 — 엔진이 무엇이든 **같은 문서**를 본다 (guide.py 머리 주석)
+GUIDE = guide_mod.Guide(DATA_DIR / "guide.md")
+
+def _tidy_ws_root() -> None:
+    """`workspaces/` 에는 **워크스페이스만** 둔다 (사용자 지시 2026-08-08).
+
+    ★옛 자리에서 한 번 옮긴다: 휴지통은 이름에 워크스페이스가 이미 들어 있어 그대로 옮기고,
+      파생 썸네일 캐시는 **다시 구우면 되는 것**이라 지운다. 대화(`data/chats`)는 워크스페이스를
+      알 수 없어 옮기지 않는다 — 사용자 결정으로 버린다.
+    ★**한 항목이 실패해도 앱은 뜬다.** 폴더를 누가 붙들고 있으면 rename 이 그냥 거부된다 —
+      그때는 남겨 두고 다음 부팅에 다시 시도한다 (실측 2026-08-08: WinError 5).
+    """
+    import shutil as _sh
+
+    old_trash = WS_ROOT / ".trash"
+    if old_trash.is_dir():
+        for ws_dir in list(old_trash.iterdir()):
+            if not ws_dir.is_dir():
+                continue
+            dst = WS_ROOT / ws_dir.name / ".trash"
+            try:
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                if dst.exists():
+                    for batch in list(ws_dir.iterdir()):
+                        target = dst / batch.name
+                        if not target.exists():
+                            _sh.move(str(batch), str(target))
+                else:
+                    _sh.move(str(ws_dir), str(dst))
+                print(f"[휴지통] {ws_dir.name} 을 워크스페이스 안으로 옮김")
+            except OSError as e:
+                print(f"[휴지통] {ws_dir.name} 을 못 옮겼습니다 ({e}) — 다음에 다시 시도합니다")
+        with contextlib.suppress(OSError):
+            old_trash.rmdir()
+
+    old_thumbs = WS_ROOT / ".thumbs"
+    if old_thumbs.is_dir():
+        _sh.rmtree(old_thumbs, ignore_errors=True)  # 파생 캐시 — 다시 구워진다
+        if not old_thumbs.exists():
+            print("[썸네일 캐시] 최상위 .thumbs 를 비움 (워크스페이스 안에서 다시 구워짐)")
+
+    # ★대화는 다시 전역이다 — 잠깐 워크스페이스 안에 뒀던 것을 되가져온다 (출처를 적어서)
+    home = DATA_DIR / "chats"
+    for ws_dir in list(WS_ROOT.iterdir()) if WS_ROOT.is_dir() else []:
+        moved_from = ws_dir / "chats"
+        if not moved_from.is_dir():
+            continue
+        home.mkdir(parents=True, exist_ok=True)
+        for f in list(moved_from.glob("*.json")):
+            try:
+                d = json.loads(f.read_text(encoding="utf-8"))
+                d["workspace"] = d.get("workspace") or ws_dir.name
+                (home / f.name).write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+                f.unlink()
+            except Exception as e:
+                print(f"[AI 대화] {f.name} 을 못 옮겼습니다 ({e})")
+        with contextlib.suppress(OSError):
+            moved_from.rmdir()
+        print(f"[AI 대화] {ws_dir.name} 의 대화를 공용으로 되돌림")
+
+
+_tidy_ws_root()
+
+for _line in migrate_thumbs.run(cards, store, pins):
+    print(f"[썸네일 이전] {_line}")
+
+# ★휴지통은 **켤 때** 비운다 (종료 때가 아니라 — 강제 종료에서는 안 돈다, trash.py 머리 주석)
+for _batch in trash.sweep(WS_ROOT):
+    print(f"[휴지통 비움] {_batch}")
+
+app = FastAPI(title="PeroPix Backend", version=APP_VERSION)
+
+# Tauri 는 tauri://localhost 오리진, 개발 중에는 Vite 가 localhost:1420.
+# 로컬 전용 서버이므로 전부 허용한다.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ── 설정 ──────────────────────────────────────────────────────────
+def load_config() -> dict:
+    if CONFIG_PATH.exists():
+        try:
+            return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {}
+
+
+def save_config(cfg: dict) -> None:
+    CONFIG_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+CONFIG = load_config()
+
+# ★비밀은 **다른 파일**에 산다 (사용자 지시 2026-08-08). 설정 파일은 아무 때나 보여줄 수 있어야
+#   하고, 키는 그럴 수 없다. 옛 설정에 섞여 있던 것은 부팅 때 한 번 옮겨 온다.
+SECRETS = secretstore.Secrets(DATA_DIR / "secrets.json")
+if SECRETS.adopt(CONFIG):
+    save_config(CONFIG)
+
+
+def nai_token() -> str:
+    return os.environ.get("NAI_TOKEN") or SECRETS.get("nai_token")
+
+
+def llm_settings(provider: str = "") -> dict:
+    """설정(공급자·모델) + 비밀(키). ★합치는 것은 **부를 때뿐**이다.
+
+    ★키도 모델도 **공급자마다 따로** 산다 — 공급자를 바꿨다고 앞서 넣은 키가 날아가면
+      쓰기 어렵다 (화면의 초록 점이 공급자별로 켜지는 것도 이것 때문)."""
+    llm = CONFIG.get("llm") or {}
+    pid = provider or llm_mod.provider_of(llm)
+    return {
+        "provider": pid,
+        "model": (llm.get("models") or {}).get(pid, ""),
+        "effort": (llm.get("efforts") or {}).get(pid, ""),
+        "key": SECRETS.get(f"llm_key_{pid}"),
+    }
+
+
+def _migrate_llm() -> None:
+    """옛 설정 모양(공급자 하나 · 모델 하나 · 키 하나)을 새 모양으로 한 번 옮긴다.
+
+    ★`openai` 는 예전에 **"OpenAI 호환"** 이라는 뜻이었고 기본 주소가 OpenRouter 였다.
+      그대로 두면 OpenAI 로 잘못 붙는다 — 주소를 보고 어느 쪽이었는지 가른다."""
+    llm = dict(CONFIG.get("llm") or {})
+    if not llm or "models" in llm:
+        return
+    pid = llm.get("provider") or ""
+    if pid == "openai":
+        pid = "openai" if "api.openai.com" in (llm.get("baseUrl") or "").lower() else "openrouter"
+    if pid not in llm_mod.PROVIDERS:
+        pid = llm_mod.DEFAULT_PROVIDER
+    CONFIG["llm"] = {"provider": pid, "models": {pid: llm["model"]} if llm.get("model") else {}}
+    old_key = SECRETS.get("llm_key")
+    if old_key:
+        SECRETS.set(f"llm_key_{pid}", old_key)
+        SECRETS.set("llm_key", "")
+    save_config(CONFIG)
+
+
+_migrate_llm()
+
+
+# ── 모델 ──────────────────────────────────────────────────────────
+class TokenBody(BaseModel):
+    token: str
+
+
+class GenBody(BaseModel):
+    # 어디에 저장할지
+    workspace: str = "새 작업"
+    tab: str = "싱글"
+    cell: str | None = None
+    # ★슬롯 번호(1부터). 파일 이름 앞에 붙어 **탐색기에서 슬롯 순서**를 만든다
+    cell_no: int | None = None
+    # 멀티의 캐릭터 이름 — 저장 경로 한 칸이 된다 (`멀티/<캐릭터>/<포즈세트>/`)
+    char: str | None = None
+    # ★강화(Enhance)의 **원본 파일**. 이 값이 있으면 그 그림의 **버전**으로 묶인다.
+    #   버전을 또 강화해도 **뿌리 하나**를 가리켜야 스택이 평평하다 (v2 `enhance_group`).
+    enhance_of: str | None = None
+    # ★강화의 **원본 파일 경로**. 주면 서버가 그 파일을 읽어 베이스 이미지로 쓴다 —
+    #   화면이 4.6MB base64 를 실어 보내지 않아도 되고, 배치로 여러 장을 돌릴 수 있다.
+    enhance_from: str | None = None
+    # 1.0 이면 그대로, 1.5 면 그 배로 키워서 (64 배수로 맞춘다)
+    enhance_scale: float = 1.0
+    # ★화면이 결과를 묶는 **진짜 키**. 폴더는 사람이 읽을 수 있게 이름을 그대로 쓰지만,
+    #   이름은 바뀌므로 이름으로 묶으면 이름을 고치는 순간 결과가 화면에서 사라진다.
+    #   (옛 레코드에는 없다 — 클라이언트가 id 우선·이름 폴백으로 읽는다)
+    tab_id: str | None = None
+    cell_id: str | None = None
+    # 프롬프트는 블록 에디터가 컴파일해 넣는다
+    prompt: str = ""
+    negative_prompt: str = ""
+    # ★캐릭터 프롬프트 — `{prompt, uc, center:{x,y}, use_coord}`.
+    #   ★예전에는 화면이 계산해 놓고 **보내지 않았고**, 여기에 받을 자리도 없어서
+    #     `characterPrompts` 가 늘 비어 나갔다. 이 앱의 핵심 기능이 통째로 안 걸려 있었다.
+    characters: list[dict] = []
+    # ★vibe 강도 정규화 — 공홈 기본 켜짐. 사용자 토글이라 하드코딩하지 않는다
+    normalize_reference_strength: bool = True
+    model: str = "nai-diffusion-4-5-full"
+    width: int = 832
+    height: int = 1216
+    steps: int = 28
+    cfg: float = 5.0
+    sampler: str = "k_euler_ancestral"
+    scheduler: str = "karras"
+    seed: int = -1
+    cfg_rescale: float = 0.0
+    uc_preset: str = "Heavy"
+    quality_tags: bool = True
+    variety_plus: bool = False
+    furry_mode: bool = False
+    # 저장 옵션 (v2 Save Options)
+    save_format: str = "png"          # png | jpg | webp
+    jpg_quality: int = 95
+    strip_metadata: bool = False
+    # ── 이미지 입력 (5단계) ──
+    vibe_transfer: list[dict] = []
+    precise_references: list[dict] = []
+    base_image: str = ""
+    base_mode: str = "img2img"
+    base_strength: float = 0.7
+    # ★인페인트 슬라이더는 별개다 (기본 1) — `nai.GenRequest.base_inpaint_strength` 주석
+    base_inpaint_strength: float = 1.0
+    base_noise: float = 0.0
+    base_mask: str = ""
+
+
+class SpecBody(BaseModel):
+    spec: dict
+
+
+class CardBody(BaseModel):
+    card: dict
+
+
+class BlockItemBody(BaseModel):
+    item: dict
+
+
+class BlockOrderBody(BaseModel):
+    ids: list[str]
+
+
+class PinBody(BaseModel):
+    """어느 생성물을 고정 썸네일로 굳힐지. **바이트를 올리지 않는다** — 서버가 원본에서 굽는다."""
+
+    workspace: str
+    file: str
+
+
+class ThumbBody(BaseModel):
+    """이미 굳힌 고정 썸네일(tid)을 어디에 어떻게 걸지."""
+
+    tid: str
+    view: dict | None = None
+
+
+# ★썸네일 주소는 **내용이 바뀌면 주소도 바뀐다** (tid 는 원본+mtime+크기에서 나온다).
+#   그래서 마음 놓고 오래 캐시해도 된다 — "위치는 그대로 두고 그림만 갈아 끼웠더니
+#   옛 그림이 계속 보인다"는 실사용 결함(2026-08-02)이 구조적으로 불가능하다.
+IMMUTABLE_IMG = {"Cache-Control": "public, max-age=31536000, immutable"}
+
+
+# ── 기본 ──────────────────────────────────────────────────────────
+@app.get("/api/health")
+async def health():
+    return {"ok": True, "version": APP_VERSION, "hasToken": bool(nai_token()),
+            "hasLlm": bool(llm_settings().get("key"))}
+
+
+@app.post("/api/token")
+async def set_token(body: TokenBody):
+    SECRETS.set("nai_token", body.token)
+    return {"ok": True, "hasToken": bool(nai_token())}
+
+
+# ── 에이전트 다리 (바깥에서 앱 도구를 부른다) ─────────────────────
+class AgentCall(BaseModel):
+    name: str
+    input: dict = {}
+
+
+@app.get("/api/agent/system")
+async def agent_system(lang: str = ""):
+    """★두 경로(BYOK·CLI)가 **같은 지침**을 쓴다 — 두 벌로 두면 곧 어긋난다.
+
+    ★`lang` 은 앱의 표시 언어다 — 답도 그 언어로 나와야 한다 (사용자 지시 2026-08-12).
+      안 주면 사용자 말을 따라간다."""
+    return {"system": agent_mod.system_prompt(CONFIG.get("support_url", ""), GUIDE.block(), lang)}
+
+
+class WsNowBody(BaseModel):
+    name: str = ""
+
+
+@app.post("/api/agent/workspace")
+async def set_agent_workspace(body: WsNowBody):
+    """앱이 **지금 연 워크스페이스**를 알려 준다 — 파일 도구의 기준이 된다.
+
+    ★없으면 도구가 오류로 세운다(코드가 대신 고르지 않는다). 바깥(MCP)에서 부를 때는
+    도구 인자로 지정하면 된다."""
+    app_cmd.workspace = (body.name or "").strip()
+    return {"ok": True, "workspace": app_cmd.workspace}
+
+
+@app.get("/api/agent/tools")
+async def agent_tools():
+    """★**언제나 같은 목록**이다. 화면이 붙어 있든 말든 상관없다 —
+    앞선 구조는 화면이 올려 준 것에 기대서, 화면이 안 붙으면 도구가 0개가 됐다."""
+    return {"tools": tools.specs(), "ready": True}
+
+
+@app.post("/api/agent/call")
+async def agent_call(body: AgentCall):
+    return await tools.call(body.name, body.input)
+
+
+# ── 로컬 에이전트 CLI ─────────────────────────────────────────────
+class CliRun(BaseModel):
+    prompt: str
+    system: str = ""
+    exe: str = ""
+    # ★저쪽이 들고 있는 대화 id — 있으면 이어 붙인다 (없으면 새 대화)
+    resume: str = ""
+    #: 비우면 CLI 기본값. 별칭('sonnet'·'opus')도 전체 이름도 받는다
+    model: str = ""
+    #: `claude --effort` — 비우면 CLI 기본값
+    effort: str = ""
+
+
+@app.get("/api/cli/detect")
+async def cli_detect():
+    """PATH + 툴체인 폴더 스캔. **공짜다** — 켤 때마다 불러도 된다."""
+    return {"items": cliagent.detect(), "busy": cli_runner.busy}
+
+
+@app.get("/api/cli/session/{sid}")
+async def cli_session(sid: str):
+    """그 대화를 claude 가 아직 갖고 있나 — **열 때 미리** 물어 안내하려고 있다.
+    ★사용자가 말을 걸어 실패를 겪고 나서 알게 되지 않도록 (사용자 지시 2026-08-12)."""
+    return {"exists": cliagent.session_exists(sid)}
+
+
+@app.post("/api/cli/run")
+async def cli_run(body: CliRun, port: int = 0):
+    if cli_runner.busy:
+        raise HTTPException(409, "이미 돌고 있습니다.")
+    exe = body.exe or (cliagent.find(["claude"]) or "")
+    if not exe:
+        raise HTTPException(400, "claude 를 못 찾았습니다. 설치하고 다시 스캔해 주세요.")
+    cfg = cliagent.mcp_config(DATA_DIR, f"http://127.0.0.1:{port or CURRENT_PORT}")
+
+    async def emit(ev: dict):
+        # ★화면으로 그대로 흘린다 — 도구 줄·글자를 그리는 것은 화면 몫이다
+        await Q.broadcast({"type": "cli", "event": ev})
+
+    async def go():
+        try:
+            # ★워크스페이스가 아니라 **앱 안의 빈 폴더**(`data/agent/`)에서 돌린다
+            await cli_runner.run(
+                # ★지침이 안 실려 오면 **백엔드 것**을 쓴다 — 지침 없이 도는 일이 없게
+                exe, body.prompt, cfg, cliagent.work_dir(DATA_DIR),
+                body.system or agent_mod.system_prompt(CONFIG.get("support_url", ""), GUIDE.block()),
+                emit,
+                body.resume,
+                body.model,
+                body.effort,
+            )
+        except Exception as e:
+            # ★**종류를 반드시 붙인다** — `str(e)` 가 빈 예외가 있다 (실측 2026-08-12:
+            #   리로드 모드의 `NotImplementedError`). 그때 화면에는 까닭 없이 「코드 -1」만
+            #   남아서, 고칠 실마리가 하나도 없었다. 로그에도 통째로 남긴다.
+            traceback.print_exc()
+            why = str(e).strip()
+            await emit({
+                "type": "error",
+                "text": f"{type(e).__name__}: {why}" if why else type(e).__name__,
+            })
+            await emit({"type": "exit", "code": -1})
+
+    asyncio.create_task(go())
+    return {"ok": True, "exe": exe}
+
+
+@app.post("/api/cli/stop")
+async def cli_stop():
+    await cli_runner.stop()
+    return {"ok": True}
+
+
+# ── LLM (BYOK) ────────────────────────────────────────────────────
+# ★키는 여기서만 산다. 설정 조회는 `hasKey` 만 돌려주고 키 자체는 절대 안 나간다.
+class LlmConfigBody(BaseModel):
+    provider: str = ""
+    model: str = ""
+    #: 추론 강도. `None` 이면 그대로 두고, 빈 문자열이면 **끈다**(모델 기본값)
+    effort: str | None = None
+    # 빈 문자열이면 **그대로 둔다** (설정 화면이 키를 다시 안 보내도 지워지지 않게)
+    key: str | None = None
+
+
+class LlmChatBody(BaseModel):
+    system: str = ""
+    messages: list[dict]
+    tools: list[dict] | None = None
+    #: ★기본은 **안 보냄**이다 (llm.chat 주석). 상한을 걸면 thinking 모델이 추론에
+    #  다 쓰고 본문이 0자로 잘린다 — 실측으로 밟았다.
+    maxTokens: int | None = None
+
+
+def _llm_view() -> dict:
+    v = llm_mod.config_view(
+        {"llm": CONFIG.get("llm") or {}}, lambda pid: SECRETS.has(f"llm_key_{pid}")
+    )
+    # ★요청 창구 주소는 **한 곳뿐**이다 (`agent.SUPPORT_URL`, `config.json` 의 `support_url` 로
+    #   바꾼다). 화면에 따로 박으면 주소가 바뀔 때 두 곳을 고쳐야 한다.
+    v["support"] = CONFIG.get("support_url") or agent_mod.SUPPORT_URL
+    return v
+
+
+# ── 사용자 지침 ────────────────────────────────────────────────────
+# ★AI 도 사람도 **같은 문서**를 통째로 읽고 쓴다 (guide.py 머리 주석).
+class GuideBody(BaseModel):
+    text: str
+
+
+@app.get("/api/guide")
+async def guide_get():
+    return {"text": GUIDE.read(), "max": guide_mod.MAX_CHARS}
+
+
+@app.put("/api/guide")
+async def guide_put(body: GuideBody):
+    r = GUIDE.write(body.text)
+    if r.get("error"):
+        raise HTTPException(400, r["error"])
+    return r
+
+
+@app.get("/api/llm/config")
+async def llm_config():
+    return _llm_view()
+
+
+@app.post("/api/llm/config")
+async def set_llm_config(body: LlmConfigBody):
+    cur = dict(CONFIG.get("llm") or {})
+    cur.pop("key", None)  # ★설정 파일에는 키가 **없다** - 비밀 파일로 간다
+    pid = body.provider or llm_mod.provider_of(cur)
+    if pid not in llm_mod.PROVIDERS:
+        raise HTTPException(400, f"모르는 공급자: {pid}")
+    cur["provider"] = pid
+    models = dict(cur.get("models") or {})
+    if body.model.strip():
+        models[pid] = body.model.strip()
+    cur["models"] = models
+    if body.effort is not None:
+        efforts = dict(cur.get("efforts") or {})
+        efforts[pid] = body.effort.strip()
+        cur["efforts"] = efforts
+    CONFIG["llm"] = cur
+    save_config(CONFIG)
+    if body.key is not None and body.key.strip():
+        SECRETS.set(f"llm_key_{pid}", body.key)
+    if body.key == "":
+        SECRETS.set(f"llm_key_{pid}", "")  # 빈 문자열을 **명시적으로** 보내면 지운다
+    return _llm_view()
+
+
+@app.get("/api/llm/models")
+async def llm_models(provider: str = ""):
+    """★공급자에게 물어본 목록. 코드에 박아 두지 않는다 — 목록은 썩는다.
+
+    ★오픈라우터는 **추천 목록만** 준다 (사용자 결정 2026-08-08) — 명세를 아는 모델만 고르게 한다."""
+    return await llm_mod.models(llm_settings(provider))
+
+
+@app.post("/api/llm/verify")
+async def verify_llm(provider: str = ""):
+    """★키가 실제로 도는지 눌러서 확인한다 (사용자가 누를 때만 — 공짜가 아니다)."""
+    return await llm_mod.verify(llm_settings(provider))
+
+
+class ChatBody(BaseModel):
+    wire: list
+    title: str = ""
+    session: str = ""
+    #: 어디서 시작했는지 — 목록 라벨용. 첫 저장 때만 박힌다 (chats.py)
+    workspace: str = ""
+
+
+@app.get("/api/chats")
+async def list_chats():
+    return {"items": chats.list()}
+
+
+@app.get("/api/chats/{cid}")
+async def get_chat(cid: str):
+    d = chats.get(cid)
+    if d is None:
+        raise HTTPException(404, "그런 대화가 없습니다.")
+    return d
+
+
+@app.put("/api/chats/{cid}")
+async def put_chat(cid: str, body: ChatBody):
+    try:
+        return chats.put(cid, body.wire, body.title, body.session, body.workspace)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/api/chats/{cid}")
+async def delete_chat(cid: str):
+    try:
+        chats.delete(cid)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+@app.post("/api/llm/chat")
+async def llm_chat(body: LlmChatBody):
+    return await llm_mod.chat(
+        llm_settings(), body.system, body.messages, body.tools, body.maxTokens
+    )
+
+
+@app.get("/api/subscription")
+async def subscription():
+    import httpx
+
+    token = nai_token()
+    if not token:
+        raise HTTPException(400, "NAI 토큰이 설정되지 않았습니다.")
+    async with httpx.AsyncClient(timeout=20) as client:
+        r = await client.get(
+            "https://image.novelai.net/user/subscription",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    if r.status_code != 200:
+        raise HTTPException(r.status_code, r.text[:300])
+    d = r.json()
+    ts = d.get("trainingStepsLeft", {})
+    return {
+        "tier": d.get("tier"),
+        "anlas": ts.get("fixedTrainingStepsLeft", 0) + ts.get("purchasedTrainingSteps", 0),
+    }
+
+
+# ── 워크스페이스 ──────────────────────────────────────────────────
+@app.get("/api/workspaces")
+async def list_workspaces():
+    return {"items": store.list()}
+
+
+@app.get("/api/workspaces/{ws}")
+async def get_workspace(ws: str):
+    spec = store.load(ws)
+    return {"spec": spec, "records": store.records(ws)}
+
+
+@app.put("/api/workspaces/{ws}")
+async def put_workspace(ws: str, body: SpecBody):
+    return {"spec": store.save(ws, body.spec)}
+
+
+@app.post("/api/workspaces/{ws}/rename")
+async def rename_workspace(ws: str, body: dict):
+    new = safe_name(str(body.get("name", "")).strip())
+    if not new:
+        raise HTTPException(400, "이름이 비어 있습니다.")
+    return {"name": store.rename(ws, new)}
+
+
+@app.delete("/api/workspaces/{ws}")
+async def delete_workspace(ws: str):
+    store.delete(ws)
+    return {"ok": True}
+
+
+class CopyBody(BaseModel):
+    files: list[str]
+    tab: str
+    tab_id: str | None = None
+
+
+@app.post("/api/workspaces/{ws}/copy")
+async def copy_to_tab(ws: str, body: CopyBody):
+    """고른 그림을 **같은 워크스페이스의 다른 싱글 탭**으로 복사한다 (원본은 그대로)."""
+    try:
+        return store.copy_to_tab(ws, body.files, body.tab, body.tab_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+class TrashBody(BaseModel):
+    files: list[str] = []
+    entries: list[dict] = []
+
+
+@app.post("/api/workspaces/{ws}/trash")
+async def trash_files(ws: str, body: TrashBody):
+    """지우기 = 휴지통으로 **이동**. 되돌릴 수 있게 자리를 돌려준다 (trash.py 머리 주석)."""
+    return trash.send(store, ws, body.files)
+
+
+@app.post("/api/workspaces/{ws}/restore")
+async def restore_files(ws: str, body: TrashBody):
+    return trash.restore(store, ws, body.entries)
+
+
+# ── 썸네일 ────────────────────────────────────────────────────────
+@app.get("/api/thumb/{ws}/{rel:path}")
+def get_derived_thumb(ws: str, rel: str):
+    """생성물의 **파생 썸네일** — 히스토리 줄·셀 그리드가 쓴다 (원본은 /api/file).
+
+    ★같은 경로에는 늘 같은 그림이다 (생성이 매번 새 파일명을 쓴다). 원본이 바뀌면
+      mtime 비교로 다시 굽는다."""
+    p = store.thumb_path(ws, rel)
+    if not p:
+        raise HTTPException(404, "not found")
+    return FileResponse(p, media_type="image/webp", headers=IMMUTABLE_IMG)
+
+
+@app.post("/api/pin")
+async def pin_thumb(body: PinBody):
+    """생성물을 **고정 썸네일**로 굳힌다 — 배너·카드 앞면·덱 커버가 이 tid 를 함께 쓴다.
+
+    ★바이트를 주고받지 않는다. 예전엔 브라우저가 캔버스로 줄여 base64 로 올렸는데,
+      같은 주소를 평범한 <img> 로 먼저 띄운 적이 있으면 CORS 헤더 없는 캐시 항목이
+      재사용돼 **조용히 실패**했다 (실사용: "적용을 눌러도 반응이 없다").
+      서버가 원본에서 직접 구우면 그 경로 자체가 없다."""
+    src = store.file_path(body.workspace, body.file)
+    if not src:
+        raise HTTPException(404, "원본을 찾을 수 없습니다.")
+    tid = pins.pin(src, f"{body.workspace}/{body.file}")
+    if not tid:
+        raise HTTPException(500, "썸네일을 만들지 못했습니다.")
+    return {"tid": tid}
+
+
+@app.get("/api/pin/{tid}")
+async def get_pinned_thumb(tid: str):
+    p = pins.path(tid)
+    if not p:
+        raise HTTPException(404, "not found")
+    return FileResponse(p, media_type="image/webp", headers=IMMUTABLE_IMG)
+
+
+# ── 카드 (공용) ───────────────────────────────────────────────────
+@app.get("/api/cards")
+async def list_cards():
+    # 그림 파일이 실제로 있는 커버만 — json 만 남고 파일이 없으면 빈 커버로 그리게 된다
+    covers = {k: v for k, v in cards.covers().items() if pins.path(v["tid"])}
+    return {**cards.list_all(), "covers": covers}
+
+
+@app.post("/api/cards/cover/{kind}")
+async def set_card_cover(kind: str, body: ThumbBody):
+    """덱 커버 — 종류당 하나. 이미 굳힌 tid 를 걸기만 한다."""
+    if kind not in KINDS:
+        raise HTTPException(400, f"알 수 없는 카드 종류: {kind}")
+    if not pins.path(body.tid):
+        raise HTTPException(404, f"고정 썸네일이 없습니다: {body.tid}")
+    return {"covers": cards.set_cover(kind, body.tid, body.view)}
+
+
+@app.put("/api/cards/{kind}")
+async def put_card(kind: str, body: CardBody):
+    if kind not in KINDS:
+        raise HTTPException(400, f"알 수 없는 카드 종류: {kind}")
+    try:
+        return {"card": cards.save(kind, body.card)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/api/cards/{kind}/{cid}")
+async def delete_card(kind: str, cid: str):
+    if kind not in KINDS:
+        raise HTTPException(400, f"알 수 없는 카드 종류: {kind}")
+    try:
+        cards.delete(kind, cid)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+@app.post("/api/cards/thumb/{kind}/{cid}")
+async def set_card_thumb(kind: str, cid: str, body: ThumbBody):
+    """카드 앞면 — 이미 굳힌 tid 를 걸기만 한다 (바이트는 /api/pin 이 만든다)."""
+    if kind not in KINDS:
+        raise HTTPException(400, f"알 수 없는 카드 종류: {kind}")
+    if not pins.path(body.tid):
+        raise HTTPException(404, f"고정 썸네일이 없습니다: {body.tid}")
+    try:
+        return {"card": cards.set_thumb(kind, cid, body.tid, body.view)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+# ── 블록 저장소 (공용) ────────────────────────────────────────────
+@app.get("/api/blocks")
+async def list_blocks():
+    return {"items": blocklib.list()}
+
+
+@app.put("/api/blocks")
+async def put_block(body: BlockItemBody):
+    return {"item": blocklib.save(body.item)}
+
+
+@app.delete("/api/blocks/{bid}")
+async def delete_block(bid: str):
+    blocklib.delete(bid)
+    return {"ok": True}
+
+
+@app.post("/api/blocks/order")
+async def reorder_blocks(body: BlockOrderBody):
+    return {"items": blocklib.reorder(body.ids)}
+
+
+# ── 생성 ──────────────────────────────────────────────────────────
+def _req_of(body: GenBody) -> nai.GenRequest:
+    return nai.GenRequest(
+        prompt=body.prompt,
+        negative_prompt=body.negative_prompt,
+        model=body.model,
+        width=body.width,
+        height=body.height,
+        steps=body.steps,
+        cfg=body.cfg,
+        sampler=body.sampler,
+        scheduler=body.scheduler,
+        seed=body.seed,
+        cfg_rescale=body.cfg_rescale,
+        uc_preset=body.uc_preset,
+        quality_tags=body.quality_tags,
+        variety_plus=body.variety_plus,
+        furry_mode=body.furry_mode,
+        # ★기본 좌표는 화면 한가운데다 (공홈 `{x:0.5, y:0.5}`). 격자를 쓰면 화면이 실어 보낸다
+        characters=[
+            nai.CharPrompt(
+                prompt=str(c.get("prompt", "")),
+                uc=str(c.get("uc", "")),
+                center=c.get("center") or {"x": 0.5, "y": 0.5},
+                use_coord=bool(c.get("use_coord")),
+            )
+            for c in (body.characters or [])
+        ],
+        normalize_reference_strength=body.normalize_reference_strength,
+        vibe_transfer=body.vibe_transfer,
+        precise_references=body.precise_references,
+        base_image=body.base_image,
+        base_mode=body.base_mode,
+        base_strength=body.base_strength,
+        base_inpaint_strength=body.base_inpaint_strength,
+        base_noise=body.base_noise,
+        base_mask=body.base_mask,
+    )
+
+
+async def _generate_one(body: GenBody) -> dict:
+    """한 장을 만들어 저장하고 records 에 남긴다.
+
+    ★직접 호출(`/api/generate`)과 큐가 **같은 경로**를 쓴다 — 저장 규칙이 갈리면
+      큐로 만든 것과 직접 만든 것의 파일이 달라진다."""
+    req = _req_of(body)
+    # ★강화 — 원본 파일을 읽어 베이스 이미지로 쓴다 (화면이 그림을 실어 보내지 않는다).
+    #   ★여기서는 **목표 크기만 잡는다.** 그림을 그 크기로 리샘플하는 것은 조립부가 한다
+    #     (`imgutil.preprocess_base_image` — 공통 전송 구간이 모든 베이스 이미지에 건다).
+    #     한쪽에서만 하면 두 번 리샘플되거나(화질 손실) 아예 안 된다.
+    #   ★목표 크기 = `align64(floor(원본 × 배율))`. 정렬은 가까운 쪽 반올림이다
+    #     (1216×832 ×1.5 는 1824×1248 이 아니라 **1856×1280**).
+    #   ★고치는 대상은 `body` 가 아니라 **`req`** 다 — `req` 는 이미 만들어졌으므로 `body` 를
+    #     고쳐 봐야 페이로드에 안 들어간다. 예전에 그래서 **강화가 조용히 txt2img 로 나갔다.**
+    if body.enhance_from:
+        src = store.file_path(body.workspace, body.enhance_from)
+        if not src:
+            raise HTTPException(404, "강화할 그림을 찾지 못했습니다")
+        with Image.open(src) as _im:
+            w, h = _im.size
+        sc = max(1.0, float(body.enhance_scale or 1.0))
+        req.base_image = base64.b64encode(src.read_bytes()).decode()
+        req.base_mode = "img2img"
+        req.base_mask = ""
+        req.enhance = True
+        req.width = nai.align64(math.floor(w * sc))
+        req.height = nai.align64(math.floor(h * sc))
+
+    # ★vibe 인코딩은 **조립 전에** 한다 — 유료 호출이라 캐시 판정이 여기서 끝나야 한다
+    await nai.encode_vibes(req, nai_token(), vibes)
+    payload = nai.build_payload(req)
+    png, seed = await nai.generate_with_payload(payload, nai_token())
+
+    # ★인페인트 결과를 **보낸 원본 위에 소프트 마스크로 되붙인다** (7절).
+    #   NAI 결과는 마스크 밖도 미세하게 달라져서, 그대로 저장하면 고치지 않은 자리가 바뀐다.
+    #   ★합성 실패로 생성을 버리지 않는다 — 그때는 NAI 결과를 그대로 쓰고 콘솔에만 남긴다.
+    if payload["action"] == "infill" and req.base_mask:
+        try:
+            png = imgutil.composite_inpaint(png, payload["parameters"]["image"], req.base_mask)
+        except Exception as e:
+            print(f"[인페인트] 합성하지 못했습니다 ({e}) — NAI 결과를 그대로 씁니다")
+
+    # ★싱글/멀티를 갈라 저장한다 (`workspace.out_dir` 주석). 멀티는 슬롯 폴더 대신
+    #   **파일 앞 슬롯 번호**를 쓰고, 이름은 시각이 아니라 **순번**이다.
+    is_set = body.cell is not None
+    d = store.out_dir(body.workspace, body.tab, is_set, body.char)
+    fmt = body.save_format.lower()
+    if fmt not in ("png", "jpg", "webp"):
+        fmt = "png"
+
+    # ★NAI 응답 PNG 에는 원본 tEXt 청크(Source 등)가 들어 있다. 포맷을 바꾸거나 메타데이터를
+    #   다시 쓸 때 **그 청크를 넘겨줘야** NAI 공홈이 자기 이미지로 인식한다 (meta.write 참조).
+    with Image.open(io.BytesIO(png)) as _im:
+        original_chunks = dict(_im.info)
+
+    if body.strip_metadata:
+        # ★tEXt 만 지우면 안 된다 — NAI 는 알파 LSB 로 한 벌 더 심는다 (meta.strip)
+        data = meta.strip(png, fmt, body.jpg_quality)
+    elif fmt == "png":
+        data = png  # NAI 원본 그대로가 가장 정확하다 (다시 인코딩하지 않는다)
+    else:
+        data = meta.write(png, meta.read_raw(png), fmt, body.jpg_quality, original_chunks)
+
+    path = store.next_name(d, f"{body.cell_no:03d}" if is_set and body.cell_no else "", fmt)
+    path.write_bytes(data)
+    rel = store.rel(body.workspace, path)
+
+    # ★records 는 append-only. resolved 에 그 시점의 완전한 요청을 남겨
+    #   나중에 spec 이 바뀌어도 재현·비교가 가능하게 한다.
+    store.append_record(
+        body.workspace,
+        {
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "file": rel,
+            "tab": body.tab,
+            "cell": body.cell,
+            "tab_id": body.tab_id,
+            "cell_id": body.cell_id,
+            "enhance_of": body.enhance_of,
+            "seed": seed,
+            "resolved": payload,
+        },
+    )
+    return {"ok": True, "file": rel, "seed": seed, "bytes": len(data),
+            "tab": body.tab, "cell": body.cell,
+            "tab_id": body.tab_id, "cell_id": body.cell_id,
+            "enhance_of": body.enhance_of,
+            "workspace": body.workspace}
+
+
+class UpscaleBody(BaseModel):
+    """이미 만든 그림 한 장을 4배로 키운다. **파일 경로만** 싣는다 (바이트는 서버가 읽는다)."""
+
+    workspace: str
+    file: str
+    #: 버전 뿌리 — 없으면 이 파일이 뿌리다 (강화와 같은 자리를 쓴다)
+    enhance_of: str | None = None
+
+
+@app.post("/api/upscale")
+async def upscale_image(body: UpscaleBody):
+    """4배 업스케일 (`/ai/upscale`).
+
+    ★결과는 **원본 옆에 새 파일**이고, 강화와 같은 방식으로 **그 그림의 버전**이 된다
+      (`enhance_of` = 뿌리). 원본을 갈아 끼우지 않는다.
+    ★생성 파이프라인을 타지 않는다 — 프롬프트도 시드도 없는 별개 호출이다."""
+    src = store.file_path(body.workspace, body.file)
+    if not src or not src.exists():
+        raise HTTPException(404, "업스케일할 그림을 찾지 못했습니다")
+    with Image.open(src) as im:
+        w, h = im.size
+    # ★공홈도 이 한계에서 버튼을 막는다. 보내 봐야 거절이라 여기서 끊는다
+    if w * h > nai.UPSCALE_MAX_PX:
+        raise HTTPException(400, f"1024x1024 보다 큰 그림은 업스케일할 수 없습니다 ({w}x{h})")
+
+    b64 = base64.b64encode(src.read_bytes()).decode()
+    try:
+        png = await nai.upscale(b64, w, h, nai_token())
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
+
+    # 원본과 **같은 폴더**에 남긴다 — 버전이라 자리가 갈리면 찾기 어렵다.
+    # ★접두를 따로 둔다(`up_001.png`) — 세트 탭의 셀 번호(`003_002.png`)와 섞이면
+    #   폴더만 보고는 무엇이 무엇인지 알 수 없다.
+    path = store.next_name(src.parent, "up", "png")
+    path.write_bytes(png)
+    rel = store.rel(body.workspace, path)
+
+    # ★뒤에서부터 500줄만 보는 기본값으로는 **옛 그림을 못 찾는다** — 넉넉히 읽는다
+    rec = next(
+        (r for r in store.records(body.workspace, limit=100000) if r.get("file") == body.file),
+        None,
+    )
+    new_rec = {
+        "ts": datetime.now().isoformat(timespec="seconds"),
+        "file": rel,
+        "tab": (rec or {}).get("tab", ""),
+        "cell": (rec or {}).get("cell"),
+        "tab_id": (rec or {}).get("tab_id"),
+        "cell_id": (rec or {}).get("cell_id"),
+        # ★뿌리를 그대로 물려받는다 — 업스케일한 것을 또 키워도 스택이 평평해야 한다
+        "enhance_of": body.enhance_of or (rec or {}).get("enhance_of") or body.file,
+        "seed": (rec or {}).get("seed", 0),
+        "op": "upscale",
+    }
+    store.append_record(body.workspace, new_rec)
+    # ★레코드를 통째로 돌려준다 — 화면이 목록을 다시 읽지 않고 한 줄만 얹으면 된다
+    return {"ok": True, "file": rel, "from": body.file, "size": [w * 4, h * 4],
+            "workspace": body.workspace, "record": new_rec}
+
+
+@app.post("/api/generate")
+async def generate(body: GenBody):
+    """한 장을 바로 만든다 (큐를 거치지 않는다). 여러 장은 `/api/generate/queue`."""
+    try:
+        return await _generate_one(body)
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
+
+
+# ── 큐 + WebSocket ────────────────────────────────────────────────
+# ★v2 backend.py:2296-2430, 4592-4681 이식. 동시성 1 고정 (genqueue.py 주석 참조).
+Q = genqueue.GenerationQueue()
+# ★바깥(클로드 코드 CLI 등)이 앱을 만지는 통로. 도구는 화면에 있다 (agent.py).
+#   큐의 클라이언트 표를 그대로 쓰므로 **Q 가 만들어진 뒤**에 세운다
+# ★도구는 **파일을 만진다** — 화면이 꺼져 있어도 목록이 나오고 실행된다 (agent.py 머리 주석).
+#   데이터가 바뀌면 화면에 알리기만 한다 (화면은 다시 읽는다).
+def _notify(what: str) -> None:
+    asyncio.create_task(Q.broadcast({"type": "data_changed", "what": what}))
+
+
+app_cmd = App(Q.clients)
+tools = Tools(cards, store, files, WS_ROOT, meta, _notify, app_cmd, GUIDE)
+# 로컬 에이전트 CLI — 한 번에 하나만 돈다 (cliagent.py 머리 주석)
+cli_runner = cliagent.Runner()
+
+
+class QueueBody(BaseModel):
+    """여러 장을 큐에 넣는다. `items` 가 비면 `base` 하나를 `count` 번 만든다."""
+
+    base: GenBody
+    #: 셀마다 다른 프롬프트를 줄 때 (세트 탭 전체 생성)
+    items: list[dict] = []
+    #: 항목당 반복 횟수
+    count: int = 1
+
+
+async def _process_job(job: dict) -> None:
+    qb: QueueBody = job["request"]
+    job_id = job["id"]
+    await Q.broadcast({"type": "job_start", "job_id": job_id, "count": job["count"],
+                       "progress": Q.progress()})
+
+    units = qb.items or [{}]
+    # ★**한 바퀴씩 돈다** (사용자 지시 2026-08-11): 씬이 여럿이면 위에서부터 한 장씩 만들고,
+    #   다 돌면 다시 첫 씬으로 가서 두 번째 장을 만든다. 예전에는 한 씬을 다 만들고 다음으로
+    #   넘어가서, 여러 장을 걸어 두면 **마지막 씬은 한참 뒤에야 첫 장이 나왔다.**
+    #   한 바퀴가 끝날 때마다 전체를 견줄 수 있어야 중간에 멈추고 고칠지 판단이 선다.
+    for _ in range(max(1, qb.count)):
+        for unit in units:
+            if Q.cancel_current:
+                # ★취소는 **다음 장부터** 먹는다 — 이미 NAI 에 돈을 낸 장은 버리지 않는다
+                left = Q.total_images - Q.completed_images
+                Q.total_images = Q.completed_images
+                await Q.broadcast({"type": "job_cancelled", "job_id": job_id,
+                                   "cancelled_images": left, "progress": Q.progress()})
+                return
+            # ★단위(셀)마다 다른 값만 base 위에 덮는다 — 나머지 설정은 공유한다
+            one = qb.base.model_copy(update={k: v for k, v in unit.items() if v is not None})
+            try:
+                r = await _generate_one(one)
+            except Exception as e:
+                print(f"[queue] 생성 실패 (job {job_id}, cell={one.cell}): {e}")
+                await Q.broadcast({"type": "image_error", "job_id": job_id, "error": str(e),
+                                   "cell": one.cell, "progress": Q.progress()})
+                continue
+            Q.completed_images += 1
+            msg = {"type": "image", "job_id": job_id, **r}
+            # ★seq 를 먼저 부여하고(사본 저장), 그 뒤에 progress 를 덧붙인다.
+            #   순서를 바꾸면 복원분에 그때그때의 진행률이 섞여 들어간다.
+            Q.add_completed_image(msg)
+            msg["progress"] = Q.progress()
+            await Q.broadcast(msg)
+
+    await Q.broadcast({"type": "job_done", "job_id": job_id, "progress": Q.progress()})
+
+
+@app.on_event("startup")
+async def _start_queue():
+    app.state.queue_task = asyncio.create_task(genqueue.run_loop(Q, _process_job))
+
+
+@app.on_event("shutdown")
+async def _stop_queue():
+    t = getattr(app.state, "queue_task", None)
+    if t:
+        t.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await t
+
+
+@app.post("/api/generate/queue")
+async def generate_queue(body: QueueBody):
+    n = max(1, len(body.items or [{}])) * max(1, body.count)
+    job_id = Q.add_job(body, n)
+    await Q.broadcast({"type": "queued", "job_id": job_id, "count": n, "progress": Q.progress()})
+    return {"ok": True, "job_id": job_id, "count": n}
+
+
+@app.post("/api/cancel-current")
+async def cancel_current():
+    if Q.is_processing:
+        Q.cancel_current_job()
+        return {"ok": True}
+    return {"ok": False, "message": "돌고 있는 작업이 없습니다."}
+
+
+@app.post("/api/clear-queue")
+async def clear_queue():
+    """대기 큐만 비운다 — 현재 작업은 계속 돈다."""
+    jobs, images = Q.clear_queue()
+    Q.total_images = max(Q.completed_images, Q.total_images - images)
+    await Q.broadcast({"type": "queue_cleared", "cleared_jobs": jobs,
+                       "cleared_images": images, "progress": Q.progress()})
+    return {"ok": True, "cleared_jobs": jobs, "cleared_images": images}
+
+
+@app.get("/api/vibe-cache")
+async def vibe_cache_list():
+    """구워 둔 vibe 목록 (뷰어용). ★vibe 데이터 자체는 안 내보낸다 — 크고 화면에 쓸 일이 없다."""
+    return {"items": vibes.entries()}
+
+
+@app.get("/api/vibe-cache/{name}")
+async def vibe_cache_thumb(name: str):
+    """캐시 PNG 한 장 (썸네일). 경로 탈출을 막는다."""
+    from fastapi.responses import FileResponse
+
+    base = (DATA_DIR / "vibe-cache").resolve()
+    f = (base / name).resolve()
+    if not str(f).startswith(str(base)) or not f.exists():
+        raise HTTPException(404, "없는 캐시 항목")
+    return FileResponse(f, media_type="image/png")
+
+
+@app.get("/api/queue")
+async def queue_status():
+    return Q.get_status()
+
+
+@app.websocket("/ws")
+async def ws_endpoint(websocket: WebSocket, clientId: str | None = None):
+    client_id = clientId or str(uuid.uuid4())[:8]
+    await websocket.accept()
+
+    # 같은 id 로 다시 붙으면 옛 소켓을 닫고 자리를 넘겨받는다
+    old = Q.clients.get(client_id)
+    if old:
+        with contextlib.suppress(Exception):
+            await old.close()
+    Q.clients[client_id] = websocket
+
+    await websocket.send_json({"type": "connected", "client_id": client_id, "status": Q.get_status()})
+    try:
+        while True:
+            data = await websocket.receive_json()
+            if data.get("type") == "sync":
+                last = int(data.get("last_seq", 0) or 0)
+                await websocket.send_json({
+                    "type": "sync",
+                    "images": Q.get_images_since(last),
+                    "status": Q.get_status(),
+                })
+            elif data.get("type") == "ping":
+                await websocket.send_json({"type": "pong"})
+            # 앱이 시킨 일을 마치고 돌려준 결과 (생성 큐 등)
+            elif data.get("type") == "done":
+                app_cmd.resolve(data.get("id", ""), data.get("result"))
+
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        # ★자기 소켓일 때만 해제 (genqueue._unregister 주석 참조)
+        Q._unregister(client_id, websocket)
+
+
+@app.get("/api/file/{ws}/{rel:path}")
+async def get_file(ws: str, rel: str):
+    p = store.file_path(ws, rel)
+    if not p:
+        raise HTTPException(404, "not found")
+    return FileResponse(p, media_type="image/png")
+
+
+# ── 갤러리 ────────────────────────────────────────────────────
+# ★파일을 훑는다 (gallery.py 주석 참조). records.jsonl 에 기대지 않는다.
+
+
+class GalleryFiles(BaseModel):
+    files: list[str]
+    dest: str | None = None
+
+
+@app.get("/api/gallery/{ws}/folders")
+async def gallery_folders(ws: str):
+    return {"items": gallery.folders(store, ws)}
+
+
+@app.get("/api/gallery/{ws}/images")
+async def gallery_images(ws: str, folder: str | None = None):
+    return {"items": gallery.images(store, ws, folder)}
+
+
+@app.get("/api/gallery/{ws}/meta")
+async def gallery_meta(ws: str, file: str):
+    """고른 **한 장**의 메타데이터. 목록에서는 안 읽는다 (수백 장이면 그것만으로 몇 초다)."""
+    p = store.file_path(ws, file)
+    if not p:
+        raise HTTPException(404, "not found")
+    return {"file": file, "meta": meta.read(p)}
+
+
+@app.post("/api/gallery/{ws}/move")
+async def gallery_move(ws: str, body: GalleryFiles):
+    if not body.dest:
+        raise HTTPException(400, "dest 가 필요합니다")
+    try:
+        return gallery.move(store, ws, body.files, body.dest)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/gallery/{ws}/delete")
+async def gallery_delete(ws: str, body: GalleryFiles):
+    return gallery.delete(store, ws, body.files)
+
+
+KEEP_DIR = APP_DIR / "gallery"
+KEEP_DIR.mkdir(parents=True, exist_ok=True)
+
+
+class KeepSave(BaseModel):
+    workspace: str
+    file: str
+    folder: str = ""
+    meta: dict | None = None
+
+
+class KeepFiles(BaseModel):
+    files: list[str] = []
+    dest: str = ""
+
+
+@app.get("/api/keep/folders")
+async def keep_folders():
+    return {"folders": keep.folders(KEEP_DIR)}
+
+
+# ★한 쪽에 몇 장인가 — v2 는 50 이었다. 60 은 3열·4열 어느 쪽에도 딱 떨어진다
+PAGE = 60
+
+
+@app.get("/api/keep/images")
+async def keep_images(folder: str = "", page: int = 1, limit: int = PAGE):
+    try:
+        return keep.images(KEEP_DIR, folder, page, limit)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/keep/save")
+async def keep_save(body: KeepSave):
+    """작업 폴더의 그림을 보관함으로 **복사**한다 (원본은 그대로)."""
+    src = store.file_path(body.workspace, body.file)
+    if not src:
+        raise HTTPException(404, "그림을 찾지 못했습니다")
+    try:
+        return keep.save(KEEP_DIR, src, body.folder, body.meta)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/keep/delete")
+async def keep_delete(body: KeepFiles):
+    return keep.delete(KEEP_DIR, body.files)
+
+
+@app.post("/api/keep/move")
+async def keep_move(body: KeepFiles):
+    return keep.move(KEEP_DIR, body.files, body.dest)
+
+
+@app.get("/api/keep/file/{rel:path}")
+async def keep_file(rel: str):
+    from fastapi.responses import FileResponse
+
+    p = keep.safe_folder(KEEP_DIR, rel)
+    if not p.is_file():
+        raise HTTPException(404, "not found")
+    return FileResponse(p)
+
+
+@app.get("/api/keep/meta")
+async def keep_meta(file: str):
+    p = keep.safe_folder(KEEP_DIR, file)
+    if not p.is_file():
+        raise HTTPException(404, "not found")
+    return {"meta": meta.read(p) or {}}
+
+
+# ── 보조 도구 ─────────────────────────────────────────────────
+# ★셋은 **보는 대상이 다르다**: 갤러리=골라 둔 것 · 파일 관리=아웃풋 폴더 그대로 ·
+#   EXIF/변환=밖에서 온 것까지. 그래서 경로 기준도 다르다 (files.py 머리 주석).
+
+
+class ToolItem(BaseModel):
+    """손볼 그림 하나. 셋 중 하나로 온다 — 절대 경로·아웃풋 상대 경로·base64."""
+
+    name: str = ""
+    path: str | None = None
+    rel: str | None = None
+    data: str | None = None
+
+
+class ToolConvert(BaseModel):
+    items: list[ToolItem] = []
+    fmt: str = "png"
+    quality: int = 95
+    strip_metadata: bool = False
+    prefix: str | None = None
+    start: int = 1
+    pad: int = 3
+    dest: str = ""
+
+
+@app.post("/api/tools/convert")
+async def tools_convert(body: ToolConvert):
+    """변환·일괄 이름 바꾸기 — ★**원본을 지우지 않는다.** 새 파일을 만든다."""
+    if not body.items:
+        raise HTTPException(400, "그림이 없습니다")
+    try:
+        return tools.convert(
+            WS_ROOT,
+            [i.model_dump() for i in body.items],
+            body.fmt,
+            body.quality,
+            body.strip_metadata,
+            body.prefix,
+            body.start,
+            body.pad,
+            body.dest,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/tools/meta")
+async def tools_meta(body: ToolItem):
+    """★**밖에서 가져온 그림**도 읽는다. 저장하지 않는다 — 읽고 버린다."""
+    try:
+        return {"meta": tools.read_meta(WS_ROOT, body.model_dump())}
+    except (ValueError, OSError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/tools/meta-upload")
+async def tools_meta_upload(file: UploadFile = File(...)):
+    """경로를 모르는 곳(브라우저)에서 떨군 그림 — 바이트를 그대로 받는다."""
+    data = await file.read()
+    return {"meta": meta.normalize(meta.read_raw(data)) or {}}
+
+
+# ── 검열 ──────────────────────────────────────────────────────
+# ★모델은 **앱에 들어 있다** (models/censor/*.onnx). 받아 오는 경로가 없다 — censor.py 머리 주석.
+
+
+class CensorSource(BaseModel):
+    """검열할 그림 하나. 도구와 같은 세 갈래로 받는다 (밖에서 떨군 것도 된다)."""
+
+    workspace: str | None = None
+    file: str | None = None     # 워크스페이스 안 상대 경로
+    rel: str | None = None      # 아웃풋 루트 기준
+    path: str | None = None     # 절대 경로 (창에 떨군 파일)
+    data: str | None = None     # base64
+
+
+class CensorDetect(CensorSource):
+    model: str | None = None
+    targets: list[str] | None = None
+    label_conf: dict[str, float] = {}
+    default_conf: float = 0.25
+    return_all: bool = False
+
+
+class CensorApply(CensorSource):
+    boxes: list[dict] = []
+    method: str = "black"
+    color: str | None = None
+    expand: int = 0
+    feather: int = 0
+    mosaic_strength: int = 12
+    mosaic_opacity: int = 100
+    blur_strength: int = 20
+    suffix: str = "_censored"
+
+
+def _censor_open(b: CensorSource):
+    """세 갈래 중 하나로 그림을 연다. 함께 **원본 자리**도 돌려준다 (저장할 곳을 알기 위해)."""
+    if b.workspace and b.file:
+        p = store.file_path(b.workspace, b.file)
+        if not p:
+            raise HTTPException(404, "그림을 찾지 못했습니다")
+        return Image.open(p), p
+    if b.rel:
+        try:
+            p = files.under(WS_ROOT, b.rel)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        if not p.is_file():
+            raise HTTPException(404, "그림을 찾지 못했습니다")
+        return Image.open(p), p
+    if b.path:
+        p = Path(b.path)
+        if not p.is_file():
+            raise HTTPException(404, "그림을 찾지 못했습니다")
+        return Image.open(p), p
+    if b.data:
+        raw = b.data.split(",", 1)[-1]
+        return Image.open(io.BytesIO(base64.b64decode(raw))), None
+    raise HTTPException(400, "그림이 없습니다")
+
+
+@app.get("/api/censor/models")
+async def censor_models():
+    return {"models": censor.models()}
+
+
+@app.post("/api/censor/detect")
+async def censor_detect(body: CensorDetect):
+    """가릴 곳 찾기. ★그림을 **고치지 않는다** — 좌표만 돌려준다."""
+    im, _ = _censor_open(body)
+    try:
+        dets = censor.detect(
+            im, body.model, body.targets, body.label_conf, body.default_conf, body.return_all
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(503, str(e))
+    return {"detections": dets, "width": im.width, "height": im.height}
+
+
+@app.post("/api/censor/apply")
+async def censor_apply(body: CensorApply):
+    """가린 그림을 **새 파일로** 저장한다 (원본은 그대로).
+
+    ★덮어쓰기 경로를 만들지 말 것 — 생성물은 Anlas 가 든 원본이다."""
+    im, src = _censor_open(body)
+    out = censor.apply_boxes(
+        im,
+        body.boxes,
+        body.method,
+        body.color,
+        body.expand,
+        body.feather,
+        body.mosaic_strength,
+        body.mosaic_opacity,
+        body.blur_strength,
+    )
+    if src is None:
+        buf = io.BytesIO()
+        out.save(buf, format="PNG")
+        return {"image": "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()}
+
+    dst = src.with_name(f"{src.stem}{body.suffix}.png")
+    n = 2
+    while dst.exists():
+        dst = src.with_name(f"{src.stem}{body.suffix}_{n}.png")
+        n += 1
+    # ★생성 설정을 데려간다 — 검열본에서도 재생성할 수 있어야 한다
+    try:
+        raw = meta.read_raw(src.read_bytes())
+        buf = io.BytesIO()
+        out.save(buf, format="PNG")
+        dst.write_bytes(meta.write(buf.getvalue(), raw, "PNG", 95, dict(Image.open(src).info)))
+    except Exception:
+        out.save(dst, format="PNG")
+    rel = dst.relative_to(WS_ROOT.resolve()) if str(dst).startswith(str(WS_ROOT.resolve())) else dst
+    return {"file": str(rel).replace("\\", "/"), "name": dst.name}
+
+
+# ── 파일 관리 (아웃풋 폴더 트리) ────────────────────────────────
+
+
+class FilesMove(BaseModel):
+    files: list[str] = []
+    dest: str = ""
+
+
+class FilesName(BaseModel):
+    path: str = ""
+    name: str = ""
+
+
+@app.get("/api/files/tree")
+async def files_tree():
+    return files.tree(WS_ROOT)
+
+
+@app.get("/api/files/list")
+async def files_list(folder: str = "", page: int = 1, limit: int = PAGE):
+    try:
+        return files.listdir(WS_ROOT, folder, page, limit)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/files/mkdir")
+async def files_mkdir(body: FilesName):
+    try:
+        return files.mkdir(WS_ROOT, body.path, body.name)
+    except (ValueError, OSError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/files/rename")
+async def files_rename(body: FilesName):
+    try:
+        return files.rename(WS_ROOT, body.path, body.name)
+    except (ValueError, OSError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/files/move")
+async def files_move(body: FilesMove):
+    try:
+        return files.move(WS_ROOT, body.files, body.dest)
+    except (ValueError, OSError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/files/delete")
+async def files_delete(body: FilesMove):
+    try:
+        return files.delete(WS_ROOT, body.files)
+    except (ValueError, OSError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/files/reveal")
+async def files_reveal(body: FilesName):
+    """탐색기에서 연다 — ★파일이면 고른 채로."""
+    try:
+        files.reveal(WS_ROOT, body.path)
+        return {"ok": True}
+    except (ValueError, OSError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/files/img/{rel:path}")
+async def files_img(rel: str):
+    try:
+        p = files.under(WS_ROOT, rel)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if not p.is_file():
+        raise HTTPException(404, "not found")
+    return FileResponse(p)
+
+
+@app.get("/api/files/thumb/{rel:path}")
+def files_thumb(rel: str):
+    """파일 관리용 썸네일. ★캐시는 **그 워크스페이스 안**에 둔다 (사용자 지시 2026-08-08) —
+    `workspaces/` 최상위에는 워크스페이스만 있어야 한다. rel 의 첫 칸이 워크스페이스다."""
+    try:
+        p = files.under(WS_ROOT, rel)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if not p.is_file():
+        raise HTTPException(404, "not found")
+    head = rel.replace("\\", "/").split("/", 1)[0]
+    t = thumbs.derive(p, WS_ROOT / head / ".thumbs" / thumbs.flat_name(rel))
+    return FileResponse(t or p)
+
+
+def main():
+    import uvicorn
+
+    global CURRENT_PORT
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", type=int, default=8770)
+    args = ap.parse_args()
+    CURRENT_PORT = args.port
+    # ★개발 중에는 **파이썬을 고치면 알아서 다시 뜬다** (사용자 지시 2026-08-08).
+    #   예전엔 사이드카가 앱과 함께만 떠서, 백엔드를 고치면 앱을 통째로 재실행해야 했다.
+    #   ★보는 곳은 `backend/` **하나뿐**이다 — 작업 폴더를 보게 두면 그림이 한 장 생길
+    #     때마다 서버가 다시 뜬다.
+    #   ★켜지는 것은 `PEROPIX_DEV_RELOAD` 가 있을 때뿐이다 (dev.bat · qa\host.cmd 가 넣는다).
+    if os.environ.get("PEROPIX_DEV_RELOAD"):
+        here = str(Path(__file__).resolve().parent)
+        os.environ["PEROPIX_BACKEND_PORT"] = str(args.port)  # 워커가 읽는다
+        print(f"[backend] dev reload on - watching {here}")
+        uvicorn.run("server:app", host="127.0.0.1", port=args.port, log_level="info",
+                    reload=True, reload_dirs=[here], app_dir=here)
+    else:
+        uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info")
+
+
+if __name__ == "__main__":
+    main()

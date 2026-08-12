@@ -1,0 +1,31 @@
+[package]
+name = "peropix"
+version = "3.0.0"
+description = "PeroPix — NAI 전용 이미지 생성 툴"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "peropix_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# ★고아 사이드카 방지 — 파이썬 자식을 Job Object 에 매단다 (backend.rs `adopt_into_job`).
+#   tauri 가 이미 끌어오는 크레이트라 새로 받는 것이 없다.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading",
+] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+strip = true

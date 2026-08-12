@@ -1,0 +1,171 @@
+import { create } from "zustand";
+
+/** 모드 = 하단 네비의 자리. v2.x 의 모드 전환이 여기로 온다.
+ *  싱글·세트는 모드가 아니라 캔버스 탭이므로 여기 없다. */
+export type ModeId = "generate" | "gallery" | "censor" | "utility";
+
+export const MODES: { id: ModeId; label: string; color: string }[] = [
+  { id: "generate", label: "생성", color: "var(--mode-single)" },
+  { id: "gallery", label: "갤러리", color: "var(--mode-gallery)" },
+  { id: "censor", label: "자동검열", color: "var(--mode-censor)" },
+  { id: "utility", label: "보조 도구", color: "var(--mode-utility)" },
+];
+
+const KEY = "peropix.ui";
+
+
+/** 본문 폰트 — 넷을 번들해 두고 고른다 (styles/fonts.css). 비교해 보려고 넣은 것이다. */
+export type FontId = "pretendard" | "spoqa" | "gothic" | "noto";
+
+export const FONTS: { id: FontId; label: string; stack: string }[] = [
+  { id: "pretendard", label: "Pretendard", stack: "'Pretendard Variable', Pretendard" },
+  { id: "spoqa", label: "Spoqa Han Sans", stack: "'Spoqa Han Sans Neo'" },
+  { id: "gothic", label: "Gothic A1", stack: "'Gothic A1'" },
+  { id: "noto", label: "Noto Sans KR", stack: "'Noto Sans KR'" },
+];
+
+/** 고른 폰트를 `--font-sans` 에 꽂는다. ★폴백은 언제나 뒤에 붙인다 —
+ *  번들이 아직 안 실렸을 때 글자가 사라지지 않게. */
+export function applyFont(id: FontId) {
+  const f = FONTS.find((x) => x.id === id) ?? FONTS[0];
+  document.documentElement.style.setProperty(
+    "--font-sans",
+    `${f.stack}, "Segoe UI", "Malgun Gothic", sans-serif`,
+  );
+}
+
+type Persisted = {
+  leftWidth: number;
+  /** AI 채팅 패널 — ★**기본은 접힌 레일**이다 (ui-guide 7절: LLM 은 선택 사항) */
+  aiWidth: number;
+  aiCollapsed: boolean;
+  rightWidth: number;
+  leftCollapsed: boolean;
+  rightCollapsed: boolean;
+  /** 무대에 한 줄로 몇 장을 놓나. ★**1이면 라이트박스**가 된다 — 한 장이 무대를 다 쓴다.
+   *  크기 슬라이더를 따로 두지 않는다: 크기는 열 수에서 나온다 (하나의 정보에 하나의 창구). */
+  cols: number;
+  /** 씬 칸의 칸 크기 3단 (0 작게 · 1 보통 · 2 크게). ★썸네일 슬라이더를 따로 두지 않는다 */
+  laneStep: number;
+  /** 씬 칸 높이 — 사용자가 손잡이로 정한다 */
+  laneHeight: number;
+  /** 생성 화면을 끄고 **슬롯만 모아 본다** — 선별 뒤 확인용 (사용자 결정 2026-08-04) */
+  curated: boolean;
+  /** ★슬롯당 몇 장 만드나 (페로픽스파이 `countPerSlot`). 한 번에 여러 장을 뽑아
+   *  고르는 것이 멀티의 본래 쓰임이라, 1장씩 돌리면 같은 일을 여러 번 해야 한다. */
+  perSlot: number;
+  /** ★큐가 다 끝나면 알린다 — 여러 장을 돌려 놓고 다른 일을 하다 놓치는 것을 막는다 */
+  notifyDone: boolean;
+  font: FontId;
+};
+
+const DEFAULTS: Persisted = {
+  leftWidth: 380,
+  aiWidth: 320,
+  aiCollapsed: true,
+  rightWidth: 260,
+  leftCollapsed: false,
+  rightCollapsed: false,
+  cols: 4,
+  laneStep: 1,
+  laneHeight: 302,
+  curated: false,
+  perSlot: 1,
+  notifyDone: true,
+  font: "pretendard",
+};
+
+/** 한 번에 뽑는 최대 — 큐가 길어지면 취소하기 번거롭다 */
+export const PER_SLOT_MAX = 12;
+export const COLS_MIN = 1;
+export const COLS_MAX = 12;
+
+function load(): Persisted {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
+  } catch {}
+  return DEFAULTS;
+}
+
+type S = Persisted & {
+  mode: ModeId;
+  setMode: (m: ModeId) => void;
+  setLaneStep: (n: number) => void;
+  setLaneHeight: (n: number) => void;
+  setLeftWidth: (w: number) => void;
+  setAiWidth: (w: number) => void;
+  toggleAi: () => void;
+  setRightWidth: (w: number) => void;
+  setCols: (n: number) => void;
+  setCurated: (v: boolean) => void;
+  setPerSlot: (n: number) => void;
+  setNotifyDone: (v: boolean) => void;
+  setFont: (f: FontId) => void;
+  toggleLeft: () => void;
+  toggleRight: () => void;
+  /** 드래그가 끝났을 때만 저장한다 — 매 프레임 localStorage 를 때리지 않는다. */
+  commitLayout: () => void;
+};
+
+export const useUi = create<S>((set, get) => ({
+  ...load(),
+  mode: "generate",
+  setMode: (m) => set({ mode: m }),
+  setLaneStep: (n) => set({ laneStep: Math.min(2, Math.max(0, Math.round(n))) }),
+  setLaneHeight: (n) => set({ laneHeight: Math.max(84, Math.round(n)) }),
+  setLeftWidth: (w) => set({ leftWidth: w }),
+  setAiWidth: (w) => set({ aiWidth: w }),
+  toggleAi: () => {
+    set({ aiCollapsed: !get().aiCollapsed });
+    get().commitLayout();
+  },
+  setRightWidth: (w) => set({ rightWidth: w }),
+  setCols: (n) => {
+    set({ cols: Math.min(COLS_MAX, Math.max(COLS_MIN, Math.round(n))) });
+    get().commitLayout();
+  },
+  setCurated: (v) => set({ curated: v }),
+  setNotifyDone: (v) => {
+    set({ notifyDone: v });
+    get().commitLayout();
+  },
+  setPerSlot: (n) => {
+    set({ perSlot: Math.min(PER_SLOT_MAX, Math.max(1, Math.round(n))) });
+    get().commitLayout();
+  },
+  setFont: (f) => {
+    applyFont(f);
+    set({ font: f });
+    get().commitLayout();
+  },
+  toggleLeft: () => {
+    set({ leftCollapsed: !get().leftCollapsed });
+    get().commitLayout();
+  },
+  toggleRight: () => {
+    set({ rightCollapsed: !get().rightCollapsed });
+    get().commitLayout();
+  },
+  commitLayout: () => {
+    const { leftWidth, rightWidth, leftCollapsed, rightCollapsed, cols, laneStep, laneHeight, font, aiWidth, aiCollapsed } =
+      get();
+    try {
+      localStorage.setItem(
+        KEY,
+        JSON.stringify({
+          leftWidth,
+          rightWidth,
+          leftCollapsed,
+          rightCollapsed,
+          cols,
+          laneStep,
+          laneHeight,
+          font,
+          aiWidth,
+          aiCollapsed,
+        }),
+      );
+    } catch {}
+  },
+}));

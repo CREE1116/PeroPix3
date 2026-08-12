@@ -1,0 +1,270 @@
+import { useEffect, useRef } from "react";
+import { create } from "zustand";
+import type { AnyCard, CardKind } from "../store/cards";
+import type { LibItem } from "../store/blockLib";
+import type { Block } from "../lib/blocks";
+
+/** 카드 드래그 — **포인터 이벤트로 직접 구현한다.**
+ *
+ *  ★HTML5 DnD 를 쓰지 않는 이유는 useReorder.ts 와 같다: Tauri(WebView2)에서
+ *    HTML5 드래그를 쓰려면 `dragDropEnabled: false` 가 필요한데, 그러면 파일 드롭을 잃는다.
+ *    파일 드롭은 레퍼런스 이미지·i2i 에 필요하므로 드래그 쪽을 포인터로 옮긴다.
+ *
+ *  드롭 존은 화면에 있는 동안 자기 사각형을 등록하고, 포인터가 움직일 때마다
+ *  적중 판정을 한다. 겹치는 존(교체/스택)은 `prio` 가 큰 쪽이 이긴다. */
+
+/** apply = 덱 → 목적지 · save = 섹션 → 핸드 · image = 생성물 → 카드 썸네일 */
+export type DragDir = "apply" | "save" | "image";
+/** ★`blocklib` = 블록 저장소 → 블록 목록. 카드와 **같은 판을 쓴다** — 끄는 방식·존 판정이
+ *  같아야 하나만 고치면 둘 다 고쳐진다 (드래그 구현을 두 벌 두지 않는다) */
+export type ZoneKind = CardKind | "image" | "blocklib";
+
+/** 생성된 이미지 한 장 — 썸네일로 넣을 때 끌고 다니는 것.
+ *  ★`url` 은 **썸네일** 주소다 (고스트 92×126, 위치 잡는 창 ≤396px — 원본이 필요 없다).
+ *    어느 원본인지는 `ws`+`file` 이 들고 있고, 굳히는 것은 서버가 그 원본에서 한다. */
+export type DragImage = { ws: string; file: string; url: string };
+
+export type Dragging = {
+  dir: DragDir;
+  kind: ZoneKind;
+  /** dir 가 apply·save 일 때 */
+  card?: AnyCard;
+  /** dir 가 image 일 때 */
+  img?: DragImage;
+  /** kind 가 blocklib · dir 가 apply 일 때 — 저장소에서 끌어낸 항목 (놓으면 **사본**이 들어간다) */
+  item?: LibItem;
+  /** kind 가 blocklib · dir 가 save 일 때 — 프롬프트에서 저장소로 끌어온 블록.
+   *  ★카드의 역드래그 저장(배너 → 핸드)과 **같은 방향**이라 같은 `dir` 를 쓴다 */
+  block?: Block;
+  /** dir 가 save 일 때 — 섹션에 꽂혀 있던 그림. 카드는 **같은 tid 를 가리킬 뿐**이라
+   *  바이트가 복사되지 않는다 */
+  thumb?: SectionThumb | null;
+};
+
+/** prompt 스토어의 Thumb 과 같은 모양. 여기서 import 하면 순환 참조가 된다 */
+export type SectionThumb = {
+  tid: string;
+  banner: { zoom: number; px: number; py: number };
+  face: { zoom: number; px: number; py: number };
+};
+
+type Zone = {
+  id: string;
+  kind: ZoneKind;
+  dir: DragDir;
+  prio: number;
+  rect: () => DOMRect | null;
+  onDrop: (d: Dragging) => void;
+};
+
+type S = {
+  drag: Dragging | null;
+  pos: { x: number; y: number };
+  over: string | null;
+  zones: Zone[];
+
+  begin: (d: Dragging, x: number, y: number) => void;
+  move: (x: number, y: number) => void;
+  end: () => boolean;
+  cancel: () => void;
+  addZone: (z: Zone) => () => void;
+};
+
+export const useDrag = create<S>((set, get) => ({
+  drag: null,
+  pos: { x: 0, y: 0 },
+  over: null,
+  zones: [],
+
+  begin(d, x, y) {
+    set({ drag: d, pos: { x, y }, over: null });
+  },
+
+  move(x, y) {
+    const { drag, zones } = get();
+    if (!drag) return;
+    let hit: Zone | null = null;
+    for (const z of zones) {
+      if (z.kind !== drag.kind || z.dir !== drag.dir) continue;
+      const r = z.rect();
+      if (!r) continue;
+      if (x < r.left || x > r.right || y < r.top || y > r.bottom) continue;
+      // 같은 우선순위가 겹치면 **나중에 등록된 것**이 이긴다 — 나중 것이 위에 그려진다
+      if (!hit || z.prio >= hit.prio) hit = z;
+    }
+    set({ pos: { x, y }, over: hit ? hit.id : null });
+  },
+
+  /** 손을 뗐다. 드롭이 실제로 일어났으면 true — 덱을 닫을지 판단에 쓴다. */
+  end() {
+    const { drag, over, zones } = get();
+    set({ drag: null, over: null });
+    if (!drag || !over) return false;
+    zones.find((z) => z.id === over)?.onDrop(drag);
+    return true;
+  },
+
+  cancel() {
+    set({ drag: null, over: null });
+  },
+
+  addZone(z) {
+    set({ zones: [...get().zones, z] });
+    return () => set({ zones: get().zones.filter((x) => x !== z) });
+  },
+}));
+
+/** 드롭 존 등록 — 반환한 ref 를 DOM 요소에 붙인다. */
+export function useDropZone(opts: {
+  id: string;
+  kind: ZoneKind;
+  dir?: DragDir;
+  prio?: number;
+  onDrop: (d: Dragging) => void;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  // onDrop 은 매 렌더 새로 만들어지므로 최신 것을 상자에 담아 둔다
+  //  — 등록/해제를 매 렌더 반복하면 드래그 중에 존이 사라진다
+  const cb = useRef(opts.onDrop);
+  cb.current = opts.onDrop;
+
+  const { id, kind, dir = "apply", prio = 0 } = opts;
+  useEffect(
+    () =>
+      useDrag.getState().addZone({
+        id,
+        kind,
+        dir,
+        prio,
+        rect: () => ref.current?.getBoundingClientRect() ?? null,
+        onDrop: (d) => cb.current(d),
+      }),
+    [id, kind, dir, prio],
+  );
+
+  const over = useDrag((s) => s.over === id);
+  const active = useDrag((s) => s.drag?.kind === kind && s.drag.dir === dir);
+  return { ref, over, active };
+}
+
+/* ── 포인터 제스처 공통 ─────────────────────────────────────────
+ * 끄는 동작(카드 드래그·미리보기 위치 조정)은 전부 이걸 거친다.
+ * 여기 모아 두는 이유는 **엣지 케이스가 전부 같기 때문**이다:
+ *
+ *  1. 기본 동작을 막는다 — 안 막으면 브라우저 네이티브 드래그가 시작되고
+ *     그 뒤 pointermove·pointerup 이 오지 않아 화면이 굳는다 (WebView2 실측).
+ *  2. **포인터를 캡처한다** — 커서가 영역을 벗어나도 계속 이 제스처가 받는다.
+ *     캡처를 안 하면 옆의 다른 조작 영역이 반응하고 커서 모양이 풀린다 (실측 지적).
+ *  3. **화면 전체 커서를 고정한다**(html.is-dragging) — 캡처만으로는 커서가 돌아온다.
+ *  4. 포인터를 잃거나(pointercancel) 창이 포커스를 잃으면(blur) **취소**로 끝낸다 —
+ *     안 그러면 어둠·고스트가 화면에 남는다.
+ *  5. 다른 손가락(pointerId)의 이벤트는 무시한다.
+ *  6. Esc 로 언제든 취소할 수 있다 (`cancelGesture`).
+ */
+let activeCancel: (() => void) | null = null;
+
+/** 지금 끌고 있는 중인가 — 휠·Esc 처리에서 본다 */
+export const isGestureActive = () => activeCancel !== null;
+/** 진행 중인 제스처를 취소로 끝낸다 (Esc 등) */
+export const cancelGesture = () => activeCancel?.();
+
+export function pointerGesture(
+  e: React.PointerEvent,
+  o: { onMove: (ev: PointerEvent) => void; onEnd?: (committed: boolean) => void },
+): boolean {
+  if (e.button !== 0) return false;
+  cancelGesture(); // 앞의 제스처가 남아 있으면 정리하고 시작한다
+  e.preventDefault();
+
+  const el = e.currentTarget as HTMLElement;
+  const pid = e.pointerId;
+  try {
+    el.setPointerCapture(pid);
+  } catch {
+    /* 캡처를 못 해도 window 리스너로 동작한다 */
+  }
+  document.documentElement.classList.add("is-dragging");
+
+  const move = (ev: PointerEvent) => {
+    if (ev.pointerId === pid) o.onMove(ev);
+  };
+  const finish = (committed: boolean) => {
+    if (activeCancel !== cancel) return; // 이미 끝난 제스처
+    activeCancel = null;
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+    window.removeEventListener("pointercancel", cancel);
+    window.removeEventListener("blur", cancel);
+    document.documentElement.classList.remove("is-dragging");
+    try {
+      el.releasePointerCapture(pid);
+    } catch {
+      /* 이미 풀렸으면 그만이다 */
+    }
+    o.onEnd?.(committed);
+  };
+  const up = (ev: PointerEvent) => {
+    if (ev.pointerId === pid) finish(true);
+  };
+  const cancel = () => finish(false);
+
+  activeCancel = cancel;
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+  window.addEventListener("pointercancel", cancel);
+  window.addEventListener("blur", cancel);
+  return true;
+}
+
+/** 드래그를 시작하는 쪽에 붙이는 포인터 핸들러.
+ *  ★임계값(4px)을 두는 이유: 클릭도 같은 요소에서 받기 때문이다.
+ *    문턱을 넘기 전에는 드래그로 치지 않아 "클릭 = 즉시 적용"이 살아 있다. */
+export function useDragSource() {
+  return (
+    e: React.PointerEvent,
+    d: Dragging,
+    onDrop?: (dropped: boolean) => void,
+    /** 문턱을 안 넘기고 뗐을 때(= 클릭). ★pointerdown 의 preventDefault 가 브라우저의
+     *  호환 click 이벤트를 삼키므로, 드래그 출발점의 클릭 동작은 onClick 이 아니라 여기로 받는다 */
+    onTap?: () => void,
+  ) => {
+    const sx = e.clientX;
+    const sy = e.clientY;
+    let started = false;
+
+    pointerGesture(e, {
+      onMove: (ev) => {
+        if (!started) {
+          if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;
+          started = true;
+          useDrag.getState().begin(d, ev.clientX, ev.clientY);
+        }
+        useDrag.getState().move(ev.clientX, ev.clientY);
+      },
+      onEnd: (committed) => {
+        if (!started) {
+          if (committed) onTap?.();
+          return;
+        }
+        if (!committed) {
+          useDrag.getState().cancel();
+          return;
+        }
+        // ★`onDrop?.(end())` 로 쓰지 말 것 — 옵셔널 호출은 콜백이 없으면 **인자도 평가하지 않는다.**
+        //   콜백을 넘기지 않는 역드래그 저장이 통째로 무시된다. 두 번 밟은 함정이라 줄을 나눠 둔다:
+        //   end() 를 **먼저 부르고**, 그 결과를 콜백에 넘긴다.
+        const dropped = useDrag.getState().end();
+        onDrop?.(dropped);
+      },
+    });
+  };
+}
+
+/** 드래그 출발점에 공통으로 붙이는 스타일 — 네이티브 드래그·선택을 원천에서 막는다.
+ *  (`WebkitUserDrag` 는 표준이 아니라 타입에 없어 캐스팅한다) */
+export const dragSourceStyle = {
+  touchAction: "none",
+  userSelect: "none",
+  WebkitUserSelect: "none",
+  WebkitUserDrag: "none",
+} as React.CSSProperties;

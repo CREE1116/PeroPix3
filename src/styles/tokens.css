@@ -1,0 +1,220 @@
+/* PeroPix 3.0 디자인 토큰
+   ★체계·값 = **페로픽스파이**(`D:\ClaudeCode\PeroPixComfy` 의 `ui/src/styles.css`).
+     사용자 지시 2026-08-03: "구조까지 이식".
+
+   페로픽스파이의 구조는 토큰 7개가 전부다 (bg·panel·border·fg·muted·accent·error):
+
+     1. **표면은 두 단계뿐** — `--bg`(페이지) / `--panel`(올라온 것 전부:
+        입력·버튼·카드·**그림 영역**까지 같은 면이다. `.result-main` 도 `--panel`).
+     2. **경계선은 한 종류** (`--border`, 52회 사용).
+     3. **글자는 두 단계** (`--fg` / `--muted`). ★`--muted` 가 65회로 가장 많다 —
+        대부분의 글자가 흐린 쪽이고, 밝은 글자는 아껴 쓴다.
+     4. **강조는 테두리로 나타낸다** — hover/focus 는 `border-color` 만 바뀌고,
+        active 일 때만 옅은 강조 배경(`#2a2640`)이 깔린다. 넓은 면을 강조색으로 채우지 않는다.
+
+   ★**다크에만 적용한다** (사용자 지시). 라이트는 기존 값 그대로다.
+   우리 토큰이 더 잘게 쪼개져 있어(surface/surface2, line/soft/strong, ink 4단계)
+   다크에서는 **같은 값으로 접어** 구조를 맞춘다. 이름은 그대로 두어 컴포넌트를 안 건드린다.
+   ★값을 스크린샷에서 눈으로 뽑지 말 것 — 실측으로 채도가 3~6배 어긋났다. */
+
+:root {
+  /* ── 표면 — ★**두 겹뿐이다** (사용자 지시 2026-08-04: "배경부 색들 통일 · 개방감 있게")
+     페로픽스파이가 그렇다: `--bg`(바탕) 과 `--panel`(올라온 것 전부 — 패널·섹션·입력·
+     그림 영역까지 같은 면). 겹이 다섯이면(bg-deep/bg/panel/surface/surface2) 화면이
+     칸칸이 나뉘어 답답해진다. 이름은 남기되 **값을 접어** 컴포넌트를 안 건드린다.
+     ★올라온 면과 바탕을 가르는 것은 **1px 선**이지 색 차이가 아니다. */
+  --bg-deep: #eef1f4;     /* = --bg. 창 바탕과 무대를 더 가르지 않는다 */
+  --bg: #eef1f4;          /* 바탕 */
+  --panel: #ffffff;       /* 올라온 것 전부 */
+  --surface: #ffffff;
+  --surface2: #ffffff;
+  --chip-bg: #eef1f4;
+  --code-bg: #f4f6f8;     /* 코드만 아주 옅게 눕힌다 */
+
+  /* ── 선 ── */
+  --line: #dde2e8;
+  --line-strong: #c3cbd4;
+  --line-soft: #e8ecf1;
+
+  /* ── 글자 ── */
+  --ink: #1e2630;
+  --ink-soft: #55616e;
+  --ink-dim: #78838f;
+  --ink-faint: #98a2ad;
+  --ink-ghost: #b4bcc5;
+
+  /* ── 강조 ── */
+  --accent: #2f6fa8;
+  --accent-bg: #e3eef8;
+  --accent-line: #2f6fa855;
+  --accent-on: #ffffff;
+
+  /* ── 의미색 (기능이 색을 갖는다) ── */
+  --char-c: #7a58b8;      /* 캐릭터 섹션 */
+  --uc-c: #a8433b;        /* Undesired Content */
+  --warn: #c07f18;
+  --minus: #a8433b;       /* 음수 가중치 */
+  --ok: #2d8a52;
+  --err: #a8433b;
+
+  /* ── 모드 색 (하단 네비 표시선) ── */
+  --mode-single: #2f6fa8;
+  --mode-set: #14806f;
+  --mode-gallery: #6b5bb8;
+  --mode-censor: #a8433b;
+  --mode-utility: #7a7f86;
+
+  /* ── 타입 ──
+     ★Pretendard 는 같은 px 에서 한글 글자속이 넓어 11px 도 읽힌다 (globals.css 에서 번들).
+     ★계단이 **또렷해야 위계가 선다.** 예전엔 12px 가 셋(2xs·xs·sm)이라 셋 다 같은 크기로
+       보였다 — 이름만 다르고 화면에서는 구분이 안 됐다. */
+  --font-sans: "Pretendard Variable", Pretendard, "Segoe UI", "Malgun Gothic", sans-serif;
+  --font-mono: ui-monospace, Consolas, "D2Coding", monospace;  /* 영문·숫자 자리에만 */
+
+  /* ★페로픽스파이 규칙에 맞춘다 (사용자 지시 2026-08-04 — 전체적으로 작았다).
+     그쪽은 **본문 13px**(`body`)이고 라벨 12·힌트 11이다. 우리는 라벨에 `--text-xs`,
+     힌트에 `--text-2xs` 를 쓰므로 각각 13·12 가 되어야 같은 크기로 읽힌다 → 한 칸씩 올렸다. */
+  --text-2xs: 12px;   /* 보조 — 메타·힌트 */
+  --text-xs: 13px;    /* 라벨 (= 페로픽스파이 본문) */
+  --text-sm: 13px;
+  --text-md: 14px;    /* 본문 */
+  --text-lg: 15px;    /* 소제목 */
+  --text-xl: 16px;    /* 제목 */
+  --text-2xl: 19px;
+
+  /* ── 굵기 ──
+     ★한글은 같은 굵기에서 라틴보다 **획이 빽빽하다.** Pretendard 700 으로 한글 제목을 쓰면
+       획이 겹쳐 뭉쳐 보인다 (사용자 지적 2026-08-04). 그래서 한 단씩 낮춰 잡는다 —
+       가변 폰트라 550 같은 중간값도 그대로 나온다. */
+  --w-normal: 400;
+  --w-medium: 500;
+  --w-semi: 550;   /* 예전 600 자리 */
+  --w-bold: 620;   /* 예전 700 자리 — 한글 제목의 상한 */
+
+  --lh-tight: 1.2;
+  --lh-normal: 1.45;
+  --lh-relaxed: 1.6;
+
+  /* ── 간격 ── */
+  --sp-1: 4px;
+  --sp-2: 6px;
+  --sp-3: 8px;
+  --sp-4: 10px;
+  --sp-5: 12px;
+  --sp-6: 14px;
+  --sp-7: 16px;
+  --sp-8: 20px;
+  --sp-9: 24px;
+  --sp-10: 32px;
+
+  /* ── 반경 ──
+     ★시안 계단(썸네일 5 · 칩 7 · 버튼 9 · 상자 12). 예전 4/6/8/12 보다 한 단씩 크다 —
+       모서리가 커야 면이 '부드러운 판'으로 읽히고, 작은 요소끼리도 구분이 선다. */
+  --r-1: 5px;
+  --r-2: 7px;
+  --r-3: 9px;
+  --r-4: 12px;
+  --r-5: 16px;
+
+  /* ── 그림자 ── */
+  --shadow-1: 0 1px 2px rgba(20, 30, 45, 0.08);
+  --shadow-2: 0 4px 14px rgba(20, 30, 45, 0.10);
+  --shadow-3: 0 12px 40px rgba(20, 30, 45, 0.16);
+}
+
+/* ── 다크 ──
+   목업 값. Studio 다크(#0b0b0d)보다 덜 어둡고 푸른 톤이라 개방감이 유지된다. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    /* ★두 겹뿐 — 페로픽스파이와 같은 값이다 (bg #16161a · panel #1e1e24) */
+    --bg-deep: #16161a;
+    --bg: #16161a;
+    --panel: #1e1e24;
+    --surface: #1e1e24;
+    --surface2: #1e1e24;
+    --chip-bg: #1e1e24;
+    --code-bg: #16161a;
+
+    --line: #2e2e36;
+    --line-strong: #2e2e36;
+    --line-soft: #26262e;
+
+    --ink: #ececf1;
+    /* ★흐린 글자는 **알파**로 낮춘다. 고정 hex 는 면이 바뀌면(패널 위·무대 위) 따로 놀지만
+       알파는 어느 면에서도 같은 만큼 가라앉는다. 단계도 늘렸다 — 예전엔 soft 와 dim 이
+       같은 값이라 사실상 둘뿐이었다 (시안은 다섯 단계를 쓴다). */
+    --ink-soft: rgba(236, 236, 241, 0.72);
+    --ink-dim: rgba(236, 236, 241, 0.55);
+    --ink-faint: rgba(236, 236, 241, 0.42);
+    --ink-ghost: rgba(236, 236, 241, 0.3);
+
+    --accent: #7c6cf0;
+    --accent-bg: #2a2640;
+    --accent-line: #7c6cf055;
+    --accent-on: #ffffff;
+
+    --char-c: #9d8cf5;
+    --uc-c: #e05555;
+    --warn: #fbbf24;
+    --minus: #e05555;
+    --ok: #22c55e;
+    --err: #e05555;
+
+    --mode-single: #7c6cf0;
+    --mode-set: #22c55e;
+    --mode-gallery: #9d8cf5;
+    --mode-censor: #e05555;
+    --mode-utility: #a8a8b6;
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-2: 0 4px 14px rgba(0, 0, 0, 0.45);
+    --shadow-3: 0 12px 40px rgba(0, 0, 0, 0.6);
+  }
+}
+
+/* 명시 선택이 OS 설정을 이긴다 */
+:root[data-theme="dark"] {
+  /* ★두 겹뿐 — 페로픽스파이와 같은 값이다 (bg #16161a · panel #1e1e24) */
+  --bg-deep: #16161a;
+  --bg: #16161a;
+  --panel: #1e1e24;
+  --surface: #1e1e24;
+  --surface2: #1e1e24;
+  --chip-bg: #1e1e24;
+  --code-bg: #16161a;
+
+  --line: #2e2e36;
+  --line-strong: #2e2e36;
+  --line-soft: #26262e;
+
+  --ink: #ececf1;
+  /* ★흐린 글자는 **알파**로 낮춘다. 고정 hex 는 면이 바뀌면(패널 위·무대 위) 따로 놀지만
+     알파는 어느 면에서도 같은 만큼 가라앉는다. 단계도 늘렸다 — 예전엔 soft 와 dim 이
+     같은 값이라 사실상 둘뿐이었다 (시안은 다섯 단계를 쓴다). */
+  --ink-soft: rgba(236, 236, 241, 0.72);
+  --ink-dim: rgba(236, 236, 241, 0.55);
+  --ink-faint: rgba(236, 236, 241, 0.42);
+  --ink-ghost: rgba(236, 236, 241, 0.3);
+
+  --accent: #7c6cf0;
+  --accent-bg: #2a2640;
+  --accent-line: #7c6cf055;
+  --accent-on: #ffffff;
+
+  --char-c: #9d8cf5;
+  --uc-c: #e05555;
+  --warn: #fbbf24;
+  --minus: #e05555;
+  --ok: #22c55e;
+  --err: #e05555;
+
+  --mode-single: #7c6cf0;
+  --mode-set: #22c55e;
+  --mode-gallery: #9d8cf5;
+  --mode-censor: #e05555;
+  --mode-utility: #a8a8b6;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --shadow-3: 0 12px 40px rgba(0, 0, 0, 0.6);
+}

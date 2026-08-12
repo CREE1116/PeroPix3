@@ -1,0 +1,515 @@
+import { create } from "zustand";
+import { api } from "../lib/backend";
+import { useWs } from "./workspace";
+import { t, useI18n } from "../i18n";
+import { useCli } from "./cli";
+
+/** LLM 채팅 — **반복 작업을 대신 시키는 창구** (3.0 의 목표 중 하나, ui-guide 7절).
+ *
+ *  ★키는 백엔드에만 있다 (`/api/llm/*`). 여기서는 주고받는 모양만 안다.
+ *  ★**도구는 백엔드 것이다** (`/api/agent/*`, `backend/agent.py`). AI 는 화면을 조작하지 않고
+ *    **데이터(카드·워크스페이스 파일)** 를 만진다 — 그래서 앱이 꺼져 있어도 같은 도구가 돈다.
+ *    바뀐 것은 `data_changed` 로 알려 화면이 다시 읽는다.
+ *  ★스트리밍은 안 쓴다. 도구 루프는 어차피 한 번에 받아야 하고, 중간 글자보다
+ *    "무슨 도구를 썼는지"가 더 중요하다 (그것은 줄로 보여 준다).
+ *  ★저장하는 것은 **`wire` 하나뿐**이다. 화면 줄은 거기서 파생시킨다(`linesOf`) —
+ *    같은 것을 두 벌로 담으면 둘이 어긋난다 (`backend/chats.py` 머리 주석). */
+
+/** 공급자에 보내는 정본 모양 (앤트로픽 기준 — backend/llm.py 머리 주석) */
+type Part =
+  | { type: "text"; text: string }
+  | {
+      type: "tool_use";
+      id: string;
+      name: string;
+      input: Record<string, unknown>;
+      /** ★공급자가 준 원본 조각 — **손대지 않고 그대로 돌려준다.**
+       *  생각하는 모델(제미나이 3 계열)은 함수 호출에 `thoughtSignature` 를 실어 보내고,
+       *  그것이 빠진 채 되돌아오면 400 을 낸다. 우리가 이름·인자만 뽑아 다시 만들면
+       *  그 서명이 사라진다 (`backend/llm.py` 의 `_to_gemini` 주석). */
+      raw?: unknown;
+    }
+  | { type: "tool_result"; tool_use_id: string; content: string };
+
+export type Wire = { role: "user" | "assistant"; content: Part[] };
+
+/** 화면에 그리는 한 줄 */
+export type Line =
+  | { kind: "user"; text: string }
+  | { kind: "ai"; text: string }
+  | { kind: "tool"; name: string; note: string; ok: boolean }
+  | { kind: "error"; text: string };
+
+/** ★공급자는 **정확한 이름**으로 고른다 (사용자 지시 2026-08-08: "호환은 적을 필요 없음").
+ *  목록·라벨·호출명 예시는 **백엔드가 정본**이다 — 규격을 아는 쪽이 거기라서. */
+export type ProviderInfo = { id: string; label: string; hint: string; hasKey: boolean };
+/** 공급자가 알려 준 모델 하나. `in` 은 백만 토큰당 입력 단가(오픈라우터만) */
+export type ModelInfo = {
+  id: string;
+  label?: string;
+  in?: number;
+  vision?: boolean;
+  /** ★추론 단계는 **모델이 알려 준다** — 모델마다 다르므로 코드에 박지 않는다 */
+  efforts?: string[];
+  effortDefault?: string;
+  /** 끌 수 없는 모델(제미나이·그록·Qwen 등) — 끄기 칸을 감춘다 */
+  reasoningLocked?: boolean;
+};
+export type LlmConfig = {
+  provider: string;
+  /** 지금 공급자의 모델 (공급자마다 따로 기억한다) */
+  model: string;
+  models: Record<string, string>;
+  /** 지금 공급자의 추론 강도. 빈 값이면 모델 기본값 */
+  effort: string;
+  hasKey: boolean;
+  providers: ProviderInfo[];
+  /** 요청 창구(디스코드). ★백엔드가 정본이다 — 화면에 주소를 박지 않는다 */
+  support: string;
+};
+
+export type ChatInfo = { id: string; title: string; updatedAt: string; turns: number;
+  /** 어디서 시작했는지 — 대화는 전역이지만 출처는 보인다 */ workspace?: string };
+
+/** AI 가 사용자에게 던진 물음 — 답할 때까지 도구가 기다린다 (`ask_user`).
+ *  ★내장 AskUserQuestion 은 이 환경에서 못 쓴다(stdin 이 닫혀 있다). 그래서 우리 도구로 만든다. */
+export type Ask = {
+  question: string;
+  header?: string;
+  options: { label: string; description?: string }[];
+  /** 여러 개를 함께 고르는 물음인가 (사용자 지시 2026-08-08) */
+  multi?: boolean;
+  /** 고른 것을 돌려주는 길 — 화면이 부른다. 하나든 여럿이든 배열로 넘긴다 */
+  answer: (labels: string[]) => void;
+};
+
+/** 한 번의 물음에 도구를 몇 번까지 이어 쓰나 — 무한 루프를 막는 울타리 */
+const MAX_ROUNDS = 12;
+
+/** 지침은 **백엔드가 정본**이다 (`/api/agent/system`) — BYOK 와 CLI 가 같은 것을 쓴다.
+ *  못 받아 오면 이 한 줄로 버틴다 (없는 도구를 시키지 않는 것이 중요하다). */
+let SYSTEM = "You are the assistant inside PeroPix 3.0, an image generation app. Work on the user's data with the tools.";
+
+/** 지침을 **지금 표시 언어로** 받아 둔다 — 답이 그 언어로 나와야 한다 (사용자 지시 2026-08-12).
+ *  ★언어를 바꾸면 다시 받는다. 안 그러면 앱은 일본어인데 조수만 한국어로 답한다. */
+export async function loadSystemPrompt() {
+  try {
+    const r = await api<{ system: string }>(
+      `/api/agent/system?lang=${encodeURIComponent(useI18n.getState().locale)}`,
+    );
+    if (r.system) SYSTEM = r.system;
+  } catch {
+    /* 백엔드가 아직 안 떴을 수 있다 — 다음에 다시 부른다 */
+  }
+}
+useI18n.subscribe((s, prev) => {
+  // ★CLI 는 이어 붙일 때 지침을 다시 안 준다(세션이 갈라진다) — 바뀐 언어는 **새 대화부터** 먹는다
+  if (s.locale !== prev.locale) void loadSystemPrompt();
+});
+
+/** 저장된 대화(wire)를 화면 줄로 — **파생이지 별도 상태가 아니다.** */
+export function linesOf(wire: Wire[]): Line[] {
+  const out: Line[] = [];
+  const names = new Map<string, string>(); // tool_use id → 도구 이름
+  for (const m of wire) {
+    for (const b of m.content) {
+      if (b.type === "text") out.push({ kind: m.role === "user" ? "user" : "ai", text: b.text });
+      else if (b.type === "tool_use") names.set(b.id, b.name);
+      else if (b.type === "tool_result") {
+        let ok = true;
+        let note = "";
+        try {
+          const d = JSON.parse(b.content) as { error?: string; cancelled?: boolean; did?: string };
+          if (d?.error) {
+            ok = false;
+            note = String(d.error);
+          } else if (d?.cancelled) {
+            ok = false;
+            note = t("ai.declined");
+          } else if (d?.did) {
+            // ★★**무엇을 바꿨는지 성공했을 때도 보여 준다** (사용자 지시 2026-08-08).
+            //   예전엔 성공하면 도구 **이름만** 떴다 — `create_card` 만으로는 무엇이 생겼는지
+            //   알 수 없어서, 사용자가 "되돌려" 라고 말할 근거가 화면에 없었다.
+            //   바꾸는 도구가 `did` 를 돌려준다 (`backend/agent.py` Tools 머리 주석).
+            note = String(d.did);
+          }
+        } catch {
+          /* 도구가 문자열을 돌려준 것 — 성공으로 본다 */
+        }
+        out.push({ kind: "tool", name: names.get(b.tool_use_id) ?? "tool", note, ok });
+      }
+    }
+  }
+  return out;
+}
+
+/** 목록에 보일 이름 — 첫 사용자 발화의 앞부분 */
+const titleOf = (wire: Wire[]) => {
+  for (const m of wire)
+    if (m.role === "user")
+      for (const b of m.content) if (b.type === "text") return b.text.slice(0, 60);
+  return "";
+};
+
+type S = {
+  cfg: LlmConfig | null;
+  /** 지금 열려 있는 대화 */
+  id: string;
+  wire: Wire[];
+  lines: Line[];
+  list: ChatInfo[];
+  sending: boolean;
+  error: string;
+  /** 지금 화면에 떠 있는 물음 (없으면 null) */
+  ask: Ask | null;
+  /** CLI 턴에서 저쪽이 들고 있는 대화 id — 다음 턴에 `--resume` 으로 이어 붙인다 */
+  cliSession: string | null;
+  /** 이 대화의 CLI 세션이 저쪽에 **없다** — 열 때 확인한다.
+   *  ★사용자가 말을 걸어 실패를 겪고 나서 알게 되지 않도록 (사용자 지시 2026-08-12) */
+  cliSessionGone: boolean;
+
+  /** 지금 공급자가 주는 모델 목록. ★설정 화면과 채팅 칩이 **같은 것**을 본다 —
+   *  두 곳에서 따로 받아 오면 한쪽만 갱신돼 서로 다른 목록을 보여 준다 */
+  models: ModelInfo[];
+  modelsErr: string;
+  modelsLoading: boolean;
+  loadModels: (provider?: string) => Promise<void>;
+
+  loadConfig: () => Promise<void>;
+  saveConfig: (c: Partial<LlmConfig> & { key?: string }) => Promise<void>;
+  /** 앱을 켤 때 — 마지막 대화를 되살린다 */
+  restore: () => Promise<void>;
+  refreshList: () => Promise<void>;
+  open: (id: string) => Promise<void>;
+  newChat: () => void;
+  remove: (id: string) => Promise<void>;
+  send: (text: string) => Promise<void>;
+  stop: () => void;
+};
+
+/** 백엔드가 내주는 도구 명세 (MCP 모양). 한 번 받아 두고 쓴다 */
+type ToolSpec = { name: string; description: string; inputSchema: Record<string, unknown> };
+let specs: ToolSpec[] = [];
+let abort = false;
+const newId = () => "chat_" + Date.now().toString(36);
+
+export const useLlm = create<S>((set, get) => ({
+  cfg: null,
+  models: [],
+  modelsErr: "",
+  modelsLoading: false,
+  id: newId(),
+  wire: [],
+  lines: [],
+  list: [],
+  sending: false,
+  error: "",
+  ask: null,
+  cliSession: null,
+  cliSessionGone: false,
+
+  async loadConfig() {
+    try {
+      // 지침도 함께 받아 둔다 (두 경로가 같은 것을 쓰게 · 지금 표시 언어로)
+      void loadSystemPrompt();
+      set({ cfg: await api<LlmConfig>("/api/llm/config") });
+    } catch {
+      /* 백엔드가 아직 안 떴을 수 있다 — 다음에 다시 부른다 */
+    }
+  },
+
+  async loadModels(provider) {
+    const pid = provider ?? get().cfg?.provider;
+    if (!pid) return;
+    set({ modelsLoading: true, modelsErr: "" });
+    try {
+      const r = await api<{ models: ModelInfo[]; error?: string; fixed?: boolean }>(
+        `/api/llm/models?provider=${encodeURIComponent(pid)}`,
+      );
+      set({ models: r.models ?? [], modelsErr: r.error ?? (r.fixed ? t("settings.modelFixed") : "") });
+    } catch (e) {
+      set({ models: [], modelsErr: String((e as Error).message ?? e) });
+    } finally {
+      set({ modelsLoading: false });
+    }
+  },
+
+  async saveConfig(c) {
+    const cur = get().cfg;
+    const next = await api<LlmConfig>("/api/llm/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: c.provider ?? cur?.provider ?? "",
+        // ★모델은 **그 공급자 것**이다. 공급자만 바꿀 때는 안 보낸다 (저쪽 모델을 덮지 않게)
+        model: c.model ?? "",
+        // ★추론 강도도 **보낼 때만** 바뀐다 (빈 문자열은 "모델 기본값"이라는 뜻이라 유효한 값이다)
+        ...(c.effort === undefined ? {} : { effort: c.effort }),
+        // ★키는 **보낼 때만** 바뀐다 (undefined 면 그대로 둔다)
+        ...(c.key === undefined ? {} : { key: c.key }),
+      }),
+    });
+    set({ cfg: next });
+  },
+
+  async refreshList() {
+    try {
+      set({ list: (await api<{ items: ChatInfo[] }>("/api/chats")).items });
+    } catch {
+      /* 목록이 없어도 대화는 된다 */
+    }
+  },
+
+  async restore() {
+    // ★되살리는 동안 사용자가 먼저 움직였으면 **덮지 않는다.** 목록을 받아 오는 사이에
+    //   「새 대화」를 누르거나 말을 걸면, 뒤늦게 도착한 옛 대화가 화면을 되살려 버렸다
+    //   (실측 2026-08-08: 진짜 앱 테스트에서 지난 대화의 도구 줄이 통째로 되돌아왔다).
+    const mine = get().id;
+    await get().refreshList();
+    if (get().id !== mine || get().wire.length || get().sending) return;
+    const last = get().list[0];
+    if (last) await get().open(last.id);
+  },
+
+  async open(id) {
+    // ★턴이 도는 중에는 안 연다 — 돌던 응답이 **그 대화에 붙는다**
+    if (get().sending) return;
+    try {
+      const d = await api<{ id: string; wire: Wire[]; session?: string }>(`/api/chats/${id}`);
+      // ★세션 id 도 되살린다 — 이게 없으면 이어 열 때마다 CLI 가 첫 메시지부터 시작한다
+      set({
+        id: d.id,
+        wire: d.wire ?? [],
+        lines: linesOf(d.wire ?? []),
+        error: "",
+        ask: null,
+        cliSession: d.session || null,
+        cliSessionGone: false,
+      });
+      // ★열자마자 확인한다 — claude 는 기본 30일이 지난 기록을 지운다. 없어진 것을
+      //   모르고 말을 걸면 한 마디도 못 하고 죽는데, 그때는 까닭이 안 보인다.
+      if (d.session) {
+        const gone = await api<{ exists: boolean }>(`/api/cli/session/${d.session}`)
+          .then((r) => !r.exists)
+          .catch(() => false); // 못 물어봤으면 있다고 친다 — 멀쩡한 대화를 막지 않는다
+        // ★그 사이 사용자가 다른 대화로 갔으면 덮지 않는다 (restore 와 같은 함정)
+        if (gone && get().id === d.id) set({ cliSessionGone: true });
+      }
+    } catch {
+      /* 지워졌을 수 있다 — 새 대화로 둔다 */
+      get().newChat();
+    }
+  },
+
+  newChat() {
+    // ★턴이 도는 중에는 안 바꾼다 — 돌던 응답이 **새 대화에 붙는다** (2026-08-08 확인)
+    if (get().sending) return;
+    // ★CLI 세션도 함께 끊는다 — 안 그러면 새 대화인데 저쪽은 옛 맥락을 들고 있다
+    set({ id: newId(), wire: [], lines: [], error: "", ask: null, cliSession: null,
+          cliSessionGone: false });
+  },
+
+  async remove(id) {
+    await api(`/api/chats/${id}`, { method: "DELETE" });
+    await get().refreshList();
+    if (get().id === id) get().newChat();
+  },
+
+  async send(text) {
+    if (get().sending || !text.trim()) return;
+    abort = false;
+    const push = (m: Wire) => {
+      const wire = [...get().wire, m];
+      set({ wire, lines: linesOf(wire) });
+    };
+    push({ role: "user", content: [{ type: "text", text }] });
+    set({ sending: true, error: "" });
+
+    // ★로컬 CLI 로 도는 턴 — 도구 루프를 **저쪽이** 돈다. 우리는 흘러오는 것을 옮겨 적을 뿐이다
+    if (useCli.getState().engine === "cli") {
+      try {
+        await api("/api/cli/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: text,
+            system: SYSTEM,
+            exe: useCli.getState().exe ?? "",
+            resume: get().cliSession ?? "",
+            // 비우면 저쪽이 안 넘긴다 = CLI 기본값
+            model: useCli.getState().model,
+            effort: useCli.getState().effort,
+          }),
+        });
+      } catch (e) {
+        set({ error: String((e as Error).message ?? e), sending: false });
+      }
+      return; // 끝은 `exit` 이벤트가 알린다 (cliEvent)
+    }
+
+    try {
+      for (let round = 0; round < MAX_ROUNDS; round++) {
+        if (abort) break;
+        // ★도구 명세는 **백엔드가 정본**이다 (CLI 경로와 같은 것을 쓴다)
+        if (!specs.length) specs = (await api<{ tools: ToolSpec[] }>("/api/agent/tools")).tools ?? [];
+        const r = await api<{
+          text?: string;
+          tools?: { id: string; name: string; input: Record<string, unknown>; raw?: unknown }[];
+          error?: string;
+        }>("/api/llm/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            system: SYSTEM,
+            messages: get().wire,
+            tools: specs.map((t) => ({ name: t.name, description: t.description, schema: t.inputSchema })),
+          }),
+        });
+
+        if (r.error) {
+          // ★오류는 **대화에 남기지 않는다** — 다음 턴에 공급자로 되돌아가면 또 걸린다
+          set({ error: r.error });
+          break;
+        }
+
+        const calls = r.tools ?? [];
+        const parts: Part[] = [];
+        if (r.text) parts.push({ type: "text", text: r.text });
+        for (const c of calls)
+          parts.push({ type: "tool_use", id: c.id, name: c.name, input: c.input, raw: c.raw });
+        push({ role: "assistant", content: parts });
+        if (!calls.length) break;
+
+        // 도구 실행 — ★백엔드가 **데이터**를 만진다 (화면 조작이 아니다)
+        const results: Part[] = [];
+        for (const c of calls) {
+          const out = await api<Record<string, unknown>>("/api/agent/call", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: c.name, input: c.input }),
+          }).catch((e) => ({ error: String((e as Error).message ?? e) }));
+          results.push({
+            type: "tool_result",
+            tool_use_id: c.id,
+            content: JSON.stringify(out ?? { ok: true }),
+          });
+        }
+        push({ role: "user", content: results });
+      }
+    } catch (e) {
+      set({ error: String((e as Error).message ?? e) });
+    } finally {
+      set({ sending: false });
+      void save(get());
+    }
+  },
+
+  stop() {
+    abort = true;
+    set({ sending: false });
+    if (useCli.getState().engine === "cli")
+      void api("/api/cli/stop", { method: "POST" }).catch(() => {});
+  },
+}));
+
+/** CLI 가 흘려보내는 stream-json 한 줄을 받아 **wire 조각**으로 옮긴다.
+ *
+ *  ★도구 이름에서 `mcp__peropix__` 접두를 뗀다 — 화면에는 우리 도구 이름만 보여야 한다.
+ *  ★끝은 `exit` 이 알린다. `result` 는 세션 id 를 준다 (다음 턴 `--resume`). */
+export function cliEvent(ev: Record<string, any>) {
+  const st = useLlm.getState();
+  const push = (m: Wire) => {
+    const wire = [...useLlm.getState().wire, m];
+    useLlm.setState({ wire, lines: linesOf(wire) });
+  };
+  const strip = (n: string) => n.replace(/^mcp__peropix__/, "");
+
+  if (ev.type === "system" && ev.subtype === "init") {
+    if (ev.session_id) useLlm.setState({ cliSession: String(ev.session_id) });
+    return;
+  }
+  if (ev.type === "assistant") {
+    const blocks = (ev.message?.content ?? []) as Record<string, any>[];
+    const parts: Part[] = [];
+    for (const b of blocks) {
+      if (b.type === "text" && b.text?.trim()) parts.push({ type: "text", text: b.text });
+      else if (b.type === "tool_use")
+        parts.push({ type: "tool_use", id: String(b.id), name: strip(String(b.name)), input: b.input ?? {} });
+    }
+    if (parts.length) push({ role: "assistant", content: parts });
+    return;
+  }
+  if (ev.type === "user") {
+    const blocks = (ev.message?.content ?? []) as Record<string, any>[];
+    const parts: Part[] = [];
+    for (const b of blocks) {
+      if (b.type !== "tool_result") continue;
+      const body = Array.isArray(b.content)
+        ? b.content.map((c: Record<string, any>) => c.text ?? "").join("")
+        : String(b.content ?? "");
+      // ★도구가 실패했는지는 `is_error` 가 말해 준다 — 본문을 짐작하지 않는다
+      parts.push({
+        type: "tool_result",
+        tool_use_id: String(b.tool_use_id),
+        content: b.is_error ? JSON.stringify({ error: body.slice(0, 300) }) : body,
+      });
+    }
+    if (parts.length) push({ role: "user", content: parts });
+    return;
+  }
+  if (ev.type === "result") {
+    if (ev.session_id) useLlm.setState({ cliSession: String(ev.session_id) });
+    if (ev.is_error) useLlm.setState({ error: String(ev.result ?? "CLI 오류") });
+    return;
+  }
+  if (ev.type === "error") {
+    useLlm.setState({ error: String(ev.text ?? "") });
+    return;
+  }
+  // ★CLI 가 뱉은 말을 **버리지 않는다** (사용자 지적 2026-08-11). 예전에는 `stderr` 를
+  //   아예 안 받아서, 죽어도 화면에 "코드 -1 로 끝났습니다" 만 남고 **왜인지 알 길이 없었다.**
+  //   (`CLAUDE.md` 「실패를 조용히 넘기지 않는다」 — 그때도 아무 일이 안 일어나 원인을 못 찾았다)
+  if (ev.type === "stderr") {
+    const line = String(ev.text ?? "").trim();
+    if (line) cliErr = [...cliErr, line].slice(-8);
+    return;
+  }
+  if (ev.type === "exit") {
+    useLlm.setState({ sending: false });
+    if (ev.code && ev.code !== 0 && !st.error) {
+      const why = cliErr.join("\n");
+      useLlm.setState({
+        error: t("ai.cliExit", { code: String(ev.code) }) + (why ? "\n" + why : ""),
+      });
+    }
+    cliErr = [];
+    void save(useLlm.getState());
+    return;
+  }
+}
+
+/** CLI 가 뱉은 마지막 몇 줄 — 죽었을 때 **왜인지** 보여 주려고 들고 있는다.
+ *  ★스토어에 안 넣는다: 대화와 함께 저장될 값이 아니고, 다음 턴에 공급자로 되돌아가면 안 된다
+ *    (`useLlm.error` 를 대화에 안 담는 것과 같은 이유). */
+let cliErr: string[] = [];
+
+/** 한 턴이 끝날 때마다 통째로 저장한다 — 대화는 길어야 수십 줄이라 부분 저장이 필요 없다 */
+async function save(s: S) {
+  if (!s.wire.length) return;
+  try {
+    await api(`/api/chats/${s.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        wire: s.wire,
+        title: titleOf(s.wire),
+        session: s.cliSession ?? "",
+        // ★어디서 시작했는지 — 목록 라벨용 (백엔드가 첫 저장 때만 박는다)
+        workspace: useWs.getState().current,
+      }),
+    });
+    await useLlm.getState().refreshList();
+  } catch {
+    /* 저장이 실패해도 화면의 대화는 그대로 이어진다 */
+  }
+}
