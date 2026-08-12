@@ -10,6 +10,7 @@ import {
 } from "../store/imageInput";
 import { MaskEditor } from "../components/MaskEditor";
 import { fitSizeToBase } from "../store/gen";
+import { flashStyle, useFlash } from "../store/ui";
 import { VibeCache } from "./VibeCache";
 
 /** 이미지 입력 — Vibe Transfer · Precise Reference · 베이스 이미지.
@@ -134,7 +135,7 @@ export function ImageInputPanel() {
         />
       </Section>
 
-      <Section label={t("imgIn.base")} data-sec="base">
+      <Section label={t("imgIn.base")} data-sec="base" flashKey="base">
         {s.baseImage ? (
           <Card
             src={`data:image/png;base64,${s.baseImage}`}
@@ -211,9 +212,13 @@ export function ImageInputPanel() {
           image={s.baseImage}
           mask={s.baseMask}
           strength={s.baseStrength}
+          // ★워크스페이스에서 온 그림이면 「인페인트+」를 고를 수 있다 (서버가 그 파일을 자른다)
+          tile={!!s.baseFrom}
           onCancel={() => setMask(false)}
-          onApply={(m, strength) => {
+          onApply={(m, strength, rect) => {
             s.patchBase({ baseMask: m, baseStrength: strength });
+            s.setTileRect(rect);
+            s.setTilePlus(!!rect);
             setMask(false);
           }}
         />
@@ -239,16 +244,23 @@ function Section({
   label,
   on,
   onToggle,
+  flashKey,
   children,
   ...rest
 }: {
   label: string;
   on?: boolean;
   onToggle?: (v: boolean) => void;
+  /** 방금 이 자리가 바뀌었으면 강조한다 (`useUi.reveal`) */
+  flashKey?: string;
   children: React.ReactNode;
 } & Record<string, unknown>) {
+  const flash = useFlash(flashKey ?? "");
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)" }} {...rest}>
+    <div
+      style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)", ...flashStyle(!!flashKey && flash) }}
+      {...rest}
+    >
       <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)" }}>
         <span style={{ fontSize: "var(--text-xs)", fontWeight: "var(--w-semi)", color: "var(--ink-soft)" }}>
           {label}

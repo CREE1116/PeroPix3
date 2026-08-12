@@ -87,6 +87,8 @@ export function ImageActions({
       s.setBase(b64, name, upscale ?? null);
       // ★공홈처럼 **해상도를 그림에 맞춘다** — 안 맞추면 전송 직전 리샘플이 그림을 늘린다
       await fitSizeToBase(b64);
+      // ★그림이 들어간 자리도 보여 준다 — 우측 패널이 접혀 있으면 펴진다
+      useUi.getState().reveal("right", "base");
       s.patchBase({ baseMode: mode });
       if (mode === "inpaint") return setMaskOn(true); // 마스크부터 칠하고 나서 넘어간다
       useUi.getState().setMode("generate");
@@ -293,6 +295,7 @@ export function ImageActions({
           onApply={(m, strength, rect) => {
             useImageInput.getState().patchBase({ baseMask: m, baseStrength: strength });
             useImageInput.getState().setTileRect(rect);
+            useImageInput.getState().setTilePlus(!!rect);
             setMaskOn(false);
             useUi.getState().setMode("generate");
             onLeave?.();

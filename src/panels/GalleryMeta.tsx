@@ -5,6 +5,7 @@ import { useGen } from "../store/gen";
 import { useGallery, type ImageMeta } from "../store/gallery";
 import { CHAR_COLORS, usePrompt, type Char } from "../store/prompt";
 import { useImageInput } from "../store/imageInput";
+import { useUi } from "../store/ui";
 
 /** 그림 정보 — 우 패널. 고른 **한 장**의 메타데이터를 보여주고, 프롬프트로 되돌린다.
  *
@@ -173,6 +174,8 @@ export function applyMeta(m: ImageMeta, what: "prompt" | "all" = "all") {
     chars,
   });
 
+  // ★프롬프트가 통째로 바뀐다 — 좌측 패널을 펴고 알린다 (사용자 지시 2026-08-13)
+  useUi.getState().reveal("left", "prompt");
   if (what === "prompt") return;
 
   // 설정 — 있는 것만 덮는다. 없는 값을 기본값으로 되돌리면 사용자가 잡아 둔 것이 날아간다.

@@ -104,6 +104,11 @@ type S = Persisted & {
   setFont: (f: FontId) => void;
   toggleLeft: () => void;
   toggleRight: () => void;
+  /** 방금 바뀐 자리들 — 키를 담아 두고 잠깐 뒤 스스로 지운다 */
+  flashes: string[];
+  /** ★**바꿨으면 보여 준다.** 접힌 패널을 펴고 그 자리를 잠깐 강조한다 (사용자 지시 2026-08-13).
+   *  말없이 값만 바뀌면 사용자는 자기가 고른 것을 잃은 줄 안다. */
+  reveal: (side: "left" | "right", key: string) => void;
   /** 드래그가 끝났을 때만 저장한다 — 매 프레임 localStorage 를 때리지 않는다. */
   commitLayout: () => void;
 };
@@ -147,6 +152,14 @@ export const useUi = create<S>((set, get) => ({
     set({ rightCollapsed: !get().rightCollapsed });
     get().commitLayout();
   },
+  flashes: [],
+  reveal: (side, key) => {
+    const patch = side === "left" ? { leftCollapsed: false } : { rightCollapsed: false };
+    set({ ...patch, flashes: [...new Set([...get().flashes, key])] });
+    get().commitLayout();
+    // ★스스로 꺼진다 — 강조가 남아 있으면 다음에 바뀐 것과 구별이 안 된다
+    setTimeout(() => set({ flashes: get().flashes.filter((k) => k !== key) }), 2200);
+  },
   commitLayout: () => {
     const { leftWidth, rightWidth, leftCollapsed, rightCollapsed, cols, laneStep, laneHeight, font, aiWidth, aiCollapsed } =
       get();
@@ -169,3 +182,19 @@ export const useUi = create<S>((set, get) => ({
     } catch {}
   },
 }));
+
+/** 방금 바뀐 자리인가 — 강조 스타일을 붙일 때 쓴다.
+ *  ★모양은 한 곳에서만 정한다 (`flashStyle`) — 자리마다 다르게 강조하면 학습 대상이 된다. */
+export const useFlash = (key: string) => useUi((s) => s.flashes.includes(key));
+
+/** 강조 — 액센트 테두리 + 옅은 바탕. 레이아웃을 밀지 않도록 **outline** 을 쓴다 */
+export const flashStyle = (on: boolean): React.CSSProperties =>
+  on
+    ? {
+        outline: "2px solid var(--accent)",
+        outlineOffset: 3,
+        borderRadius: "var(--r-2)",
+        background: "var(--accent-bg)",
+        transition: "outline-color 0.2s, background 0.2s",
+      }
+    : {};

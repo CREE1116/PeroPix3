@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { MODELS, NAI_MAX, SIZE_PRESETS, alignTo64, useGen } from "../store/gen";
 import { Icon } from "../components/Icon";
 import { ImageInputPanel } from "./ImageInputPanel";
+import { flashStyle, useFlash } from "../store/ui";
 
 const SAMPLERS = ["k_euler_ancestral", "k_euler", "k_dpmpp_2m", "k_dpmpp_2m_sde", "k_dpmpp_2s_ancestral", "k_dpmpp_sde"];
 const SCHEDULERS = ["karras", "native", "exponential", "polyexponential"];
@@ -28,7 +29,7 @@ export function OptionsPanel() {
         />
       </Group>
 
-      <Group label={t("options.resolution")}>
+      <Group label={t("options.resolution")} flashKey="size">
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "var(--sp-2)" }}>
           {SIZE_PRESETS.flatMap((g) => g.items).map(([w, h, star]) => {
             const on = p.width === w && p.height === h;
@@ -76,9 +77,9 @@ export function OptionsPanel() {
         {/* ★직접 입력 — NAI 는 64 배수만 받는다. 입력을 떠날 때 올려 맞추고 그 값을 보여 준다
             (서버도 같은 정렬을 하지만, 무엇이 갈지 지금 보여야 한다) */}
         <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
-          <NumBox value={p.width} onCommit={(v) => set("width", alignTo64(v))} />
+          <NumBox data-size="w" value={p.width} onCommit={(v) => set("width", alignTo64(v))} />
           <span style={{ color: "var(--ink-faint)", fontSize: "var(--text-2xs)" }}>×</span>
-          <NumBox value={p.height} onCommit={(v) => set("height", alignTo64(v))} />
+          <NumBox data-size="h" value={p.height} onCommit={(v) => set("height", alignTo64(v))} />
           <Hint>{t("options.sizeHint")}</Hint>
         </div>
       </Group>
@@ -149,9 +150,22 @@ export function OptionsPanel() {
   );
 }
 
-function Group({ label, children }: { label: string; children: React.ReactNode }) {
+function Group({
+  label,
+  flashKey,
+  children,
+}: {
+  label: string;
+  /** 방금 이 자리가 바뀌었으면 강조한다 (`useUi.reveal`) */
+  flashKey?: string;
+  children: React.ReactNode;
+}) {
+  const on = useFlash(flashKey ?? "");
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
+    <div
+      data-flash={flashKey && on ? "" : undefined}
+      style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)", ...flashStyle(!!flashKey && on) }}
+    >
       <span style={{ fontSize: "var(--text-xs)", fontWeight: "var(--w-semi)", color: "var(--ink-soft)" }}>
         {label}
       </span>
@@ -251,11 +265,16 @@ function Select({
 
 /** 숫자 직접 입력 — **떠날 때 확정한다.** 타이핑 중 정렬하면 "8" 을 치는 순간 64 로
  *  튀어 이어서 못 친다 (v2 도 input 이 아니라 change 에서 맞춘다). */
-function NumBox({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
+function NumBox({
+  value,
+  onCommit,
+  ...rest
+}: { value: number; onCommit: (v: number) => void } & Record<string, unknown>) {
   const [text, setText] = useState(String(value));
   useEffect(() => setText(String(value)), [value]);
   return (
     <input
+      {...rest}
       value={text}
       onChange={(e) => setText(e.target.value)}
       onBlur={() => onCommit(parseInt(text) || value)}

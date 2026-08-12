@@ -95,6 +95,9 @@ export async function fitSizeToBase(b64: string): Promise<void> {
   const next = sizeForBase(size.w, size.h, { width: cur.width, height: cur.height });
   if (!next) return;
   useGen.setState({ params: { ...useGen.getState().params, ...next } });
+  // ★바꿨으면 **어디가 바뀌었는지 보여 준다** (사용자 지시 2026-08-13) —
+  //   우측 패널을 펴고 해상도 자리를 잠깐 강조한다
+  useUi.getState().reveal("right", "size");
   toast(t("imgIn.sizeFitted", { w: String(next.width), h: String(next.height) }));
 }
 
