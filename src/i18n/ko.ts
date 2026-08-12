@@ -174,7 +174,7 @@ export const ko: Dict = {
     size: "해상도",
     magnitude: "강도 단계",
     advanced: "고급 — 강도·노이즈를 직접",
-    hint: "i2i 강도 {s} · 노이즈 {n} 로 다시 그립니다. 결과는 원본의 버전으로 붙습니다.",
+    hint: "i2i 강도 {s} · 노이즈 {n} 로 다시 그립니다. 결과는 새 그림으로 저장됩니다.",
     run: "인핸스 실행",
     button: "인핸스",
   },
@@ -184,7 +184,7 @@ export const ko: Dict = {
     button: "업스케일",
     hint: "가로세로 4배로 키웁니다 ({a} Anlas). 다시 그리지 않아 그림이 안 바뀝니다.",
     tooLarge: "1024×1024 보다 큰 그림은 업스케일할 수 없습니다.",
-    done: "업스케일 완료 — 원본의 다음 판으로 붙였습니다",
+    done: "업스케일 완료 — 새 그림으로 저장했습니다",
   },
 
   gen: {
@@ -200,6 +200,7 @@ export const ko: Dict = {
     cacheHint: "누르면 그대로 씁니다 — 다시 굽지 않아 Anlas가 안 나갑니다",
     cacheEmpty: "아직 구운 것이 없습니다.",
     cacheUse: "이 인코딩을 그대로 쓰기",
+    tileHint: "이 사각형 안만 NAI 로 갑니다 — 밖은 원본 그대로입니다. 끌면 옮겨지고, 누르면 크기가 바뀝니다.",
     maskApply: "마스크 적용",
     maskCancel: "취소",
     vibe: "Vibe Transfer",

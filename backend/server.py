@@ -247,14 +247,20 @@ class GenBody(BaseModel):
     cell_no: int | None = None
     # 멀티의 캐릭터 이름 — 저장 경로 한 칸이 된다 (`멀티/<캐릭터>/<포즈세트>/`)
     char: str | None = None
-    # ★강화(Enhance)의 **원본 파일**. 이 값이 있으면 그 그림의 **버전**으로 묶인다.
-    #   버전을 또 강화해도 **뿌리 하나**를 가리켜야 스택이 평평하다 (v2 `enhance_group`).
+    # 이 그림이 **어느 그림에서 나왔나** (강화·업스케일·인페인트의 원본 파일).
+    # ★**묶는 데 쓰지 않는다.** 결과는 언제나 **각각 별개의 그림**으로 보인다
+    #   (사용자 결정 2026-08-13 — v2 의 버전 스택 `1/n` 은 작업할 때 오히려 불편하다).
+    #   여기 남기는 것은 출처 기록뿐이다. 화면에서 이 값으로 묶는 코드를 만들지 말 것.
     enhance_of: str | None = None
     # ★강화의 **원본 파일 경로**. 주면 서버가 그 파일을 읽어 베이스 이미지로 쓴다 —
     #   화면이 4.6MB base64 를 실어 보내지 않아도 되고, 배치로 여러 장을 돌릴 수 있다.
     enhance_from: str | None = None
     # 1.0 이면 그대로, 1.5 면 그 배로 키워서 (64 배수로 맞춘다)
     enhance_scale: float = 1.0
+    # ★타일 인페인트 — 고칠 그림의 **파일 경로**와 원본 좌표계의 **크롭 사각형**.
+    #   둘 다 있어야 타일 경로를 탄다. 없으면 지금까지의 인페인트 그대로다.
+    inpaint_from: str | None = None
+    inpaint_rect: dict | None = None
     # ★화면이 결과를 묶는 **진짜 키**. 폴더는 사람이 읽을 수 있게 이름을 그대로 쓰지만,
     #   이름은 바뀌므로 이름으로 묶으면 이름을 고치는 순간 결과가 화면에서 사라진다.
     #   (옛 레코드에는 없다 — 클라이언트가 id 우선·이름 폴백으로 읽는다)
@@ -863,6 +869,40 @@ async def _generate_one(body: GenBody) -> dict:
         req.width = nai.align64(math.floor(w * sc))
         req.height = nai.align64(math.floor(h * sc))
 
+    # ★타일 인페인트 — **잘라낸 조각만** 보내고 결과를 원본 자리에 되붙인다.
+    #   정본은 `docs/naia-bgcomp-survey.md` 5절. 없던 것은 「원본 해상도를 지킨 채 일부만
+    #   고치는 것」이다: 지금 경로는 원본 전체를 보내고 NAI 가 요청 크기로 **줄여서** 그려
+    #   2048×3072 짜리 그림을 고치면 832×1216 축소본이 결과가 된다 (같은 문서 4절).
+    #   ★사각형이 없으면 **지금 동작 그대로** 간다 — 옛 세션의 「부분 수정」이 안 바뀐다.
+    tile_src: Image.Image | None = None
+    tile_rect: tuple[int, int, int, int] | None = None
+    if body.inpaint_from and body.inpaint_rect:
+        p = store.file_path(body.workspace, body.inpaint_from)
+        if not p:
+            raise HTTPException(404, "고칠 그림을 찾지 못했습니다")
+        tile_src = Image.open(p)
+        tile_src.load()
+        x, y, w, h = imgutil.fit_tile_rect(body.inpaint_rect, *tile_src.size)
+        if not req.base_mask:
+            raise HTTPException(400, "마스크가 없습니다 — 고칠 자리를 칠해 주세요")
+        # ★마스크는 **원본 크기**로 받아 여기서 자른다. 자르는 주체가 둘이면 사각형이
+        #   어긋났을 때 어디서 틀렸는지 알 수 없다 (조사 문서 5-1절)
+        with Image.open(io.BytesIO(base64.b64decode(req.base_mask))) as _m:
+            _m.load()
+            mask_full = _m.convert("L")
+        if mask_full.size != tile_src.size:
+            mask_full = mask_full.resize(tile_src.size, Image.NEAREST)
+        mask_tile = imgutil.crop_to_base64(mask_full, x, y, w, h)
+        if not imgutil.mask_has_white(mask_tile):
+            # ★익스텐션은 사각형 밖에 칠한 마스크를 조용히 버린다. 우리는 세운다
+            raise HTTPException(400, "사각형 안에 칠한 곳이 없습니다 — 사각형을 옮기거나 더 칠해 주세요")
+        req.base_image = imgutil.crop_to_base64(tile_src, x, y, w, h)
+        req.base_mask = mask_tile
+        req.base_mode = "inpaint"
+        # ★이 두 줄이 설계의 전부다 — 요청 크기가 타일이 되는 순간 NAI 가 줄일 것이 없어진다
+        req.width, req.height = w, h
+        tile_rect = (x, y, w, h)
+
     # ★vibe 인코딩은 **조립 전에** 한다 — 유료 호출이라 캐시 판정이 여기서 끝나야 한다
     await nai.encode_vibes(req, nai_token(), vibes)
     payload = nai.build_payload(req)
@@ -876,6 +916,15 @@ async def _generate_one(body: GenBody) -> dict:
             png = imgutil.composite_inpaint(png, payload["parameters"]["image"], req.base_mask)
         except Exception as e:
             print(f"[인페인트] 합성하지 못했습니다 ({e}) — NAI 결과를 그대로 씁니다")
+
+    # ★타일을 원본 자리에 되붙인다 — 합성(위)은 **타일 안에서** 이미 끝났다.
+    #   합성한 타일을 붙이므로 타일 테두리에도 원본이 그대로 남아 솔기가 없다
+    #   (사용자 결정 2026-08-13: 타일 통째 덮어쓰기가 아니라 소프트 마스크 합성).
+    if tile_src is not None and tile_rect is not None:
+        try:
+            png = imgutil.paste_tile(tile_src, png, tile_rect[0], tile_rect[1])
+        finally:
+            tile_src.close()
 
     # ★싱글/멀티를 갈라 저장한다 (`workspace.out_dir` 주석). 멀티는 슬롯 폴더 대신
     #   **파일 앞 슬롯 번호**를 쓰고, 이름은 시각이 아니라 **순번**이다.

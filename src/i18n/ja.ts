@@ -184,7 +184,7 @@ export const ja: Dict = {
     button: "アップスケール",
     hint: "縦横 4 倍に拡大します（{a} Anlas）。描き直さないので絵は変わりません。",
     tooLarge: "1024×1024 より大きい画像はアップスケールできません。",
-    done: "アップスケール完了 — 元画像の次の版として追加しました",
+    done: "アップスケール完了 — 新しい画像として保存しました",
   },
 
   gen: {
@@ -200,6 +200,7 @@ export const ja: Dict = {
     cacheHint: "押すとそのまま使います（再エンコードなし）",
     cacheEmpty: "まだありません。",
     cacheUse: "このエンコードを使う",
+    tileHint: "この四角の中だけが NAI に送られます — 外は元のままです。ドラッグで移動、クリックでサイズ変更。",
     maskApply: "マスクを適用",
     maskCancel: "キャンセル",
     vibe: "Vibe Transfer",

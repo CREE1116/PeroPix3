@@ -166,6 +166,76 @@ def quantize_mask_8px(b64_mask: str, width: int, height: int) -> str:
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
+#: 인페인트 타일 한 장의 상한 — 1024×1024. 공홈 Focused Inpainting 과 같은 한도이고,
+#: Opus 무료 판정(`src/lib/anlas.ts`)도 이 값을 본다. 넘기면 아낄 것 없이 요금만 는다.
+TILE_MAX_PX = 1_048_576
+
+
+def fit_tile_rect(rect: dict, iw: int, ih: int) -> tuple[int, int, int, int]:
+    """크롭 사각형을 **보낼 수 있는 형태**로 다듬는다 — 64 배수 · 그림 안 · 1MP 이하.
+
+    ★화면이 준 값을 그대로 믿지 않는다. 요금이 걸린 값이고(1MP 를 넘으면 Opus 무료가
+      깨진다), 64 배수가 아니면 NAI 가 거절한다.
+    ★**중심을 지킨 채** 줄인다 — 마스크를 감싸라고 잡은 사각형이라 한쪽 모서리를 깎으면
+      칠한 자리가 밖으로 밀려난다."""
+    x, y, w, h = (int(rect.get(k, 0)) for k in ("x", "y", "w", "h"))
+    cx, cy = x + w / 2, y + h / 2
+
+    # 64 배수로 내린다 (올리면 상한을 넘길 수 있다). 그림보다 크면 그림에 맞춘다
+    w = max(64, min(int(w) // 64 * 64, iw // 64 * 64 or 64))
+    h = max(64, min(int(h) // 64 * 64, ih // 64 * 64 or 64))
+
+    # 1MP 를 넘으면 **비율을 지킨 채** 64 배수 단위로 줄인다
+    while w * h > TILE_MAX_PX and (w > 64 or h > 64):
+        if w >= h and w > 64:
+            w -= 64
+        elif h > 64:
+            h -= 64
+        else:
+            break
+
+    x = int(round(cx - w / 2))
+    y = int(round(cy - h / 2))
+    # 그림 안으로 밀어 넣는다 (경계에 붙는다)
+    x = max(0, min(x, iw - w))
+    y = max(0, min(y, ih - h))
+    return x, y, w, h
+
+
+def crop_to_base64(img: Image.Image, x: int, y: int, w: int, h: int) -> str:
+    """타일을 잘라 PNG base64 로. ★마스크로 지우지 않은 **원본 픽셀 그대로** 보낸다."""
+    tile = img.crop((x, y, x + w, y + h))
+    if tile.mode not in ("RGB", "RGBA"):
+        tile = tile.convert("RGB")
+    buf = io.BytesIO()
+    tile.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
+def mask_has_white(b64_mask: str) -> bool:
+    """마스크에 칠한 곳이 있나 — 타일 안이 비었으면 생성을 세운다.
+
+    ★익스텐션은 사각형 밖에 칠한 마스크를 **조용히 버린다**(조사 문서 1절). 우리는 세운다."""
+    with Image.open(io.BytesIO(base64.b64decode(b64_mask))) as m:
+        return m.convert("L").getextrema()[1] >= 155
+
+
+def paste_tile(src: Image.Image, tile_png: bytes, x: int, y: int) -> bytes:
+    """되그린 타일을 원본 좌표에 얹어 **원본 크기** PNG 를 만든다.
+
+    ★해상도를 지키는 것이 이 기능의 전부다 — 원본은 손대지 않고 타일 자리만 갈아 끼운다.
+    ★NAI 응답의 tEXt 청크를 결과에 **옮겨 싣는다.** 잃으면 공홈이 자기 이미지로 인식하지
+      못하고 우리 「설정까지」 재현도 깨진다 (`composite_inpaint` 와 같은 이유)."""
+    with Image.open(io.BytesIO(tile_png)) as tile:
+        tile.load()
+        info = tile.info
+        out = src.convert("RGB").copy()
+        out.paste(tile.convert("RGB"), (x, y))
+    buf = io.BytesIO()
+    out.save(buf, format="PNG", pnginfo=_pnginfo_of(info))
+    return buf.getvalue()
+
+
 def size_of_base64(b64: str) -> tuple[int, int]:
     """base64 이미지의 크기. 진단 로그용."""
     with Image.open(io.BytesIO(base64.b64decode(b64))) as img:

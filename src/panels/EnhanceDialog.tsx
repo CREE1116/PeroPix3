@@ -26,7 +26,8 @@ const MAGNITUDE: Record<number, { strength: number; noise: number }> = {
  *  ★**원본을 미리 확대해 보내지 않는다** (`docs/nai-web-reference.md` 6절). 서버가 저장된
  *    원본을 그대로 보내고 width/height 만 키운다 — 예전 주석의 "캔버스로 먼저 키운다"는 폐기됐다.
  *  ★배율도 1.5 고정이 아니다. 원본 크기가 정한다 (`lib/enhance.ts`).
- *  ★결과는 새 카드가 아니라 **원본의 버전**으로 붙는다 (`enhance_of`).
+ *  ★결과는 **새 그림**이다. 어느 그림에서 나왔는지만 `enhance_of` 에 남기고, 화면은
+ *    묶지 않는다 (사용자 결정 2026-08-13: v2 의 버전 스택 `1/n` 은 작업할 때 불편하다).
  */
 export function EnhanceDialog({
   files,

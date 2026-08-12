@@ -82,7 +82,9 @@ export function ImageActions({
     try {
       const b64 = await asBase64();
       const s = useImageInput.getState();
-      s.setBase(b64, name);
+      // ★워크스페이스 파일이면 **경로도 함께** 넘긴다 — 타일 인페인트가 그 파일을 서버에서
+      //   열어 사각형 안만 잘라 보낸다 (밖에서 떨군 그림에는 경로가 없다)
+      s.setBase(b64, name, upscale ?? null);
       s.patchBase({ baseMode: mode });
       if (mode === "inpaint") return setMaskOn(true); // 마스크부터 칠하고 나서 넘어간다
       useUi.getState().setMode("generate");
@@ -283,9 +285,12 @@ export function ImageActions({
           image={useImageInput.getState().baseImage}
           mask={useImageInput.getState().baseMask}
           strength={useImageInput.getState().baseStrength}
+          // ★타일은 **워크스페이스 파일**일 때만 — 서버가 그 파일을 열어 자른다
+          tile={!!upscale}
           onCancel={() => setMaskOn(false)}
-          onApply={(m, strength) => {
+          onApply={(m, strength, rect) => {
             useImageInput.getState().patchBase({ baseMask: m, baseStrength: strength });
+            useImageInput.getState().setTileRect(rect);
             setMaskOn(false);
             useUi.getState().setMode("generate");
             onLeave?.();

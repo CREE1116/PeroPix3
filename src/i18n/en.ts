@@ -174,7 +174,7 @@ export const en = {
     size: "Size",
     magnitude: "Magnitude",
     advanced: "Advanced — set strength and noise",
-    hint: "Redraws at i2i strength {s}, noise {n}. The result attaches as a version of the original.",
+    hint: "Redraws at i2i strength {s}, noise {n}. The result is saved as a new image.",
     run: "Enhance",
     button: "Enhance",
   },
@@ -184,7 +184,7 @@ export const en = {
     button: "Upscale",
     hint: "Enlarges 4x in each direction ({a} Anlas). Nothing is redrawn, so the image stays the same.",
     tooLarge: "Images larger than 1024×1024 cannot be upscaled.",
-    done: "Upscaled — added as the next version of the original",
+    done: "Upscaled — saved as a new image",
   },
 
   gen: {
@@ -200,6 +200,7 @@ export const en = {
     cacheHint: "Click to reuse — no re-encoding, no Anlas",
     cacheEmpty: "Nothing baked yet.",
     cacheUse: "Reuse this encoding",
+    tileHint: "Only this rectangle goes to NAI — everything outside stays as-is. Drag to move it, click to change its size.",
     maskApply: "Apply mask",
     maskCancel: "Cancel",
     vibe: "Vibe Transfer",
