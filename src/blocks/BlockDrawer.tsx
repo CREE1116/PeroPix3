@@ -285,7 +285,6 @@ function Row({ it, onRemove }: { it: LibItem; onRemove: () => void }) {
             {it.label}
           </span>
         )}
-        <span style={{ color: "var(--ink-faint)" }}>{it.tags.length}</span>
         <button
           data-lib-del={it.id}
           onPointerDown={(e) => e.stopPropagation()}

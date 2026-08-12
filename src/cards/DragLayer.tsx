@@ -37,9 +37,6 @@ export function DragLayer() {
         }}
       >
         {drag.item?.label ?? drag.block?.label}
-        {drag.block && (
-          <span style={{ marginLeft: 6, color: "var(--ink-faint)" }}>{drag.block.tags.length}</span>
-        )}
       </div>
     );
   }

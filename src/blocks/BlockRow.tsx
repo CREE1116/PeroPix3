@@ -253,9 +253,8 @@ export function BlockRow({
           <span style={{ flex: 1 }} />
         )}
 
-        <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
-          {block.tags.length}
-        </span>
+        {/* ★태그 개수를 적지 않는다 (사용자 지시 2026-08-13) — 접혀 있으면 요약이 이미
+            보이고 펼치면 칩이 다 보인다. 한 줄에 정보가 너무 많았다 */}
         <button
           onClick={(e) => {
             e.stopPropagation();
