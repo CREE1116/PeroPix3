@@ -91,9 +91,10 @@ export async function fitSizeToBase(b64: string): Promise<void> {
     im.src = "data:image/png;base64," + b64;
   });
   if (!size) return;
+  const next = sizeForBase(size.w, size.h);
   const cur = useGen.getState().params;
-  const next = sizeForBase(size.w, size.h, { width: cur.width, height: cur.height });
-  if (!next) return;
+  // ★이미 그 값이면 아무 말도 하지 않는다 — 바뀐 게 없는데 알리면 소음이다
+  if (!next || (next.width === cur.width && next.height === cur.height)) return;
   useGen.setState({ params: { ...useGen.getState().params, ...next } });
   // ★바꿨으면 **어디가 바뀌었는지 보여 준다** (사용자 지시 2026-08-13) —
   //   우측 패널을 펴고 해상도 자리를 잠깐 강조한다

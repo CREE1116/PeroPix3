@@ -1,66 +1,58 @@
-/** 베이스 그림을 넣을 때 **해상도를 맞춘다** — 공홈 이식 (`chunks/3811` 의 등록 훅).
+/** 베이스 그림을 넣을 때 **해상도를 맞춘다**.
  *
- *  ★공홈은 그림을 넣으면 해상도 값을 **자동으로 채워 준다.** 잠그지 않는다 —
- *    채워 놓기만 하고 사용자가 그 뒤에 바꿀 수 있다. (v2 는 원본 크기를 넣고 칸을
- *    잠갔는데, 그건 v2 의 선택이고 공홈과 다르다.)
- *  ★3.0 에는 이 단계가 통째로 없었다. 그래서 2048×2048 그림을 832×1216 설정에 넣으면
- *    전송 직전 리샘플이 **비율을 무시하고 늘려** 그림이 눌렸다 (실측 2026-08-13).
+ *  ★공홈 규칙을 그대로 베끼지 않는다 (사용자 결정 2026-08-13). 공홈은 「1216 / 896 상자」에
+ *    떨어뜨리는데, 그 규칙이 **비율을 뭉갠다.** 실측으로 확인했다:
  *
- *  번들 원문의 판정을 그대로 옮긴다:
+ *      800×3200 (1:4) 을 넣으면  →  공홈은 **512×512**  (원이 타원이 된다)
+ *                                   우리는  512×2048 (1:4 그대로, 1MP 딱)
  *
- *      가로가 길면 세로 기준으로 눕혀 계산하고, 끝에 되돌린다
- *      지금 설정과 비율이 같고 그림이 설정보다 작으면  →  손대지 않는다
- *      64 배수이고 픽셀이 상한 이하                    →  그 크기 그대로
- *      아니면 1216 / 896 상자에 비율을 맞춰 넣는다     →  둘 다 안 되면 512×512
+ *    431개 크기로 훑어 본 결과 — 공홈 규칙은 55%(238건)에서 값이 붙고 99건에서 비율이 3%
+ *    넘게 어긋난다(최대 3,952%). 우리 규칙은 값 0건, 비율 오차 최대 6%(아주 작은 그림뿐).
+ *  ★못 그려서가 아니다. NAI 는 1:40(64×2560)도 그려 준다 — API 로 직접 확인했다.
+ *
+ *  규칙: **비율을 지키며 1MP(공짜 구간) 안에서 가장 알맞은 64 배수 크기.**
+ *   - 이미 64 배수이고 1MP 이하면 손대지 않는다.
+ *   - 후보(64 배수)를 훑어 **비율 오차가 가장 작은 것**을 고르고, 같으면 원본 면적에 가까운 것.
+ *   - 키우는 것은 512 까지만 — 64 격자가 성겨서 작은 그림은 조금 키워야 비율이 산다
+ *     (151×122 를 원본 이하로만 맞추면 64×64 로 뭉개진다).
  */
 import { alignTo64 } from "./align.ts";
 
-/** 그림을 그대로 쓸 수 있는 픽셀 상한 (공홈 `xM`). 이보다 크면 상자에 맞춰 줄인다 */
-export const MAX_INGEST_PX = 3_145_728;
-/** 상자 — 세로 기준 1216, 가로 기준 896 (SD 계열이면 768/512 지만 우리는 V4.5 뿐이다) */
-const BOX_LONG = 1216;
-const BOX_SHORT = 896;
+/** Opus 무료 구간 — 여기 안에 있으면 값이 안 나간다 */
+export const FREE_PIXELS = 1_048_576;
+/** 작은 그림을 키워도 되는 한도 (NAI 의 가장 작은 표준 크기) */
+const GROW_TO = 512;
 
 export type Size = { width: number; height: number };
 
-/** 이 그림을 넣었을 때 해상도를 무엇으로 바꿀까. **null 이면 손대지 않는다.** */
-export function sizeForBase(iw: number, ih: number, cur: Size): Size | null {
+/** 이 그림을 넣었을 때 쓸 해상도. **언제나 값을 돌려준다** (못 정하면 null).
+ *
+ *  ★"지금 설정과 같은가"는 **부르는 쪽이 본다.** 예전에는 같으면 null 을 돌려줬는데,
+ *    그러면 null 이 「안 바꿔도 된다」와 「손댈 수 없다」 두 뜻을 겸해서, 부르는 쪽이
+ *    원본 크기를 그대로 쓰는 사고가 났다 (회귀가 잡았다). */
+export function sizeForBase(iw: number, ih: number): Size | null {
   if (!iw || !ih) return null;
-  let e = iw;
-  let a = ih;
-  const o = iw / ih;
-  // 가로가 길면 눕혀서 계산한다 (상자는 세로 기준으로 쓰여 있다)
-  if (o > 1) {
-    const t = e;
-    e = a;
-    a = t;
+  // 이미 64 배수 + 공짜 구간이면 그대로 쓴다 (가장 좋은 값이 이미 손에 있다)
+  if (iw % 64 === 0 && ih % 64 === 0 && iw * ih <= FREE_PIXELS) {
+    return { width: iw, height: ih };
   }
-  const n = e / a;
 
-  // ★비율이 이미 같고 그림이 지금 설정 안에 들어가면 **그대로 둔다** (공홈 조건 그대로)
-  if (cur.width / cur.height === o && e <= cur.width && a <= cur.height) return null;
+  const ar = iw / ih;
+  const target = Math.min(iw * ih, FREE_PIXELS);
+  const maxW = Math.max(iw, GROW_TO);
+  const maxH = Math.max(ih, GROW_TO);
+  let best: { err: number; gap: number; size: Size } | null = null;
 
-  if (e % 64 === 0 && a % 64 === 0 && e * a <= MAX_INGEST_PX) {
-    // 그 크기 그대로 쓴다
-  } else {
-    const s = alignTo64(BOX_LONG * n);
-    const o2 = alignTo64(BOX_SHORT / n);
-    if (Math.abs(s / BOX_LONG - n) < Math.abs(BOX_SHORT / o2 - n) && s * BOX_LONG <= MAX_INGEST_PX) {
-      e = s;
-      a = BOX_LONG;
-    } else if (BOX_SHORT * o2 <= MAX_INGEST_PX) {
-      e = BOX_SHORT;
-      a = o2;
-    } else {
-      e = 512;
-      a = 512;
+  for (let w = 64; w <= 4096; w += 64) {
+    const h = alignTo64(w / ar);
+    const px = w * h;
+    if (px > FREE_PIXELS || w > maxW || h > maxH) continue;
+    // ★비율이 먼저다 — 면적을 키우려다 그림이 눌리면 아무 소용이 없다
+    const err = Math.round((Math.abs(w / h - ar) / ar) * 1000) / 1000;
+    const gap = Math.abs(px - target);
+    if (!best || err < best.err || (err === best.err && gap < best.gap)) {
+      best = { err, gap, size: { width: w, height: h } };
     }
   }
-
-  if (o > 1) {
-    const t = e;
-    e = a;
-    a = t;
-  }
-  return { width: e, height: a };
+  return best ? best.size : null;
 }
