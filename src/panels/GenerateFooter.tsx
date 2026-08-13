@@ -9,6 +9,7 @@ import { allCells, useWs } from "../store/workspace";
 import { useImageInput } from "../store/imageInput";
 import { useUi, PER_SLOT_MAX } from "../store/ui";
 import { anlasCost } from "../lib/anlas";
+import { focusedPlan } from "../lib/focused";
 import { useSub } from "../store/sub";
 import { Icon } from "../components/Icon";
 
@@ -28,7 +29,7 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
   const t = useI18n((s) => s.t);
   // 구독 상태는 **스토어 하나**가 들고 있다 (업스케일 값 표시도 같은 곳을 본다)
   const sub = useSub((s) => s.sub);
-  const { params, set, busy, error, generateAll, queueSingle } = useGen();
+  const { params, set, busy, error, generateAll, queueSingle, queueInpaint } = useGen();
   const { progress, cancel, clear } = useQueue();
   const tab = useWs((s) => s.activeTab());
   const img = useImageInput();
@@ -42,9 +43,19 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
   //   슬롯이 없을 뿐 쓰임은 같아서 `perSlot` 을 그대로 쓴다 — 값을 둘로 나누면 어느 쪽이
   //   먹는지 헷갈린다.
   const count = isSet ? slots * perSlot : perSlot;
+  /** ★Focused 는 **사각형에서 요청 크기가 나온다**. 해상도 칸(최종 저장 크기)이 아니라
+   *  이 값으로 값을 매겨야 실제 청구와 맞는다 (`lib/focused.ts`) */
+  const req =
+    img.baseMode === "inpaint" && img.focused && img.tileRect
+      ? focusedPlan(img.tileRect).req
+      : { width: params.width, height: params.height };
+  /** 마스크를 칠하는 중. 생성 버튼이 「인페인트」가 된다 */
+  const editing = img.editing;
+  // 아무것도 안 칠해도 사각형이 있으면 보낼 수 있다 (안쪽 전체를 다시 그린다)
+  const canInpaint = !!img.baseMask || (img.focused && !!img.tileRect);
   const cost = anlasCost({
-    width: params.width,
-    height: params.height,
+    width: req.width,
+    height: req.height,
     steps: params.steps,
     opus: (sub?.tier ?? 0) >= 3,
     uncachedVibes: img.vibeOn ? img.vibes.filter((v) => !v.encoded).length : 0,
@@ -58,13 +69,25 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
 
   const genBtn = (
     <button
-      data-generate={isSet ? "all" : "one"}
-      onClick={() => (isSet ? generateAll() : queueSingle(perSlot))}
-      disabled={busy}
-      title={compact ? t("canvas.generate") : undefined}
+      data-generate={editing ? "inpaint" : isSet ? "all" : "one"}
+      onClick={() => {
+        if (editing) {
+          if (!canInpaint) return;
+          // ★`queueSingle` 은 씬 탭에서 그냥 돌아가고 `generateAll` 은 씬을 전부 돈다.
+          //   인페인트는 그림 한 장을 고치는 일이라 자기 창구를 쓴다
+          void queueInpaint(perSlot);
+          // ★생성하면 편집에서 나온다. 여기 머물면 결과를 못 본다 (사용자 결정 2026-08-13).
+          //   마스크와 사각형은 그대로 남아, 다시 들어가면 이어서 고칠 수 있다
+          img.endEdit();
+          return;
+        }
+        isSet ? generateAll() : queueSingle(perSlot);
+      }}
+      disabled={busy || (editing && !canInpaint)}
+      title={compact ? t(editing ? "focus.inpaintBtn" : "canvas.generate") : undefined}
       style={{
-        background: "var(--accent)",
-        color: "var(--accent-on)",
+        background: busy || (editing && !canInpaint) ? "var(--panel)" : "var(--accent)",
+        color: busy || (editing && !canInpaint) ? "var(--ink-faint)" : "var(--accent-on)",
         borderRadius: "var(--r-2)",
         padding: compact ? "var(--sp-3) 0" : "var(--sp-3)",
         fontWeight: "var(--w-semi)",
@@ -77,7 +100,7 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
       }}
     >
       {!busy && Icon.spark}
-      {!compact && (busy ? t("canvas.generating") : t("canvas.generate"))}
+      {!compact && (busy ? t("canvas.generating") : editing ? t("focus.inpaintBtn") : t("canvas.generate"))}
       {/* ★몇 장을 만들지·얼마가 드는지를 **누르기 전에** 보여 준다 */}
       {!compact && (
         <span style={{ opacity: 0.82, fontVariantNumeric: "tabular-nums" }}>
@@ -252,6 +275,14 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
       </div>
 
       {genBtn}
+
+      {/* ★칠하다 값이 붙으면 **버튼 밑에서** 알린다. 누르기 전에 보이는 자리가 여기다.
+          Focused 를 켜면 대개 0 으로 돌아온다 (사용자 결정 2026-08-13) */}
+      {editing && cost.total > 0 && (
+        <span data-inpaint-cost-warn style={{ fontSize: "var(--text-2xs)", color: "var(--warn)" }}>
+          {t("focus.costWarn", { a: cost.total })}
+        </span>
+      )}
 
       <div style={{ display: "flex", alignItems: "center", fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
         {cost.encoding > 0 && <span>{t("gen.vibeEncode", { a: cost.encoding })}</span>}

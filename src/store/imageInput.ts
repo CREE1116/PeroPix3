@@ -1,5 +1,10 @@
 import { create } from "zustand";
 import { vibeDefaults } from "../lib/vibeDefaults";
+import { canFocus, defaultRect, wholeRectMask } from "../lib/focused";
+import { sizeForBase } from "../lib/baseSize";
+import { toast } from "./toast";
+import { useSceneFocus } from "./sceneFocus";
+import { t } from "../i18n";
 import { useGen } from "./gen";
 
 /** 이미지 입력 — Vibe Transfer · Precise Reference · 베이스 이미지(i2i·인페인트).
@@ -56,18 +61,24 @@ type S = {
   baseInpaintStrength: number;
   baseNoise: number;
   baseMask: string;
-  /** ★타일 인페인트 — 이 베이스 그림이 **워크스페이스 파일**이면 그 경로.
+  /** ★Focused Inpainting. 이 베이스 그림이 **워크스페이스 파일**이면 그 경로.
    *  있으면 서버가 그 파일을 열어 **사각형 안만** 잘라 보내고 결과를 그 자리에 되붙인다.
    *  밖에서 떨군 그림에는 없다 (그때는 지금까지의 인페인트 그대로다). */
   baseFrom: { ws: string; file: string } | null;
-  /** ★「인페인트+」 — **켜야 타일 경로를 탄다** (사용자 지시 2026-08-13).
+  /** 베이스 그림의 실제 크기. 사각형·최종 해상도가 전부 이 값을 기준으로 잡힌다 */
+  baseSize: { w: number; h: number } | null;
+  /** ★Focused Inpainting 을 켰나 (`lib/focused.ts`).
    *
-   *  끄면 **공홈과 같은 기본 인페인트**다: 그림 전체를 보내고 요청 크기로 그린다.
-   *  켜면 사각형 안만 잘라 보내고 결과를 그 자리에 되붙인다 — 원본 해상도가 지켜지고
-   *  요청이 1MP 이하라 값이 안 나간다. **기본을 대체하는 것이 아니라 얹는 기능이다.** */
-  tilePlus: boolean;
-  /** 크롭 사각형 (원본 좌표계). 「인페인트+」를 켜면 칠한 자리에 맞춰 자동으로 잡힌다 */
+   *  끄면 **공홈과 같은 기본 인페인트**다: 그림 전체를 보내고 요청 크기로 그린다 (줄어든다).
+   *  켜면 사각형 안만 잘라 1MP 로 키워 보내고 결과를 원래 크기로 되돌려 되붙인다.
+   *  ★1MP 를 넘는 그림에서 **저절로 켜진다**. 그 그림은 켜지 않으면 결과가 줄어든다. */
+  focused: boolean;
+  /** 크롭 사각형 (원본 좌표계) */
   tileRect: { x: number; y: number; w: number; h: number } | null;
+  /** 지금 마스크를 칠하는 중인가. 켜면 캔버스 자리가 마스크 편집으로 바뀐다 */
+  editing: boolean;
+  /** 고치는 그림이 있던 **씬 칸**. 결과를 그 옆에 붙이려고 들고 있는다 (`queueInpaint`) */
+  originCell: { id: string } | null;
 
   setVibeOn: (v: boolean) => void;
   addVibe: (image: string, name: string) => void;
@@ -81,7 +92,10 @@ type S = {
 
   setBase: (image: string, name: string, from?: { ws: string; file: string } | null) => void;
   setTileRect: (r: { x: number; y: number; w: number; h: number } | null) => void;
-  setTilePlus: (v: boolean) => void;
+  setFocused: (v: boolean) => void;
+  /** 마스크 칠하기로 들어간다. 큰 그림이면 Focused 를 켜 주고 알린다 */
+  startEdit: () => void;
+  endEdit: () => void;
   clearBase: () => void;
   patchBase: (p: Partial<Pick<S, "baseMode" | "baseStrength" | "baseInpaintStrength" | "baseNoise" | "baseMask">>) => void;
 
@@ -91,6 +105,9 @@ type S = {
 
 /** v2 제한 그대로 (index.html:18376) */
 export const MAX_VIBES = 16;
+
+/** 베이스 그림 크기를 재는 중인 약속. `startEdit` 이 그 뒤에 자동 켜기를 판단한다 */
+let measuring: Promise<void> | null = null;
 
 export const useImageInput = create<S>((set, get) => ({
   vibeOn: false,
@@ -105,8 +122,11 @@ export const useImageInput = create<S>((set, get) => ({
   baseNoise: 0,
   baseMask: "",
   baseFrom: null,
-  tilePlus: false,
+  baseSize: null,
+  focused: false,
   tileRect: null,
+  editing: false,
+  originCell: null,
 
   // ★바이브와 레퍼런스는 **동시에 못 쓴다** (NAI 제약, v2 index.html:18366). 켜면 다른 쪽을 끈다
   setVibeOn: (v) => set(v ? { vibeOn: true, refOn: false } : { vibeOn: false }),
@@ -135,18 +155,76 @@ export const useImageInput = create<S>((set, get) => ({
   patchRef: (i, p) => set((s) => ({ refs: s.refs.map((r, k) => (k === i ? { ...r, ...p } : r)) })),
   removeRef: (i) => set((s) => ({ refs: s.refs.filter((_, k) => k !== i) })),
 
-  setBase: (image, name, from = null) =>
+  setBase: (image, name, from = null) => {
     set({ baseImage: image, baseName: name, baseMask: "", baseFrom: from,
-          tileRect: null, tilePlus: false }),
+          baseSize: null, tileRect: null, focused: false, editing: false, originCell: null });
+    // ★크기는 **여기서 한 번만** 잰다. 사각형·최종 해상도·자동 켜기가 전부 이 값을 본다.
+    //   부르는 쪽마다 따로 재게 하면 어느 값이 진짜인지 갈린다.
+    measuring = new Promise<void>((done) => {
+      const im = new Image();
+      im.onload = () => {
+        if (get().baseImage === image) set({ baseSize: { w: im.naturalWidth, h: im.naturalHeight } });
+        done();
+      };
+      im.onerror = () => done();
+      im.src = "data:image/png;base64," + image;
+    });
+  },
   clearBase: () =>
-    set({ baseImage: "", baseName: "", baseMask: "", baseMode: "img2img",
-          baseFrom: null, tileRect: null, tilePlus: false }),
+    set({ baseImage: "", baseName: "", baseMask: "", baseMode: "img2img", baseFrom: null,
+          baseSize: null, tileRect: null, focused: false, editing: false, originCell: null }),
   setTileRect: (r) => set({ tileRect: r }),
-  setTilePlus: (v) => set({ tilePlus: v, ...(v ? null : { tileRect: null }) }),
-  patchBase: (p) => set(p),
+
+  setFocused: (v) => {
+    const s = get();
+    const size = s.baseSize;
+    if (v && !size) return;
+    set({
+      focused: v,
+      tileRect: v ? (s.tileRect ?? defaultRect(size!.w, size!.h)) : null,
+    });
+    // ★최종 해상도를 따라 바꾼다. 켜면 **원본 크기 그대로**(되붙이므로), 끄면 그림 전체를
+    //   보내는 크기다. 값이 남아 있으면 끈 채로 눌렀을 때 3MP 짜리 요청이 나간다.
+    if (v && size) useGen.setState({ params: { ...useGen.getState().params, width: size.w, height: size.h } });
+    else if (size) {
+      const next = sizeForBase(size.w, size.h);
+      if (next) useGen.setState({ params: { ...useGen.getState().params, ...next } });
+    }
+  },
+
+  startEdit: () => {
+    if (!get().baseImage) return;
+    // ★어느 씬 칸의 그림인지 **여기서** 잡아 둔다. 결과가 그 자리에 붙어야 화면에 보인다
+    const cell = useSceneFocus.getState().cell;
+    set({ editing: true, baseMode: "inpaint", originCell: cell ? { id: cell } : null });
+    // ★큰 그림은 켜 두고 알린다. 끈 채로 보내면 결과가 통째로 줄어드는 그림이다.
+    //   크기를 아직 재는 중일 수 있어 그 뒤에 판단한다 (`measuring`)
+    void (measuring ?? Promise.resolve()).then(() => {
+      const s = get();
+      if (!s.editing || s.focused || !s.baseFrom || !s.baseSize) return;
+      if (!canFocus(s.baseSize.w, s.baseSize.h)) return;
+      s.setFocused(true);
+      toast(t("focus.auto"));
+    });
+  },
+  endEdit: () => set({ editing: false }),
+
+  patchBase: (p) => {
+    // ★이어 그리기로 돌아가면 Focused 를 끈다. 켜져 있는 동안 해상도 칸은 **원본 크기**라,
+    //   그대로 i2i 로 나가면 3MP 를 넘어 NAI 가 거절한다 (2048² = 4.2MP)
+    if (p.baseMode === "img2img" && get().focused) get().setFocused(false);
+    set(p);
+  },
 
   payload() {
     const s = get();
+    const focusing = s.baseMode === "inpaint" && s.focused && !!s.tileRect && !!s.baseFrom;
+    // ★아무것도 안 칠했으면 **사각형 안쪽 전체**를 보낸다 (공홈과 같다). 화면에 미리 칠해
+    //   보여 주지 않으므로 마스크는 비어 있고, 보낼 때 여기서 만든다.
+    const mask =
+      focusing && !s.baseMask && s.baseSize
+        ? wholeRectMask(s.tileRect!, s.baseSize.w, s.baseSize.h)
+        : s.baseMask;
     return {
       vibe_transfer: s.vibeOn ? s.vibes : [],
       precise_references: s.refOn ? s.refs.map((r) => ({
@@ -158,10 +236,10 @@ export const useImageInput = create<S>((set, get) => ({
       base_inpaint_strength: s.baseInpaintStrength,
       base_noise: s.baseNoise,
       // ★마스크는 인페인트일 때만 보낸다 — i2i 로 되돌려 놓고 마스크가 남아 있으면 엉뚱하게 인페인트가 된다
-      base_mask: s.baseMode === "inpaint" ? s.baseMask : "",
-      // ★「인페인트+」를 **켰을 때만** 타일 경로를 탄다. 끄면 공홈과 같은 기본 인페인트다
-      inpaint_from: s.baseMode === "inpaint" && s.tilePlus && s.tileRect ? (s.baseFrom?.file ?? "") : "",
-      inpaint_rect: s.baseMode === "inpaint" && s.tilePlus && s.baseFrom ? s.tileRect : null,
+      base_mask: s.baseMode === "inpaint" ? mask : "",
+      // ★Focused 를 **켰을 때만** 잘라 보낸다. 끄면 공홈과 같은 기본 인페인트다
+      inpaint_from: focusing ? (s.baseFrom?.file ?? "") : "",
+      inpaint_rect: focusing ? s.tileRect : null,
     };
   },
 }));

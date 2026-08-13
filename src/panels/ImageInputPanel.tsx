@@ -8,7 +8,7 @@ import {
   useImageInput,
   type BaseMode,
 } from "../store/imageInput";
-import { MaskEditor } from "../components/MaskEditor";
+import { canFocus } from "../lib/focused";
 import { fitSizeToBase } from "../store/gen";
 import { flashStyle, useFlash } from "../store/ui";
 import { VibeCache } from "./VibeCache";
@@ -20,7 +20,6 @@ import { VibeCache } from "./VibeCache";
 export function ImageInputPanel() {
   const t = useI18n((s) => s.t);
   const s = useImageInput();
-  const [mask, setMask] = useState(false);
   const [cache, setCache] = useState(false);
 
   return (
@@ -181,12 +180,26 @@ export function ImageInputPanel() {
               />
             )}
             {s.baseMode === "inpaint" && (
-              <button data-mask-open onClick={() => setMask(true)} style={{ ...box, width: "100%" }}>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--sp-2)" }}>
-                  {Icon.brush}
-                  {t("imgIn.mask")}
-                </span>
-              </button>
+              <>
+                {/* ★칠하기는 **가운데 화면**에서 한다 (모달이 아니다). 그동안 왼쪽 아래
+                    생성 버튼이 「인페인트」가 된다 */}
+                <button
+                  data-mask-open
+                  onClick={() => s.startEdit()}
+                  style={{
+                    ...box,
+                    width: "100%",
+                    background: s.editing ? "var(--accent)" : "var(--panel)",
+                    color: s.editing ? "var(--accent-on)" : "var(--ink-soft)",
+                  }}
+                >
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--sp-2)" }}>
+                    {Icon.brush}
+                    {t("imgIn.mask")}
+                  </span>
+                </button>
+                <FocusedToggle />
+              </>
             )}
           </Card>
         ) : (
@@ -206,23 +219,97 @@ export function ImageInputPanel() {
       </Section>
 
       {cache && <VibeCache onClose={() => setCache(false)} />}
+    </div>
+  );
+}
 
-      {mask && (
-        <MaskEditor
-          image={s.baseImage}
-          mask={s.baseMask}
-          strength={s.baseStrength}
-          // ★워크스페이스에서 온 그림이면 「인페인트+」를 고를 수 있다 (서버가 그 파일을 자른다)
-          tile={!!s.baseFrom}
-          onCancel={() => setMask(false)}
-          onApply={(m, strength, rect) => {
-            s.patchBase({ baseMask: m, baseStrength: strength });
-            s.setTileRect(rect);
-            s.setTilePlus(!!rect);
-            setMask(false);
+/** Focused Inpainting 스위치. 무엇을 하는 기능인지는 `lib/focused.ts` 머리 주석에 있다.
+ *
+ *  ★**끌 수 있게 둔다.** 큰 그림에서는 켜진 채로 시작하지만, 사각형보다 넓게 고치고 싶으면
+ *    끄고 해상도를 올리는 길이 있어야 한다 (사용자 지시 2026-08-13).
+ *  ★워크스페이스 파일에만 뜬다. 서버가 그 파일을 열어 잘라야 한다. 밖에서 떨군 그림은
+ *    경로가 없어 못 쓴다. */
+function FocusedToggle() {
+  const t = useI18n((s) => s.t);
+  const s = useImageInput();
+  if (!s.baseFrom || !s.baseSize) return null;
+  const big = canFocus(s.baseSize.w, s.baseSize.h);
+  const on = s.focused && big;
+  return (
+    <div
+      data-focused={on ? "on" : "off"}
+      onClick={() => big && s.setFocused(!s.focused)}
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: "var(--sp-3)",
+        padding: "var(--sp-2)",
+        borderRadius: "var(--r-2)",
+        border: `1px solid ${on ? "var(--accent)" : "var(--line)"}`,
+        background: on ? "var(--accent-bg, var(--panel))" : "var(--panel)",
+        opacity: big ? 1 : 0.5,
+        cursor: big ? "pointer" : "default",
+      }}
+    >
+      <span
+        style={{
+          flexShrink: 0,
+          width: 30,
+          height: 17,
+          marginTop: 1,
+          borderRadius: 9,
+          background: on ? "var(--accent)" : "var(--line-strong, var(--line))",
+          position: "relative",
+          transition: "background 120ms",
+        }}
+      >
+        <span
+          style={{
+            position: "absolute",
+            top: 2,
+            left: on ? 15 : 2,
+            width: 13,
+            height: 13,
+            borderRadius: "50%",
+            background: "var(--surface)",
+            transition: "left 120ms",
           }}
         />
-      )}
+      </span>
+      <span style={{ minWidth: 0 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", fontSize: "var(--text-xs)" }}>
+          Focused Inpainting
+          <span
+            data-focused-help
+            title={t("focus.help")}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              display: "inline-grid",
+              placeItems: "center",
+              width: 14,
+              height: 14,
+              borderRadius: "50%",
+              border: "1px solid var(--ink-faint)",
+              color: "var(--ink-faint)",
+              fontSize: 9,
+              cursor: "help",
+            }}
+          >
+            ?
+          </span>
+        </span>
+        <span
+          style={{
+            display: "block",
+            marginTop: 2,
+            fontSize: "var(--text-2xs)",
+            color: "var(--ink-faint)",
+            lineHeight: 1.5,
+          }}
+        >
+          {!big ? t("focus.notNeeded") : on ? t("focus.onDesc") : t("focus.offDesc")}
+        </span>
+      </span>
     </div>
   );
 }

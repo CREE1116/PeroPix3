@@ -202,6 +202,52 @@ def fit_tile_rect(rect: dict, iw: int, ih: int) -> tuple[int, int, int, int]:
     return x, y, w, h
 
 
+def fit_to_1mp(w: int, h: int) -> tuple[int, int]:
+    """조각을 **1MP 에 맞춰 키운 요청 크기**. 비율을 지키고 64 배수로 맞춘다.
+
+    ★Focused Inpainting 의 핵심이 이 한 줄이다: 잘라낸 조각을 **그 크기 그대로** 보내면
+      작게 그려지고, 1MP 로 키워 보내면 같은 자리를 더 촘촘하게 그린다. 공홈이 하는 그대로다
+      (`docs/nai-web-reference.md`: 요청 크기는 사각형 비율을 1,048,576px 에 맞춘 값).
+    ★조각이 589,824px(768×768) 이하면 확대율이 반드시 4/3 을 넘는다. 화면이 사각형을
+      그 크기로 묶는 이유다 (`src/lib/focused.ts`).
+    ★**넓이가 먼저고 비율 오차에는 천장(6%)을 둔다.** 오차를 먼저 보면 확대가 사라진다.
+      320×1408 은 그대로가 오차 0 이라 1등이 되어 ×1.0 이 나왔다 (실측 2026-08-13).
+      화면 쪽 `fitToPixels` 와 **같은 규칙이어야 한다** (표시한 크기로 실제로 나가야 하므로)."""
+    if w <= 0 or h <= 0:
+        return max(64, w), max(64, h)
+    ar = w / h
+    best: tuple[int, float, int, int] | None = None   # (넓이, 오차, w, h). 넓이가 클수록 좋다
+    loose: tuple[float, int, int] | None = None       # 천장을 못 넘으면 오차가 가장 작은 것
+    for cw in range(64, 4097, 64):
+        ch = max(64, round(cw / ar / 64) * 64)
+        px = cw * ch
+        if px > TILE_MAX_PX:
+            continue
+        err = abs(cw / ch - ar) / ar
+        if loose is None or err < loose[0]:
+            loose = (err, cw, ch)
+        if err > 0.06:
+            continue
+        if best is None or (px, -err) > (best[0], -best[1]):
+            best = (px, err, cw, ch)
+    if best:
+        return best[2], best[3]
+    return (loose[1], loose[2]) if loose else (w, h)
+
+
+def resize_png(png: bytes, w: int, h: int) -> bytes:
+    """다 만든 그림을 다른 크기로. ★tEXt 청크를 물려준다 (`paste_tile` 과 같은 이유)."""
+    with Image.open(io.BytesIO(png)) as im:
+        im.load()
+        info = im.info
+        if im.size == (w, h):
+            return png
+        out = im.convert("RGB").resize((w, h), Image.LANCZOS)
+    buf = io.BytesIO()
+    out.save(buf, format="PNG", pnginfo=_pnginfo_of(info))
+    return buf.getvalue()
+
+
 def crop_to_base64(img: Image.Image, x: int, y: int, w: int, h: int) -> str:
     """타일을 잘라 PNG base64 로. ★마스크로 지우지 않은 **원본 픽셀 그대로** 보낸다."""
     tile = img.crop((x, y, x + w, y + h))
@@ -220,17 +266,24 @@ def mask_has_white(b64_mask: str) -> bool:
         return m.convert("L").getextrema()[1] >= 155
 
 
-def paste_tile(src: Image.Image, tile_png: bytes, x: int, y: int) -> bytes:
+def paste_tile(
+    src: Image.Image, tile_png: bytes, x: int, y: int, w: int | None = None, h: int | None = None
+) -> bytes:
     """되그린 타일을 원본 좌표에 얹어 **원본 크기** PNG 를 만든다.
 
     ★해상도를 지키는 것이 이 기능의 전부다 — 원본은 손대지 않고 타일 자리만 갈아 끼운다.
+    ★`w`·`h` 는 **원본에서 잘라낸 사각형의 크기**다. 조각은 1MP 로 키워 보내므로 돌아온
+      타일이 그보다 크다. 되붙이기 전에 원래 크기로 되돌린다 (`fit_to_1mp`).
     ★NAI 응답의 tEXt 청크를 결과에 **옮겨 싣는다.** 잃으면 공홈이 자기 이미지로 인식하지
       못하고 우리 「설정까지」 재현도 깨진다 (`composite_inpaint` 와 같은 이유)."""
     with Image.open(io.BytesIO(tile_png)) as tile:
         tile.load()
         info = tile.info
+        piece = tile.convert("RGB")
+        if w and h and piece.size != (w, h):
+            piece = piece.resize((w, h), Image.LANCZOS)
         out = src.convert("RGB").copy()
-        out.paste(tile.convert("RGB"), (x, y))
+        out.paste(piece, (x, y))
     buf = io.BytesIO()
     out.save(buf, format="PNG", pnginfo=_pnginfo_of(info))
     return buf.getvalue()

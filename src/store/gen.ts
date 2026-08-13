@@ -141,6 +141,8 @@ type S = {
   /** ★싱글도 **큐로** 보낸다 (사용자 지적 2026-08-05: 한 장이 끝나야 다시 누를 수 있었다).
    *  `generate()` 는 강화처럼 **한 장을 즉시** 만드는 자리에만 남는다. */
   queueSingle: (count: number) => Promise<void>;
+  /** 인페인트 한 장. 탭 종류를 안 가리고, 결과를 원본이 있던 씬 칸에 붙인다 */
+  queueInpaint: (count: number) => Promise<void>;
 };
 
 /** 바퀴 × 씬을 펴면서 **시드를 확정**한다 — 큐에 넣기 전 마지막 판정이다.
@@ -268,6 +270,43 @@ export const useGen = create<S>((set, get) => ({
       undefined,
       Math.max(1, count),
     );
+  },
+
+  /** 인페인트 한 장. **탭 종류를 안 가린다**.
+   *
+   *  ★`queueSingle` 은 씬 탭에서 그냥 돌아가고(옛 싱글 탭 전용), `generateAll` 은 씬을 전부
+   *    돈다. 인페인트는 **그림 한 장을 고치는 일**이라 둘 다 아니다.
+   *  ★결과는 **원본이 있던 씬 칸**에 붙는다 (`origin`). 안 붙이면 씬 탭에서는 셀 없는
+   *    레코드가 되어 화면 어디에도 안 뜬다 (`lib/takes.ts`).
+   *  ★프롬프트도 그 씬의 것을 쓴다. 베이스만 쓰면 장면과 무관한 것이 그려진다. */
+  async queueInpaint(count) {
+    const ws = useWs.getState();
+    const tab = ws.activeTab();
+    if (!tab) return;
+    const { prompt, uc, chars } = usePrompt.getState().compiled();
+    const origin = useImageInput.getState().originCell;
+    const found = tab.kind === "set" && origin
+      ? allScenes(tab).find((x) => x.cell.id === origin.id)
+      : null;
+    const scene = found ? compileBlocks(found.cell.blocks) : "";
+    await useQueue.getState().enqueue(
+      {
+        ...get().params,
+        ...useImageInput.getState().payload(),
+        seed: get().params.seed_mode === "fixed" ? get().params.seed : -1,
+        prompt: [(found?.card.prefix || "").trim(), prompt, scene].filter(Boolean).join(", "),
+        negative_prompt: uc,
+        characters: chars,
+        workspace: ws.current,
+        char: ws.activeCharOf()?.name ?? null,
+        tab: tab.name,
+        tab_id: tab.id,
+        ...(found ? { cell: found.cell.name, cell_id: found.cell.id } : {}),
+      },
+      undefined,
+      Math.max(1, count),
+    );
+    if (get().params.seed_mode !== "fixed") get().set("seed", randomSeed());
   },
 
   async generateAll() {

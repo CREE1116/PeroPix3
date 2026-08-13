@@ -4,7 +4,6 @@ import { useGen, fitSizeToBase } from "../store/gen";
 import { useImageInput } from "../store/imageInput";
 import { useUi } from "../store/ui";
 import { toast } from "../store/toast";
-import { MaskEditor } from "../components/MaskEditor";
 import { applyMeta } from "./GalleryMeta";
 import { api } from "../lib/backend";
 import { upscaleCost } from "../lib/anlas";
@@ -59,7 +58,6 @@ export function ImageActions({
   const seedNow = useGen((s) => s.params.seed);
   const [busy, setBusy] = useState(false);
   const opus = useSub((s) => (s.sub?.tier ?? 0) >= 3);
-  const [maskOn, setMaskOn] = useState(false);
   const [seen, setSeen] = useState<ImageMeta | null>(null);
 
   /** ★쿼리를 하나 붙여 받는다 — 같은 주소를 `<img>` 가 no-cors 로 먼저 캐시해 두면
@@ -90,9 +88,14 @@ export function ImageActions({
       // ★그림이 들어간 자리도 보여 준다 — 우측 패널이 접혀 있으면 펴진다
       useUi.getState().reveal("right", "base");
       s.patchBase({ baseMode: mode });
-      if (mode === "inpaint") return setMaskOn(true); // 마스크부터 칠하고 나서 넘어간다
       useUi.getState().setMode("generate");
       onLeave?.();
+      // ★인페인트는 **캔버스 자리에서** 칠한다 (모달이 아니다). 생성 모드로 옮긴 뒤
+      //   편집을 켠다. 큰 그림이면 `startEdit` 이 Focused 를 켜 주고 알린다
+      if (mode === "inpaint") {
+        s.startEdit();
+        return toast(t("act.sentInpaint"));
+      }
       toast(t("act.sentI2i"));
     } catch (e) {
       toast(String(e), "warn");
@@ -281,28 +284,6 @@ export function ImageActions({
       </div>
 
       {seen && <PromptView meta={seen} onClose={() => setSeen(null)} />}
-
-      {/* ★인페인트는 **칠하고 나서** 생성 모드로 간다 — 마스크 없이 넘어가면
-          "인페인트를 골랐는데 i2i 로 도는" 조용한 어긋남이 된다. */}
-      {maskOn && (
-        <MaskEditor
-          image={useImageInput.getState().baseImage}
-          mask={useImageInput.getState().baseMask}
-          strength={useImageInput.getState().baseStrength}
-          // ★타일은 **워크스페이스 파일**일 때만 — 서버가 그 파일을 열어 자른다
-          tile={!!upscale}
-          onCancel={() => setMaskOn(false)}
-          onApply={(m, strength, rect) => {
-            useImageInput.getState().patchBase({ baseMask: m, baseStrength: strength });
-            useImageInput.getState().setTileRect(rect);
-            useImageInput.getState().setTilePlus(!!rect);
-            setMaskOn(false);
-            useUi.getState().setMode("generate");
-            onLeave?.();
-            toast(t("act.sentInpaint"));
-          }}
-        />
-      )}
     </>
   );
 }

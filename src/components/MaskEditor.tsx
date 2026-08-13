@@ -2,8 +2,22 @@ import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { Icon } from "./Icon";
 import { alignTo64 } from "../store/gen";
+import { useImageInput } from "../store/imageInput";
+import {
+  MIN_RECT,
+  SAFE_MARGIN,
+  canFocus,
+  clampRect,
+  focusedPlan,
+  innerRect,
+  type Rect,
+} from "../lib/focused";
 
-/** 인페인트 마스크 에디터 — v2 원문 이식 (index.html:10457-10495 · 23092-23430).
+/** 인페인트 마스크 에디터. **캔버스 자리를 대신한다** (모달이 아니다).
+ *
+ *  ★모달이었을 때는 칠하는 동안 프롬프트도 결과도 못 봤고, 생성은 창을 닫은 뒤에 눌러야 했다.
+ *    지금은 가운데 화면이 이 편집기로 바뀌고, 왼쪽 아래 생성 버튼이 「인페인트」가 된다
+ *    (사용자 결정 2026-08-13). 생성하면 편집에서 나가 결과를 보여 주고 **마스크는 남는다.**
  *
  *  ★**8×8 그리드에 붙는 사각 브러시**다. 둥글게 보여도 사각이고, 안티앨리어싱이 없다
  *    (NAI 웹·NAIS2 와 같은 방식). "둥근 브러시가 자연스럽다"고 고치면 **결과가 달라진다** —
@@ -15,95 +29,41 @@ import { alignTo64 } from "../store/gen";
  */
 const GRID = 8;
 
-export type Rect = { x: number; y: number; w: number; h: number };
-
-/** 타일 한 장의 상한 — 1024×1024 (`backend/imgutil.py TILE_MAX_PX` 와 같은 값).
- *  ★넘기면 Opus 무료가 깨지고 공홈도 막는다. 아래 후보는 전부 이 턱밑이다 —
- *  작게 잡으면 아끼는 것 없이 **모델이 보는 문맥**만 줄어든다 (조사 문서 2절). */
-const TILE_MAX_PX = 1_048_576;
-const TILE_SIZES: [number, number][] = [
-  [832, 1216],
-  [1216, 832],
-  [1024, 1024],
-  [768, 1344],
-  [1344, 768],
-  [640, 1600],
-  [1600, 640],
-];
-
-/** 칠한 자리를 감싸는 사각형을 **자동으로** 잡는다.
- *
- *  ★익스텐션은 사람이 직접 옮긴다. 우리는 **초안을 잡아 주고 옮길 수 있게** 한다
- *    (사용자 결정 2026-08-13) — "사각형 밖에 칠한 마스크가 조용히 버려지는" 함정이
- *    기본값에서 사라지고, 문맥을 얼마나 넣을지 고를 권한은 남는다.
- *  ★후보 중 **칠한 자리를 담을 수 있는 것**만 고르고, 그중 비율이 가장 가까운 것을 쓴다. */
-export function autoRect(bbox: Rect, iw: number, ih: number): Rect {
-  const fits = TILE_SIZES.filter(([w, h]) => w >= bbox.w && h >= bbox.h && w <= iw && h <= ih);
-  const want = bbox.w / Math.max(1, bbox.h);
-  const pick = (fits.length ? fits : TILE_SIZES.filter(([w, h]) => w <= iw && h <= ih))
-    .sort((a, b) => Math.abs(a[0] / a[1] - want) - Math.abs(b[0] / b[1] - want))[0];
-  // 그림이 후보보다 작으면 그림 전체 (64 배수로 내린다)
-  const w = pick ? pick[0] : Math.max(64, Math.floor(iw / 64) * 64);
-  const h = pick ? pick[1] : Math.max(64, Math.floor(ih / 64) * 64);
-  return clampRect({ x: Math.round(bbox.x + bbox.w / 2 - w / 2), y: Math.round(bbox.y + bbox.h / 2 - h / 2), w, h }, iw, ih);
-}
-
-/** 사각형을 그림 안으로 밀어 넣는다 (크기는 그대로) */
-export function clampRect(r: Rect, iw: number, ih: number): Rect {
-  const w = Math.min(r.w, Math.max(64, Math.floor(iw / 64) * 64));
-  const h = Math.min(r.h, Math.max(64, Math.floor(ih / 64) * 64));
-  return { x: Math.max(0, Math.min(r.x, iw - w)), y: Math.max(0, Math.min(r.y, ih - h)), w, h };
-}
-
-/** 칠한 칸들을 감싸는 사각형 (판 좌표계). 아무것도 없으면 null */
-function paintedBBox(cells: Set<string>): Rect | null {
-  if (!cells.size) return null;
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const key of cells) {
-    const [gx, gy] = key.split(",").map(Number);
-    x0 = Math.min(x0, gx * GRID); y0 = Math.min(y0, gy * GRID);
-    x1 = Math.max(x1, gx * GRID + GRID); y1 = Math.max(y1, gy * GRID + GRID);
-  }
-  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-}
-
-export function MaskEditor({
-  image,
-  mask,
-  strength,
-  tile,
-  onCancel,
-  onApply,
-}: {
-  image: string;
-  mask: string;
-  strength: number;
-  /** ★「인페인트+」를 **쓸 수 있는** 그림인가 — 워크스페이스 파일이어야 한다
-   *  (서버가 그 파일을 열어 자른다). 밖에서 떨군 그림에는 경로가 없어 못 쓴다.
-   *  ★쓸 수 있다는 것이지 **켜졌다는 뜻이 아니다** — 켜는 것은 사용자다 (아래 스위치). */
-  tile?: boolean;
-  onCancel: () => void;
-  /** rect 는 **원본 좌표계**의 크롭 사각형 — 없으면 지금까지의 인페인트 그대로다 */
-  onApply: (mask: string, strength: number, rect: Rect | null) => void;
-}) {
+export function MaskEditor() {
   const t = useI18n((s) => s.t);
+  const image = useImageInput((s) => s.baseImage);
+  const savedMask = useImageInput((s) => s.baseMask);
+  const focused = useImageInput((s) => s.focused);
+  const rectNatural = useImageInput((s) => s.tileRect);
+  const baseSize = useImageInput((s) => s.baseSize);
+
   const maskRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLCanvasElement>(null);
-  const [size, setSize] = useState({ w: 0, h: 0, dw: 0, dh: 0 });
+  const overRef = useRef<HTMLCanvasElement>(null);
+  const [size, setSize] = useState({ w: 0, h: 0 });
   const [brush, setBrush] = useState(30);
   const [erase, setErase] = useState(false);
-  const [str, setStr] = useState(strength);
   /** 이미 칠한 칸 — 다시 칠하지 않는다 (v2 `paintedCells`) */
   const painted = useRef(new Set<string>());
-  /** 크롭 사각형 (판 좌표계). ★원본이 1MP 를 넘을 때만 뜻이 있다 */
-  const [rect, setRect] = useState<Rect | null>(null);
-  /** 「인페인트+」 스위치 — 이 창에서 켜고 끈다 */
-  const [plus, setPlus] = useState(false);
+  const [count, setCount] = useState(0);
   /** 원본 픽셀 크기 — 판은 64 배수로 맞춰져 있어 좌표를 되돌릴 때 쓴다 */
   const natural = useRef({ w: 0, h: 0 });
-  const dragRect = useRef<{ x: number; y: number; rx: number; ry: number } | null>(null);
+  const drag = useRef<{ kind: "move" | "size"; corner?: string; sx: number; sy: number; r0: Rect } | null>(null);
   const drawing = useRef(false);
   const lastCell = useRef<{ gx: number; gy: number } | null>(null);
+
+  /** 판 좌표계의 사각형. 저장은 원본 좌표계라 여기서 갈아 신는다 */
+  const kx = size.w ? natural.current.w / size.w : 1;
+  const ky = size.h ? natural.current.h / size.h : 1;
+  const rect: Rect | null =
+    focused && rectNatural && size.w
+      ? {
+          x: Math.round(rectNatural.x / kx),
+          y: Math.round(rectNatural.y / ky),
+          w: Math.round(rectNatural.w / kx),
+          h: Math.round(rectNatural.h / ky),
+        }
+      : null;
 
   // 그림을 올리고 판을 맞춘다
   useEffect(() => {
@@ -112,28 +72,33 @@ export function MaskEditor({
       natural.current = { w: img.width, h: img.height };
       const w = alignTo64(img.width);
       const h = alignTo64(img.height);
-      const scale = Math.min((window.innerWidth * 0.8) / w, (window.innerHeight * 0.62) / h, 1);
-      setSize({ w, h, dw: Math.round(w * scale), dh: Math.round(h * scale) });
+      setSize({ w, h });
       const ic = imgRef.current!;
       const mc = maskRef.current!;
-      ic.width = mc.width = w;
-      ic.height = mc.height = h;
+      const oc = overRef.current!;
+      ic.width = mc.width = oc.width = w;
+      ic.height = mc.height = oc.height = h;
       ic.getContext("2d")!.drawImage(img, 0, 0, w, h);
       const mx = mc.getContext("2d")!;
       mx.fillStyle = "black";
       mx.fillRect(0, 0, w, h);
       painted.current.clear();
-      if (mask) {
+      setCount(0);
+      if (savedMask) {
         const m = new Image();
         m.onload = () => {
           mx.drawImage(m, 0, 0, w, h);
           syncPainted(mx, w, h);
+          setCount(painted.current.size);
         };
-        m.src = "data:image/png;base64," + mask;
+        m.src = "data:image/png;base64," + savedMask;
       }
     };
     img.src = "data:image/png;base64," + image;
-  }, [image, mask]);
+    // ★마스크는 **들어올 때 한 번만** 읽는다. 칠할 때마다 저장하므로, savedMask 를 따라
+    //   다시 그리면 칠하는 도중에 판이 갈아 끼워진다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [image]);
 
   /** 있는 마스크에서 칠한 칸을 되살린다 — 칸 **가운데 픽셀**로 판정한다 (v2 와 같다) */
   const syncPainted = (mx: CanvasRenderingContext2D, w: number, h: number) => {
@@ -147,16 +112,28 @@ export function MaskEditor({
     }
   };
 
-  const cellAt = (e: React.PointerEvent) => {
+  /** 칠한 것을 스토어에 넣는다. ★빈 판은 **빈 문자열**로 둔다. 그래야 「아무것도 안 칠하면
+   *  사각형 안쪽 전체」가 보낼 때 만들어진다 (`lib/focused.wholeRectMask`) */
+  const commit = () => {
+    const s = useImageInput.getState();
+    s.patchBase({ baseMask: painted.current.size ? maskRef.current!.toDataURL("image/png").split(",")[1] : "" });
+    setCount(painted.current.size);
+  };
+
+  const at = (e: React.PointerEvent) => {
     const c = maskRef.current!;
     const r = c.getBoundingClientRect();
-    const x = (e.clientX - r.left) * (c.width / r.width);
-    const y = (e.clientY - r.top) * (c.height / r.height);
+    return { x: (e.clientX - r.left) * (c.width / r.width), y: (e.clientY - r.top) * (c.height / r.height) };
+  };
+
+  const cellAt = (e: React.PointerEvent) => {
+    const c = maskRef.current!;
+    const p = at(e);
     const maxX = Math.floor(c.width / GRID) - 1;
     const maxY = Math.floor(c.height / GRID) - 1;
     return {
-      gx: Math.max(0, Math.min(Math.floor(x / GRID), maxX)),
-      gy: Math.max(0, Math.min(Math.floor(y / GRID), maxY)),
+      gx: Math.max(0, Math.min(Math.floor(p.x / GRID), maxX)),
+      gy: Math.max(0, Math.min(Math.floor(p.y / GRID), maxY)),
     };
   };
 
@@ -166,12 +143,20 @@ export function MaskEditor({
       mx.fillStyle = "black";
       mx.fillRect(gx * GRID, gy * GRID, GRID, GRID);
       painted.current.delete(key);
-    } else {
-      if (painted.current.has(key)) return;
-      mx.fillStyle = "white";
-      mx.fillRect(gx * GRID, gy * GRID, GRID, GRID);
-      painted.current.add(key);
+      return;
     }
+    // ★사각형 **안쪽**만 칠한다. 테두리 96px 은 문맥으로만 나가고, 밖은 아예 안 나간다.
+    //   여기서 막지 않으면 "칠했는데 안 고쳐지는" 자리가 생긴다
+    if (rect) {
+      const i = innerRect(rect);
+      const cx = gx * GRID + GRID / 2;
+      const cy = gy * GRID + GRID / 2;
+      if (cx < i.x || cy < i.y || cx > i.x + i.w || cy > i.y + i.h) return;
+    }
+    if (painted.current.has(key)) return;
+    mx.fillStyle = "white";
+    mx.fillRect(gx * GRID, gy * GRID, GRID, GRID);
+    painted.current.add(key);
   };
 
   /** 붓 굵기만큼 둘레 칸을 함께 (v2 `fillBrushArea`) */
@@ -217,46 +202,67 @@ export function MaskEditor({
     lastCell.current = cell;
   };
 
-  /** 「인페인트+」를 **고를 수 있나** — 원본이 1MP 이하면 자를 이유가 없다 (통째로 보내도 같다) */
-  const canTile = !!tile && natural.current.w * natural.current.h > TILE_MAX_PX;
-  /** ★켜져 있나 — **기본은 꺼짐**이다. 끄면 공홈과 같은 기본 인페인트로 나간다
-   *  (사용자 지시 2026-08-13: 타일이 기본을 대체하면 안 된다) */
-  const needTile = canTile && plus;
+  /** 사각형을 원본 좌표계로 되돌려 저장한다 */
+  const putRect = (r: Rect) =>
+    useImageInput.getState().setTileRect({
+      x: Math.round(r.x * kx), y: Math.round(r.y * ky),
+      w: Math.round(r.w * kx), h: Math.round(r.h * ky),
+    });
 
-  /** 칠한 자리를 보고 사각형을 다시 잡는다.
-   *
-   *  ★**손으로 옮긴 사각형을 함부로 되돌리지 않는다** — 칠한 자리가 사각형 밖으로
-   *    나갔을 때만 다시 잡는다. 그래야 "문맥을 더 넣으려고 옮겨 둔" 것이 안 풀린다. */
-  const refitRect = () => {
-    if (!needTile) return;
-    const bbox = paintedBBox(painted.current);
-    if (!bbox) return;
-    const inside =
-      rect &&
-      bbox.x >= rect.x && bbox.y >= rect.y &&
-      bbox.x + bbox.w <= rect.x + rect.w && bbox.y + bbox.h <= rect.y + rect.h;
-    if (inside) return;
-    setRect(autoRect(bbox, size.w, size.h));
+  /** 모서리를 잡았나 · 띠를 잡았나 · 칠하는가 */
+  const hitOf = (p: { x: number; y: number }) => {
+    if (!rect) return "paint";
+    const grab = Math.max(18, 44 / Math.max(kx, 1));
+    for (const [hx, hy, k] of [
+      [rect.x, rect.y, "nw"], [rect.x + rect.w, rect.y, "ne"],
+      [rect.x, rect.y + rect.h, "sw"], [rect.x + rect.w, rect.y + rect.h, "se"],
+    ] as [number, number, string][])
+      if (Math.abs(p.x - hx) < grab && Math.abs(p.y - hy) < grab) return k;
+    const i = innerRect(rect);
+    if (p.x >= i.x && p.x <= i.x + i.w && p.y >= i.y && p.y <= i.y + i.h) return "paint";
+    if (p.x >= rect.x && p.x <= rect.x + rect.w && p.y >= rect.y && p.y <= rect.y + rect.h) return "move";
+    return "outside";
   };
 
-  // 켜면 그 자리에서 사각형을 잡아 준다 (끄면 지운다)
+  // 사각형·테두리·안내를 겹쳐 그린다 (칠은 마스크 판이 따로 그린다)
   useEffect(() => {
-    if (!canTile) return;
-    if (!plus) return setRect(null);
-    const bbox = paintedBBox(painted.current);
-    setRect(bbox ? autoRect(bbox, size.w, size.h) : autoRect(
-      { x: size.w / 2 - 256, y: size.h / 2 - 256, w: 512, h: 512 }, size.w, size.h));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plus, canTile, size.w, size.h]);
-
-  /** 사각형 크기를 다음 후보로 — 중심을 지킨 채 바꾼다 (익스텐션의 `;`/`'` 자리) */
-  const cycleSize = () => {
+    const oc = overRef.current;
+    if (!oc || !size.w) return;
+    const o = oc.getContext("2d")!;
+    o.clearRect(0, 0, size.w, size.h);
     if (!rect) return;
-    const i = TILE_SIZES.findIndex(([w, h]) => w === rect.w && h === rect.h);
-    const [w, h] = TILE_SIZES[(i + 1) % TILE_SIZES.length];
-    const cx = rect.x + rect.w / 2, cy = rect.y + rect.h / 2;
-    setRect(clampRect({ x: Math.round(cx - w / 2), y: Math.round(cy - h / 2), w, h }, size.w, size.h));
-  };
+    const i = innerRect(rect);
+    o.fillStyle = "rgba(6,8,12,0.5)";
+    o.fillRect(0, 0, size.w, rect.y);
+    o.fillRect(0, rect.y + rect.h, size.w, size.h - rect.y - rect.h);
+    o.fillRect(0, rect.y, rect.x, rect.h);
+    o.fillRect(rect.x + rect.w, rect.y, size.w - rect.x - rect.w, rect.h);
+    // 여백 띠. 여기는 문맥으로만 간다 (칠이 안 된다)
+    o.fillStyle = "rgba(106,166,255,0.14)";
+    o.fillRect(rect.x, rect.y, rect.w, SAFE_MARGIN);
+    o.fillRect(rect.x, rect.y + rect.h - SAFE_MARGIN, rect.w, SAFE_MARGIN);
+    o.fillRect(rect.x, i.y, SAFE_MARGIN, i.h);
+    o.fillRect(rect.x + rect.w - SAFE_MARGIN, i.y, SAFE_MARGIN, i.h);
+    o.strokeStyle = "#6aa6ff";
+    o.lineWidth = Math.max(2, Math.round(size.w / 420));
+    o.strokeRect(rect.x, rect.y, rect.w, rect.h);
+    const hs = Math.max(8, Math.round(size.w / 120));
+    o.fillStyle = "#6aa6ff";
+    for (const [hx, hy] of [
+      [rect.x, rect.y], [rect.x + rect.w, rect.y],
+      [rect.x, rect.y + rect.h], [rect.x + rect.w, rect.y + rect.h],
+    ])
+      o.fillRect(hx - hs / 2, hy - hs / 2, hs, hs);
+    // ★보내는 크기와 확대율은 **사각형에 붙여** 적는다. 그림을 안 가리게 테두리 바깥쪽에
+    const plan = focusedPlan({ ...rect, w: Math.round(rect.w * kx), h: Math.round(rect.h * ky) });
+    const label = `${plan.req.width}×${plan.req.height}${plan.scale >= 1.05 ? `  ×${plan.scale.toFixed(1)}` : ""}`;
+    const fs = Math.max(13, Math.round(size.w / 52));
+    o.font = `${fs}px ui-monospace, Consolas, monospace`;
+    o.fillStyle = "#6aa6ff";
+    const tw = o.measureText(label).width;
+    const lx = Math.max(2, Math.min(rect.x, size.w - tw - 4));
+    o.fillText(label, lx, rect.y - fs * 0.4 > fs ? rect.y - fs * 0.4 : rect.y + rect.h + fs);
+  }, [rect?.x, rect?.y, rect?.w, rect?.h, size.w, size.h, kx, ky]);
 
   const clear = () => {
     const c = maskRef.current!;
@@ -264,6 +270,7 @@ export function MaskEditor({
     mx.fillStyle = "black";
     mx.fillRect(0, 0, c.width, c.height);
     painted.current.clear();
+    commit();
   };
 
   /** 반전 — 칠한 칸과 아닌 칸을 맞바꾼다 */
@@ -272,207 +279,165 @@ export function MaskEditor({
     const mx = c.getContext("2d")!;
     const cols = Math.floor(c.width / GRID);
     const rows = Math.floor(c.height / GRID);
-    const next = new Set<string>();
+    const keep = new Set(painted.current);
     mx.fillStyle = "black";
     mx.fillRect(0, 0, c.width, c.height);
-    for (let gy = 0; gy < rows; gy++) {
-      for (let gx = 0; gx < cols; gx++) {
-        const key = `${gx},${gy}`;
-        if (painted.current.has(key)) continue;
-        mx.fillStyle = "white";
-        mx.fillRect(gx * GRID, gy * GRID, GRID, GRID);
-        next.add(key);
-      }
-    }
-    painted.current = next;
+    painted.current.clear();
+    const was = erase;
+    // ★`fillCell` 을 그대로 쓴다. 사각형 안쪽 제한이 반전에도 걸려야 한다
+    for (let gy = 0; gy < rows; gy++)
+      for (let gx = 0; gx < cols; gx++) if (!keep.has(`${gx},${gy}`)) fillCell(mx, gx, gy);
+    if (was) setErase(true);
+    commit();
   };
+
+  const ready = size.w > 0;
+  const plan = rectNatural && focused ? focusedPlan(rectNatural) : null;
+  const big = !!baseSize && canFocus(baseSize.w, baseSize.h);
 
   return (
     <div
       data-mask-editor
-      onPointerDown={(e) => e.target === e.currentTarget && onCancel()}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 90,
-        background: "rgba(6,8,12,0.72)",
-        display: "grid",
-        placeItems: "center",
-        padding: "var(--sp-6)",
-      }}
+      style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}
     >
-      <div
-        style={{
-          background: "var(--surface)",
-          border: "1px solid var(--line)",
-          borderRadius: "var(--r-4)",
-          padding: "var(--sp-5)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--sp-4)",
-          maxWidth: "94vw",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)" }}>
-          {(["brush", "eraser"] as const).map((tool) => (
-            <button
-              key={tool}
-              data-mask-tool={tool}
-              onClick={() => setErase(tool === "eraser")}
-              style={{
-                ...btn,
-                background: erase === (tool === "eraser") ? "var(--accent)" : "var(--panel)",
-                color: erase === (tool === "eraser") ? "var(--accent-on)" : "var(--ink-soft)",
-              }}
-            >
-              {tool === "brush" ? Icon.brush : Icon.eraser}
-            </button>
-          ))}
-          <label style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", fontSize: "var(--text-2xs)" }}>
-            <span style={{ color: "var(--ink-faint)" }}>{t("imgIn.mask")}</span>
-            <input
-              type="range"
-              data-mask-brush
-              min={5}
-              max={100}
-              value={brush}
-              onChange={(e) => setBrush(Number(e.target.value))}
-            />
-            <span style={{ width: 22, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{brush}</span>
-          </label>
-          <span style={{ flex: 1 }} />
-          <button data-mask-clear onClick={clear} style={btn}>{Icon.trash}</button>
-          <button data-mask-invert onClick={invert} style={btn}>{Icon.refresh}</button>
-        </div>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)", padding: "0 var(--sp-4)" }}>
+        {(["brush", "eraser"] as const).map((tool) => (
+          <button
+            key={tool}
+            data-mask-tool={tool}
+            onClick={() => setErase(tool === "eraser")}
+            title={t(tool === "brush" ? "imgIn.brush" : "imgIn.eraser")}
+            style={{
+              ...btn,
+              background: erase === (tool === "eraser") ? "var(--accent)" : "var(--panel)",
+              color: erase === (tool === "eraser") ? "var(--accent-on)" : "var(--ink-soft)",
+            }}
+          >
+            {tool === "brush" ? Icon.brush : Icon.eraser}
+          </button>
+        ))}
+        <label style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", fontSize: "var(--text-2xs)" }}>
+          <span style={{ color: "var(--ink-faint)" }}>{t("imgIn.brushSize")}</span>
+          <input type="range" data-mask-brush min={5} max={100} value={brush}
+                 onChange={(e) => setBrush(Number(e.target.value))} />
+          <span style={{ width: 22, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{brush}</span>
+        </label>
+        <button data-mask-clear onClick={clear} style={btn} title={t("imgIn.maskClear")}>{Icon.trash}</button>
+        <button data-mask-invert onClick={invert} style={btn} title={t("imgIn.maskInvert")}>{Icon.refresh}</button>
 
-        <div
-          style={{ position: "relative", width: size.dw, height: size.dh, margin: "0 auto", touchAction: "none" }}
+        <span style={{ flex: 1 }} />
+        {/* 지금 무엇이 나가는지 한 줄. 칠한 것이 없으면 사각형 안쪽 전체다 */}
+        <span data-mask-report style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
+          {plan
+            ? count
+              ? t("focus.willSend", { w: plan.req.width, h: plan.req.height, s: plan.scale.toFixed(1) })
+              : t("focus.willSendWhole", { w: plan.req.width, h: plan.req.height })
+            : big
+              ? t("focus.offWarn")
+              : count
+                ? ""
+                : t("focus.paintFirst")}
+        </span>
+        <button
+          data-mask-done
+          onClick={() => useImageInput.getState().endEdit()}
+          style={{ ...btn, background: "var(--panel)" }}
         >
-          <canvas ref={imgRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
+          {t("imgIn.maskDoneBtn")}
+        </button>
+      </div>
+
+      <div style={{ flex: 1, minHeight: 0, display: "grid", placeItems: "center", padding: "0 var(--sp-4) var(--sp-2)" }}>
+        <div
+          style={{
+            position: "relative",
+            // ★비율은 `aspect-ratio` 가 지킨다. 높이를 채우고 넘치면 max-width 가 줄인다
+            aspectRatio: ready ? `${size.w} / ${size.h}` : "1",
+            width: "auto",
+            height: "100%",
+            maxWidth: "100%",
+            touchAction: "none",
+            border: "1px solid var(--line)",
+            borderRadius: "var(--r-2)",
+            overflow: "hidden",
+            background: "var(--panel)",
+          }}
+        >
+          <canvas ref={imgRef} style={layer} />
           {/* ★마스크는 반투명으로 얹어 보여 준다 — 내보낼 때는 캔버스 원본(순흑백)을 쓴다 */}
+          <canvas ref={maskRef} data-mask-canvas style={{ ...layer, opacity: 0.5, mixBlendMode: "screen" }} />
           <canvas
-            ref={maskRef}
-            data-mask-canvas
+            ref={overRef}
+            data-mask-overlay
+            /* 사각형을 표식으로도 내놓는다. 조작 테스트가 픽셀을 재지 않고 값을 본다 */
+            data-mask-rect={rectNatural && focused ? `${rectNatural.x},${rectNatural.y},${rectNatural.w},${rectNatural.h}` : undefined}
+            style={{ ...layer, cursor: "crosshair" }}
             onPointerDown={(e) => {
+              (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+              const p = at(e);
+              if (rect) {
+                const hit = hitOf(p);
+                if (hit === "outside") return;
+                if (hit === "move") { drag.current = { kind: "move", sx: p.x, sy: p.y, r0: rect }; return; }
+                if (hit !== "paint") { drag.current = { kind: "size", corner: hit, sx: p.x, sy: p.y, r0: rect }; return; }
+              }
               drawing.current = true;
               lastCell.current = null;
-              (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
               paint(e);
             }}
-            onPointerMove={paint}
-            onPointerUp={() => { drawing.current = false; lastCell.current = null; refitRect(); }}
-            onPointerCancel={() => { drawing.current = false; lastCell.current = null; refitRect(); }}
-            style={{
-              position: "absolute",
-              inset: 0,
-              width: "100%",
-              height: "100%",
-              opacity: 0.55,
-              mixBlendMode: "screen",
-              cursor: "crosshair",
+            onPointerMove={(e) => {
+              const d = drag.current;
+              if (d) {
+                const p = at(e);
+                if (d.kind === "move") {
+                  putRect(clampRect(
+                    { ...d.r0, x: d.r0.x + (p.x - d.sx), y: d.r0.y + (p.y - d.sy) },
+                    size.w, size.h,
+                    { x: d.r0.x + (p.x - d.sx), y: d.r0.y + (p.y - d.sy) },
+                  ));
+                } else {
+                  // ★잡은 모서리만 움직인다. 맞은편은 못 박혀 있다 (사용자 지적 2026-08-13)
+                  const ax = d.corner!.includes("e") ? d.r0.x : d.r0.x + d.r0.w;
+                  const ay = d.corner!.includes("s") ? d.r0.y : d.r0.y + d.r0.h;
+                  const cx = Math.max(0, Math.min(size.w, p.x));
+                  const cy = Math.max(0, Math.min(size.h, p.y));
+                  let w = Math.max(MIN_RECT, Math.abs(cx - ax));
+                  let h = Math.max(MIN_RECT, Math.abs(cy - ay));
+                  w = Math.min(w, cx < ax ? ax : size.w - ax);
+                  h = Math.min(h, cy < ay ? ay : size.h - ay);
+                  const fit = clampRect({ x: 0, y: 0, w, h }, size.w, size.h);
+                  putRect(clampRect(
+                    { ...fit, x: cx < ax ? ax - fit.w : ax, y: cy < ay ? ay - fit.h : ay },
+                    size.w, size.h,
+                    { x: cx < ax ? ax - fit.w : ax, y: cy < ay ? ay - fit.h : ay },
+                  ));
+                }
+                return;
+              }
+              if (e.buttons & 1) paint(e);
+            }}
+            onPointerUp={() => {
+              drag.current = null;
+              if (drawing.current) { drawing.current = false; lastCell.current = null; commit(); }
+            }}
+            onPointerCancel={() => {
+              drag.current = null;
+              if (drawing.current) { drawing.current = false; lastCell.current = null; commit(); }
             }}
           />
-
-          {/* ★크롭 사각형 — **이 안만 NAI 로 간다.** 밖은 원본이 그대로 남는다.
-              끌면 옮겨지고, 크기 단추로 후보를 돌린다. 자동으로 잡히므로 안 건드려도 된다 */}
-          {needTile && rect && (
-            <div
-              data-mask-rect={`${rect.x},${rect.y},${rect.w},${rect.h}`}
-              onPointerDown={(e) => {
-                e.stopPropagation();
-                (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-                dragRect.current = { x: e.clientX, y: e.clientY, rx: rect.x, ry: rect.y };
-              }}
-              onPointerMove={(e) => {
-                const d = dragRect.current;
-                if (!d) return;
-                // 화면 좌표 → 판 좌표 (판이 축소돼 보이고 있다)
-                const k = size.w / Math.max(1, size.dw);
-                setRect(clampRect({
-                  ...rect,
-                  x: Math.round(d.rx + (e.clientX - d.x) * k),
-                  y: Math.round(d.ry + (e.clientY - d.y) * k),
-                }, size.w, size.h));
-              }}
-              onPointerUp={() => { dragRect.current = null; }}
-              onPointerCancel={() => { dragRect.current = null; }}
-              style={{
-                position: "absolute",
-                left: `${(rect.x / size.w) * 100}%`,
-                top: `${(rect.y / size.h) * 100}%`,
-                width: `${(rect.w / size.w) * 100}%`,
-                height: `${(rect.h / size.h) * 100}%`,
-                border: "2px solid var(--accent)",
-                boxShadow: "0 0 0 9999px rgba(6,8,12,0.45)",
-                cursor: "move",
-                touchAction: "none",
-              }}
-            />
-          )}
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", fontSize: "var(--text-2xs)" }}>
-            <span style={{ color: "var(--ink-faint)" }}>{t("imgIn.strength")}</span>
-            <input
-              type="range"
-              data-mask-strength
-              min={0.01}
-              max={0.99}
-              step={0.01}
-              value={str}
-              onChange={(e) => setStr(Number(e.target.value))}
-            />
-            <span style={{ width: 30, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{str}</span>
-          </label>
-          {canTile && (
-            <button
-              data-mask-plus
-              data-on={plus ? "" : undefined}
-              onClick={() => setPlus((v) => !v)}
-              title={t("imgIn.plusHint")}
-              style={{
-                ...btn,
-                background: plus ? "var(--accent)" : "var(--panel)",
-                color: plus ? "var(--accent-on)" : "var(--ink-soft)",
-              }}
-            >
-              {t("imgIn.plus")}
-            </button>
-          )}
-          {needTile && rect && (
-            <button data-mask-size onClick={cycleSize} style={btn} title={t("imgIn.tileHint")}>
-              {rect.w}×{rect.h}
-            </button>
-          )}
-          <span style={{ flex: 1 }} />
-          <button data-mask-cancel onClick={onCancel} style={btn}>{t("imgIn.maskCancel")}</button>
-          <button
-            data-mask-apply
-            onClick={() => {
-              const png = maskRef.current!.toDataURL("image/png").split(",")[1];
-              // ★사각형은 **원본 좌표계**로 돌려준다 — 판은 64 배수로 맞춰져 있어 배율이 다르다
-              const k = natural.current.w / Math.max(1, size.w);
-              onApply(png, str, needTile && rect ? {
-                x: Math.round(rect.x * k), y: Math.round(rect.y * k),
-                w: Math.round(rect.w * k), h: Math.round(rect.h * k),
-              } : null);
-            }}
-            style={{ ...btn, background: "var(--accent)", color: "var(--accent-on)" }}
-          >
-            {t("imgIn.maskApply")}
-          </button>
         </div>
       </div>
     </div>
   );
 }
 
+const layer: React.CSSProperties = { position: "absolute", inset: 0, width: "100%", height: "100%" };
+
 const btn: React.CSSProperties = {
   background: "var(--panel)",
   border: "1px solid var(--line)",
   borderRadius: "var(--r-2)",
-  padding: "var(--sp-2) var(--sp-4)",
+  padding: "var(--sp-2) var(--sp-3)",
   fontSize: "var(--text-xs)",
   color: "var(--ink-soft)",
   display: "inline-flex",

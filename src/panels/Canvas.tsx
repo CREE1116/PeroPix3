@@ -16,6 +16,8 @@ import { imgUrl, thumbUrlOf } from "../lib/imgUrl";
 import { Icon } from "../components/Icon";
 import { toast } from "../store/toast";
 import { ImageActions } from "./ImageActions";
+import { MaskEditor } from "../components/MaskEditor";
+import { useImageInput } from "../store/imageInput";
 import { EnhanceDialog } from "./EnhanceDialog";
 import { useGallery, type ImageMeta } from "../store/gallery";
 import { useQueue } from "../store/queue";
@@ -48,6 +50,9 @@ export function Canvas({
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
   /** ★아직 안 나온 장 — 눌렀다는 신호이자 "어디에 생길지"다 (멀티의 queued 카드와 같은 것) */
   const pending = useQueue((q) => q.pending);
+  /** ★마스크를 칠하는 동안 **이 자리가 편집기로 바뀐다** (사용자 결정 2026-08-13).
+   *  모달로 띄우면 칠하는 동안 프롬프트도 결과도 못 본다. 생성 버튼은 그동안 「인페인트」다. */
+  const editing = useImageInput((s) => s.editing);
   const tab = activeTab();
   if (!tab) return null;
 
@@ -170,7 +175,11 @@ export function Canvas({
       <CanvasTabs part="sets" />
       <SetZone />
 
-      {isSet ? (
+      {editing ? (
+        // ★마스크 칠하기는 **씬 탭이든 옛 싱글 탭이든** 이 자리를 차지한다. 아래 갈래보다
+        //   먼저 판정해야 한다. 지금 워크스페이스의 탭은 전부 씬 탭이다 (2026-08-11)
+        <MaskEditor />
+      ) : isSet ? (
         // ★씬 칸 (2026-08-11) — 그릇 + 얹은 카드 + 씬 줄. 옛 목차형 무대(`SlotResults`)를
         //   대신한다. 위는 **고른 한 장**의 프리뷰다 (「줄마다 한 장」은 안 쓰기로 했다).
         <SceneStage />

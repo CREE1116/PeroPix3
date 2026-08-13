@@ -899,8 +899,10 @@ async def _generate_one(body: GenBody) -> dict:
         req.base_image = imgutil.crop_to_base64(tile_src, x, y, w, h)
         req.base_mask = mask_tile
         req.base_mode = "inpaint"
-        # ★이 두 줄이 설계의 전부다 — 요청 크기가 타일이 되는 순간 NAI 가 줄일 것이 없어진다
-        req.width, req.height = w, h
+        # ★조각을 **1MP 로 키워** 보낸다 (공홈 Focused Inpainting 과 같다). 조각 크기 그대로
+        #   보내면 작은 그림이 되어 세밀함이 원본만 못하다. 키워 보내야 그 자리가 촘촘해진다.
+        #   되붙일 때 원래 크기로 되돌린다 (`paste_tile` 의 w·h).
+        req.width, req.height = imgutil.fit_to_1mp(w, h)
         tile_rect = (x, y, w, h)
 
     # ★vibe 인코딩은 **조립 전에** 한다 — 유료 호출이라 캐시 판정이 여기서 끝나야 한다
@@ -922,7 +924,13 @@ async def _generate_one(body: GenBody) -> dict:
     #   (사용자 결정 2026-08-13: 타일 통째 덮어쓰기가 아니라 소프트 마스크 합성).
     if tile_src is not None and tile_rect is not None:
         try:
-            png = imgutil.paste_tile(tile_src, png, tile_rect[0], tile_rect[1])
+            x, y, w, h = tile_rect
+            png = imgutil.paste_tile(tile_src, png, x, y, w, h)
+            # ★타일 경로에서 `width`·`height` 는 요청 크기가 아니라 **최종 저장 크기**다
+            #   (요청 크기는 사각형에서 나온다). 기본값이 원본 크기라 대개 아무 일도 없고,
+            #   화면에서 값을 바꿨을 때만 마지막에 한 번 줄이거나 키운다.
+            if body.width and body.height and (body.width, body.height) != tile_src.size:
+                png = imgutil.resize_png(png, body.width, body.height)
         finally:
             tile_src.close()
 
