@@ -27,17 +27,16 @@ import { BANNER_BG, BANNER_CUT, BANNER_IMG_W, BANNER_STEP, bannerEmptyFill } fro
  *
  *  설계 정본은 `docs/timeline-mockup.html` (합의된 화면). */
 
-/** 칸 높이 3단. ★칸은 **정사각**이다 (사용자 지시 2026-08-14).
+/** ★칸은 **정사각**이고 크기는 연속값이다 (사용자 지시 2026-08-14).
  *  예전에는 폭을 생성 해상도 비율에서 뽑았는데, 해상도를 크게 잡으면 칸이 그만큼 길어져
- *  줄이 통째로 망가졌다 (1536×640 이면 칸 하나가 336px). 그림은 잘라서 보여 준다. */
-const SIZES = [64, 96, 140];
+ *  줄이 통째로 망가졌다 (1536×640 이면 칸 하나가 336px). 그림은 잘라서 보여 준다.
+ *  ★3단 버튼도 없앴다. Ctrl+휠 한 번에 12% 씩 움직인다 (`store/ui` 의 LANE_MIN·LANE_MAX). */
+const ZOOM = 1.12;
 const GAP = 6;
 /** 줄 머리 폭 — 그 씬의 프롬프트가 들어가므로 넓다.
  *  ★대가: 1500px 창에서 한 줄에 보이는 장이 10 → 8 로 준다 (칸 66 + 간격 6). */
 const HEADW = 286;
 const RULER_H = 19;
-/** ★키를 문자열로 조립하지 않는다 — i18n 검사가 동적 접두사를 잡는다 (`i18n.test.ts`) */
-const SIZE_KEYS = ["scenes.size0", "scenes.size1", "scenes.size2"] as const;
 
 export function SceneLane() {
   const t = useI18n((s) => s.t);
@@ -48,7 +47,7 @@ export function SceneLane() {
   // ★구독해서 읽는다. `getState()` 로 읽으면 진행이 바뀌어도 다시 그리지 않아
   //   「생성 중」이 영영 안 뜬다 (사용자 지적 2026-08-14)
   const progress = useQueue((s) => s.progress);
-  const laneStep = useUi((u) => u.laneStep);
+  const laneSize = useUi((u) => u.laneSize);
   const startDrag = useDragSource();
   // ★씬 프롬프트 목적지 — 켜져 있는 캐릭터만 고를 수 있다 (꺼진 캐릭터는 payload 에 없다)
   const chars = usePrompt((s) => s.chars).filter((c) => c.on);
@@ -71,9 +70,8 @@ export function SceneLane() {
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
-      const cur = useUi.getState().laneStep;
-      const next = Math.max(0, Math.min(2, cur + (e.deltaY < 0 ? 1 : -1)));
-      if (next !== cur) useUi.getState().setLaneStep(next);
+      const cur = useUi.getState().laneSize;
+      useUi.getState().setLaneSize(e.deltaY < 0 ? cur * ZOOM : cur / ZOOM);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -111,7 +109,7 @@ export function SceneLane() {
   // ★고른 캐릭터가 꺼지거나 지워졌으면 base 로 되돌린다 — 없는 곳으로 보내면 조용히 사라진다
   const dest = chars.some((c) => c.id === tab.sceneDest) ? tab.sceneDest! : "base";
 
-  const h = SIZES[Math.min(2, Math.max(0, laneStep))];
+  const h = laneSize;
   const w = h;
   const queued = pending.filter((p) => p.tabId === tab.id);
   const running = progress.total > progress.completed;
@@ -195,10 +193,10 @@ export function SceneLane() {
             차지하던 자리를 돌려주고, 손이 줄 위에 있는 채로 바로 조절된다.
             지금 단계만 알려 준다 (`data-lane-step` 은 조작 테스트가 읽는다) */}
         <span
-          data-lane-step={laneStep}
+          data-lane-size={laneSize}
           style={{ fontSize: "var(--text-2xs)", color: "var(--ink-ghost)", whiteSpace: "nowrap" }}
         >
-          {t("scenes.sizeHint", { s: t(SIZE_KEYS[laneStep]) })}
+          {t("scenes.sizeHint", { s: laneSize })}
         </span>
       </div>
 

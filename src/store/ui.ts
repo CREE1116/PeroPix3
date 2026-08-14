@@ -46,7 +46,9 @@ type Persisted = {
    *  크기 슬라이더를 따로 두지 않는다: 크기는 열 수에서 나온다 (하나의 정보에 하나의 창구). */
   cols: number;
   /** 씬 칸의 칸 크기 3단 (0 작게 · 1 보통 · 2 크게). ★썸네일 슬라이더를 따로 두지 않는다 */
-  laneStep: number;
+  /** 씬 칸 한 변의 길이(px). ★3단 고정이 아니라 **연속값**이다 (사용자 지시 2026-08-14).
+   *  Ctrl+휠로 조절하고, 한 번에 12% 씩 움직인다. */
+  laneSize: number;
   /** 씬 칸 높이 — 사용자가 손잡이로 정한다 */
   laneHeight: number;
   /** 생성 화면을 끄고 **슬롯만 모아 본다** — 선별 뒤 확인용 (사용자 결정 2026-08-04) */
@@ -67,7 +69,7 @@ const DEFAULTS: Persisted = {
   leftCollapsed: false,
   rightCollapsed: false,
   cols: 4,
-  laneStep: 1,
+  laneSize: 96,
   laneHeight: 302,
   curated: false,
   perSlot: 1,
@@ -91,7 +93,7 @@ function load(): Persisted {
 type S = Persisted & {
   mode: ModeId;
   setMode: (m: ModeId) => void;
-  setLaneStep: (n: number) => void;
+  setLaneSize: (n: number) => void;
   setLaneHeight: (n: number) => void;
   setLeftWidth: (w: number) => void;
   setAiWidth: (w: number) => void;
@@ -113,11 +115,16 @@ type S = Persisted & {
   commitLayout: () => void;
 };
 
+/** 씬 칸 한 변의 한계. ★위쪽을 크게 잡는다 (사용자 지시 2026-08-14: 훨씬 더 크게).
+ *  줄은 가로세로 다 스크롤하므로 커져도 화면을 안 뚫는다 (`SceneLane` 의 minWidth 주석). */
+export const LANE_MIN = 40;
+export const LANE_MAX = 560;
+
 export const useUi = create<S>((set, get) => ({
   ...load(),
   mode: "generate",
   setMode: (m) => set({ mode: m }),
-  setLaneStep: (n) => set({ laneStep: Math.min(2, Math.max(0, Math.round(n))) }),
+  setLaneSize: (n) => set({ laneSize: Math.min(LANE_MAX, Math.max(LANE_MIN, Math.round(n))) }),
   setLaneHeight: (n) => set({ laneHeight: Math.max(84, Math.round(n)) }),
   setLeftWidth: (w) => set({ leftWidth: w }),
   setAiWidth: (w) => set({ aiWidth: w }),
@@ -161,7 +168,7 @@ export const useUi = create<S>((set, get) => ({
     setTimeout(() => set({ flashes: get().flashes.filter((k) => k !== key) }), 2200);
   },
   commitLayout: () => {
-    const { leftWidth, rightWidth, leftCollapsed, rightCollapsed, cols, laneStep, laneHeight, font, aiWidth, aiCollapsed } =
+    const { leftWidth, rightWidth, leftCollapsed, rightCollapsed, cols, laneSize, laneHeight, font, aiWidth, aiCollapsed } =
       get();
     try {
       localStorage.setItem(
@@ -172,7 +179,7 @@ export const useUi = create<S>((set, get) => ({
           leftCollapsed,
           rightCollapsed,
           cols,
-          laneStep,
+          laneSize,
           laneHeight,
           font,
           aiWidth,
