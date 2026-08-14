@@ -552,7 +552,7 @@ function SceneStage() {
           }}
         />
       </div>
-      <div style={{ flexShrink: 0, height: laneHeight, display: "flex", minHeight: 0 }}>
+      <div style={{ flexShrink: 0, height: laneHeight, display: "flex", minHeight: 0, minWidth: 0 }}>
         <SceneLane />
       </div>
     </div>

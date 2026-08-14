@@ -117,7 +117,13 @@ export function SceneLane() {
   };
 
   return (
-    <div data-scene-lane style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+    <div
+      data-scene-lane
+      /* ★`minWidth: 0` 이 없으면 **가로로 넘칠 때 스크롤이 아니라 통째로 커진다**.
+         칸이 넓어지자 씬 줄이 오른쪽 기둥을 뚫고 나갔다 (사용자 지적 2026-08-14).
+         flex 자식의 기본 `min-width: auto` 가 내용 폭만큼 늘어나기 때문이다. */
+      style={{ flex: 1, minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column" }}
+    >
       {/* ★머리줄 — 그릇의 것이다. 카드 이름은 카드 배너가 말한다 */}
       <div
         style={{
@@ -598,8 +604,11 @@ function SceneRow(
   const c = p.cell;
   const on = p.focus.cell === c.id;
   const expanded = p.expandedId === c.id;
-  const takes = p.takes(c);
-  const waits = p.queuedOf(c.id);
+  /** ★줄은 **최신이 왼쪽**이다 (사용자 지시 2026-08-14, 싱글 히스토리 줄과 같은 규칙).
+   *  방금 나온 것을 찾아 눈이 끝까지 갈 이유가 없다. 대기 칸도 같은 규칙이라
+   *  **새로 넣은 큐가 맨 왼쪽**이고, 지금 만드는 중인 것은 결과 바로 옆에 선다. */
+  const takes = [...p.takes(c)].reverse();
+  const waits = [...p.queuedOf(c.id)].reverse();
   const patchCell = (patch: Partial<Slot>) =>
     p.onPatch({ cells: p.card.cells.map((x) => (x.id === c.id ? { ...x, ...patch } : x)) });
   /** 접혀 있을 때 보이는 한 줄 — ★켜진 블록의 태그만 (컴파일에서 빠지는 것을 보여 주면 헷갈린다) */
@@ -734,6 +743,26 @@ function SceneRow(
             {t("scenes.noneYet")}
           </span>
         )}
+        {waits.map((q) => (
+          <div
+            key={q.id}
+            data-pending-cell
+            style={{
+              flexShrink: 0,
+              width: p.w,
+              height: p.h,
+              borderRadius: "var(--r-1)",
+              border: `2px dashed ${q.id === p.firstWaiting ? "var(--accent)" : "var(--line)"}`,
+              background: "var(--bg)",
+              display: "grid",
+              placeItems: "center",
+              fontSize: 11,
+              color: q.id === p.firstWaiting ? "var(--accent)" : "var(--ink-faint)",
+            }}
+          >
+            {q.id === p.firstWaiting ? t("slots.running") : t("slots.queued")}
+          </div>
+        ))}
         {takes.map((r) => {
           const sel = p.picked.has(r.file);
           const cur = p.focus.cell === c.id && p.focus.file === r.file;
@@ -788,26 +817,6 @@ function SceneRow(
             </button>
           );
         })}
-        {waits.map((q) => (
-          <div
-            key={q.id}
-            data-pending-cell
-            style={{
-              flexShrink: 0,
-              width: p.w,
-              height: p.h,
-              borderRadius: "var(--r-1)",
-              border: `2px dashed ${q.id === p.firstWaiting ? "var(--accent)" : "var(--line)"}`,
-              background: "var(--bg)",
-              display: "grid",
-              placeItems: "center",
-              fontSize: 11,
-              color: q.id === p.firstWaiting ? "var(--accent)" : "var(--ink-faint)",
-            }}
-          >
-            {q.id === p.firstWaiting ? t("slots.running") : t("slots.queued")}
-          </div>
-        ))}
       </div>
     </div>
   );
