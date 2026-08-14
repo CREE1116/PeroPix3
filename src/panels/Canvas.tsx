@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { useGen } from "../store/gen";
-import { useWs, takesOf } from "../store/workspace";
+import { useWs, takesOf, allScenes } from "../store/workspace";
 import { SceneLane } from "./SceneLane";
 import { useSceneFocus } from "../store/sceneFocus";
 import { useUi } from "../store/ui";
@@ -633,10 +633,34 @@ function ScenePreview() {
   const tr = useI18n((s) => s.t);
   const { base } = useGen();
   const ws = useWs((s) => s.current);
+  const { records, activeTab, isDeleted } = useWs();
+  const cell = useSceneFocus((s) => s.cell);
   const file = useSceneFocus((s) => s.file);
+
+  /** ★휠로 앞뒤 장 (사용자 지시 2026-08-14, 싱글 큰 그림과 같은 조작).
+   *
+   *  ★**씬 줄에 보이는 순서를 따른다.** 줄은 최신이 왼쪽이므로, 아래로 굴리면
+   *    오른쪽(더 오래된 것)으로 간다. 저장 순서로 세면 줄과 반대로 움직인다
+   *    (싱글 쪽에서 한 번 밟은 함정이다). */
+  const tab = activeTab();
+  const scene = tab?.kind === "set" ? allScenes(tab).find((x) => x.cell.id === cell) : null;
+  const shown = scene
+    ? [...takesOf(records, tab!, scene.cell)].filter((r) => !isDeleted(r.file)).reverse()
+    : [];
+  const step = (d: 1 | -1) => {
+    if (shown.length < 2) return;
+    const i = shown.findIndex((r) => r.file === file);
+    const next = shown[Math.min(shown.length - 1, Math.max(0, (i < 0 ? 0 : i) + d))];
+    if (next && next.file !== file) useSceneFocus.getState().focus(cell, next.file);
+  };
+
   return (
     <div
       data-scene-preview
+      onWheel={(e) => {
+        if (e.deltaY === 0) return;
+        step(e.deltaY > 0 ? 1 : -1);
+      }}
       style={{
         flex: 1,
         minHeight: 0,
@@ -653,6 +677,7 @@ function ScenePreview() {
       {file ? (
         <img
           data-scene-img={file}
+          data-scene-pos={`${shown.findIndex((r) => r.file === file) + 1}/${shown.length}`}
           src={imgUrl(base, ws, file)}
           alt=""
           draggable={false}

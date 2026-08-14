@@ -115,10 +115,14 @@ type S = Persisted & {
   commitLayout: () => void;
 };
 
-/** 씬 칸 한 변의 한계. ★위쪽을 크게 잡는다 (사용자 지시 2026-08-14: 훨씬 더 크게).
- *  줄은 가로세로 다 스크롤하므로 커져도 화면을 안 뚫는다 (`SceneLane` 의 minWidth 주석). */
+/** 씬 칸 한 변의 한계.
+ *
+ *  ★위쪽은 **썸네일 해상도**가 정한다 (사용자 지시 2026-08-14). 썸네일은 긴 변 512px 로
+ *    굽는다(`backend/thumbs.py MAX_SIDE`). 그보다 크게 키우면 늘려 그리게 되어 흐려진다.
+ *    원본으로 갈아 끼우는 길도 만들어 봤지만 쓰지 않기로 했다 (스크롤할 때마다 큰 파일을
+ *    받게 되어, 보이는 칸만 그리는 최적화와 정면으로 부딪힌다). */
 export const LANE_MIN = 40;
-export const LANE_MAX = 560;
+export const LANE_MAX = 512;
 
 export const useUi = create<S>((set, get) => ({
   ...load(),

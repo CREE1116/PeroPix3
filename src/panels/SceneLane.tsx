@@ -5,7 +5,7 @@ import { usePrompt } from "../store/prompt";
 import { useQueue } from "../store/queue";
 import { useUi } from "../store/ui";
 import { useWs, takesOf, type Rec, type SceneCard, type Slot } from "../store/workspace";
-import { imgUrl, thumbUrlOf } from "../lib/imgUrl";
+import { thumbUrlOf } from "../lib/imgUrl";
 import { BlockList } from "../blocks/BlockList";
 import { Icon } from "../components/Icon";
 import { colorOf } from "../store/cards";
@@ -838,7 +838,13 @@ function SceneRow(
                 lineHeight: 0,
               }}
             >
-              <Thumb base={p.base} ws={p.ws} file={r.file} box={p.h} dim={sel} />
+              <img
+                src={thumbUrlOf(p.base, p.ws, r.file)}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", opacity: sel ? 0.6 : 1 }}
+              />
               <span
                 data-take-star={r.file}
                 onClick={(e) => {
@@ -864,41 +870,6 @@ function SceneRow(
         {tail > 0 && <div style={{ width: tail, flexShrink: 0 }} />}
       </div>
     </div>
-  );
-}
-
-/** 칸 안의 그림.
- *
- *  ★칸이 썸네일보다 커지면 **원본으로 갈아 끼운다** (사용자 지시 2026-08-14).
- *    썸네일은 긴 변 512px 로 굽는다 (`backend/thumbs.py MAX_SIDE`). 칸을 키우면 그것을
- *    늘려 그리게 되어 흐려진다.
- *  ★임계값을 숫자로 박지 않는다. 실제로 받은 그림의 **짧은 변**을 보고 판단한다.
- *    `object-fit: cover` 라 짧은 변이 칸을 채우기 때문이다. 세로로 긴 그림은 512 보다
- *    한참 작은 짧은 변을 가지므로(832×1216 이면 350) 숫자를 박으면 틀린다. */
-function Thumb({ base, ws, file, box, dim }: {
-  base: string; ws: string; file: string; box: number; dim: boolean;
-}) {
-  /** 받아 온 **썸네일의 짧은 변**. 이것과 칸 크기를 견줘 매번 다시 판단한다.
-   *  ★한 번 판단하고 끝내면 안 된다. 칸은 Ctrl+휠로 계속 바뀌는데 `onLoad` 는
-   *    그때 한 번만 불린다 (실측 2026-08-14: 560px 로 키워도 안 바뀌었다). */
-  const [thumbShort, setThumbShort] = useState(0);
-  const full = thumbShort > 0 && thumbShort < box * (window.devicePixelRatio || 1);
-  useEffect(() => { setThumbShort(0); }, [file]);
-  return (
-    <img
-      src={full ? imgUrl(base, ws, file) : thumbUrlOf(base, ws, file)}
-      alt=""
-      loading="lazy"
-      decoding="async"
-      data-full={full ? "" : undefined}
-      onLoad={(e) => {
-        // 원본을 받은 것은 재지 않는다. 재면 짧은 변이 커져 다시 썸네일로 튕긴다
-        if (full) return;
-        const im = e.currentTarget;
-        setThumbShort(Math.min(im.naturalWidth, im.naturalHeight));
-      }}
-      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", opacity: dim ? 0.6 : 1 }}
-    />
   );
 }
 
