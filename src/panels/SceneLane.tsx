@@ -5,7 +5,7 @@ import { usePrompt } from "../store/prompt";
 import { useQueue } from "../store/queue";
 import { useUi } from "../store/ui";
 import { useWs, takesOf, type Rec, type SceneCard, type Slot } from "../store/workspace";
-import { thumbUrlOf } from "../lib/imgUrl";
+import { imgUrl, thumbUrlOf } from "../lib/imgUrl";
 import { BlockList } from "../blocks/BlockList";
 import { Icon } from "../components/Icon";
 import { colorOf } from "../store/cards";
@@ -59,6 +59,32 @@ export function SceneLane() {
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  /** ★보이는 자리만 그리려고 재 두는 값 (사용자 지시 2026-08-14).
+   *  칸이 560px 까지 커지고 한 줄에 수십 장이 붙으므로, 다 그리면 화면이 무거워진다. */
+  const [view, setView] = useState({ x: 0, w: 0 });
+
+  // 스크롤·크기가 바뀌면 보이는 구간을 다시 잰다 (rAF 로 한 번만)
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let raf = 0;
+    const measure = () => {
+      raf = 0;
+      setView((v) =>
+        v.x === el.scrollLeft && v.w === el.clientWidth ? v : { x: el.scrollLeft, w: el.clientWidth },
+      );
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(measure); };
+    measure();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    const ro = new ResizeObserver(onScroll);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
 
   /** ★Ctrl + 휠로 칸 크기.
    *
@@ -255,6 +281,7 @@ export function SceneLane() {
                 takes={takesOfCell}
                 queuedOf={(cellId) => queued.filter((p) => p.cellId === cellId)}
                 firstWaiting={running ? (queued[0]?.id ?? null) : null}
+                view={view}
                 base={base}
                 ws={ws}
                 isStarred={isStarred}
@@ -404,6 +431,8 @@ type GroupProps = {
   takes: (c: Slot) => Rec[];
   queuedOf: (cellId: string) => { id: string }[];
   firstWaiting: string | null;
+  /** 스크롤 컨테이너의 보이는 구간 (가로). 이 밖의 칸은 안 그린다 */
+  view: { x: number; w: number };
   base: string;
   ws: string;
   isStarred: (f: string) => boolean;
@@ -615,6 +644,17 @@ function SceneRow(
    *  **새로 넣은 큐가 맨 왼쪽**이고, 지금 만드는 중인 것은 결과 바로 옆에 선다. */
   const takes = [...p.takes(c)].reverse();
   const waits = [...p.queuedOf(c.id)].reverse();
+  /** 보이는 구간의 칸 번호. 앞뒤로 2칸씩 더 그려 스크롤이 끊겨 보이지 않게 한다 */
+  const STEP = p.w + GAP;
+  const total = waits.length + takes.length;
+  const from = p.view.w
+    ? Math.max(0, Math.floor((p.view.x - HEADW - 8) / STEP) - 2)
+    : 0;
+  const to = p.view.w
+    ? Math.min(total, Math.ceil((p.view.x + p.view.w - HEADW - 8) / STEP) + 2)
+    : total;
+  const lead = from > 0 ? from * STEP - GAP : 0;
+  const tail = total - to > 0 ? (total - to) * STEP - GAP : 0;
   const patchCell = (patch: Partial<Slot>) =>
     p.onPatch({ cells: p.card.cells.map((x) => (x.id === c.id ? { ...x, ...patch } : x)) });
   /** 접혀 있을 때 보이는 한 줄 — ★켜진 블록의 태그만 (컴파일에서 빠지는 것을 보여 주면 헷갈린다) */
@@ -749,7 +789,11 @@ function SceneRow(
             {t("scenes.noneYet")}
           </span>
         )}
-        {waits.map((q) => (
+        {/* ★보이는 구간 앞뒤는 **빈 자리**로 때운다 (사용자 지시 2026-08-14).
+            폭을 그대로 채워야 스크롤 길이와 눈금이 안 어긋난다. flex 의 gap 때문에
+            빈 자리 하나가 간격 하나를 더 만들므로 그만큼 뺀다. */}
+        {lead > 0 && <div style={{ width: lead, flexShrink: 0 }} />}
+        {waits.slice(from, to).map((q) => (
           <div
             key={q.id}
             data-pending-cell
@@ -769,7 +813,7 @@ function SceneRow(
             {q.id === p.firstWaiting ? t("slots.running") : t("slots.queued")}
           </div>
         ))}
-        {takes.map((r) => {
+        {takes.slice(Math.max(0, from - waits.length), Math.max(0, to - waits.length)).map((r) => {
           const sel = p.picked.has(r.file);
           const cur = p.focus.cell === c.id && p.focus.file === r.file;
           return (
@@ -794,13 +838,7 @@ function SceneRow(
                 lineHeight: 0,
               }}
             >
-              <img
-                src={thumbUrlOf(p.base, p.ws, r.file)}
-                alt=""
-                loading="lazy"
-                decoding="async"
-                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", opacity: sel ? 0.6 : 1 }}
-              />
+              <Thumb base={p.base} ws={p.ws} file={r.file} box={p.h} dim={sel} />
               <span
                 data-take-star={r.file}
                 onClick={(e) => {
@@ -823,8 +861,44 @@ function SceneRow(
             </button>
           );
         })}
+        {tail > 0 && <div style={{ width: tail, flexShrink: 0 }} />}
       </div>
     </div>
+  );
+}
+
+/** 칸 안의 그림.
+ *
+ *  ★칸이 썸네일보다 커지면 **원본으로 갈아 끼운다** (사용자 지시 2026-08-14).
+ *    썸네일은 긴 변 512px 로 굽는다 (`backend/thumbs.py MAX_SIDE`). 칸을 키우면 그것을
+ *    늘려 그리게 되어 흐려진다.
+ *  ★임계값을 숫자로 박지 않는다. 실제로 받은 그림의 **짧은 변**을 보고 판단한다.
+ *    `object-fit: cover` 라 짧은 변이 칸을 채우기 때문이다. 세로로 긴 그림은 512 보다
+ *    한참 작은 짧은 변을 가지므로(832×1216 이면 350) 숫자를 박으면 틀린다. */
+function Thumb({ base, ws, file, box, dim }: {
+  base: string; ws: string; file: string; box: number; dim: boolean;
+}) {
+  /** 받아 온 **썸네일의 짧은 변**. 이것과 칸 크기를 견줘 매번 다시 판단한다.
+   *  ★한 번 판단하고 끝내면 안 된다. 칸은 Ctrl+휠로 계속 바뀌는데 `onLoad` 는
+   *    그때 한 번만 불린다 (실측 2026-08-14: 560px 로 키워도 안 바뀌었다). */
+  const [thumbShort, setThumbShort] = useState(0);
+  const full = thumbShort > 0 && thumbShort < box * (window.devicePixelRatio || 1);
+  useEffect(() => { setThumbShort(0); }, [file]);
+  return (
+    <img
+      src={full ? imgUrl(base, ws, file) : thumbUrlOf(base, ws, file)}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      data-full={full ? "" : undefined}
+      onLoad={(e) => {
+        // 원본을 받은 것은 재지 않는다. 재면 짧은 변이 커져 다시 썸네일로 튕긴다
+        if (full) return;
+        const im = e.currentTarget;
+        setThumbShort(Math.min(im.naturalWidth, im.naturalHeight));
+      }}
+      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", opacity: dim ? 0.6 : 1 }}
+    />
   );
 }
 
