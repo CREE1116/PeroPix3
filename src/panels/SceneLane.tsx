@@ -93,12 +93,17 @@ export function SceneLane() {
    *  세로는 휠로 쉬운데 가로가 어려웠다. 사진 격자처럼 잡아 끌면 옆으로 넘어간다.
    *  ★4px 을 넘게 움직였을 때만 끄는 것으로 본다. 그보다 작으면 그냥 클릭이라
    *    장을 고르는 조작이 죽으면 안 된다.
-   *  ★줄 머리는 뺀다. 거기에는 프롬프트 칸과 단추가 있어 끌면 안 된다. */
+   *  ★줄 머리는 뺀다. 거기에는 프롬프트 칸과 단추가 있어 끌면 안 된다.
+   *  ★끌기로 판정되는 순간 **포인터를 잡는다**(`setPointerCapture`). 안 잡으면 줄 밖으로
+   *    나가는 순간 바깥 UI 가 포인터를 받아, 끌던 것이 끊기고 거기 글자가 선택된다
+   *    (사용자 지적 2026-08-15). 잡는 것은 **판정된 뒤**다: 누르자마자 잡으면 클릭의
+   *    대상이 바뀌어 장을 고르는 조작이 어긋난다. */
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     let from: { x: number; y: number; sx: number; sy: number } | null = null;
     let moved = false;
+    let held = -1;   // 잡고 있는 pointerId (없으면 -1. id 는 0 일 수 있다)
     const down = (e: PointerEvent) => {
       const t = e.target as HTMLElement;
       if (e.button !== 0) return;
@@ -115,7 +120,15 @@ export function SceneLane() {
       const dx = e.clientX - from.x;
       const dy = e.clientY - from.y;
       if (!moved && Math.abs(dx) + Math.abs(dy) < 4) return;
-      moved = true;
+      if (!moved) {
+        moved = true;
+        held = e.pointerId;
+        try { el.setPointerCapture(e.pointerId); } catch { /* 이미 놓쳤으면 그냥 간다 */ }
+        // 끌리는 동안 바깥 글자가 선택되지 않게
+        el.style.userSelect = "none";
+      }
+      // 글자 선택·기본 끌기를 막는다. 이 시점에는 클릭을 이미 삼키기로 한 뒤다
+      e.preventDefault();
       el.style.cursor = "grabbing";
       el.scrollLeft = from.sx - dx;
       el.scrollTop = from.sy - dy;
@@ -123,6 +136,11 @@ export function SceneLane() {
     const up = () => {
       from = null;
       el.style.cursor = "";
+      el.style.userSelect = "";
+      if (held >= 0) {
+        try { el.releasePointerCapture(held); } catch { /* 이미 놓였으면 그만 */ }
+        held = -1;
+      }
       // ★표식을 **다음 차례에** 지운다. 클릭은 손을 떼자마자 같은 차례에 오므로 그때는
       //   아직 살아 있어 삼켜지고, 그 뒤로는 깨끗해진다.
       //   ★안 지우면 끌고 난 다음의 **진짜 클릭 한 번이 통째로 죽는다** (실측 2026-08-14:
@@ -142,12 +160,15 @@ export function SceneLane() {
     const noDrag = (e: DragEvent) => e.preventDefault();
     el.addEventListener("dragstart", noDrag);
     el.addEventListener("pointerdown", down);
+    // 포인터를 뺏겼으면 끌기도 거기서 끝난다 (창을 벗어나거나 다른 창으로 갔을 때)
+    el.addEventListener("lostpointercapture", up);
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     el.addEventListener("click", click, true);
     return () => {
       el.removeEventListener("dragstart", noDrag);
       el.removeEventListener("pointerdown", down);
+      el.removeEventListener("lostpointercapture", up);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       el.removeEventListener("click", click, true);
