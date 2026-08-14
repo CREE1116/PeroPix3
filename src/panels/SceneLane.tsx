@@ -27,7 +27,9 @@ import { BANNER_BG, BANNER_CUT, BANNER_IMG_W, BANNER_STEP, bannerEmptyFill } fro
  *
  *  설계 정본은 `docs/timeline-mockup.html` (합의된 화면). */
 
-/** 칸 높이 3단 — 카드 폭은 생성 해상도 비율에서 나온다 */
+/** 칸 높이 3단. ★칸은 **정사각**이다 (사용자 지시 2026-08-14).
+ *  예전에는 폭을 생성 해상도 비율에서 뽑았는데, 해상도를 크게 잡으면 칸이 그만큼 길어져
+ *  줄이 통째로 망가졌다 (1536×640 이면 칸 하나가 336px). 그림은 잘라서 보여 준다. */
 const SIZES = [64, 96, 140];
 const GAP = 6;
 /** 줄 머리 폭 — 그 씬의 프롬프트가 들어가므로 넓다.
@@ -39,10 +41,13 @@ const SIZE_KEYS = ["scenes.size0", "scenes.size1", "scenes.size2"] as const;
 
 export function SceneLane() {
   const t = useI18n((s) => s.t);
-  const { base, params } = useGen();
+  const base = useGen((g) => g.base);
   const { records, current: ws, activeTab, isDeleted, isStarred, toggleStar, deleteFiles,
     undoSelection, setTab, setCard, addCard, removeCard, addSlot } = useWs();
   const pending = useQueue((s) => s.pending);
+  // ★구독해서 읽는다. `getState()` 로 읽으면 진행이 바뀌어도 다시 그리지 않아
+  //   「생성 중」이 영영 안 뜬다 (사용자 지적 2026-08-14)
+  const progress = useQueue((s) => s.progress);
   const { laneStep, setLaneStep } = useUi();
   const startDrag = useDragSource();
   // ★씬 프롬프트 목적지 — 켜져 있는 캐릭터만 고를 수 있다 (꺼진 캐릭터는 payload 에 없다)
@@ -89,9 +94,9 @@ export function SceneLane() {
   const dest = chars.some((c) => c.id === tab.sceneDest) ? tab.sceneDest! : "base";
 
   const h = SIZES[Math.min(2, Math.max(0, laneStep))];
-  const w = Math.max(40, Math.round(h * (params.width / Math.max(1, params.height))));
+  const w = h;
   const queued = pending.filter((p) => p.tabId === tab.id);
-  const running = useQueue.getState().progress.total > useQueue.getState().progress.completed;
+  const running = progress.total > progress.completed;
 
   /** 그 씬의 결과 (숨긴 것 제외) */
   const takesOfCell = (c: Slot) => takesOf(records, tab, c).filter((r) => !isDeleted(r.file));

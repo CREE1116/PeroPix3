@@ -8,6 +8,10 @@ import { usePrompt } from "../store/prompt";
 import { useWs } from "../store/workspace";
 import { imgUrl } from "../lib/imgUrl";
 import { Icon } from "../components/Icon";
+import { anlasCost } from "../lib/anlas";
+import { useSub } from "../store/sub";
+import { useSceneFocus } from "../store/sceneFocus";
+import { allScenes } from "../store/workspace";
 
 /** ★Magnitude → 강도·노이즈. v2 `magnitudePresets` 원문 그대로 (index.html:23953).
  *  숫자를 바꾸면 결과가 달라진다 — "적당히 비슷한 값"으로 손대지 말 것. */
@@ -38,7 +42,8 @@ export function EnhanceDialog({
   onClose: () => void;
 }) {
   const t = useI18n((s) => s.t);
-  const { base, params, generate } = useGen();
+  const { base, params } = useGen();
+  const opus = useSub((s) => (s.sub?.tier ?? 0) >= 3);
   const ws = useWs((s) => s.current);
   const records = useWs((s) => s.records);
   const tabNow = useWs((s) => s.activeTab());
@@ -74,6 +79,14 @@ export function EnhanceDialog({
     ? enhanceTargetSize(size[0], size[1], scale)
     : [params.width, params.height];
 
+  /** ★값을 **누르기 전에** 보여 준다 (사용자 지적 2026-08-14).
+   *  강화는 i2i 라 강도가 값에 들어간다. 배율을 올리면 크기가 커져 값도 뛴다. */
+  const cost = anlasCost({
+    width: target[0], height: target[1], steps: params.steps, opus,
+    uncachedVibes: 0, activeVibes: 0, refCount: 0,
+    strength: useStrength, count: files.length,
+  });
+
   const run = async () => {
     if (busy) return;
     setBusy(true);
@@ -87,19 +100,29 @@ export function EnhanceDialog({
         base_strength: useStrength,
         base_noise: useNoise,
       }));
-      if (jobs.length === 1) {
-        await generate(undefined, jobs[0]);
-      } else {
-        // 여러 장은 큐로 — 한 장씩 await 하면 중간에 앱을 닫을 때 나머지가 사라진다
-        const { prompt, uc, chars } = usePrompt.getState().compiled();
-        await useQueue.getState().enqueue(
-          { ...useGen.getState().params, ...useImageInput.getState().payload(), prompt, negative_prompt: uc,
-            characters: chars, workspace: ws, tab: tabName, char: charName },
-          jobs,
-          1,
-        );
-      }
+      // ★한 장이어도 **큐로 보낸다** (사용자 지적 2026-08-14).
+      //   예전에는 한 장일 때만 `generate()` 로 직접 돌아서, 다 될 때까지 창이 안 닫히고
+      //   조작이 막혔다. 대기 칸도 안 떴다. 큐로 보내면 누른 즉시 자리가 잡힌다.
+      const { prompt, uc, chars } = usePrompt.getState().compiled();
+      // ★어느 씬 칸의 그림인가. 안 실으면 씬 탭에서 결과가 어디에도 안 뜬다 (`lib/takes.ts`)
+      const cellId = useSceneFocus.getState().cell;
+      const found = tabNow?.kind === "set" && cellId
+        ? allScenes(tabNow).find((x) => x.cell.id === cellId)
+        : null;
+      // ★창을 **먼저** 닫는다 (사용자 지적 2026-08-14: 다 될 때까지 안 꺼졌다).
+      //   큐는 보내기 전에 대기 칸을 미리 잡아 두므로, 닫자마자 그 자리가 보인다.
       onClose();
+      await useQueue.getState().enqueue(
+        {
+          ...useGen.getState().params,
+          ...useImageInput.getState().payload(),
+          prompt, negative_prompt: uc, characters: chars,
+          workspace: ws, tab: tabName, tab_id: tabNow?.id ?? null, char: charName,
+          ...(found ? { cell: found.cell.name, cell_id: found.cell.id } : {}),
+        },
+        jobs,
+        1,
+      );
     } catch (e) {
       // ★조용히 실패하지 않는다 — 실측으로 밟았다 (그림을 못 읽어 아무 일도 안 일어났다)
       useGen.setState({ error: String(e) });
@@ -231,6 +254,9 @@ export function EnhanceDialog({
         >
           {Icon.spark}
           {files.length > 1 ? t("enhance.runN", { n: files.length }) : t("enhance.run")}
+          <span style={{ opacity: 0.82, fontVariantNumeric: "tabular-nums" }}>
+            {t("focus.oneCost", { a: cost.total })}
+          </span>
         </button>
       </div>
     </div>

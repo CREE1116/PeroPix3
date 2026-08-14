@@ -98,7 +98,14 @@ export const useQueue = create<S>((set, get) => ({
     //   서버가 한 바퀴씩 도는데 여기서 씬별로 몰아 넣으면, "지금 만드는 중"이 엉뚱한 줄에 뜬다.
     for (let i = 0; i < Math.max(1, count); i++) {
       for (const it of units) {
-        add.push({ id: `p${seqId++}`, tabId, cellId: (it.cell_id as string) ?? null });
+        // ★칸은 **항목에 없으면 base 에서** 가져온다. 강화처럼 항목이 파일만 들고 오는
+        //   경우가 있는데, 그때 null 로 두면 대기 칸이 어느 씬에도 안 뜬다
+        //   (사용자 지적 2026-08-14: 눌러도 아무 반응이 없어 보였다)
+        add.push({
+          id: `p${seqId++}`,
+          tabId,
+          cellId: ((it.cell_id as string) ?? (base.cell_id as string)) ?? null,
+        });
       }
     }
     set({ pending: [...get().pending, ...add] });
