@@ -507,6 +507,7 @@ export const ko: Dict = {
     destChar: "캐릭터 · {name}에",
     size1: "보통",
     size2: "크게",
+    sizeHint: "칸 {s} · Ctrl+휠로 조절",
     cardLabel: "씬 세트 · {n}개",
     addCard: "씬 카드 추가",
     addCardFirst: "씬 카드 추가하기",

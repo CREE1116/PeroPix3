@@ -507,6 +507,7 @@ export const en = {
     destChar: "Character · {name}",
     size1: "M",
     size2: "L",
+    sizeHint: "Cells {s} · Ctrl and wheel to resize",
     cardLabel: "SCENE SET · {n}",
     addCard: "Add scene card",
     addCardFirst: "Add a scene card",

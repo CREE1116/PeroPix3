@@ -48,7 +48,7 @@ export function SceneLane() {
   // ★구독해서 읽는다. `getState()` 로 읽으면 진행이 바뀌어도 다시 그리지 않아
   //   「생성 중」이 영영 안 뜬다 (사용자 지적 2026-08-14)
   const progress = useQueue((s) => s.progress);
-  const { laneStep, setLaneStep } = useUi();
+  const laneStep = useUi((u) => u.laneStep);
   const startDrag = useDragSource();
   // ★씬 프롬프트 목적지 — 켜져 있는 캐릭터만 고를 수 있다 (꺼진 캐릭터는 payload 에 없다)
   const chars = usePrompt((s) => s.chars).filter((c) => c.on);
@@ -60,6 +60,24 @@ export function SceneLane() {
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  /** ★Ctrl + 휠로 칸 크기.
+   *
+   *  ★**네이티브 리스너로 붙인다.** React 의 `onWheel` 은 뿌리에 passive 로 달려서
+   *    `preventDefault()` 가 안 먹고, 그러면 Ctrl+휠이 웹뷰 **확대**로 새어 나간다. */
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const cur = useUi.getState().laneStep;
+      const next = Math.max(0, Math.min(2, cur + (e.deltaY < 0 ? 1 : -1)));
+      if (next !== cur) useUi.getState().setLaneStep(next);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   // 탭을 옮기면 고른 것을 놓는다 — 다른 탭의 파일을 고른 채로 두면 안 된다
   const tabId = tab?.id;
@@ -173,25 +191,15 @@ export function SceneLane() {
           </select>
         </label>
         <span style={{ flex: 1 }} />
-        <div style={{ display: "flex", border: "1px solid var(--line)", borderRadius: "var(--r-2)", overflow: "hidden" }}>
-          {[0, 1, 2].map((i) => (
-            <button
-              key={i}
-              data-lane-step={i}
-              onClick={() => setLaneStep(i)}
-              style={{
-                padding: "2px var(--sp-3)",
-                fontSize: "var(--text-2xs)",
-                borderRight: i < 2 ? "1px solid var(--line)" : undefined,
-                background: i === laneStep ? "var(--accent-bg)" : "transparent",
-                color: i === laneStep ? "var(--accent)" : "var(--ink-dim)",
-                fontWeight: i === laneStep ? "var(--w-semi)" : 400,
-              }}
-            >
-              {t(SIZE_KEYS[i])}
-            </button>
-          ))}
-        </div>
+        {/* ★칸 크기는 **Ctrl + 휠**로 바꾼다 (사용자 지시 2026-08-14). 버튼 셋이
+            차지하던 자리를 돌려주고, 손이 줄 위에 있는 채로 바로 조절된다.
+            지금 단계만 알려 준다 (`data-lane-step` 은 조작 테스트가 읽는다) */}
+        <span
+          data-lane-step={laneStep}
+          style={{ fontSize: "var(--text-2xs)", color: "var(--ink-ghost)", whiteSpace: "nowrap" }}
+        >
+          {t("scenes.sizeHint", { s: t(SIZE_KEYS[laneStep]) })}
+        </span>
       </div>
 
       <div

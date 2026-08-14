@@ -507,6 +507,7 @@ export const ja: Dict = {
     destChar: "キャラクター · {name}へ",
     size1: "中",
     size2: "大",
+    sizeHint: "コマ {s} · Ctrl+ホイールで調整",
     cardLabel: "シーンセット · {n}",
     addCard: "シーンカード追加",
     addCardFirst: "シーンカードを追加",
