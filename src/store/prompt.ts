@@ -131,9 +131,22 @@ export const defaultUc = (): Block[] => [
 ];
 
 /** 저장 예약 — 순환 참조를 피하려 workspace 스토어가 여기에 자기 저장 함수를 꽂는다. */
-let onEdit: (() => void) | null = null;
+let onEditRaw: (() => void) | null = null;
+let paused = false;
+const onEdit = () => {
+  if (!paused) onEditRaw?.();
+};
 export const setPromptSaver = (fn: () => void) => {
-  onEdit = fn;
+  onEditRaw = fn;
+};
+
+/** ★인페인트 중에는 저장을 멈춘다.
+ *
+ *  인페인트는 **씬 프롬프트의 사본**을 편집한다 (사용자 결정 2026-08-13: 구조는 같아야 하고,
+ *  거기서 고친 것이 씬 카드에 남으면 안 된다). 이 패널은 편집할 때마다 워크스페이스에
+ *  저장을 예약하므로, 멈추지 않으면 **사본이 씬 카드를 덮어쓴다.** */
+export const pausePromptSave = (v: boolean) => {
+  paused = v;
 };
 
 const newId = () => "ch_" + Math.random().toString(36).slice(2, 8);
@@ -153,14 +166,14 @@ export const usePrompt = create<S>((set, get) => ({
 
   update: (area, fn) => {
     set({ [area]: fn(get()[area]) } as Pick<S, AreaId>);
-    onEdit?.();
+    onEdit();
   },
 
   updateChar: (id, area, fn) => {
     set({
       chars: get().chars.map((c) => (c.id === id ? { ...c, [area]: fn(c[area]) } : c)),
     });
-    onEdit?.();
+    onEdit();
   },
 
   setStyle: (s) => {
@@ -170,13 +183,13 @@ export const usePrompt = create<S>((set, get) => ({
       ...(s.base ? { base: s.base } : {}),
       ...(s.uc ? { baseUc: s.uc } : {}),
     });
-    onEdit?.();
+    onEdit();
   },
 
   setThumb(section, thumb) {
     if (section === "base") set({ style: { ...get().style, thumb } });
     else set({ chars: get().chars.map((c) => (c.id === section ? { ...c, thumb } : c)) });
-    onEdit?.();
+    onEdit();
   },
 
   addChar(c) {
@@ -198,7 +211,7 @@ export const usePrompt = create<S>((set, get) => ({
         },
       ],
     });
-    onEdit?.();
+    onEdit();
     return id;
   },
 
@@ -218,29 +231,29 @@ export const usePrompt = create<S>((set, get) => ({
           : x,
       ),
     });
-    onEdit?.();
+    onEdit();
   },
 
   stackChar(id, c) {
     set({
       chars: get().chars.map((x) => (x.id === id ? { ...x, stack: [...x.stack, c] } : x)),
     });
-    onEdit?.();
+    onEdit();
   },
 
   removeChar(id) {
     set({ chars: get().chars.filter((c) => c.id !== id) });
-    onEdit?.();
+    onEdit();
   },
 
   renameChar(id, name) {
     set({ chars: get().chars.map((c) => (c.id === id ? { ...c, name } : c)) });
-    onEdit?.();
+    onEdit();
   },
 
   toggleChar(id) {
     set({ chars: get().chars.map((c) => (c.id === id ? { ...c, on: !c.on } : c)) });
-    onEdit?.();
+    onEdit();
   },
 
   rotateStack(id) {
@@ -258,7 +271,7 @@ export const usePrompt = create<S>((set, get) => ({
         };
       }),
     });
-    onEdit?.();
+    onEdit();
   },
 
   load: (p) =>

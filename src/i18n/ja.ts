@@ -244,6 +244,9 @@ export const ja: Dict = {
     offWarn: "Focused がオフなので結果が縮みます",
     paintFirst: "直す場所を塗ってください",
     inpaintBtn: "インペイント",
+    oneCost: "({a} Anlas)",
+    promptLabel: "インペイント プロンプト",
+    lockedByInpaint: "インペイント中です。このボタンはスロット全体を作る所なので今は使えません。",
     costWarn: "無料枠（1MP）を超えて {a} Anlas かかります",
   },
 

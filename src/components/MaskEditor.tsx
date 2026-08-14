@@ -3,6 +3,9 @@ import { useI18n } from "../i18n";
 import { Icon } from "./Icon";
 import { alignTo64 } from "../store/gen";
 import { useImageInput } from "../store/imageInput";
+import { anlasCost } from "../lib/anlas";
+import { useSub } from "../store/sub";
+import { useGen } from "../store/gen";
 import {
   MIN_RECT,
   SAFE_MARGIN,
@@ -29,9 +32,18 @@ import {
  */
 const GRID = 8;
 
+/** 칠한 자리를 보여 주는 색. ★보내는 마스크와 무관하다 (그쪽은 순흑백이다).
+ *  파랑 계열은 사각형 테두리와 겹쳐서 빨강을 쓴다. */
+const PAINT_COLOR = "rgba(255,64,96,0.55)";
+
 export function MaskEditor() {
   const t = useI18n((s) => s.t);
   const image = useImageInput((s) => s.baseImage);
+  const baseName = useImageInput((s) => s.baseName);
+  const params = useGen((s) => s.params);
+  const busy = useGen((s) => s.busy);
+  const queueInpaint = useGen((s) => s.queueInpaint);
+  const opus = useSub((s) => (s.sub?.tier ?? 0) >= 3);
   const savedMask = useImageInput((s) => s.baseMask);
   const focused = useImageInput((s) => s.focused);
   const rectNatural = useImageInput((s) => s.tileRect);
@@ -39,6 +51,7 @@ export function MaskEditor() {
 
   const maskRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLCanvasElement>(null);
+  const showRef = useRef<HTMLCanvasElement>(null);
   const overRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [brush, setBrush] = useState(30);
@@ -75,13 +88,15 @@ export function MaskEditor() {
       setSize({ w, h });
       const ic = imgRef.current!;
       const mc = maskRef.current!;
+      const sc = showRef.current!;
       const oc = overRef.current!;
-      ic.width = mc.width = oc.width = w;
-      ic.height = mc.height = oc.height = h;
+      ic.width = mc.width = sc.width = oc.width = w;
+      ic.height = mc.height = sc.height = oc.height = h;
       ic.getContext("2d")!.drawImage(img, 0, 0, w, h);
       const mx = mc.getContext("2d")!;
       mx.fillStyle = "black";
       mx.fillRect(0, 0, w, h);
+      sc.getContext("2d")!.clearRect(0, 0, w, h);
       painted.current.clear();
       setCount(0);
       if (savedMask) {
@@ -89,6 +104,7 @@ export function MaskEditor() {
         m.onload = () => {
           mx.drawImage(m, 0, 0, w, h);
           syncPainted(mx, w, h);
+          repaintShow();
           setCount(painted.current.size);
         };
         m.src = "data:image/png;base64," + savedMask;
@@ -112,6 +128,19 @@ export function MaskEditor() {
     }
   };
 
+  /** 보여 주는 판을 칠한 칸에서 다시 그린다 (되읽기·반전·지우기 뒤) */
+  const repaintShow = () => {
+    const sc = showRef.current;
+    if (!sc) return;
+    const sx = sc.getContext("2d")!;
+    sx.clearRect(0, 0, sc.width, sc.height);
+    sx.fillStyle = PAINT_COLOR;
+    for (const key of painted.current) {
+      const [gx, gy] = key.split(",").map(Number);
+      sx.fillRect(gx * GRID, gy * GRID, GRID, GRID);
+    }
+  };
+
   /** 칠한 것을 스토어에 넣는다. ★빈 판은 **빈 문자열**로 둔다. 그래야 「아무것도 안 칠하면
    *  사각형 안쪽 전체」가 보낼 때 만들어진다 (`lib/focused.wholeRectMask`) */
   const commit = () => {
@@ -120,14 +149,19 @@ export function MaskEditor() {
     setCount(painted.current.size);
   };
 
+  /** 화면 좌표 → 판 좌표.
+   *  ★자를 대는 것은 **화면에 보이는 판**(overlay)이다. 데이터 판(mask)은 `display:none` 이라
+   *    `getBoundingClientRect()` 가 전부 0 이고, 그러면 칠하기도 사각형 끌기도 통째로 죽는다
+   *    (실측 2026-08-14: 조작 테스트가 잡았다. 사각형이 아예 안 움직였다). */
   const at = (e: React.PointerEvent) => {
-    const c = maskRef.current!;
+    const c = overRef.current!;
     const r = c.getBoundingClientRect();
+    if (!r.width || !r.height) return { x: 0, y: 0 };
     return { x: (e.clientX - r.left) * (c.width / r.width), y: (e.clientY - r.top) * (c.height / r.height) };
   };
 
   const cellAt = (e: React.PointerEvent) => {
-    const c = maskRef.current!;
+    const c = overRef.current!;
     const p = at(e);
     const maxX = Math.floor(c.width / GRID) - 1;
     const maxY = Math.floor(c.height / GRID) - 1;
@@ -137,16 +171,10 @@ export function MaskEditor() {
     };
   };
 
-  const fillCell = (mx: CanvasRenderingContext2D, gx: number, gy: number) => {
+  /** 한 칸을 칠한다 (지우개와 무관). ★사각형 **안쪽**만 칠한다: 테두리 96px 은 문맥으로만
+   *  나가고 밖은 아예 안 나간다. 여기서 막지 않으면 "칠했는데 안 고쳐지는" 자리가 생긴다. */
+  const paintCell = (mx: CanvasRenderingContext2D, gx: number, gy: number) => {
     const key = `${gx},${gy}`;
-    if (erase) {
-      mx.fillStyle = "black";
-      mx.fillRect(gx * GRID, gy * GRID, GRID, GRID);
-      painted.current.delete(key);
-      return;
-    }
-    // ★사각형 **안쪽**만 칠한다. 테두리 96px 은 문맥으로만 나가고, 밖은 아예 안 나간다.
-    //   여기서 막지 않으면 "칠했는데 안 고쳐지는" 자리가 생긴다
     if (rect) {
       const i = innerRect(rect);
       const cx = gx * GRID + GRID / 2;
@@ -154,9 +182,22 @@ export function MaskEditor() {
       if (cx < i.x || cy < i.y || cx > i.x + i.w || cy > i.y + i.h) return;
     }
     if (painted.current.has(key)) return;
+    // ★두 판을 **함께** 칠한다: 보내는 것은 순흑백(mx), 보이는 것은 빨강(show).
+    //   한 판으로 겸하면 흰 마스크가 밝은 그림 위에서 안 보인다 (사용자 지적 2026-08-13)
     mx.fillStyle = "white";
     mx.fillRect(gx * GRID, gy * GRID, GRID, GRID);
+    const sx = showRef.current!.getContext("2d")!;
+    sx.fillStyle = PAINT_COLOR;
+    sx.fillRect(gx * GRID, gy * GRID, GRID, GRID);
     painted.current.add(key);
+  };
+
+  const fillCell = (mx: CanvasRenderingContext2D, gx: number, gy: number) => {
+    if (!erase) return paintCell(mx, gx, gy);
+    mx.fillStyle = "black";
+    mx.fillRect(gx * GRID, gy * GRID, GRID, GRID);
+    showRef.current!.getContext("2d")!.clearRect(gx * GRID, gy * GRID, GRID, GRID);
+    painted.current.delete(`${gx},${gy}`);
   };
 
   /** 붓 굵기만큼 둘레 칸을 함께 (v2 `fillBrushArea`) */
@@ -270,6 +311,7 @@ export function MaskEditor() {
     mx.fillStyle = "black";
     mx.fillRect(0, 0, c.width, c.height);
     painted.current.clear();
+    repaintShow();
     commit();
   };
 
@@ -282,18 +324,30 @@ export function MaskEditor() {
     const keep = new Set(painted.current);
     mx.fillStyle = "black";
     mx.fillRect(0, 0, c.width, c.height);
+    showRef.current!.getContext("2d")!.clearRect(0, 0, c.width, c.height);
     painted.current.clear();
-    const was = erase;
-    // ★`fillCell` 을 그대로 쓴다. 사각형 안쪽 제한이 반전에도 걸려야 한다
+    // ★`paintCell` 을 쓴다: 사각형 안쪽 제한이 반전에도 걸려야 하고, **지우개가 켜져 있어도
+    //   반전은 칠해야 한다** (`fillCell` 은 지우개를 본다)
     for (let gy = 0; gy < rows; gy++)
-      for (let gx = 0; gx < cols; gx++) if (!keep.has(`${gx},${gy}`)) fillCell(mx, gx, gy);
-    if (was) setErase(true);
+      for (let gx = 0; gx < cols; gx++) if (!keep.has(`${gx},${gy}`)) paintCell(mx, gx, gy);
     commit();
   };
 
   const ready = size.w > 0;
   const plan = rectNatural && focused ? focusedPlan(rectNatural) : null;
   const big = !!baseSize && canFocus(baseSize.w, baseSize.h);
+  /** ★실행 버튼은 **이 화면 안에** 있다 (사용자 지적 2026-08-13).
+   *
+   *  왼쪽 생성 푸터를 빌려 쓰면 「생성」이 슬롯 전체를 도는 문법과 부딪힌다.
+   *  5슬롯을 열어 둔 채 인페인트하면 5장이 나왔다. 강화·업스케일이 그림 아래 줄에서
+   *  자기 버튼으로 도는 것과 같은 계열로 둔다. */
+  const req = plan ? plan.req : { width: params.width, height: params.height };
+  const cost = anlasCost({
+    width: req.width, height: req.height, steps: params.steps, opus,
+    uncachedVibes: 0, activeVibes: 0, refCount: 0, strength: 1, count: 1,
+  });
+  // 아무것도 안 칠해도 사각형이 있으면 안쪽 전체를 다시 그린다
+  const canRun = !busy && (count > 0 || (focused && !!rectNatural));
 
   return (
     <div
@@ -301,6 +355,25 @@ export function MaskEditor() {
       style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)", padding: "0 var(--sp-4)" }}>
+        {/* ★지금 무슨 상황인지 **맨 앞에서** 말한다. 화면이 통째로 바뀌는 자리라,
+            무엇을 하는 중인지와 어느 그림인지가 한눈에 보여야 한다 */}
+        <span
+          data-mask-title
+          style={{
+            display: "inline-flex", alignItems: "center", gap: "var(--sp-2)",
+            padding: "3px var(--sp-3)", borderRadius: "var(--r-2)",
+            background: "var(--accent-bg, var(--panel))", border: "1px solid var(--accent)",
+            fontSize: "var(--text-2xs)", color: "var(--accent)", fontWeight: "var(--w-semi)",
+            flexShrink: 0, maxWidth: 260,
+          }}
+        >
+          {Icon.brush}
+          {t("imgIn.inpaint")}
+          <span style={{ color: "var(--ink-faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {baseName}
+          </span>
+        </span>
+        <span style={{ width: 1, alignSelf: "stretch", background: "var(--line)" }} />
         {(["brush", "eraser"] as const).map((tool) => (
           <button
             key={tool}
@@ -338,12 +411,36 @@ export function MaskEditor() {
                 ? ""
                 : t("focus.paintFirst")}
         </span>
+        {/* 실행. 이 화면의 버튼이고 언제나 **이 한 장**에만 먹는다 */}
+        <button
+          data-mask-run
+          disabled={!canRun}
+          onClick={() => {
+            if (!canRun) return;
+            // 나가는 것은 `queueInpaint` 가 페이로드를 굳힌 뒤에 한다 (순서가 걸려 있다)
+            void queueInpaint(1);
+          }}
+          style={{
+            ...btn,
+            background: canRun ? "var(--accent)" : "var(--panel)",
+            borderColor: canRun ? "var(--accent)" : "var(--line)",
+            color: canRun ? "var(--accent-on)" : "var(--ink-faint)",
+            fontWeight: "var(--w-semi)",
+          }}
+        >
+          {Icon.spark}
+          {t("focus.inpaintBtn")}
+          <span style={{ opacity: 0.82, fontVariantNumeric: "tabular-nums" }}>
+            {t("focus.oneCost", { a: cost.total })}
+          </span>
+        </button>
         <button
           data-mask-done
           onClick={() => useImageInput.getState().endEdit()}
-          style={{ ...btn, background: "var(--panel)" }}
+          title={t("imgIn.maskDoneBtn")}
+          style={{ ...btn, background: "var(--panel)", padding: "var(--sp-2)" }}
         >
-          {t("imgIn.maskDoneBtn")}
+          {Icon.close}
         </button>
       </div>
 
@@ -364,8 +461,10 @@ export function MaskEditor() {
           }}
         >
           <canvas ref={imgRef} style={layer} />
-          {/* ★마스크는 반투명으로 얹어 보여 준다 — 내보낼 때는 캔버스 원본(순흑백)을 쓴다 */}
-          <canvas ref={maskRef} data-mask-canvas style={{ ...layer, opacity: 0.5, mixBlendMode: "screen" }} />
+          {/* ★보내는 마스크는 순흑백이라 화면에 그대로 얹으면 밝은 그림 위에서 안 보인다.
+              그래서 **데이터 판은 숨기고**(mask) 보여 주는 판을 따로 둔다(show). */}
+          <canvas ref={maskRef} data-mask-canvas style={{ display: "none" }} />
+          <canvas ref={showRef} data-mask-show style={layer} />
           <canvas
             ref={overRef}
             data-mask-overlay

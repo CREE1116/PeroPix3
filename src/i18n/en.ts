@@ -244,6 +244,9 @@ export const en = {
     offWarn: "Focused is off, so the result will be smaller",
     paintFirst: "Paint the area you want redrawn",
     inpaintBtn: "Inpaint",
+    oneCost: "({a} Anlas)",
+    promptLabel: "Inpaint prompt",
+    lockedByInpaint: "Inpainting. This button makes every slot, so it is locked for now.",
     costWarn: "Past the free range (1MP), this costs {a} Anlas",
   },
 

@@ -278,7 +278,9 @@ export const useGen = create<S>((set, get) => ({
    *    돈다. 인페인트는 **그림 한 장을 고치는 일**이라 둘 다 아니다.
    *  ★결과는 **원본이 있던 씬 칸**에 붙는다 (`origin`). 안 붙이면 씬 탭에서는 셀 없는
    *    레코드가 되어 화면 어디에도 안 뜬다 (`lib/takes.ts`).
-   *  ★프롬프트도 그 씬의 것을 쓴다. 베이스만 쓰면 장면과 무관한 것이 그려진다. */
+   *  ★프롬프트는 **왼쪽 패널에 있는 그대로** 쓴다. 인페인트 중에는 그 패널이 씬 프롬프트가
+   *    아니라 **인페인트 사본**을 들고 있다 (`store/imageInput` 의 startEdit). 여기서 씬
+   *    블록을 또 붙이면 사본에 이미 든 것이 두 번 들어간다. */
   async queueInpaint(count) {
     const ws = useWs.getState();
     const tab = ws.activeTab();
@@ -288,24 +290,25 @@ export const useGen = create<S>((set, get) => ({
     const found = tab.kind === "set" && origin
       ? allScenes(tab).find((x) => x.cell.id === origin.id)
       : null;
-    const scene = found ? compileBlocks(found.cell.blocks) : "";
-    await useQueue.getState().enqueue(
-      {
-        ...get().params,
-        ...useImageInput.getState().payload(),
-        seed: get().params.seed_mode === "fixed" ? get().params.seed : -1,
-        prompt: [(found?.card.prefix || "").trim(), prompt, scene].filter(Boolean).join(", "),
-        negative_prompt: uc,
-        characters: chars,
-        workspace: ws.current,
-        char: ws.activeCharOf()?.name ?? null,
-        tab: tab.name,
-        tab_id: tab.id,
-        ...(found ? { cell: found.cell.name, cell_id: found.cell.id } : {}),
-      },
-      undefined,
-      Math.max(1, count),
-    );
+    // ★페이로드를 **먼저** 굳힌다. `payload()` 와 `compiled()` 는 편집 중일 때만 인페인트
+    //   내용을 내므로, 편집에서 나가기 전에 다 읽어 둬야 한다
+    const body = {
+      ...get().params,
+      ...useImageInput.getState().payload(),
+      seed: get().params.seed_mode === "fixed" ? get().params.seed : -1,
+      prompt,
+      negative_prompt: uc,
+      characters: chars,
+      workspace: ws.current,
+      char: ws.activeCharOf()?.name ?? null,
+      tab: tab.name,
+      tab_id: tab.id,
+      ...(found ? { cell: found.cell.name, cell_id: found.cell.id } : {}),
+    };
+    // ★보냈으면 편집에서 나온다 (사용자 결정 2026-08-13). 여기 머물면 결과를 못 본다.
+    //   마스크·사각형·프롬프트 사본은 남아, 다시 들어가면 그대로 이어진다
+    useImageInput.getState().endEdit();
+    await useQueue.getState().enqueue(body, undefined, Math.max(1, count));
     if (get().params.seed_mode !== "fixed") get().set("seed", randomSeed());
   },
 

@@ -244,6 +244,9 @@ export const ko: Dict = {
     offWarn: "Focused 가 꺼져 있어 결과가 줄어듭니다",
     paintFirst: "고칠 자리를 칠하세요",
     inpaintBtn: "인페인트",
+    oneCost: "({a} Anlas)",
+    promptLabel: "인페인트 프롬프트",
+    lockedByInpaint: "인페인트 중입니다. 이 버튼은 슬롯 전체를 만드는 자리라 지금은 잠깁니다.",
     costWarn: "공짜 구간(1MP)을 넘어 {a} Anlas 가 나갑니다",
   },
 

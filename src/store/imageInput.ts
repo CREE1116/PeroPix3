@@ -4,6 +4,7 @@ import { canFocus, defaultRect, wholeRectMask } from "../lib/focused";
 import { sizeForBase } from "../lib/baseSize";
 import { toast } from "./toast";
 import { useSceneFocus } from "./sceneFocus";
+import { pausePromptSave, usePrompt } from "./prompt";
 import { t } from "../i18n";
 import { useGen } from "./gen";
 
@@ -109,6 +110,16 @@ export const MAX_VIBES = 16;
 /** 베이스 그림 크기를 재는 중인 약속. `startEdit` 이 그 뒤에 자동 켜기를 판단한다 */
 let measuring: Promise<void> | null = null;
 
+/** ★인페인트는 **씬 프롬프트의 사본**을 편집한다 (사용자 결정 2026-08-13).
+ *
+ *  구조는 같아야 한다: 같은 왼쪽 패널에서 블록·캐릭터·UC 를 그대로 고친다. 다만 거기서
+ *  고친 것이 **씬 카드에 남으면 안 된다** (얼굴 고치려고 프롬프트를 줄였는데 그 씬이
+ *  통째로 바뀌는 사고). 그래서 들어갈 때 씬 것을 치워 두고 사본을 얹는다.
+ *  ★사본은 나가도 남는다. 마스크와 한 짝이라, 여러 번 돌릴 때 그대로 이어져야 한다. */
+type PromptSnap = ReturnType<typeof usePrompt.getState>["snapshot"] extends () => infer R ? R : never;
+let sceneStash: PromptSnap | null = null;
+let inpaintPrompt: PromptSnap | null = null;
+
 export const useImageInput = create<S>((set, get) => ({
   vibeOn: false,
   vibes: [],
@@ -156,6 +167,8 @@ export const useImageInput = create<S>((set, get) => ({
   removeRef: (i) => set((s) => ({ refs: s.refs.filter((_, k) => k !== i) })),
 
   setBase: (image, name, from = null) => {
+    // 대상이 바뀌면 인페인트 프롬프트 사본도 버린다 (다른 그림의 프롬프트다)
+    inpaintPrompt = null;
     set({ baseImage: image, baseName: name, baseMask: "", baseFrom: from,
           baseSize: null, tileRect: null, focused: false, editing: false, originCell: null });
     // ★크기는 **여기서 한 번만** 잰다. 사각형·최종 해상도·자동 켜기가 전부 이 값을 본다.
@@ -197,6 +210,11 @@ export const useImageInput = create<S>((set, get) => ({
     // ★어느 씬 칸의 그림인지 **여기서** 잡아 둔다. 결과가 그 자리에 붙어야 화면에 보인다
     const cell = useSceneFocus.getState().cell;
     set({ editing: true, baseMode: "inpaint", originCell: cell ? { id: cell } : null });
+    // 씬 프롬프트를 치워 두고 인페인트 사본을 얹는다 (없으면 씬 것을 복사해 시작)
+    const p = usePrompt.getState();
+    sceneStash = p.snapshot();
+    pausePromptSave(true);
+    p.load(inpaintPrompt ?? sceneStash);
     // ★큰 그림은 켜 두고 알린다. 끈 채로 보내면 결과가 통째로 줄어드는 그림이다.
     //   크기를 아직 재는 중일 수 있어 그 뒤에 판단한다 (`measuring`)
     void (measuring ?? Promise.resolve()).then(() => {
@@ -207,7 +225,16 @@ export const useImageInput = create<S>((set, get) => ({
       toast(t("focus.auto"));
     });
   },
-  endEdit: () => set({ editing: false }),
+  endEdit: () => {
+    if (!get().editing) return;
+    // 사본을 들고 나가고 씬 프롬프트를 되돌린다
+    const p = usePrompt.getState();
+    inpaintPrompt = p.snapshot();
+    if (sceneStash) p.load(sceneStash);
+    sceneStash = null;
+    pausePromptSave(false);
+    set({ editing: false });
+  },
 
   patchBase: (p) => {
     // ★이어 그리기로 돌아가면 Focused 를 끈다. 켜져 있는 동안 해상도 칸은 **원본 크기**라,
@@ -218,6 +245,20 @@ export const useImageInput = create<S>((set, get) => ({
 
   payload() {
     const s = get();
+    // ★인페인트는 **칠하는 동안에만** 존재한다 (사용자 지적 2026-08-13).
+    //   나간 뒤에도 베이스가 남아 있으면, 슬롯 전체를 도는 「생성」이 인페인트로 나가
+    //   5슬롯에 5장이 만들어진다. 나간 상태에서는 베이스를 아예 안 싣는다.
+    if (s.baseMode === "inpaint" && !s.editing) {
+      return {
+        vibe_transfer: s.vibeOn ? s.vibes : [],
+        precise_references: s.refOn ? s.refs.map((r) => ({
+          image: r.image, mode: r.mode, strength: r.strength, fidelity: r.fidelity,
+        })) : [],
+        base_image: "", base_mode: "img2img", base_strength: s.baseStrength,
+        base_inpaint_strength: s.baseInpaintStrength, base_noise: s.baseNoise,
+        base_mask: "", inpaint_from: "", inpaint_rect: null,
+      };
+    }
     const focusing = s.baseMode === "inpaint" && s.focused && !!s.tileRect && !!s.baseFrom;
     // ★아무것도 안 칠했으면 **사각형 안쪽 전체**를 보낸다 (공홈과 같다). 화면에 미리 칠해
     //   보여 주지 않으므로 마스크는 비어 있고, 보낼 때 여기서 만든다.

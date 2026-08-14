@@ -31,6 +31,7 @@ import { Deck } from "./cards/Deck";
 import { DragLayer } from "./cards/DragLayer";
 import { SaveDialog, type SaveAsk } from "./cards/SaveDialog";
 import { useSub } from "./store/sub";
+import { useImageInput } from "./store/imageInput";
 import { BlockDrawer, BlockLibButton } from "./blocks/BlockDrawer";
 import { ThumbDialog } from "./cards/ThumbDialog";
 import { saveCardWithThumb } from "./cards/saveCard";
@@ -67,6 +68,9 @@ export function App() {
   const [settings, setSettings] = useState<SettingsTab | null>(null);
   // ★탭 줄의 「+」 — 게이트를 그 자리에서 띄운다 (워크스페이스를 닫지 않고 하나 더 연다)
   const [gate, setGate] = useState(false);
+  /** ★인페인트 중에는 왼쪽 패널이 **씬 프롬프트가 아니라 그 인페인트의 사본**을 편집한다
+   *  (`store/imageInput` 의 startEdit). 머리글이 안 바뀌면 씬 프롬프트를 고치는 줄 안다. */
+  const inpainting = useImageInput((s) => s.editing);
 
   // ★저장된 글꼴 선택을 부팅 때 한 번 꽂는다. `--font-sans` 는 CSS 기본값이 Pretendard 라,
   //   이걸 안 하면 다른 글꼴을 골라 뒀어도 새로 켤 때 Pretendard 로 돌아간다.
@@ -168,7 +172,13 @@ export function App() {
         /* ★모드마다 양옆이 바뀐다 — 갤러리에서 프롬프트 편집기를 띄워 두면
            "지금 편집하는 것이 무엇인지"가 흐려진다 (갤러리는 과거를 보는 화면이다).
            머리글도 함께 바뀌어야 한다 — 안 그러면 "프롬프트" 아래 폴더가 뜬다. */
-        leftLabel={mode === "gallery" ? tr("gallery.folders") : tr("panel.prompt")}
+        leftLabel={
+          mode === "gallery"
+            ? tr("gallery.folders")
+            : inpainting
+              ? tr("focus.promptLabel")
+              : tr("panel.prompt")
+        }
         rightLabel={mode === "gallery" ? tr("gallery.meta") : tr("panel.options")}
         /* ★프롬프트·생성 옵션은 **생성 모드에만** (사용자 지적 2026-08-05).
            이미 만든 것을 다루는 화면에 뜨면 "여기서 고치면 뭐가 되나"가 흐려진다.
