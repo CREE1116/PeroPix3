@@ -49,6 +49,8 @@ type Persisted = {
   /** 씬 칸 한 변의 길이(px). ★3단 고정이 아니라 **연속값**이다 (사용자 지시 2026-08-14).
    *  Ctrl+휠로 조절하고, 한 번에 12% 씩 움직인다. */
   laneSize: number;
+  /** 씬 줄 머리의 폭(px). 경계를 끌어 바꾼다 */
+  laneHeadW: number;
   /** 씬 칸 높이 — 사용자가 손잡이로 정한다 */
   laneHeight: number;
   /** 생성 화면을 끄고 **슬롯만 모아 본다** — 선별 뒤 확인용 (사용자 결정 2026-08-04) */
@@ -70,6 +72,7 @@ const DEFAULTS: Persisted = {
   rightCollapsed: false,
   cols: 4,
   laneSize: 96,
+  laneHeadW: 286,
   laneHeight: 302,
   curated: false,
   perSlot: 1,
@@ -94,6 +97,7 @@ type S = Persisted & {
   mode: ModeId;
   setMode: (m: ModeId) => void;
   setLaneSize: (n: number) => void;
+  setLaneHeadW: (n: number) => void;
   setLaneHeight: (n: number) => void;
   setLeftWidth: (w: number) => void;
   setAiWidth: (w: number) => void;
@@ -122,13 +126,17 @@ type S = Persisted & {
  *    원본으로 갈아 끼우는 길도 만들어 봤지만 쓰지 않기로 했다 (스크롤할 때마다 큰 파일을
  *    받게 되어, 보이는 칸만 그리는 최적화와 정면으로 부딪힌다). */
 export const LANE_MIN = 40;
-export const LANE_MAX = 512;
+export const LANE_MAX = 256;
+/** 씬 줄 머리(그 씬의 프롬프트) 폭의 한계 */
+export const HEAD_MIN = 150;
+export const HEAD_MAX = 560;
 
 export const useUi = create<S>((set, get) => ({
   ...load(),
   mode: "generate",
   setMode: (m) => set({ mode: m }),
   setLaneSize: (n) => set({ laneSize: Math.min(LANE_MAX, Math.max(LANE_MIN, Math.round(n))) }),
+  setLaneHeadW: (n) => set({ laneHeadW: Math.min(HEAD_MAX, Math.max(HEAD_MIN, Math.round(n))) }),
   setLaneHeight: (n) => set({ laneHeight: Math.max(84, Math.round(n)) }),
   setLeftWidth: (w) => set({ leftWidth: w }),
   setAiWidth: (w) => set({ aiWidth: w }),
@@ -172,7 +180,7 @@ export const useUi = create<S>((set, get) => ({
     setTimeout(() => set({ flashes: get().flashes.filter((k) => k !== key) }), 2200);
   },
   commitLayout: () => {
-    const { leftWidth, rightWidth, leftCollapsed, rightCollapsed, cols, laneSize, laneHeight, font, aiWidth, aiCollapsed } =
+    const { leftWidth, rightWidth, leftCollapsed, rightCollapsed, cols, laneSize, laneHeadW, laneHeight, font, aiWidth, aiCollapsed } =
       get();
     try {
       localStorage.setItem(
@@ -184,6 +192,7 @@ export const useUi = create<S>((set, get) => ({
           rightCollapsed,
           cols,
           laneSize,
+          laneHeadW,
           laneHeight,
           font,
           aiWidth,

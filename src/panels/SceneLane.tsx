@@ -3,7 +3,7 @@ import { useI18n } from "../i18n";
 import { useGen } from "../store/gen";
 import { usePrompt } from "../store/prompt";
 import { useQueue } from "../store/queue";
-import { useUi } from "../store/ui";
+import { LANE_MAX, LANE_MIN, useUi } from "../store/ui";
 import { useWs, takesOf, type Rec, type SceneCard, type Slot } from "../store/workspace";
 import { thumbUrlOf } from "../lib/imgUrl";
 import { BlockList } from "../blocks/BlockList";
@@ -33,9 +33,8 @@ import { BANNER_BG, BANNER_CUT, BANNER_IMG_W, BANNER_STEP, bannerEmptyFill } fro
  *  ★3단 버튼도 없앴다. Ctrl+휠 한 번에 12% 씩 움직인다 (`store/ui` 의 LANE_MIN·LANE_MAX). */
 const ZOOM = 1.12;
 const GAP = 6;
-/** 줄 머리 폭 — 그 씬의 프롬프트가 들어가므로 넓다.
- *  ★대가: 1500px 창에서 한 줄에 보이는 장이 10 → 8 로 준다 (칸 66 + 간격 6). */
-const HEADW = 286;
+/** ★줄 머리 폭은 **사용자가 끈다** (사용자 지시 2026-08-14). 그 씬의 프롬프트가
+ *  들어가는 자리라, 넓히면 프롬프트가 잘 보이고 좁히면 장이 더 보인다. */
 const RULER_H = 19;
 
 export function SceneLane() {
@@ -48,6 +47,7 @@ export function SceneLane() {
   //   「생성 중」이 영영 안 뜬다 (사용자 지적 2026-08-14)
   const progress = useQueue((s) => s.progress);
   const laneSize = useUi((u) => u.laneSize);
+  const headw = useUi((u) => u.laneHeadW);
   const startDrag = useDragSource();
   // ★씬 프롬프트 목적지 — 켜져 있는 캐릭터만 고를 수 있다 (꺼진 캐릭터는 payload 에 없다)
   const chars = usePrompt((s) => s.chars).filter((c) => c.on);
@@ -62,6 +62,8 @@ export function SceneLane() {
   /** ★보이는 자리만 그리려고 재 두는 값 (사용자 지시 2026-08-14).
    *  칸이 560px 까지 커지고 한 줄에 수십 장이 붙으므로, 다 그리면 화면이 무거워진다. */
   const [view, setView] = useState({ x: 0, w: 0 });
+  /** 머리 폭 손잡이를 잡은 자리 */
+  const grip = useRef<{ x: number; w: number } | null>(null);
 
   // 스크롤·크기가 바뀌면 보이는 구간을 다시 잰다 (rAF 로 한 번만)
   useEffect(() => {
@@ -83,6 +85,72 @@ export function SceneLane() {
       el.removeEventListener("scroll", onScroll);
       ro.disconnect();
       if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
+  /** ★슬롯 자리를 잡아 **좌우로 끈다** (사용자 지시 2026-08-14).
+   *
+   *  세로는 휠로 쉬운데 가로가 어려웠다. 사진 격자처럼 잡아 끌면 옆으로 넘어간다.
+   *  ★4px 을 넘게 움직였을 때만 끄는 것으로 본다. 그보다 작으면 그냥 클릭이라
+   *    장을 고르는 조작이 죽으면 안 된다.
+   *  ★줄 머리는 뺀다. 거기에는 프롬프트 칸과 단추가 있어 끌면 안 된다. */
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let from: { x: number; y: number; sx: number; sy: number } | null = null;
+    let moved = false;
+    const down = (e: PointerEvent) => {
+      const t = e.target as HTMLElement;
+      if (e.button !== 0) return;
+      if (t.closest("[data-scene-head], input, textarea, select, [contenteditable='true']")) return;
+      from = { x: e.clientX, y: e.clientY, sx: el.scrollLeft, sy: el.scrollTop };
+      moved = false;
+    };
+    const move = (e: PointerEvent) => {
+      if (!from) return;
+      // ★버튼이 떨어졌으면 여기서 끝낸다. `pointerup` 을 못 받는 경우가 있는데
+      //   (브라우저 기본 그림 끌기가 포인터를 가져가면 그렇다) 그대로 두면
+      //   **버튼을 안 눌러도 마우스를 움직이는 것만으로 줄이 따라 움직인다.**
+      if ((e.buttons & 1) === 0) { up(); return; }
+      const dx = e.clientX - from.x;
+      const dy = e.clientY - from.y;
+      if (!moved && Math.abs(dx) + Math.abs(dy) < 4) return;
+      moved = true;
+      el.style.cursor = "grabbing";
+      el.scrollLeft = from.sx - dx;
+      el.scrollTop = from.sy - dy;
+    };
+    const up = () => {
+      from = null;
+      el.style.cursor = "";
+      // ★표식을 **다음 차례에** 지운다. 클릭은 손을 떼자마자 같은 차례에 오므로 그때는
+      //   아직 살아 있어 삼켜지고, 그 뒤로는 깨끗해진다.
+      //   ★안 지우면 끌고 난 다음의 **진짜 클릭 한 번이 통째로 죽는다** (실측 2026-08-14:
+      //     끈 뒤에 다른 장을 눌러도 안 골라졌다). 끌기가 클릭 이벤트를 안 내는 경우가 있다.
+      setTimeout(() => { moved = false; }, 0);
+    };
+    // ★끌었으면 그 뒤의 클릭을 삼킨다. 안 그러면 손을 뗀 자리의 장이 골라진다
+    const click = (e: MouseEvent) => {
+      if (!moved) return;
+      moved = false;
+      e.stopPropagation();
+      e.preventDefault();
+    };
+    // ★기본 그림 끌기를 막는다. 시작되면 포인터 이벤트가 끊겨 끌기도 클릭도 어긋난다.
+    //   ★`pointerdown` 에서 preventDefault 로 막지 말 것. 그러면 호환 click 이 사라져
+    //     장을 고르는 조작이 통째로 죽는다 (CLAUDE.md 의 잊기 쉬운 것)
+    const noDrag = (e: DragEvent) => e.preventDefault();
+    el.addEventListener("dragstart", noDrag);
+    el.addEventListener("pointerdown", down);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    el.addEventListener("click", click, true);
+    return () => {
+      el.removeEventListener("dragstart", noDrag);
+      el.removeEventListener("pointerdown", down);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      el.removeEventListener("click", click, true);
     };
   }, []);
 
@@ -135,7 +203,7 @@ export function SceneLane() {
   // ★고른 캐릭터가 꺼지거나 지워졌으면 base 로 되돌린다 — 없는 곳으로 보내면 조용히 사라진다
   const dest = chars.some((c) => c.id === tab.sceneDest) ? tab.sceneDest! : "base";
 
-  const h = laneSize;
+  const h = Math.min(LANE_MAX, Math.max(LANE_MIN, laneSize));
   const w = h;
   const queued = pending.filter((p) => p.tabId === tab.id);
   const running = progress.total > progress.completed;
@@ -226,10 +294,28 @@ export function SceneLane() {
         </span>
       </div>
 
+      <div style={{ flex: 1, minHeight: 0, minWidth: 0, position: "relative", display: "flex" }}>
+      {/* ★줄 머리 폭 손잡이. 머리는 왼쪽에 붙어 있으므로(sticky left:0) 손잡이는
+          스크롤과 무관하게 늘 같은 자리에 선다 */}
+      <div
+        data-head-grip
+        onPointerDown={(e) => {
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          grip.current = { x: e.clientX, w: headw };
+        }}
+        onPointerMove={(e) => {
+          const g = grip.current;
+          if (!g) return;
+          useUi.getState().setLaneHeadW(g.w + (e.clientX - g.x));
+        }}
+        onPointerUp={() => { grip.current = null; useUi.getState().commitLayout(); }}
+        onPointerCancel={() => { grip.current = null; }}
+        style={{ position: "absolute", left: headw - 3, top: 0, bottom: 0, width: 7, zIndex: 6, cursor: "col-resize" }}
+      />
       <div
         ref={scrollRef}
         data-lane-scroll
-        style={{ flex: 1, minHeight: 0, overflow: "auto", background: "var(--bg)" }}
+        style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: "auto", background: "var(--bg)" }}
       >
         {!tab.cards.length ? (
           <Empty onAdd={() => addCard(tab.id)} />
@@ -248,7 +334,7 @@ export function SceneLane() {
                 borderBottom: "1px solid var(--line-soft)",
               }}
             >
-              <div style={{ width: HEADW, flexShrink: 0 }} />
+              <div style={{ width: headw, flexShrink: 0 }} />
               {Array.from({ length: maxLen }, (_, k) => (
                 <div
                   key={k}
@@ -282,6 +368,7 @@ export function SceneLane() {
                 queuedOf={(cellId) => queued.filter((p) => p.cellId === cellId)}
                 firstWaiting={running ? (queued[0]?.id ?? null) : null}
                 view={view}
+                headw={headw}
                 base={base}
                 ws={ws}
                 isStarred={isStarred}
@@ -335,6 +422,7 @@ export function SceneLane() {
             </div>
           </div>
         )}
+      </div>
       </div>
 
       {/* 고른 것이 있을 때만 뜨는 줄 (멀티 무대의 선택 막대와 같은 자리) */}
@@ -433,6 +521,8 @@ type GroupProps = {
   firstWaiting: string | null;
   /** 스크롤 컨테이너의 보이는 구간 (가로). 이 밖의 칸은 안 그린다 */
   view: { x: number; w: number };
+  /** 줄 머리 폭 (사용자가 끄는 값) */
+  headw: number;
   base: string;
   ws: string;
   isStarred: (f: string) => boolean;
@@ -648,10 +738,10 @@ function SceneRow(
   const STEP = p.w + GAP;
   const total = waits.length + takes.length;
   const from = p.view.w
-    ? Math.max(0, Math.floor((p.view.x - HEADW - 8) / STEP) - 2)
+    ? Math.max(0, Math.floor((p.view.x - p.headw - 8) / STEP) - 2)
     : 0;
   const to = p.view.w
-    ? Math.min(total, Math.ceil((p.view.x + p.view.w - HEADW - 8) / STEP) + 2)
+    ? Math.min(total, Math.ceil((p.view.x + p.view.w - p.headw - 8) / STEP) + 2)
     : total;
   const lead = from > 0 ? from * STEP - GAP : 0;
   const tail = total - to > 0 ? (total - to) * STEP - GAP : 0;
@@ -680,11 +770,12 @@ function SceneRow(
       }}
     >
       <div
+        data-scene-head
         style={{
           position: "sticky",
           left: 0,
           zIndex: 2,
-          width: HEADW,
+          width: p.headw,
           flexShrink: 0,
           background: on ? "var(--accent-bg)" : "var(--surface)",
           borderRight: "1px solid var(--line)",
@@ -841,6 +932,7 @@ function SceneRow(
               <img
                 src={thumbUrlOf(p.base, p.ws, r.file)}
                 alt=""
+                draggable={false}
                 loading="lazy"
                 decoding="async"
                 style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", opacity: sel ? 0.6 : 1 }}
