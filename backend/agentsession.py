@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -73,8 +74,11 @@ class CodexSession(Session):
         self._loop = asyncio.get_running_loop()
 
     def _note(self, msg: dict) -> None:
-        """저쪽 스레드에서 불린다 — 서버 루프로 넘겨 순서대로 내보낸다."""
-        self._loop.call_soon_threadsafe(lambda: asyncio.ensure_future(self._forward(msg)))
+        """저쪽 스레드에서 불린다 — 서버 루프로 넘겨 순서대로 내보낸다.
+
+        ★서버가 내려가는 중이면 넘길 자리가 없다 (닫힌 루프). 조용히 흘린다."""
+        with contextlib.suppress(RuntimeError):
+            self._loop.call_soon_threadsafe(lambda: asyncio.ensure_future(self._forward(msg)))
 
     async def _forward(self, msg: dict) -> None:
         method = msg.get("method")
@@ -151,7 +155,7 @@ class CodexSession(Session):
 
     async def interrupt(self) -> None:
         if self.rpc and self.rpc.alive and self.turn_id:
-            with __import__("contextlib").suppress(Exception):
+            with contextlib.suppress(Exception):
                 await self.rpc.call("turn/interrupt",
                                     {"threadId": self.session_id, "turnId": self.turn_id},
                                     timeout=30)
@@ -196,7 +200,9 @@ class ClaudeSession(Session):
         return self.proc is not None and self.proc.returncode is None
 
     def _hand(self, ev: dict) -> None:
-        self._main.call_soon_threadsafe(lambda: asyncio.ensure_future(self._forward(ev)))
+        # ★서버가 내려가는 중이면 넘길 자리가 없다 — 워커 스레드에서 예외를 뿜지 않게
+        with contextlib.suppress(RuntimeError):
+            self._main.call_soon_threadsafe(lambda: asyncio.ensure_future(self._forward(ev)))
 
     async def _forward(self, ev: dict) -> None:
         sid = ev.get("session_id")
@@ -323,7 +329,7 @@ class ClaudeSession(Session):
         self.closing = True
         p = self.proc
         if p and p.returncode is None:
-            with __import__("contextlib").suppress(Exception):
+            with contextlib.suppress(Exception):
                 p.terminate()
 
 

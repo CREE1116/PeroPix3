@@ -3,6 +3,9 @@
 ★**왜 CLI 인가**: 사용자가 이미 구독료를 내고 있는 것을 그대로 쓴다 (API 크레딧이 따로 안 든다).
   에이전트 루프·도구·재시도를 저쪽이 돌고, 우리는 **우리 도구만** 열어 준다 (`mcp_stdio.py`).
 
+★프로세스를 띄우고 말을 거는 일은 `agentsession.py` 가 한다 (2026-08-15부터 CLI 는
+  턴마다가 아니라 **대화 내내** 산다). 여기는 **찾고 · 깃발을 짓는** 자리다.
+
 ★실행 깃발 셋이 핵심이다 (실측 2026-08-07, `test_agent_live.py`):
 
     --mcp-config <설정> --strict-mcp-config --allowedTools "mcp__peropix__*"
@@ -17,7 +20,6 @@
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import shutil
@@ -31,7 +33,7 @@ from pathlib import Path
 #   내린 것: Gemini CLI(구글이 Antigravity 로 흡수, 개인 무료 2026-06-18 종료) ·
 #            Cursor Agent · Qwen Code · GitHub Copilot CLI.
 #   ★다시 늘릴 때는 **스트림 파싱도 함께** 붙여야 한다 (`src/lib/codexStream.ts` 가 그 예다).
-#   ★2026-08-15: 코덱스를 붙였다. 실행 깃발은 `argv_codex`, 옮겨 적기는 `codexStream.ts`.
+#   ★2026-08-15: 코덱스를 붙였다 — `codexapp.py`(app-server), 옮겨 적기는 `codexStream.ts`.
 KNOWN = [
     {"id": "claude-code", "label": "Claude Code", "bins": ["claude"]},
     {"id": "codex", "label": "Codex CLI", "bins": ["codex"]},
@@ -244,42 +246,12 @@ def mcp_config(data_dir: Path, backend: str) -> Path:
     return cfg
 
 
-def toml_value(v) -> str:
-    """TOML 값 한 조각 — 코덱스의 `-c <점표기>=<값>` 에 실어 보낸다.
-
-    ★`json.dumps` 가 내는 문자열·배열은 **TOML 기본 문자열·배열과 같은 문법**이다.
-      윈도우 경로의 역슬래시도 `\\\\` 로 이스케이프돼 그대로 살아남는다 (실측 2026-08-15).
-      직접 따옴표를 붙이지 말 것 — 지침에 든 줄바꿈·따옴표에서 깨진다."""
-    if isinstance(v, dict):
-        return "{" + ", ".join(f"{k} = {json.dumps(x, ensure_ascii=False)}" for k, x in v.items()) + "}"
-    return json.dumps(v, ensure_ascii=False)
-
-
 class Runner:
-    """한 번에 하나만 돈다 — 화면이 하나이므로 두 개가 동시에 앱을 만지면 뒤엉킨다.
+    """클로드 코드 **실행 깃발**만 든다.
 
-    ★**프로세스는 서버의 이벤트 루프에서 띄우지 않는다** (실측 2026-08-12).
-      uvicorn 0.38 은 `--reload`(개발용 핫리로드) 를 켜면 윈도우에서 **SelectorEventLoop** 를
-      쓰는데(`Config.use_subprocess = reload or workers>1` → `asyncio_loop_factory`),
-      그 루프에서 `create_subprocess_exec` 는 `NotImplementedError` 를 던진다.
-      게다가 그 예외는 **메시지가 빈 문자열**이라, 화면에는 까닭 없이 「코드 -1」만 남았다.
-
-      그래서 CLI 는 **자기 스레드에서 자기 루프**로 돈다 (윈도우면 Proactor). 서버가 어떤
-      루프를 쓰든, uvicorn 이 또 바뀌든 상관없어진다. 흘러나온 것은 큐 하나로 서버 루프에
-      넘겨 **순서 그대로** 내보낸다."""
-
-    def __init__(self):
-        self.proc: asyncio.subprocess.Process | None = None
-
-    @property
-    def busy(self) -> bool:
-        return self.proc is not None and self.proc.returncode is None
-
-    async def stop(self) -> None:
-        p = self.proc
-        if p and p.returncode is None:
-            with __import__("contextlib").suppress(Exception):
-                p.terminate()
+    ★프로세스를 띄우고 말을 거는 일은 `agentsession.py` 로 옮겼다 (2026-08-15) —
+      이제 CLI 는 턴마다가 아니라 **대화 내내** 산다. 여기 남은 것은 깃발뿐이라
+      잠금 규칙이 한 곳에 모여 있다."""
 
     #: `claude --effort` 가 받는 단계 (실측: `claude --help` — low·medium·high·xhigh·max)
     EFFORTS = ["max", "xhigh", "high", "medium", "low"]
@@ -325,180 +297,3 @@ class Runner:
         if effort:
             args += ["--effort", effort]
         return args
-
-    @staticmethod
-    def codex_stdin(system: str, prompt: str, resume: str) -> str:
-        """코덱스에 stdin 으로 넣을 것 — **첫 턴에만 지침이 앞에 붙는다.**
-
-        ★argv 로 못 보내는 사정은 `argv_codex` 주석에 있다 (배치 래퍼가 `>` 를 삼킨다).
-        ★이어 붙일 때 다시 안 붙이는 것은 claude 와 같은 이유다 — 이미 그 대화 안에 있다."""
-        return f"{system}\n\n{prompt}" if system and not resume else prompt
-
-    def argv_codex(self, spec: dict, resume: str = "",
-                   model: str = "", effort: str = "") -> list[str]:
-        """코덱스 실행 깃발 — **여기 하나뿐이다.** 전부 실측으로 확인했다 (2026-08-15, v0.147.0).
-
-        클로드 코드와 같은 일을 하는 깃발이 이름만 다르다:
-
-            --strict-mcp-config   →  --ignore-user-config   사용자의 다른 MCP 서버를 안 싣는다
-            --mcp-config <파일>   →  -c mcp_servers.…       설정 파일이 아니라 깃발로 준다
-            --permission-mode     →  -c approval_policy=never
-            --append-system-prompt→  -c developer_instructions=…
-            --resume <id>         →  exec resume <id> -
-            --output-format …     →  --json                 (줄 단위 JSON)
-
-        ★`--ignore-user-config` 는 **인증은 그대로 둔다** (도움말 원문: "auth still uses
-          CODEX_HOME"). claude 의 `--bare` 와 다르다 — 그쪽은 OAuth 를 안 읽어 API 키를 요구했다.
-          이 PC 에 사용자의 MCP 서버가 둘(node_repl·pencil) 붙어 있어 실제로 필요하다.
-        ★★`default_tools_approval_mode="approve"` 가 **없으면 도구가 안 돈다.** 헤드리스라
-          물어볼 사람이 없어서 코덱스가 스스로 취소한다 — 실측에서 도구 결과가
-          `"user cancelled MCP tool call"` 로 돌아왔다. `approval_policy=never` 는 셸 쪽이라
-          MCP 도구를 덮지 않는다. 뺄 수 없는 줄이다.
-        ★`enabled_tools` 는 **일부러 안 쓴다.** 우리 서버는 우리 도구만 내보내므로 목록을
-          여기 또 적으면 `/api/agent/tools` 와 두 벌이 된다.
-        ★`--skip-git-repo-check` 가 필요하다 — 작업 폴더(`data/agent`)는 깃 저장소가 아니다.
-        ★이어 붙일 때는 `-s/--sandbox` 를 **못 쓴다** (resume 도움말에 없다). 그래서 모래상자는
-          언제나 `-c sandbox_mode` 로 건다 — 두 경로가 같은 값을 쓰게.
-        ★셸 도구는 **끄지 않았다** (사용자와 미결). 끄려면 `--disable shell_tool`.
-
-        ★★**지침은 여기 안 싣는다 — stdin 으로 보낸다** (실측 2026-08-15, 실연동에서 밟았다).
-          `-c developer_instructions=…` 는 되기는 하는데, npm 이 깔아 준 `codex.CMD` 가
-          **배치 파일**이라 윈도우가 `cmd.exe /c` 를 한 겹 끼운다. 그러면 cmd 가 명령줄을
-          **다시 해석**해서, 지침에 든 `long_hair -> long hair` 의 `>` 가 **출력 리다이렉션**이
-          된다. 실제로 JSON 이 통째로 `data/agent/long` 이라는 파일로 새고, 화면에는 아무것도
-          안 오는데 종료 코드는 0 이었다 (가장 나쁜 종류의 조용한 실패다).
-          그래서 **긴 사람 글은 argv 에 절대 싣지 않는다.** 여기 남은 값은 우리가 정한 짧은
-          것들(경로·모델 이름·숫자)뿐이다."""
-        flags = [
-            "--json",
-            "--ignore-user-config",
-            "--skip-git-repo-check",
-            # ★셸을 끈다 (사용자 결정 2026-08-15). `shell_tool` 은 stable 등급 기능 플래그이고
-            #   기본이 켜짐이다 (`codex features list`). 모래상자가 읽기 전용이라 고칠 수는
-            #   없었지만, 켜 두면 조수가 우리 소스를 **읽으며 턴을 쓴다** — 클로드 코드 쪽에서
-            #   실제로 겪은 일이라 거기서도 이름으로 닫아 뒀다(`argv` 의 --disallowedTools).
-            "--disable", "shell_tool",
-            "-c", "sandbox_mode=" + toml_value("read-only"),
-            "-c", "approval_policy=" + toml_value("never"),
-            "-c", "mcp_servers.peropix.command=" + toml_value(spec["command"]),
-            "-c", "mcp_servers.peropix.args=" + toml_value(spec["args"]),
-            "-c", "mcp_servers.peropix.env=" + toml_value(spec["env"]),
-            "-c", "mcp_servers.peropix.default_tools_approval_mode=" + toml_value("approve"),
-            # 파이썬이 뜨고 백엔드에 도구 목록을 물어 오는 데 걸리는 시간
-            "-c", "mcp_servers.peropix.startup_timeout_sec=30",
-        ]
-        if model:
-            flags += ["-m", model]
-        if effort:
-            flags += ["-c", "model_reasoning_effort=" + toml_value(effort)]
-        # ★프롬프트는 stdin 이다. 이어 붙일 때는 `-` 를 **적어야** stdin 을 읽는다
-        #   (안 적으면 프롬프트 없이 이어 붙이고 끝난다).
-        if resume:
-            return ["exec", "resume", resume, "-", *flags]
-        return ["exec", *flags]
-
-    async def run(
-        self, exe: str, prompt: str, cfg: Path, cwd: Path, system: str, emit, resume: str = "",
-        model: str = "", effort: str = "", agent: str = "claude-code", backend: str = "",
-    ) -> None:
-        """CLI 를 띄우고 흘러나오는 JSON 을 한 줄씩 `emit` 으로 넘긴다.
-
-        ★`cwd` 는 **빈 폴더**여야 한다(`work_dir()`). 조수가 우리 소스를 뒤지고 고치려 든
-          적이 있는데, 그것을 실제로 막는 것은 폴더 위치가 아니라 `argv()` 의 도구 잠금이다
-          (`--disallowedTools` · `--permission-mode dontAsk`).
-
-        ★프로세스는 **다른 스레드의 다른 루프**에서 돈다 (클래스 머리 주석). 여기서는
-          그 스레드가 넘겨 준 것을 큐에서 꺼내 `emit` 할 뿐이다.
-
-        ★흘러나오는 **모양은 CLI 마다 다르다** (claude 는 stream-json, 코덱스는 줄 단위 JSON).
-          여기서는 옮겨 적지 않는다 — 그대로 화면에 넘기고 `llm.ts` 가 wire 조각으로 바꾼다."""
-        codex = agent == "codex"
-        args = (
-            self.argv_codex(mcp_spec(backend), resume, model, effort)
-            if codex
-            else self.argv(cfg, system, resume, model, effort)
-        )
-        # ★코덱스는 지침도 stdin 으로 간다 (`codex_stdin` 주석 — 배치 래퍼가 argv 를 삼킨다)
-        if codex:
-            prompt = self.codex_stdin(system, prompt, resume)
-        main = asyncio.get_running_loop()
-        q: asyncio.Queue = asyncio.Queue()
-
-        # ★큐를 한 줄로 비운다 — `emit` 은 await 라, 스레드에서 곧바로 여러 개를 태우면
-        #   중간에 끼어들어 **순서가 뒤집힌다**. 스트림은 순서가 곧 내용이다.
-        async def pump():
-            while True:
-                ev = await q.get()
-                if ev is None:
-                    return
-                await emit(ev)
-
-        drain = asyncio.create_task(pump())
-        try:
-            await asyncio.to_thread(
-                self._drive, exe, args, str(cwd), prompt,
-                lambda ev: main.call_soon_threadsafe(q.put_nowait, ev),
-            )
-        finally:
-            q.put_nowait(None)
-            await drain
-            # ★★**끝을 알리는 것은 여기다** — 자리를 비운 **뒤에**. 화면은 `exit` 을 보면
-            #   곧바로 다음 턴을 시작할 수 있는데(도는 중에 쌓아 둔 말), 프로세스를 놓기
-            #   전에 알리면 그 요청이 「이미 돌고 있습니다」(409)로 튕긴다.
-            code = self.proc.returncode if self.proc else -1
-            self.proc = None
-            await emit({"type": "exit", "code": code})
-
-    def _drive(self, exe: str, args: list[str], cwd: str, prompt: str, hand) -> None:
-        """**자기 루프**를 세워 거기서 프로세스를 돌린다 (다른 스레드에서 불린다)."""
-        loop = asyncio.ProactorEventLoop() if os.name == "nt" else asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(self._pipe(exe, args, cwd, prompt, hand))
-        finally:
-            asyncio.set_event_loop(None)
-            loop.close()
-
-    async def _pipe(self, exe: str, args: list[str], cwd: str, prompt: str, hand) -> None:
-        # ★`ask_user` 가 사람을 기다리는 동안 MCP 가 끊기지 않게 (페로툰도 같은 자리를 늘렸다)
-        env = {**os.environ, "MCP_TIMEOUT": "1800000"}
-        self.proc = await asyncio.create_subprocess_exec(
-            exe,
-            *args,
-            cwd=cwd,
-            env=env,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        p = self.proc
-        # ★프롬프트는 stdin 으로 — 윈도우 argv 는 32KB 언저리에서 잘린다
-        assert p.stdin is not None
-        p.stdin.write(prompt.encode("utf-8"))
-        await p.stdin.drain()
-        p.stdin.close()
-
-        async def pump_err():
-            assert p.stderr is not None
-            async for line in p.stderr:
-                t = line.decode("utf-8", "replace").rstrip()
-                if t:
-                    hand({"type": "stderr", "text": t})
-
-        err = asyncio.create_task(pump_err())
-        assert p.stdout is not None
-        async for raw in p.stdout:
-            line = raw.decode("utf-8", "replace").strip()
-            if not line.startswith("{"):
-                continue
-            try:
-                hand(json.loads(line))
-            except Exception:
-                continue
-        await p.wait()
-        # ★죽은 까닭은 stderr 에 있다 — 잘라 버리지 말고 **끝까지 받는다.**
-        #   프로세스가 끝났으니 파이프는 곧 EOF 다 (그래도 멎지 않게 시간 제한을 둔다).
-        #   ★`exit` 는 여기서 안 낸다 — `run` 이 자리를 비운 뒤에 낸다 (그쪽 주석).
-        with __import__("contextlib").suppress(Exception):
-            await asyncio.wait_for(err, 2)
-        err.cancel()
