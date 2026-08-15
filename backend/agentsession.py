@@ -45,6 +45,10 @@ class Session:
         #: 저쪽이 들고 있는 대화 번호 — 화면이 대화 파일에 함께 저장한다
         self.session_id = ""
         self.busy = False
+        #: ★우리가 일부러 닫는 중인가 — 그때의 죽음은 **사고가 아니다**.
+        #  안 가리면 CLI 를 바꾸거나 다른 대화로 옮길 때 화면에 까닭 없는 오류가 번쩍인다
+        #  (실측 2026-08-15: 코덱스 → 클로드로 바꾸는 순간 `exit` 이 화면으로 갔다).
+        self.closing = False
 
     async def close(self) -> None: ...
 
@@ -88,6 +92,8 @@ class CodexSession(Session):
         elif t == "gone":
             # 프로세스가 죽었다 — 돌던 턴이 있으면 끝을 알려 화면이 안 멈추게 한다
             self.rpc = None
+            if self.closing:
+                return  # 우리가 닫았다 — 화면에 알릴 일이 아니다
             if self.busy:
                 self.busy = False
                 await self.emit({"type": "turn_end", "code": msg.get("code") or -1})
@@ -151,6 +157,7 @@ class CodexSession(Session):
                                     timeout=30)
 
     async def close(self) -> None:
+        self.closing = True
         if self.rpc:
             await self.rpc.stop()
             self.rpc = None
@@ -209,6 +216,8 @@ class ClaudeSession(Session):
             await self.emit({"type": "turn_end", "code": 0})
         elif t == "gone":
             self.proc = None
+            if self.closing:
+                return  # 우리가 닫았다 — 화면에 알릴 일이 아니다
             if self.busy:
                 self.busy = False
                 await self.emit({"type": "turn_end", "code": ev.get("code") or -1})
@@ -311,6 +320,7 @@ class ClaudeSession(Session):
                                 "request": {"subtype": "interrupt"}}) + "\n")
 
     async def close(self) -> None:
+        self.closing = True
         p = self.proc
         if p and p.returncode is None:
             with __import__("contextlib").suppress(Exception):
