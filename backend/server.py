@@ -31,6 +31,7 @@ import imgutil
 import keep
 import genqueue
 import cliagent
+import agentsession
 import secretstore
 import llm as llm_mod
 import agent as agent_mod
@@ -412,7 +413,7 @@ class CliRun(BaseModel):
 @app.get("/api/cli/detect")
 async def cli_detect():
     """PATH + 툴체인 폴더 스캔. **공짜다** — 켤 때마다 불러도 된다."""
-    return {"items": cliagent.detect(), "busy": cli_runner.busy}
+    return {"items": cliagent.detect(), "busy": bool(_sess and _sess.busy)}
 
 
 @app.get("/api/cli/session/{sid}")
@@ -423,19 +424,26 @@ async def cli_session(sid: str, agent: str = "claude-code"):
     return {"exists": cliagent.session_exists(sid, agent)}
 
 
-@app.post("/api/cli/run")
-async def cli_run(body: CliRun, port: int = 0):
-    if cli_runner.busy:
-        raise HTTPException(409, "이미 돌고 있습니다.")
-    exe = body.exe or (cliagent.find(["claude"]) or "")
-    if not exe:
-        raise HTTPException(400, "CLI 를 못 찾았습니다. 설치하고 다시 스캔해 주세요.")
-    agent = body.agent or cliagent.agent_of(exe)
-    backend = f"http://127.0.0.1:{port or CURRENT_PORT}"
-    cfg = cliagent.mcp_config(DATA_DIR, backend)
-    # ★이 턴의 번호 — 끊겼다 붙은 화면이 "내가 시킨 그 턴"의 놓친 줄만 되받게 한다
-    run_id = str(uuid.uuid4())[:8]
-    Q.start_cli_run(run_id)
+#: 지금 살아 있는 조수 한 명 (`agentsession` 머리 주석 — 한 번에 하나다)
+_sess: agentsession.Session | None = None
+
+
+async def _session_for(agent: str, exe: str, backend: str, resume: str) -> agentsession.Session:
+    """지금 세션을 그대로 쓰거나, 다른 대화·다른 CLI 면 갈아 세운다.
+
+    ★이어붙임 번호(`resume`)가 다르면 **다른 대화**다. 그대로 쓰면 다른 대화에 말이 붙는다."""
+    global _sess
+    ok = (
+        _sess is not None
+        and _sess.kind == agent
+        and _sess.exe == exe
+        and (not resume or _sess.session_id == resume)
+    )
+    if ok:
+        assert _sess is not None
+        return _sess
+    if _sess is not None:
+        await _sess.close()
 
     async def emit(ev: dict):
         # ★화면으로 그대로 흘린다 — 도구 줄·글자를 그리는 것은 화면 몫이다.
@@ -444,39 +452,67 @@ async def cli_run(body: CliRun, port: int = 0):
         #     (`genqueue` 머리 주석 — 안 그러면 「일하는 중…」에서 영원히 멈춘다).
         await Q.broadcast(Q.add_cli_event(agent, ev))
 
+    # ★워크스페이스가 아니라 **앱 안의 빈 폴더**(`data/agent/`)에서 돌린다
+    _sess = agentsession.make(agent, exe, cliagent.work_dir(DATA_DIR), backend, emit)
+    _sess.session_id = resume
+    return _sess
+
+
+@app.post("/api/cli/run")
+async def cli_run(body: CliRun, port: int = 0):
+    """말을 건다 — **놀고 있으면 새 턴, 도는 중이면 그 턴에 끼워 넣는다.**
+
+    ★예전에는 도는 중이면 409 로 돌려보냈다. 이제는 창구가 하나다 (사용자 지시 2026-08-15)."""
+    exe = body.exe or (cliagent.find(["claude"]) or "")
+    if not exe:
+        raise HTTPException(400, "CLI 를 못 찾았습니다. 설치하고 다시 스캔해 주세요.")
+    agent = body.agent or cliagent.agent_of(exe)
+    backend = f"http://127.0.0.1:{port or CURRENT_PORT}"
+    system = body.system or agent_mod.system_prompt(CONFIG.get("support_url", ""), GUIDE.block())
+    s = await _session_for(agent, exe, backend, body.resume)
+    s.model, s.effort = body.model, body.effort
+
+    # 도는 중이면 끼워 넣어 본다 — 되면 새 턴을 열지 않는다
+    if s.busy:
+        try:
+            if await s.steer(body.prompt):
+                return {"ok": True, "mode": "steer", "agent": agent, "session": s.session_id}
+        except Exception as e:
+            traceback.print_exc()
+            raise HTTPException(500, f"{type(e).__name__}: {e}") from e
+        # 못 끼워 넣는 CLI — 부른 쪽이 줄을 세운다
+        return {"ok": True, "mode": "busy", "agent": agent, "session": s.session_id}
+
+    # ★이 턴의 번호 — 끊겼다 붙은 화면이 "내가 시킨 그 턴"의 놓친 줄만 되받게 한다
+    run_id = str(uuid.uuid4())[:8]
+    Q.start_cli_run(run_id)
+
     async def go():
         try:
-            # ★워크스페이스가 아니라 **앱 안의 빈 폴더**(`data/agent/`)에서 돌린다
-            await cli_runner.run(
-                # ★지침이 안 실려 오면 **백엔드 것**을 쓴다 — 지침 없이 도는 일이 없게
-                exe, body.prompt, cfg, cliagent.work_dir(DATA_DIR),
-                body.system or agent_mod.system_prompt(CONFIG.get("support_url", ""), GUIDE.block()),
-                emit,
-                body.resume,
-                body.model,
-                body.effort,
-                agent,
-                backend,
-            )
+            await s.start_turn(body.prompt, system)
         except Exception as e:
             # ★**종류를 반드시 붙인다** — `str(e)` 가 빈 예외가 있다 (실측 2026-08-12:
             #   리로드 모드의 `NotImplementedError`). 그때 화면에는 까닭 없이 「코드 -1」만
             #   남아서, 고칠 실마리가 하나도 없었다. 로그에도 통째로 남긴다.
             traceback.print_exc()
             why = str(e).strip()
-            await emit({
+            s.busy = False
+            await Q.broadcast(Q.add_cli_event(agent, {
                 "type": "error",
                 "text": f"{type(e).__name__}: {why}" if why else type(e).__name__,
-            })
-            await emit({"type": "exit", "code": -1})
+            }))
+            await Q.broadcast(Q.add_cli_event(agent, {"type": "turn_end", "code": -1}))
 
     asyncio.create_task(go())
-    return {"ok": True, "exe": exe, "agent": agent, "run": run_id}
+    return {"ok": True, "mode": "start", "exe": exe, "agent": agent, "run": run_id}
 
 
 @app.post("/api/cli/stop")
 async def cli_stop():
-    await cli_runner.stop()
+    """★**그 턴만 멈춘다** — 대화는 살아 있다 (사용자 지시 2026-08-15).
+    예전에는 프로세스를 죽여서 이어 붙일 자리까지 함께 날아갔다."""
+    if _sess is not None:
+        await _sess.interrupt()
     return {"ok": True}
 
 
@@ -1078,8 +1114,6 @@ def _notify(what: str) -> None:
 
 app_cmd = App(Q.clients)
 tools = Tools(cards, store, files, WS_ROOT, meta, _notify, app_cmd, GUIDE)
-# 로컬 에이전트 CLI — 한 번에 하나만 돈다 (cliagent.py 머리 주석)
-cli_runner = cliagent.Runner()
 
 
 class QueueBody(BaseModel):

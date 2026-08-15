@@ -341,16 +341,16 @@ export const useLlm = create<S>((set, get) => ({
       set({ wire, lines: linesOf(wire) });
     };
     push({ role: "user", content: [{ type: "text", text }] });
-    // ★★**도는 중에도 말을 걸 수 있다** (사용자 지시 2026-08-15). 줄은 그 자리에 뜨고,
-    //   지금 턴이 끝나는 대로 이어서 처리한다 (`drain`).
-    //   ★왜 "지금 프로세스에 밀어 넣기"가 아닌가: 코덱스 `exec` 는 stdin 을 **EOF 까지
-    //     모아** 한 프롬프트로 쓴다 — 턴이 도는 중에는 받을 자리가 아예 없다 (실측
-    //     2026-08-15: 둘째 줄을 보냈더니 첫 줄과 합쳐져 한 턴이 됐다). 클로드 코드는
-    //     `--input-format stream-json` 으로 받을 수 있지만, 그러자고 CLI 마다 다르게
-    //     굴면 "도는 중에 보낸 말"의 동작이 갈린다. 둘 다 같게 둔다.
+    // ★★**도는 중에도 말을 걸 수 있다** (사용자 지시 2026-08-15).
+    //   CLI 는 **그 턴 안으로 곧바로 들어간다**(`mode: "steer"`). 못 받는 경우에만 줄을
+    //   세웠다가 턴이 끝나는 대로 이어서 보낸다 (`drain`).
     if (get().sending) {
-      set({ queued: [...get().queued, text] });
       void save(get());
+      if (useCli.getState().engine === "cli") {
+        const r = await cliPost(text, get()).catch(() => null);
+        if (r?.mode === "steer") return; // 도는 턴에 들어갔다 — 줄 세울 것 없다
+      }
+      set({ queued: [...get().queued, text] });
       return;
     }
     await get().run(text);
@@ -372,28 +372,14 @@ export const useLlm = create<S>((set, get) => ({
     // ★로컬 CLI 로 도는 턴 — 도구 루프를 **저쪽이** 돈다. 우리는 흘러오는 것을 옮겨 적을 뿐이다
     if (useCli.getState().engine === "cli") {
       try {
+        const r = await cliPost(text, get());
         // ★이 턴의 번호를 받아 적어 둔다 — 소켓이 **한 줄도 못 받고** 끊겨도, 붙을 때
-        //   "그 턴의 놓친 줄"을 되받을 수 있다 (`queue.ts` 의 `noteCliRun`)
-        const r = await api<{ run?: string }>("/api/cli/run", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt: text,
-            system: SYSTEM,
-            exe: useCli.getState().exe ?? "",
-            // ★어느 CLI 인지 실어 보낸다 — 실행 깃발도 흘러오는 모양도 서로 다르다
-            agent: useCli.getState().agent,
-            resume: get().cliSession ?? "",
-            // 비우면 저쪽이 안 넘긴다 = CLI 기본값
-            model: useCli.getState().model,
-            effort: useCli.getState().effort,
-          }),
-        });
+        //   "그 턴의 놓친 줄"을 되받을 수 있다 (`lib/cliCursor.ts`)
         if (r?.run) noteCliRun(r.run);
       } catch (e) {
         set({ error: String((e as Error).message ?? e), sending: false });
       }
-      return; // 끝은 `exit` 이벤트가 알린다 (cliEvent)
+      return; // 끝은 `turn_end` 가 알린다 (cliEvent)
     }
 
     try {
@@ -457,9 +443,17 @@ export const useLlm = create<S>((set, get) => ({
   stop() {
     abort = true;
     // ★멈추라고 했으면 **쌓아 둔 말도 버린다** — 안 그러면 멈춘 직후에 저절로 또 돈다
-    set({ sending: false, queued: [] });
-    if (useCli.getState().engine === "cli")
-      void api("/api/cli/stop", { method: "POST" }).catch(() => {});
+    set({ queued: [] });
+    if (useCli.getState().engine !== "cli") {
+      set({ sending: false });
+      return;
+    }
+    // ★★CLI 는 **`sending` 을 여기서 끄지 않는다.** 이제 중단은 프로세스를 죽이는 게 아니라
+    //   그 턴만 멈추는 것이고, 멈췄다는 것은 `turn_end` 가 알린다. 여기서 미리 끄면
+    //   아직 흘러나오는 줄이 "안 도는 중"에 붙는다.
+    void api("/api/cli/stop", { method: "POST" }).catch(() =>
+      set({ sending: false }),
+    );
   },
 }));
 
@@ -545,7 +539,14 @@ export function cliEvent(ev: Record<string, any>, agent = "claude-code") {
     if (line) cliErr = [...cliErr, line].slice(-8);
     return;
   }
-  if (ev.type === "exit") {
+  // ★이어붙임 번호는 **백엔드가 알려 준다** (`agentsession`) — CLI 마다 캐낼 자리가 다르다
+  if (ev.type === "session") {
+    if (ev.id) useLlm.setState({ cliSession: String(ev.id) });
+    return;
+  }
+  // ★★**턴의 끝은 `turn_end` 다.** 프로세스가 죽는 것(`exit`)과 다르다 — 이제 프로세스는
+  //   대화 내내 살아 있고, 「중단」도 그 턴만 멈춘다 (사용자 지시 2026-08-15).
+  if (ev.type === "turn_end" || ev.type === "exit") {
     useLlm.setState({ sending: false });
     if (ev.code && ev.code !== 0 && !st.error) {
       const why = cliErr.join("\n");
@@ -562,8 +563,28 @@ export function cliEvent(ev: Record<string, any>, agent = "claude-code") {
   }
 }
 
-/** 우리가 만들어 넣는 이벤트 — CLI 가 무엇이든 모양이 같다 (`cliagent.Runner`) */
-const COMMON = new Set(["stderr", "exit", "error"]);
+/** CLI 에 말을 거는 자리 — **여기 하나뿐이다** (새 턴이든 도는 턴에 끼워 넣기든 같은 창구).
+ *  백엔드가 `mode` 로 무엇이 됐는지 알려 준다: `start` 새 턴 · `steer` 도는 턴에 들어감 ·
+ *  `busy` 못 끼워 넣음(부른 쪽이 줄을 세운다). */
+function cliPost(text: string, s: S) {
+  return api<{ run?: string; mode?: string; session?: string }>("/api/cli/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt: text,
+      system: SYSTEM,
+      exe: useCli.getState().exe ?? "",
+      // ★어느 CLI 인지 실어 보낸다 — 실행 깃발도 흘러오는 모양도 서로 다르다
+      agent: useCli.getState().agent,
+      resume: s.cliSession ?? "",
+      model: useCli.getState().model,
+      effort: useCli.getState().effort,
+    }),
+  });
+}
+
+/** 우리가 만들어 넣는 이벤트 — CLI 가 무엇이든 모양이 같다 (`backend/agentsession.py`) */
+const COMMON = new Set(["stderr", "exit", "error", "turn_end", "session"]);
 
 /** 이번 턴에 이미 「도구 부름」 줄을 낸 항목 — 코덱스는 `item.started` 와 `item.completed` 가
  *  같은 id 로 두 번 오므로, 결과 줄만 뒤에 붙이려고 들고 있는다. */
@@ -573,7 +594,6 @@ let codexOpen = new Set<string>();
  *  (순수 함수라 저쪽이 실제로 뱉은 기록으로 확인할 수 있다). 여기서는 스토어에 앉힐 뿐이다. */
 function codexEvent(ev: Record<string, any>, push: (m: Wire) => void) {
   const out = codexWire(ev, codexOpen);
-  if (out.session) useLlm.setState({ cliSession: out.session });
   if (out.error) useLlm.setState({ error: out.error });
   if (out.unknown) console.debug("[codex] 모르는 항목", out.unknown, ev);
   for (const m of out.wire) push(m);
