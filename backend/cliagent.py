@@ -73,15 +73,49 @@ def find(bins: list[str]) -> str | None:
     for b in bins:
         p = shutil.which(b)
         if p:
-            return p
+            return real_exe(p, b)
     exts = [""] if os.name != "nt" else os.environ.get("PATHEXT", ".EXE;.CMD;.BAT").lower().split(";")
     for d in _extra_dirs():
         for b in bins:
             for e in exts:
                 cand = d / (b + e)
                 if cand.is_file():
-                    return str(cand)
+                    return real_exe(str(cand), b)
     return None
+
+
+#: 배치 래퍼 → 진짜 실행 파일. 찾는 데 폴더를 뒤지므로 한 번만 한다
+_REAL: dict[str, str] = {}
+
+
+def real_exe(path: str, name: str) -> str:
+    """★★**배치 래퍼(`.CMD`)로 돌리지 않는다** — 실측으로 두 번 밟았다 (2026-08-15).
+
+    npm 이 깔아 주는 것은 `claude.CMD`·`codex.CMD` 같은 **배치 파일**이라, 윈도우가
+    `cmd.exe /c` 를 한 겹 끼운다. 그러면 cmd 가 명령줄을 **다시 해석**해서:
+
+      · 코덱스 — 지침에 든 `long_hair -> long hair` 의 `>` 가 **출력 리다이렉션**이 됐다.
+        JSON 이 통째로 `data/agent/long` 파일로 새고 종료 코드는 0 이었다.
+      · 클로드 — 같은 지침을 실어 보내면 **출력이 아무것도 안 나온다.** 프로세스는 살아
+        있는데 stdout·stderr 둘 다 조용하다. 진짜 `claude.exe` 로는 멀쩡히 돈다.
+
+    두 증상 다 **조용히** 틀린다. 그래서 래퍼를 만나면 그 패키지 안의 진짜 exe 를 찾는다.
+    못 찾으면 래퍼를 그대로 쓴다 (안 도는 것보다는 낫다)."""
+    if os.name != "nt" or not path.lower().endswith((".cmd", ".bat", ".ps1")):
+        return path
+    if path in _REAL:
+        return _REAL[path]
+    root = Path(path).parent / "node_modules"
+    found = ""
+    if root.is_dir():
+        # 얕은 곳부터 본다 — 깊이가 패키지마다 다르다 (클로드는 3단, 코덱스는 7단)
+        for depth in range(2, 9):
+            hit = next(root.glob("/".join(["*"] * depth) + f"/{name}.exe"), None)
+            if hit and hit.is_file():
+                found = str(hit)
+                break
+    _REAL[path] = found or path
+    return _REAL[path]
 
 
 #: 클로드 코드의 모델 별칭 — 도움말이 예로 든 둘 (실측 2026-08-08)
