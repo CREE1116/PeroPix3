@@ -471,10 +471,20 @@ export const useLlm = create<S>((set, get) => ({
  *    (매번 프로세스 하나), 사용자가 이어서 적은 말은 대개 한 뭉치의 요청이다.
  *  ★줄은 이미 화면에 올라가 있다 (`send` 가 먼저 올린다) — 여기서 또 올리지 않는다. */
 function drain() {
-  const q = useLlm.getState().queued;
-  if (!q.length) return;
+  const s = useLlm.getState();
+  if (!s.queued.length) return;
   useLlm.setState({ queued: [] });
-  void useLlm.getState().run(q.join("\n\n"));
+  if (useCli.getState().engine === "cli") {
+    void s.run(s.queued.join("\n\n"));
+    return;
+  }
+  // ★★API 는 CLI 와 사정이 다르다. 도구 루프가 **우리 안에서** 돌고 매 바퀴 `wire` 를
+  //   통째로 보내므로, 도는 중에 친 말을 **그 루프가 이미 집어 간다.** 그런데도 여기서 또
+  //   돌리면 같은 말을 두 번 시키는 셈이라 답이 두 번 나온다.
+  //   그래서 **아직 답이 안 나갔을 때만** 한 턴 더 돈다 — 대화가 「답 없는 사용자 말」로
+  //   끝났는가로 가른다. 도구 결과도 `role:"user"` 지만 글이 아니므로 헷갈리지 않는다.
+  const last = s.wire[s.wire.length - 1];
+  if (last?.role === "user" && last.content.some((c) => c.type === "text")) void s.run("");
 }
 
 /** CLI 가 흘려보내는 stream-json 한 줄을 받아 **wire 조각**으로 옮긴다.
