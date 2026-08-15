@@ -1,5 +1,7 @@
 import { create } from "zustand";
-import { api } from "../lib/backend";
+// ★확장자를 적는다 — 이 모듈은 `cli.test.ts` 가 **node 로 그대로 불러** 확인한다
+//   (node 는 Vite 와 달리 확장자를 붙여 주지 않는다). `lib/backend` 는 import 가 없어 여기서 끝난다.
+import { api } from "../lib/backend.ts";
 
 /** 로컬 에이전트 CLI — **사용자가 이미 내고 있는 구독을 그대로 쓴다.**
  *
@@ -98,6 +100,9 @@ const load = (): "api" | "cli" => {
  *  코덱스를 골라도 다음 실행에 클로드 코드로 되돌아간다 (목록의 첫 번째라서). */
 const loadAgent = () => readStr(AGENT_KEY) || "claude-code";
 
+/** 아직 탐지 전이거나 모르는 CLI 일 때 돌려줄 빈 목록 — ★**하나를 돌려 써야 한다** (위 주석) */
+const NO_MODELS: string[] = [];
+
 /** 고른 CLI 를 자리에 앉힌다 — 경로·id·모델이 **함께** 바뀌어야 한다.
  *
  *  ★모델은 그 CLI 가 받는 이름이어야 한다. 기억해 둔 값이 목록에 없으면(CLI 를 바꿨거나
@@ -131,7 +136,10 @@ export const useCli = create<S>((set, get) => ({
   scanning: false,
   exe: null,
 
-  models: () => get().items.find((x) => x.id === get().agent)?.models ?? [],
+  // ★★빈 값은 **고정 상수**여야 한다. 여기서 `?? []` 로 새 배열을 만들면 셀렉터가 매번
+  //   다른 것을 돌려주고, zustand v5 는 그것을 "바뀌었다"로 보아 **무한 렌더**에 빠진다
+  //   (실측 2026-08-15: AI 탭을 여는 순간 화면이 통째로 사라졌다. CLAUDE.md 「잊기 쉬운 것」).
+  models: () => get().items.find((x) => x.id === get().agent)?.models ?? NO_MODELS,
 
   setEngine(e) {
     try {
