@@ -161,6 +161,9 @@ type S = {
   lines: Line[];
   list: ChatInfo[];
   sending: boolean;
+  /** 도는 중에 사용자가 더 건 말 — 이 턴이 끝나는 대로 한 턴으로 묶어 이어 처리한다.
+   *  ★줄은 이미 화면에 올라가 있다. 여기 있는 것은 **아직 CLI 에 안 보낸 글**뿐이다. */
+  queued: string[];
   error: string;
   /** 지금 화면에 떠 있는 물음 (없으면 null) */
   ask: Ask | null;
@@ -186,6 +189,8 @@ type S = {
   newChat: () => void;
   remove: (id: string) => Promise<void>;
   send: (text: string) => Promise<void>;
+  /** 한 턴을 실제로 돌린다 — 사용자 줄은 이미 올라가 있다고 본다 (`send`·`drain` 전용) */
+  run: (text: string) => Promise<void>;
   stop: () => void;
 };
 
@@ -205,6 +210,7 @@ export const useLlm = create<S>((set, get) => ({
   lines: [],
   list: [],
   sending: false,
+  queued: [],
   error: "",
   ask: null,
   cliSession: null,
@@ -319,7 +325,7 @@ export const useLlm = create<S>((set, get) => ({
     if (get().sending) return;
     // ★CLI 세션도 함께 끊는다 — 안 그러면 새 대화인데 저쪽은 옛 맥락을 들고 있다
     set({ id: newId(), wire: [], lines: [], error: "", ask: null, cliSession: null,
-          cliSessionGone: false });
+          cliSessionGone: false, queued: [] });
   },
 
   async remove(id) {
@@ -329,13 +335,34 @@ export const useLlm = create<S>((set, get) => ({
   },
 
   async send(text) {
-    if (get().sending || !text.trim()) return;
-    abort = false;
+    if (!text.trim()) return;
     const push = (m: Wire) => {
       const wire = [...get().wire, m];
       set({ wire, lines: linesOf(wire) });
     };
     push({ role: "user", content: [{ type: "text", text }] });
+    // ★★**도는 중에도 말을 걸 수 있다** (사용자 지시 2026-08-15). 줄은 그 자리에 뜨고,
+    //   지금 턴이 끝나는 대로 이어서 처리한다 (`drain`).
+    //   ★왜 "지금 프로세스에 밀어 넣기"가 아닌가: 코덱스 `exec` 는 stdin 을 **EOF 까지
+    //     모아** 한 프롬프트로 쓴다 — 턴이 도는 중에는 받을 자리가 아예 없다 (실측
+    //     2026-08-15: 둘째 줄을 보냈더니 첫 줄과 합쳐져 한 턴이 됐다). 클로드 코드는
+    //     `--input-format stream-json` 으로 받을 수 있지만, 그러자고 CLI 마다 다르게
+    //     굴면 "도는 중에 보낸 말"의 동작이 갈린다. 둘 다 같게 둔다.
+    if (get().sending) {
+      set({ queued: [...get().queued, text] });
+      void save(get());
+      return;
+    }
+    await get().run(text);
+  },
+
+  /** 한 턴을 실제로 돌린다 — `send` 와 `drain` 이 함께 쓴다 (사용자 줄은 이미 올라가 있다). */
+  async run(text) {
+    abort = false;
+    const push = (m: Wire) => {
+      const wire = [...get().wire, m];
+      set({ wire, lines: linesOf(wire) });
+    };
     set({ sending: true, error: "" });
     // ★★**말을 건 그 자리에서 저장한다** (사용자 지적 2026-08-15). 예전에는 턴이 끝나야
     //   저장해서, 도는 중에 앱을 다시 켜면 그 대화가 **목록에 아예 없었다.** 그러면
@@ -423,16 +450,30 @@ export const useLlm = create<S>((set, get) => ({
     } finally {
       set({ sending: false });
       void save(get());
+      drain();
     }
   },
 
   stop() {
     abort = true;
-    set({ sending: false });
+    // ★멈추라고 했으면 **쌓아 둔 말도 버린다** — 안 그러면 멈춘 직후에 저절로 또 돈다
+    set({ sending: false, queued: [] });
     if (useCli.getState().engine === "cli")
       void api("/api/cli/stop", { method: "POST" }).catch(() => {});
   },
 }));
+
+/** 도는 중에 쌓인 말을 이어서 처리한다 — 턴이 끝나는 자리에서만 부른다.
+ *
+ *  ★여러 줄이 쌓였으면 **한 턴으로 묶는다.** 하나씩 돌리면 CLI 를 그만큼 다시 띄우게 되고
+ *    (매번 프로세스 하나), 사용자가 이어서 적은 말은 대개 한 뭉치의 요청이다.
+ *  ★줄은 이미 화면에 올라가 있다 (`send` 가 먼저 올린다) — 여기서 또 올리지 않는다. */
+function drain() {
+  const q = useLlm.getState().queued;
+  if (!q.length) return;
+  useLlm.setState({ queued: [] });
+  void useLlm.getState().run(q.join("\n\n"));
+}
 
 /** CLI 가 흘려보내는 stream-json 한 줄을 받아 **wire 조각**으로 옮긴다.
  *
@@ -515,6 +556,8 @@ export function cliEvent(ev: Record<string, any>, agent = "claude-code") {
     cliErr = [];
     codexOpen = new Set();
     void save(useLlm.getState());
+    // ★도는 중에 쌓인 말이 있으면 이어서 처리한다 (사용자 지시 2026-08-15)
+    drain();
     return;
   }
 }

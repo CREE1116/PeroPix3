@@ -49,9 +49,11 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
     end.current?.scrollIntoView({ block: "end" });
   }, [lines.length, sending]);
 
+  // ★도는 중에도 말을 걸 수 있다 (사용자 지시 2026-08-15) — 줄은 바로 뜨고, 지금 턴이
+  //   끝나는 대로 이어서 처리된다. 그래서 `sending` 으로 막지 않는다.
   const submit = () => {
     const v = text.trim();
-    if (!v || sending) return;
+    if (!v) return;
     setText("");
     void send(v);
   };
@@ -357,15 +359,16 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
         <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
           <ModelChip onOpenSettings={onOpenSettings} />
           <span style={{ flex: 1 }} />
-          {sending ? (
-            <button data-ai-stop onClick={stop} style={sendBtn}>
+          {/* ★도는 중에도 보낼 수 있으므로 **보내기는 늘 있다.** 멈추기는 그 왼쪽에 함께 둔다
+              (예전에는 둘이 자리를 바꿔서, 도는 동안에는 보낼 수단이 아예 없었다) */}
+          {sending && (
+            <button data-ai-stop onClick={stop} style={{ ...sendBtn, ...stopBtn }}>
               {t("ai.stop")}
             </button>
-          ) : (
-            <button data-ai-send onClick={submit} disabled={!text.trim()} style={sendBtn}>
-              {t("ai.send")}
-            </button>
           )}
+          <button data-ai-send onClick={submit} disabled={!text.trim()} style={sendBtn}>
+            {sending ? t("ai.queue") : t("ai.send")}
+          </button>
         </div>
       </div>
     </div>
@@ -765,4 +768,10 @@ const sendBtn: React.CSSProperties = {
   color: "var(--ink-soft)",
   padding: "3px var(--sp-5)",
   fontSize: "var(--text-2xs)",
+};
+/** 멈추기는 보내기 옆에 함께 뜬다 — 한 단 가라앉혀 두 버튼의 무게를 가른다 */
+const stopBtn: React.CSSProperties = {
+  background: "transparent",
+  color: "var(--ink-faint)",
+  padding: "3px var(--sp-4)",
 };

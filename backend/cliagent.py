@@ -408,7 +408,12 @@ class Runner:
         finally:
             q.put_nowait(None)
             await drain
+            # ★★**끝을 알리는 것은 여기다** — 자리를 비운 **뒤에**. 화면은 `exit` 을 보면
+            #   곧바로 다음 턴을 시작할 수 있는데(도는 중에 쌓아 둔 말), 프로세스를 놓기
+            #   전에 알리면 그 요청이 「이미 돌고 있습니다」(409)로 튕긴다.
+            code = self.proc.returncode if self.proc else -1
             self.proc = None
+            await emit({"type": "exit", "code": code})
 
     def _drive(self, exe: str, args: list[str], cwd: str, prompt: str, hand) -> None:
         """**자기 루프**를 세워 거기서 프로세스를 돌린다 (다른 스레드에서 불린다)."""
@@ -457,9 +462,9 @@ class Runner:
             except Exception:
                 continue
         await p.wait()
-        # ★죽은 까닭은 stderr 에 있다 — 잘라 버리지 말고 **끝까지 받고** 나서 exit 를 낸다.
+        # ★죽은 까닭은 stderr 에 있다 — 잘라 버리지 말고 **끝까지 받는다.**
         #   프로세스가 끝났으니 파이프는 곧 EOF 다 (그래도 멎지 않게 시간 제한을 둔다).
+        #   ★`exit` 는 여기서 안 낸다 — `run` 이 자리를 비운 뒤에 낸다 (그쪽 주석).
         with __import__("contextlib").suppress(Exception):
             await asyncio.wait_for(err, 2)
         err.cancel()
-        hand({"type": "exit", "code": p.returncode})

@@ -464,6 +464,7 @@ export const ja: Dict = {
     placeholder: "やってほしいこと（Enter で送信・Shift+Enter で改行）",
     send: "送信",
     stop: "中断",
+    queue: "続けて送信",
     reset: "新しい会話",
     busyLock: "応答待ちです。中断すると切り替えられます",
     history: "過去の会話",

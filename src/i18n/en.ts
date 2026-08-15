@@ -464,6 +464,7 @@ export const en = {
     placeholder: "What should it do? (Enter to send, Shift+Enter for a new line)",
     send: "Send",
     stop: "Stop",
+    queue: "Queue",
     reset: "New chat",
     busyLock: "Waiting for a reply. Stop it to switch",
     history: "Past chats",
