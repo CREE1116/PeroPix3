@@ -339,6 +339,11 @@ class Runner:
             "--json",
             "--ignore-user-config",
             "--skip-git-repo-check",
+            # ★셸을 끈다 (사용자 결정 2026-08-15). `shell_tool` 은 stable 등급 기능 플래그이고
+            #   기본이 켜짐이다 (`codex features list`). 모래상자가 읽기 전용이라 고칠 수는
+            #   없었지만, 켜 두면 조수가 우리 소스를 **읽으며 턴을 쓴다** — 클로드 코드 쪽에서
+            #   실제로 겪은 일이라 거기서도 이름으로 닫아 뒀다(`argv` 의 --disallowedTools).
+            "--disable", "shell_tool",
             "-c", "sandbox_mode=" + toml_value("read-only"),
             "-c", "approval_policy=" + toml_value("never"),
             "-c", "mcp_servers.peropix.command=" + toml_value(spec["command"]),

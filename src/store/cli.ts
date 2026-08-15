@@ -29,6 +29,13 @@ const KEY = "peropix.engine";
  *    (실제로 `opus[1m]`·`max` 였다 — 카드 정리에 그것을 쓸 이유가 없다).
  *    같은 바이너리·같은 계정을 쓰되 **용도는 갈라야** 해서, 여기서 정하고 사용자가 바꾼다. */
 const CLI_EFFORT_DEFAULT = "high";
+/** 처음 골라 줄 모델 — ★**목록의 첫 번째가 아니다** (사용자 결정 2026-08-15).
+ *  코덱스 목록의 첫 자리는 `gpt-5.6-sol` 인데 사용자 구독으로 고를 수 있는 것이 아니다.
+ *  여기 이름이 목록에 없으면 목록의 첫 번째로 물러난다 (저쪽이 모델을 내렸을 때). */
+const MODEL_DEFAULT: Record<string, string> = {
+  "claude-code": "sonnet",
+  codex: "gpt-5.6-terra",
+};
 /** ★모델은 **CLI 마다 다르다** — 고른 것에 맞춰 따로 기억한다. 하나로 두면 코덱스를
  *  골라 놓고 `sonnet` 이 남아 있게 된다 (코덱스가 못 받는 이름이다). */
 const MODEL_KEY = (agent: string) => `peropix.cliModel:${agent}`;
@@ -94,11 +101,16 @@ const loadAgent = () => readStr(AGENT_KEY) || "claude-code";
 /** 고른 CLI 를 자리에 앉힌다 — 경로·id·모델이 **함께** 바뀌어야 한다.
  *
  *  ★모델은 그 CLI 가 받는 이름이어야 한다. 기억해 둔 값이 목록에 없으면(CLI 를 바꿨거나
- *    저쪽이 모델을 내렸거나) **목록의 첫 번째**로 되돌린다 — 저쪽이 정한 차례가 곧 추천이다. */
+ *    저쪽이 모델을 내렸거나) 우리 기본값으로, 그것도 없으면 목록의 첫 번째로 물러난다. */
 function seat(it: CliItem) {
   writeStr(AGENT_KEY, it.id);
   const kept = readStr(MODEL_KEY(it.id));
-  const model = it.models.includes(kept) ? kept : (it.models[0] ?? "");
+  const fallback = MODEL_DEFAULT[it.id] ?? "";
+  const model = it.models.includes(kept)
+    ? kept
+    : it.models.includes(fallback)
+      ? fallback
+      : (it.models[0] ?? "");
   return { agent: it.id, exe: it.path, model };
 }
 
