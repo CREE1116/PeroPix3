@@ -433,11 +433,16 @@ async def cli_run(body: CliRun, port: int = 0):
     agent = body.agent or cliagent.agent_of(exe)
     backend = f"http://127.0.0.1:{port or CURRENT_PORT}"
     cfg = cliagent.mcp_config(DATA_DIR, backend)
+    # ★이 턴의 번호 — 끊겼다 붙은 화면이 "내가 시킨 그 턴"의 놓친 줄만 되받게 한다
+    run_id = str(uuid.uuid4())[:8]
+    Q.start_cli_run(run_id)
 
     async def emit(ev: dict):
         # ★화면으로 그대로 흘린다 — 도구 줄·글자를 그리는 것은 화면 몫이다.
-        #   ★어느 CLI 인지 함께 실어야 화면이 어느 모양으로 읽을지 안다 (모양이 서로 다르다)
-        await Q.broadcast({"type": "cli", "agent": agent, "event": ev})
+        #   ★어느 CLI 인지 함께 실어야 화면이 어느 모양으로 읽을지 안다 (모양이 서로 다르다).
+        #   ★★번호를 붙여 **남기고** 내보낸다. 소켓이 잠깐 끊겨도 되받을 수 있어야 한다
+        #     (`genqueue` 머리 주석 — 안 그러면 「일하는 중…」에서 영원히 멈춘다).
+        await Q.broadcast(Q.add_cli_event(agent, ev))
 
     async def go():
         try:
@@ -466,7 +471,7 @@ async def cli_run(body: CliRun, port: int = 0):
             await emit({"type": "exit", "code": -1})
 
     asyncio.create_task(go())
-    return {"ok": True, "exe": exe, "agent": agent}
+    return {"ok": True, "exe": exe, "agent": agent, "run": run_id}
 
 
 @app.post("/api/cli/stop")
@@ -1211,6 +1216,9 @@ async def ws_endpoint(websocket: WebSocket, clientId: str | None = None):
                 await websocket.send_json({
                     "type": "sync",
                     "images": Q.get_images_since(last),
+                    # ★끊긴 사이 흘러간 CLI 줄도 돌려준다. **자기 턴 것만** 온다
+                    "cli": Q.get_cli_since(str(data.get("cli_run") or ""),
+                                           int(data.get("cli_seq", 0) or 0)),
                     "status": Q.get_status(),
                 })
             elif data.get("type") == "ping":

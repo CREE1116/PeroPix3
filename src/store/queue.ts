@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api, backendUrl } from "../lib/backend";
 import { cliEvent } from "./llm";
+import { cliCursor, takeCliSeq } from "../lib/cliCursor";
 import { useCards } from "./cards";
 import { useFiles } from "./files";
 import type { Block } from "../lib/blocks";
@@ -77,7 +78,7 @@ export const useQueue = create<S>((set, get) => ({
       retry = 0;
       set({ connected: true, error: "" });
       // 붙자마자 **놓친 것부터 달라고 한다** (새로고침·끊김 복원)
-      ws.send(JSON.stringify({ type: "sync", last_seq: get().lastSeq }));
+      ws.send(JSON.stringify({ type: "sync", last_seq: get().lastSeq, ...cliCursor() }));
     };
     ws.onclose = () => {
       set({ connected: false });
@@ -230,6 +231,8 @@ function handle(m: Record<string, any>, set: Setter, get: () => S) {
     case "sync": {
       applyStatus(m.status, set, get);
       for (const im of m.images ?? []) render(im, set, get);
+      // ★끊긴 사이 흘러간 CLI 줄 — **순서 그대로** 다시 태운다. 서버가 우리 턴 것만 보낸다
+      for (const c of m.cli ?? []) takeCli(c);
       break;
     }
     case "image":
@@ -257,10 +260,9 @@ function handle(m: Record<string, any>, set: Setter, get: () => S) {
       );
       break;
     }
-    // 로컬 CLI 가 흘려보내는 stream-json — 채팅 스토어가 wire 조각으로 옮긴다
+    // 로컬 CLI 가 흘려보내는 것 — 채팅 스토어가 wire 조각으로 옮긴다
     case "cli":
-      // ★어느 CLI 가 뱉은 것인지 함께 온다 — 모양이 서로 다르다
-      cliEvent(m.event ?? {}, String(m.agent ?? "claude-code"));
+      takeCli(m);
       break;
     case "image_error":
     case "job_error":
@@ -268,6 +270,14 @@ function handle(m: Record<string, any>, set: Setter, get: () => S) {
       if (m.progress) set({ progress: m.progress });
       break;
   }
+}
+
+/** CLI 줄 하나를 화면에 태운다 — **실시간분·복원분 공통 창구**.
+ *  이미 태운 번호는 `takeCliSeq` 가 거른다 (`lib/cliCursor.ts`). */
+function takeCli(m: Record<string, any>) {
+  if (!takeCliSeq(String(m.run ?? ""), Number(m.seq ?? 0))) return;
+  // ★어느 CLI 가 뱉은 것인지 함께 온다 — 모양이 서로 다르다
+  cliEvent(m.event ?? {}, String(m.agent ?? "claude-code"));
 }
 
 function applyStatus(status: Record<string, any> | undefined, set: Setter, get: () => S) {

@@ -21,6 +21,8 @@ from typing import Any
 
 #: 재연결·새로고침 복원 상한. v2 와 같은 값.
 RECENT_LIMIT = 500
+#: CLI 한 턴이 흘리는 줄 수 상한. 실측 2026-08-15: 도구를 16번 쓴 턴이 33줄이었다
+RECENT_CLI_LIMIT = 2000
 
 
 class GenerationQueue:
@@ -40,6 +42,16 @@ class GenerationQueue:
         #: 재연결 동기화용. seq 는 1부터 증가한다.
         self.recent_images: list[dict] = []
         self.image_sequence = 0
+
+        #: ★CLI 조수가 흘리는 것도 **번호를 달아 남긴다** (2026-08-15).
+        #  예전에는 그냥 쏘고 말아서, 소켓이 잠깐만 끊겨도 그 사이 줄이 영영 사라졌다.
+        #  하필 끝을 알리는 `exit` 이 사라지면 화면은 「일하는 중…」에서 영원히 멈춘다 —
+        #  일은 다 끝났는데도. 실제로 그렇게 카드가 만들어진 줄 모르고 기다린 적이 있다.
+        #  ★버퍼는 **한 턴 것만** 담는다 (`start_cli_run` 이 비운다). 지난 턴을 남기면
+        #    재연결한 화면에 옛 대화의 줄이 되살아난다.
+        self.cli_run: str = ""
+        self.cli_events: list[dict] = []
+        self.cli_sequence = 0
 
     # ── 큐 ──
     def add_job(self, request: Any, count: int) -> str:
@@ -70,6 +82,8 @@ class GenerationQueue:
             "completed_images": self.completed_images,
             "total_images": self.total_images,
             "image_sequence": self.image_sequence,
+            "cli_run": self.cli_run,
+            "cli_sequence": self.cli_sequence,
         }
 
     # ── 복원 ──
@@ -83,6 +97,30 @@ class GenerationQueue:
 
     def get_images_since(self, last_seq: int) -> list[dict]:
         return [i for i in self.recent_images if i.get("seq", 0) > last_seq]
+
+    # ── CLI 조수 스트림 복원 ──
+    def start_cli_run(self, run_id: str) -> None:
+        """새 턴이 시작됐다 — 버퍼를 비우고 번호를 1부터 다시 센다."""
+        self.cli_run = run_id
+        self.cli_events = []
+        self.cli_sequence = 0
+
+    def add_cli_event(self, agent: str, event: dict) -> dict:
+        """번호를 붙여 남기고, **내보낼 메시지를 돌려준다** (그림 쪽과 같은 요령)."""
+        self.cli_sequence += 1
+        msg = {"type": "cli", "run": self.cli_run, "seq": self.cli_sequence,
+               "agent": agent, "event": event}
+        self.cli_events.append(msg)
+        if len(self.cli_events) > RECENT_CLI_LIMIT:
+            self.cli_events.pop(0)
+        return msg
+
+    def get_cli_since(self, run_id: str, last_seq: int) -> list[dict]:
+        """★**같은 턴일 때만** 돌려준다. 화면이 모르는 턴의 줄을 밀어 넣으면
+        엉뚱한 대화에 남의 줄이 붙는다."""
+        if not run_id or run_id != self.cli_run:
+            return []
+        return [e for e in self.cli_events if e.get("seq", 0) > last_seq]
 
     # ── 소켓 ──
     def _unregister(self, client_id: str, ws: Any) -> None:

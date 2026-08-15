@@ -4,6 +4,7 @@ import { useWs } from "./workspace";
 import { t, useI18n } from "../i18n";
 import { useCli } from "./cli";
 import { codexWire } from "../lib/codexStream";
+import { noteCliRun } from "../lib/cliCursor";
 
 /** LLM 채팅 — **반복 작업을 대신 시키는 창구** (3.0 의 목표 중 하나, ui-guide 7절).
  *
@@ -275,8 +276,17 @@ export const useLlm = create<S>((set, get) => ({
   async open(id) {
     // ★턴이 도는 중에는 안 연다 — 돌던 응답이 **그 대화에 붙는다**
     if (get().sending) return;
+    // ★★**가져오는 사이에 화면이 움직였으면 덮지 않는다.** 위의 검사는 **보내기 전**의
+    //   상태일 뿐이라, 그 사이 사용자가 말을 걸면 늦게 도착한 옛 대화가 **진행 중인 턴을
+    //   덮어 버린다** (실측 2026-08-15: 사용자 발화가 통째로 사라지고 그 자리에 사흘 전
+    //   대화가 들어와 있었다. 그 턴은 카드까지 만들었는데 화면에는 흔적이 없었다).
+    //   아래 `cliSessionGone` 은 같은 함정을 이미 막고 있었는데 정작 본체가 안 막고 있었다.
+    //   ★견주는 것은 **길이가 아니라 그 배열 자체**다 — 사용자가 목록에서 다른 대화를
+    //   고르는 것(이때는 이미 내용이 들어 있다)까지 막으면 안 된다.
+    const before = get().wire;
     try {
       const d = await api<{ id: string; wire: Wire[]; session?: string }>(`/api/chats/${id}`);
+      if (get().sending || get().wire !== before) return;
       // ★세션 id 도 되살린다 — 이게 없으면 이어 열 때마다 CLI 가 첫 메시지부터 시작한다
       set({
         id: d.id,
@@ -327,11 +337,17 @@ export const useLlm = create<S>((set, get) => ({
     };
     push({ role: "user", content: [{ type: "text", text }] });
     set({ sending: true, error: "" });
+    // ★★**말을 건 그 자리에서 저장한다** (사용자 지적 2026-08-15). 예전에는 턴이 끝나야
+    //   저장해서, 도는 중에 앱을 다시 켜면 그 대화가 **목록에 아예 없었다.** 그러면
+    //   「마지막 대화 복구」가 엉뚱한 옛 대화를 열고, 오늘 한 일이 사흘 전 대화에 붙는다.
+    void save(get());
 
     // ★로컬 CLI 로 도는 턴 — 도구 루프를 **저쪽이** 돈다. 우리는 흘러오는 것을 옮겨 적을 뿐이다
     if (useCli.getState().engine === "cli") {
       try {
-        await api("/api/cli/run", {
+        // ★이 턴의 번호를 받아 적어 둔다 — 소켓이 **한 줄도 못 받고** 끊겨도, 붙을 때
+        //   "그 턴의 놓친 줄"을 되받을 수 있다 (`queue.ts` 의 `noteCliRun`)
+        const r = await api<{ run?: string }>("/api/cli/run", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -346,6 +362,7 @@ export const useLlm = create<S>((set, get) => ({
             effort: useCli.getState().effort,
           }),
         });
+        if (r?.run) noteCliRun(r.run);
       } catch (e) {
         set({ error: String((e as Error).message ?? e), sending: false });
       }
