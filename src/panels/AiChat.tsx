@@ -3,7 +3,7 @@ import { useI18n } from "../i18n";
 import { useLlm, type Ask, type Line } from "../store/llm";
 import { useWs } from "../store/workspace";
 import { useUi, MODES } from "../store/ui";
-import { useCli, CLI_EFFORTS, CLI_MODELS } from "../store/cli";
+import { useCli, CLI_EFFORTS } from "../store/cli";
 import { Icon } from "../components/Icon";
 
 /** AI 채팅 — **반복 작업을 말로 시키는 자리** (ui-guide 7절 「LLM 개입면」).
@@ -385,6 +385,8 @@ function ModelChip({ onOpenSettings }: { onOpenSettings?: () => void }) {
   const loadModels = useLlm((s) => s.loadModels);
   const saveLlm = useLlm((s) => s.saveConfig);
   const { engine, model: cliModel, effort: cliEffort, setModel: setCliModel, setEffort: setCliEffort } = useCli();
+  // ★고른 CLI 가 받는 모델만 보여 준다 (`items` 가 실어 온다)
+  const cliModels = useCli((c) => c.models());
   const cli = engine === "cli";
 
   // ★"기본값"이라고만 적으면 그게 뭔지 알 수 없다 (사용자 지적 2026-08-08) —
@@ -452,7 +454,11 @@ function ModelChip({ onOpenSettings }: { onOpenSettings?: () => void }) {
                   onChange={(e) => setCliModel(e.target.value)}
                   style={popField}
                 >
-                  {CLI_MODELS.map((m) => (
+                  {/* ★목록은 고른 CLI 것이다. 기억해 둔 값이 목록에 없어도 자리를 남긴다 */}
+                  {(cliModels.includes(cliModel) || !cliModel
+                    ? cliModels
+                    : [cliModel, ...cliModels]
+                  ).map((m) => (
                     <option key={m} value={m}>{m}</option>
                   ))}
                 </select>

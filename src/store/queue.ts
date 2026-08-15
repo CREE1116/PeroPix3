@@ -259,7 +259,8 @@ function handle(m: Record<string, any>, set: Setter, get: () => S) {
     }
     // 로컬 CLI 가 흘려보내는 stream-json — 채팅 스토어가 wire 조각으로 옮긴다
     case "cli":
-      cliEvent(m.event ?? {});
+      // ★어느 CLI 가 뱉은 것인지 함께 온다 — 모양이 서로 다르다
+      cliEvent(m.event ?? {}, String(m.agent ?? "claude-code"));
       break;
     case "image_error":
     case "job_error":

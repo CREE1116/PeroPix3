@@ -19,6 +19,18 @@ import sys
 import urllib.error
 import urllib.request
 
+# ★★파이프는 **UTF-8 이 아니다.** 윈도우에서 stdout 을 리다이렉트하면 파이썬이 로캘 코드
+#   페이지(여기서는 cp949)를 쓰는데, 도구 설명에 든 작대기(U+2014) 하나가 거기 없어서
+#   `tools/list` 응답이 통째로 못 나갔다. 에이전트에게는 **도구가 0개**로 보인다.
+#   실측 2026-08-15: `'cp949' codec can't encode character '—'` → 코덱스가 곧바로
+#   "그 도구는 이 세션에 없다"고 답했다. 글자 하나를 고치는 것으로 때우지 말 것 —
+#   설명은 계속 바뀌므로 **트랜스포트를 UTF-8 로 못 박는다.**
+for _s in (sys.stdin, sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 BASE = os.environ.get("PEROPIX_BACKEND", "http://127.0.0.1:8770")
 NAME = "peropix"
 VERSION = "3.0.0-dev"

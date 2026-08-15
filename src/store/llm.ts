@@ -3,6 +3,7 @@ import { api } from "../lib/backend";
 import { useWs } from "./workspace";
 import { t, useI18n } from "../i18n";
 import { useCli } from "./cli";
+import { codexWire } from "../lib/codexStream";
 
 /** LLM 채팅 — **반복 작업을 대신 시키는 창구** (3.0 의 목표 중 하나, ui-guide 7절).
  *
@@ -289,7 +290,9 @@ export const useLlm = create<S>((set, get) => ({
       // ★열자마자 확인한다 — claude 는 기본 30일이 지난 기록을 지운다. 없어진 것을
       //   모르고 말을 걸면 한 마디도 못 하고 죽는데, 그때는 까닭이 안 보인다.
       if (d.session) {
-        const gone = await api<{ exists: boolean }>(`/api/cli/session/${d.session}`)
+        const gone = await api<{ exists: boolean }>(
+          `/api/cli/session/${d.session}?agent=${encodeURIComponent(useCli.getState().agent)}`,
+        )
           .then((r) => !r.exists)
           .catch(() => false); // 못 물어봤으면 있다고 친다 — 멀쩡한 대화를 막지 않는다
         // ★그 사이 사용자가 다른 대화로 갔으면 덮지 않는다 (restore 와 같은 함정)
@@ -335,6 +338,8 @@ export const useLlm = create<S>((set, get) => ({
             prompt: text,
             system: SYSTEM,
             exe: useCli.getState().exe ?? "",
+            // ★어느 CLI 인지 실어 보낸다 — 실행 깃발도 흘러오는 모양도 서로 다르다
+            agent: useCli.getState().agent,
             resume: get().cliSession ?? "",
             // 비우면 저쪽이 안 넘긴다 = CLI 기본값
             model: useCli.getState().model,
@@ -416,13 +421,21 @@ export const useLlm = create<S>((set, get) => ({
  *
  *  ★도구 이름에서 `mcp__peropix__` 접두를 뗀다 — 화면에는 우리 도구 이름만 보여야 한다.
  *  ★끝은 `exit` 이 알린다. `result` 는 세션 id 를 준다 (다음 턴 `--resume`). */
-export function cliEvent(ev: Record<string, any>) {
+export function cliEvent(ev: Record<string, any>, agent = "claude-code") {
   const st = useLlm.getState();
   const push = (m: Wire) => {
     const wire = [...useLlm.getState().wire, m];
     useLlm.setState({ wire, lines: linesOf(wire) });
   };
   const strip = (n: string) => n.replace(/^mcp__peropix__/, "");
+
+  // ★코덱스는 **모양이 다르다** (`thread.started`·`item.completed` …). 어느 CLI 인지는
+  //   백엔드가 실어 보내므로 짐작하지 않는다. 끝(`exit`)·`stderr`·`error` 는 우리가 만든
+  //   것이라 양쪽이 같다 — 그래서 아래 공통 처리로 흘려보낸다.
+  if (agent === "codex" && !COMMON.has(String(ev.type))) {
+    codexEvent(ev, push);
+    return;
+  }
 
   if (ev.type === "system" && ev.subtype === "init") {
     if (ev.session_id) useLlm.setState({ cliSession: String(ev.session_id) });
@@ -483,9 +496,27 @@ export function cliEvent(ev: Record<string, any>) {
       });
     }
     cliErr = [];
+    codexOpen = new Set();
     void save(useLlm.getState());
     return;
   }
+}
+
+/** 우리가 만들어 넣는 이벤트 — CLI 가 무엇이든 모양이 같다 (`cliagent.Runner`) */
+const COMMON = new Set(["stderr", "exit", "error"]);
+
+/** 이번 턴에 이미 「도구 부름」 줄을 낸 항목 — 코덱스는 `item.started` 와 `item.completed` 가
+ *  같은 id 로 두 번 오므로, 결과 줄만 뒤에 붙이려고 들고 있는다. */
+let codexOpen = new Set<string>();
+
+/** 코덱스가 흘려보낸 한 줄을 받아 적는다 — 옮기는 규칙은 `lib/codexStream.ts` 가 갖는다
+ *  (순수 함수라 저쪽이 실제로 뱉은 기록으로 확인할 수 있다). 여기서는 스토어에 앉힐 뿐이다. */
+function codexEvent(ev: Record<string, any>, push: (m: Wire) => void) {
+  const out = codexWire(ev, codexOpen);
+  if (out.session) useLlm.setState({ cliSession: out.session });
+  if (out.error) useLlm.setState({ error: out.error });
+  if (out.unknown) console.debug("[codex] 모르는 항목", out.unknown, ev);
+  for (const m of out.wire) push(m);
 }
 
 /** CLI 가 뱉은 마지막 몇 줄 — 죽었을 때 **왜인지** 보여 주려고 들고 있는다.

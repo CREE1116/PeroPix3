@@ -30,7 +30,8 @@ from pathlib import Path
 #     OpenCode  CLI 중 별 최다 193k · npm 주당 168만 — 이 PC 에도 이미 깔려 있었다
 #   내린 것: Gemini CLI(구글이 Antigravity 로 흡수, 개인 무료 2026-06-18 종료) ·
 #            Cursor Agent · Qwen Code · GitHub Copilot CLI.
-#   ★다시 늘릴 때는 **스트림 파싱도 함께** 붙여야 한다 — 지금 파싱은 클로드 코드 하나뿐이다.
+#   ★다시 늘릴 때는 **스트림 파싱도 함께** 붙여야 한다 (`src/lib/codexStream.ts` 가 그 예다).
+#   ★2026-08-15: 코덱스를 붙였다. 실행 깃발은 `argv_codex`, 옮겨 적기는 `codexStream.ts`.
 KNOWN = [
     {"id": "claude-code", "label": "Claude Code", "bins": ["claude"]},
     {"id": "codex", "label": "Codex CLI", "bins": ["codex"]},
@@ -38,7 +39,19 @@ KNOWN = [
 ]
 
 # 지금 실제로 몰 수 있는 것 — 나머지는 목록에만 보이고 고를 수 없다
-DRIVABLE = {"claude-code"}
+DRIVABLE = {"claude-code", "codex"}
+
+
+def agent_of(exe: str) -> str:
+    """실행 파일 이름으로 어느 CLI 인지 가른다.
+
+    ★화면이 `agent` 를 안 실어 보냈을 때의 **폴백일 뿐**이다. 어느 CLI 인지는 화면이 안다
+      (고른 항목의 id). 이름으로 짐작하는 것을 정본으로 삼지 말 것."""
+    stem = Path(exe).stem.lower()
+    for c in KNOWN:
+        if stem in c["bins"]:
+            return c["id"]
+    return "claude-code"
 
 
 def _extra_dirs() -> list[Path]:
@@ -71,6 +84,29 @@ def find(bins: list[str]) -> str | None:
     return None
 
 
+#: 클로드 코드의 모델 별칭 — 도움말이 예로 든 둘 (실측 2026-08-08)
+CLAUDE_MODELS = ["opus", "sonnet"]
+
+
+def codex_home() -> Path:
+    """코덱스가 자기 것을 두는 곳. ★우리가 옮기지 않는다 — 인증서가 여기 있다."""
+    d = os.environ.get("CODEX_HOME")
+    return Path(d) if d else Path.home() / ".codex"
+
+
+def codex_models() -> list[str]:
+    """코덱스가 **자기 캐시에 적어 둔** 모델 목록 (`~/.codex/models_cache.json`).
+
+    ★목록을 우리가 들고 있지 않는다. 저쪽이 새 모델을 받으면 그 파일이 바뀌고 우리는 따라간다.
+      실측 2026-08-15: `visibility` 가 `list` 인 것만 사람에게 보인다 (`hide` 는 내부용).
+    ★못 읽으면 **빈 목록**이다. 그러면 `-m` 을 안 넘기고 코덱스 기본값으로 돈다."""
+    try:
+        raw = json.loads((codex_home() / "models_cache.json").read_text(encoding="utf-8"))
+        return [m["slug"] for m in raw.get("models", []) if m.get("visibility") == "list"]
+    except Exception:
+        return []
+
+
 def detect() -> list[dict]:
     out = []
     for c in KNOWN:
@@ -83,6 +119,11 @@ def detect() -> list[dict]:
                 "path": path,
                 # ★"깔려 있다"와 "몰 수 있다"는 다르다. 목록에는 보이되 고르지 못하게 한다
                 "drivable": c["id"] in DRIVABLE,
+                # ★모델 목록은 **CLI 마다 다르다.** 하나로 두면 코덱스를 골라 놓고
+                #   `sonnet` 이 떠 있게 된다 (고를 수 있는 값이 아니다)
+                "models": CLAUDE_MODELS if c["id"] == "claude-code" else (
+                    codex_models() if c["id"] == "codex" else []
+                ),
             }
         )
     return out
@@ -121,8 +162,8 @@ def config_dir() -> Path:
     return Path(d) if d else Path.home() / ".claude"
 
 
-def session_exists(sid: str) -> bool:
-    """그 대화가 claude 쪽에 **아직 있는가**.
+def session_exists(sid: str, agent: str = "claude-code") -> bool:
+    """그 대화가 저쪽에 **아직 있는가**.
 
     ★있어야 `--resume` 이 먹는다. 없으면 claude 는 한 마디도 못 하고 죽는데, 화면에는
       까닭 없는 오류만 남는다 — 그래서 **대화를 열 때 미리** 물어 안내한다.
@@ -136,32 +177,48 @@ def session_exists(sid: str) -> bool:
       (v2.1.223 부터는 프로젝트를 가리지 않고 찾는다). 파일 하나를 찾는 것뿐이라 싸다."""
     if not sid or any(c in sid for c in "/\\.:"):
         return False  # 경로 조각이 섞인 것은 우리 번호가 아니다
+    if agent == "codex":
+        # ★코덱스는 날짜로 나눠 담는다: `sessions/<년>/<월>/<일>/rollout-<시각>-<uuid>.jsonl`
+        #   (실측 2026-08-15). claude 와 자리도 이름 규칙도 달라 한 함수로 겸할 수 없다.
+        root = codex_home() / "sessions"
+        return root.is_dir() and any(root.glob(f"*/*/*/rollout-*-{sid}.jsonl"))
     root = config_dir() / "projects"
     if not root.is_dir():
         return False
     return any(root.glob(f"*/{sid}.jsonl"))
 
 
+def mcp_spec(backend: str) -> dict:
+    """우리 도구를 여는 stdio 서버 한 벌 — **여기 하나뿐이다.**
+
+    ★CLI 마다 적는 자리가 다르다 (claude 는 파일, 코덱스는 실행 깃발). 담는 그릇이 다를 뿐
+      내용은 같아야 하므로 값은 여기서만 만든다."""
+    return {
+        "command": sys.executable,
+        "args": [str(Path(__file__).resolve().parent / "mcp_stdio.py")],
+        "env": {"PEROPIX_BACKEND": backend},
+    }
+
+
 def mcp_config(data_dir: Path, backend: str) -> Path:
     """우리 도구를 여는 MCP 설정 — 켤 때마다 다시 쓴다 (백엔드 주소가 바뀔 수 있다)."""
     cfg = data_dir / "mcp.json"
     cfg.write_text(
-        json.dumps(
-            {
-                "mcpServers": {
-                    "peropix": {
-                        "type": "stdio",
-                        "command": sys.executable,
-                        "args": [str(Path(__file__).resolve().parent / "mcp_stdio.py")],
-                        "env": {"PEROPIX_BACKEND": backend},
-                    }
-                }
-            },
-            ensure_ascii=False,
-        ),
+        json.dumps({"mcpServers": {"peropix": {"type": "stdio", **mcp_spec(backend)}}}, ensure_ascii=False),
         encoding="utf-8",
     )
     return cfg
+
+
+def toml_value(v) -> str:
+    """TOML 값 한 조각 — 코덱스의 `-c <점표기>=<값>` 에 실어 보낸다.
+
+    ★`json.dumps` 가 내는 문자열·배열은 **TOML 기본 문자열·배열과 같은 문법**이다.
+      윈도우 경로의 역슬래시도 `\\\\` 로 이스케이프돼 그대로 살아남는다 (실측 2026-08-15).
+      직접 따옴표를 붙이지 말 것 — 지침에 든 줄바꿈·따옴표에서 깨진다."""
+    if isinstance(v, dict):
+        return "{" + ", ".join(f"{k} = {json.dumps(x, ensure_ascii=False)}" for k, x in v.items()) + "}"
+    return json.dumps(v, ensure_ascii=False)
 
 
 class Runner:
@@ -235,19 +292,96 @@ class Runner:
             args += ["--effort", effort]
         return args
 
+    @staticmethod
+    def codex_stdin(system: str, prompt: str, resume: str) -> str:
+        """코덱스에 stdin 으로 넣을 것 — **첫 턴에만 지침이 앞에 붙는다.**
+
+        ★argv 로 못 보내는 사정은 `argv_codex` 주석에 있다 (배치 래퍼가 `>` 를 삼킨다).
+        ★이어 붙일 때 다시 안 붙이는 것은 claude 와 같은 이유다 — 이미 그 대화 안에 있다."""
+        return f"{system}\n\n{prompt}" if system and not resume else prompt
+
+    def argv_codex(self, spec: dict, resume: str = "",
+                   model: str = "", effort: str = "") -> list[str]:
+        """코덱스 실행 깃발 — **여기 하나뿐이다.** 전부 실측으로 확인했다 (2026-08-15, v0.147.0).
+
+        클로드 코드와 같은 일을 하는 깃발이 이름만 다르다:
+
+            --strict-mcp-config   →  --ignore-user-config   사용자의 다른 MCP 서버를 안 싣는다
+            --mcp-config <파일>   →  -c mcp_servers.…       설정 파일이 아니라 깃발로 준다
+            --permission-mode     →  -c approval_policy=never
+            --append-system-prompt→  -c developer_instructions=…
+            --resume <id>         →  exec resume <id> -
+            --output-format …     →  --json                 (줄 단위 JSON)
+
+        ★`--ignore-user-config` 는 **인증은 그대로 둔다** (도움말 원문: "auth still uses
+          CODEX_HOME"). claude 의 `--bare` 와 다르다 — 그쪽은 OAuth 를 안 읽어 API 키를 요구했다.
+          이 PC 에 사용자의 MCP 서버가 둘(node_repl·pencil) 붙어 있어 실제로 필요하다.
+        ★★`default_tools_approval_mode="approve"` 가 **없으면 도구가 안 돈다.** 헤드리스라
+          물어볼 사람이 없어서 코덱스가 스스로 취소한다 — 실측에서 도구 결과가
+          `"user cancelled MCP tool call"` 로 돌아왔다. `approval_policy=never` 는 셸 쪽이라
+          MCP 도구를 덮지 않는다. 뺄 수 없는 줄이다.
+        ★`enabled_tools` 는 **일부러 안 쓴다.** 우리 서버는 우리 도구만 내보내므로 목록을
+          여기 또 적으면 `/api/agent/tools` 와 두 벌이 된다.
+        ★`--skip-git-repo-check` 가 필요하다 — 작업 폴더(`data/agent`)는 깃 저장소가 아니다.
+        ★이어 붙일 때는 `-s/--sandbox` 를 **못 쓴다** (resume 도움말에 없다). 그래서 모래상자는
+          언제나 `-c sandbox_mode` 로 건다 — 두 경로가 같은 값을 쓰게.
+        ★셸 도구는 **끄지 않았다** (사용자와 미결). 끄려면 `--disable shell_tool`.
+
+        ★★**지침은 여기 안 싣는다 — stdin 으로 보낸다** (실측 2026-08-15, 실연동에서 밟았다).
+          `-c developer_instructions=…` 는 되기는 하는데, npm 이 깔아 준 `codex.CMD` 가
+          **배치 파일**이라 윈도우가 `cmd.exe /c` 를 한 겹 끼운다. 그러면 cmd 가 명령줄을
+          **다시 해석**해서, 지침에 든 `long_hair -> long hair` 의 `>` 가 **출력 리다이렉션**이
+          된다. 실제로 JSON 이 통째로 `data/agent/long` 이라는 파일로 새고, 화면에는 아무것도
+          안 오는데 종료 코드는 0 이었다 (가장 나쁜 종류의 조용한 실패다).
+          그래서 **긴 사람 글은 argv 에 절대 싣지 않는다.** 여기 남은 값은 우리가 정한 짧은
+          것들(경로·모델 이름·숫자)뿐이다."""
+        flags = [
+            "--json",
+            "--ignore-user-config",
+            "--skip-git-repo-check",
+            "-c", "sandbox_mode=" + toml_value("read-only"),
+            "-c", "approval_policy=" + toml_value("never"),
+            "-c", "mcp_servers.peropix.command=" + toml_value(spec["command"]),
+            "-c", "mcp_servers.peropix.args=" + toml_value(spec["args"]),
+            "-c", "mcp_servers.peropix.env=" + toml_value(spec["env"]),
+            "-c", "mcp_servers.peropix.default_tools_approval_mode=" + toml_value("approve"),
+            # 파이썬이 뜨고 백엔드에 도구 목록을 물어 오는 데 걸리는 시간
+            "-c", "mcp_servers.peropix.startup_timeout_sec=30",
+        ]
+        if model:
+            flags += ["-m", model]
+        if effort:
+            flags += ["-c", "model_reasoning_effort=" + toml_value(effort)]
+        # ★프롬프트는 stdin 이다. 이어 붙일 때는 `-` 를 **적어야** stdin 을 읽는다
+        #   (안 적으면 프롬프트 없이 이어 붙이고 끝난다).
+        if resume:
+            return ["exec", "resume", resume, "-", *flags]
+        return ["exec", *flags]
+
     async def run(
         self, exe: str, prompt: str, cfg: Path, cwd: Path, system: str, emit, resume: str = "",
-        model: str = "", effort: str = "",
+        model: str = "", effort: str = "", agent: str = "claude-code", backend: str = "",
     ) -> None:
-        """`claude -p` 를 띄우고 stream-json 을 한 줄씩 `emit` 으로 넘긴다.
+        """CLI 를 띄우고 흘러나오는 JSON 을 한 줄씩 `emit` 으로 넘긴다.
 
         ★`cwd` 는 **빈 폴더**여야 한다(`work_dir()`). 조수가 우리 소스를 뒤지고 고치려 든
           적이 있는데, 그것을 실제로 막는 것은 폴더 위치가 아니라 `argv()` 의 도구 잠금이다
           (`--disallowedTools` · `--permission-mode dontAsk`).
 
         ★프로세스는 **다른 스레드의 다른 루프**에서 돈다 (클래스 머리 주석). 여기서는
-          그 스레드가 넘겨 준 것을 큐에서 꺼내 `emit` 할 뿐이다."""
-        args = self.argv(cfg, system, resume, model, effort)
+          그 스레드가 넘겨 준 것을 큐에서 꺼내 `emit` 할 뿐이다.
+
+        ★흘러나오는 **모양은 CLI 마다 다르다** (claude 는 stream-json, 코덱스는 줄 단위 JSON).
+          여기서는 옮겨 적지 않는다 — 그대로 화면에 넘기고 `llm.ts` 가 wire 조각으로 바꾼다."""
+        codex = agent == "codex"
+        args = (
+            self.argv_codex(mcp_spec(backend), resume, model, effort)
+            if codex
+            else self.argv(cfg, system, resume, model, effort)
+        )
+        # ★코덱스는 지침도 stdin 으로 간다 (`codex_stdin` 주석 — 배치 래퍼가 argv 를 삼킨다)
+        if codex:
+            prompt = self.codex_stdin(system, prompt, resume)
         main = asyncio.get_running_loop()
         q: asyncio.Queue = asyncio.Queue()
 

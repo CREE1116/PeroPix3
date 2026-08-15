@@ -399,11 +399,13 @@ class CliRun(BaseModel):
     prompt: str
     system: str = ""
     exe: str = ""
+    #: 어느 CLI 인가 (`cliagent.KNOWN` 의 id). ★비면 실행 파일 이름으로 짐작한다
+    agent: str = ""
     # ★저쪽이 들고 있는 대화 id — 있으면 이어 붙인다 (없으면 새 대화)
     resume: str = ""
     #: 비우면 CLI 기본값. 별칭('sonnet'·'opus')도 전체 이름도 받는다
     model: str = ""
-    #: `claude --effort` — 비우면 CLI 기본값
+    #: 추론 강도 — 비우면 CLI 기본값
     effort: str = ""
 
 
@@ -414,10 +416,11 @@ async def cli_detect():
 
 
 @app.get("/api/cli/session/{sid}")
-async def cli_session(sid: str):
-    """그 대화를 claude 가 아직 갖고 있나 — **열 때 미리** 물어 안내하려고 있다.
-    ★사용자가 말을 걸어 실패를 겪고 나서 알게 되지 않도록 (사용자 지시 2026-08-12)."""
-    return {"exists": cliagent.session_exists(sid)}
+async def cli_session(sid: str, agent: str = "claude-code"):
+    """그 대화를 저쪽이 아직 갖고 있나 — **열 때 미리** 물어 안내하려고 있다.
+    ★사용자가 말을 걸어 실패를 겪고 나서 알게 되지 않도록 (사용자 지시 2026-08-12).
+    ★두는 자리가 CLI 마다 다르다 — 어느 쪽 번호인지 함께 받는다."""
+    return {"exists": cliagent.session_exists(sid, agent)}
 
 
 @app.post("/api/cli/run")
@@ -426,12 +429,15 @@ async def cli_run(body: CliRun, port: int = 0):
         raise HTTPException(409, "이미 돌고 있습니다.")
     exe = body.exe or (cliagent.find(["claude"]) or "")
     if not exe:
-        raise HTTPException(400, "claude 를 못 찾았습니다. 설치하고 다시 스캔해 주세요.")
-    cfg = cliagent.mcp_config(DATA_DIR, f"http://127.0.0.1:{port or CURRENT_PORT}")
+        raise HTTPException(400, "CLI 를 못 찾았습니다. 설치하고 다시 스캔해 주세요.")
+    agent = body.agent or cliagent.agent_of(exe)
+    backend = f"http://127.0.0.1:{port or CURRENT_PORT}"
+    cfg = cliagent.mcp_config(DATA_DIR, backend)
 
     async def emit(ev: dict):
-        # ★화면으로 그대로 흘린다 — 도구 줄·글자를 그리는 것은 화면 몫이다
-        await Q.broadcast({"type": "cli", "event": ev})
+        # ★화면으로 그대로 흘린다 — 도구 줄·글자를 그리는 것은 화면 몫이다.
+        #   ★어느 CLI 인지 함께 실어야 화면이 어느 모양으로 읽을지 안다 (모양이 서로 다르다)
+        await Q.broadcast({"type": "cli", "agent": agent, "event": ev})
 
     async def go():
         try:
@@ -444,6 +450,8 @@ async def cli_run(body: CliRun, port: int = 0):
                 body.resume,
                 body.model,
                 body.effort,
+                agent,
+                backend,
             )
         except Exception as e:
             # ★**종류를 반드시 붙인다** — `str(e)` 가 빈 예외가 있다 (실측 2026-08-12:
@@ -458,7 +466,7 @@ async def cli_run(body: CliRun, port: int = 0):
             await emit({"type": "exit", "code": -1})
 
     asyncio.create_task(go())
-    return {"ok": True, "exe": exe}
+    return {"ok": True, "exe": exe, "agent": agent}
 
 
 @app.post("/api/cli/stop")

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/backend";
 import { useI18n } from "../i18n";
 import { useLlm } from "../store/llm";
-import { useCli, CLI_EFFORTS, CLI_MODELS } from "../store/cli";
+import { useCli, CLI_EFFORTS } from "../store/cli";
 // ★같은 모양을 두 벌 만들지 않는다 — 설정 화면의 묶음 상자를 그대로 쓴다
 import { Group } from "./Settings";
 
@@ -130,6 +130,9 @@ export function AiSettings() {
   const saveLlm = useLlm((s) => s.saveConfig);
   const loadLlm = useLlm((s) => s.loadConfig);
   const { engine, items, scanning, exe, setEngine, detect, pick } = useCli();
+  // ★모델 목록은 **고른 CLI** 것이다 (`items` 가 실어 온다). 하나로 두면 코덱스를 골라 놓고
+  //   `sonnet` 이 떠 있게 된다 — 코덱스가 못 받는 이름이다
+  const cliModels = useCli((c) => c.models());
   const cliModel = useCli((c) => c.model);
   const cliEffort = useCli((c) => c.effort);
   const setCliModel = useCli((c) => c.setModel);
@@ -277,7 +280,9 @@ export function AiSettings() {
               onChange={(e) => setCliModel(e.target.value)}
               style={{ ...field, flex: 1 }}
             >
-              {CLI_MODELS.map((m) => (
+              {/* ★기억해 둔 값이 목록에 없어도 자리를 남긴다 — 없으면 셀렉트가 멋대로
+                  첫 항목을 보여 주면서 실제로 넘기는 값은 그대로라 둘이 어긋난다 */}
+              {(cliModels.includes(cliModel) || !cliModel ? cliModels : [cliModel, ...cliModels]).map((m) => (
                 <option key={m} value={m}>
                   {m}
                 </option>

@@ -15,6 +15,8 @@ export type CliItem = {
   installed: boolean;
   path: string | null;
   drivable: boolean;
+  /** 그 CLI 가 받는 모델 이름 — ★목록은 **백엔드가** 준다 (코덱스는 자기 캐시에서 읽는다) */
+  models: string[];
 };
 
 const KEY = "peropix.engine";
@@ -26,14 +28,15 @@ const KEY = "peropix.engine";
  *    맞춰 둔 전역 설정(`~/.claude/settings.json`)이라 이 앱의 조수 일과는 상관이 없다
  *    (실제로 `opus[1m]`·`max` 였다 — 카드 정리에 그것을 쓸 이유가 없다).
  *    같은 바이너리·같은 계정을 쓰되 **용도는 갈라야** 해서, 여기서 정하고 사용자가 바꾼다. */
-const CLI_MODEL_DEFAULT = "sonnet";
 const CLI_EFFORT_DEFAULT = "high";
-const MODEL_KEY = "peropix.cliModel";
+/** ★모델은 **CLI 마다 다르다** — 고른 것에 맞춰 따로 기억한다. 하나로 두면 코덱스를
+ *  골라 놓고 `sonnet` 이 남아 있게 된다 (코덱스가 못 받는 이름이다). */
+const MODEL_KEY = (agent: string) => `peropix.cliModel:${agent}`;
 const EFFORT_KEY = "peropix.cliEffort";
-/** `claude --help` 가 적어 둔 단계 (실측 2026-08-08) */
+const AGENT_KEY = "peropix.cliAgent";
+/** 추론 강도 — ★두 CLI 가 **같은 다섯**을 쓴다 (실측: `claude --help` 2026-08-08 ·
+ *  코덱스 `models_cache.json` 의 `supported_reasoning_levels` 2026-08-15). */
 export const CLI_EFFORTS = ["max", "xhigh", "high", "medium", "low"];
-/** 도움말이 예로 든 별칭. ★목록 밖 이름은 「직접 입력」으로 넣는다 */
-export const CLI_MODELS = ["opus", "sonnet"];
 const readStr = (k: string) => {
   try {
     return localStorage.getItem(k) ?? "";
@@ -53,9 +56,9 @@ const writeStr = (k: string, v: string) => {
 type S = {
   /** 어느 엔진으로 대화하나 — API 키(BYOK) 또는 로컬 CLI */
   engine: "api" | "cli";
-  /** `--model` 로 넘길 값 (언제나 넘긴다) */
+  /** 모델 이름 (언제나 넘긴다). ★고른 CLI 것이다 */
   model: string;
-  /** `--effort` 로 넘길 값 (언제나 넘긴다) */
+  /** 추론 강도 (언제나 넘긴다) */
   effort: string;
   setModel: (v: string) => void;
   setEffort: (v: string) => void;
@@ -63,6 +66,10 @@ type S = {
   scanning: boolean;
   /** 고른 CLI 의 실행 파일 경로 */
   exe: string | null;
+  /** 고른 CLI 의 id — ★백엔드가 어느 모양의 깃발을 쓸지 이것으로 정한다 */
+  agent: string;
+  /** 고른 CLI 가 받는 모델 목록 (탐지 전에는 비어 있다) */
+  models: () => string[];
   setEngine: (e: "api" | "cli") => void;
   detect: () => Promise<void>;
   pick: (id: string) => void;
@@ -80,12 +87,28 @@ const load = (): "api" | "cli" => {
   }
 };
 
+/** ★골라 둔 CLI 는 **껐다 켜도 남는다.** 몰 수 있는 것이 둘이 된 뒤로는 안 그러면
+ *  코덱스를 골라도 다음 실행에 클로드 코드로 되돌아간다 (목록의 첫 번째라서). */
+const loadAgent = () => readStr(AGENT_KEY) || "claude-code";
+
+/** 고른 CLI 를 자리에 앉힌다 — 경로·id·모델이 **함께** 바뀌어야 한다.
+ *
+ *  ★모델은 그 CLI 가 받는 이름이어야 한다. 기억해 둔 값이 목록에 없으면(CLI 를 바꿨거나
+ *    저쪽이 모델을 내렸거나) **목록의 첫 번째**로 되돌린다 — 저쪽이 정한 차례가 곧 추천이다. */
+function seat(it: CliItem) {
+  writeStr(AGENT_KEY, it.id);
+  const kept = readStr(MODEL_KEY(it.id));
+  const model = it.models.includes(kept) ? kept : (it.models[0] ?? "");
+  return { agent: it.id, exe: it.path, model };
+}
+
 export const useCli = create<S>((set, get) => ({
   engine: load(),
-  model: readStr(MODEL_KEY) || CLI_MODEL_DEFAULT,
+  agent: loadAgent(),
+  model: readStr(MODEL_KEY(loadAgent())),
   effort: readStr(EFFORT_KEY) || CLI_EFFORT_DEFAULT,
   setModel(v) {
-    writeStr(MODEL_KEY, v);
+    writeStr(MODEL_KEY(get().agent), v);
     set({ model: v });
   },
   setEffort(v) {
@@ -95,6 +118,8 @@ export const useCli = create<S>((set, get) => ({
   items: [],
   scanning: false,
   exe: null,
+
+  models: () => get().items.find((x) => x.id === get().agent)?.models ?? [],
 
   setEngine(e) {
     try {
@@ -109,10 +134,11 @@ export const useCli = create<S>((set, get) => ({
     try {
       const r = await api<{ items: CliItem[] }>("/api/cli/detect");
       const items = r.items ?? [];
-      // 아직 안 골랐으면 **몰 수 있는 것 중 깔린 첫 번째**를 잡아 준다
-      const cur = get().exe;
-      const auto = items.find((x) => x.drivable && x.installed);
-      set({ items, exe: cur ?? auto?.path ?? null });
+      // 기억해 둔 것을 먼저 찾고, 못 쓰면 **몰 수 있는 것 중 깔린 첫 번째**를 잡아 준다
+      const usable = (x?: CliItem) => !!x && x.installed && x.drivable;
+      const want = items.find((x) => x.id === get().agent);
+      const it = usable(want) ? want! : items.find((x) => usable(x));
+      set({ items, ...(it ? seat(it) : { exe: null }) });
     } catch {
       set({ items: [] });
     } finally {
@@ -122,7 +148,7 @@ export const useCli = create<S>((set, get) => ({
 
   pick(id) {
     const it = get().items.find((x) => x.id === id);
-    if (it?.installed && it.drivable) set({ exe: it.path });
+    if (it?.installed && it.drivable) set(seat(it));
   },
 
   ready: () => !!get().exe,
