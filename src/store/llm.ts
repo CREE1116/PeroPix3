@@ -455,9 +455,13 @@ export const useLlm = create<S>((set, get) => ({
     // ★★CLI 는 **`sending` 을 여기서 끄지 않는다.** 이제 중단은 프로세스를 죽이는 게 아니라
     //   그 턴만 멈추는 것이고, 멈췄다는 것은 `turn_end` 가 알린다. 여기서 미리 끄면
     //   아직 흘러나오는 줄이 "안 도는 중"에 붙는다.
-    void api("/api/cli/stop", { method: "POST" }).catch(() =>
-      set({ sending: false }),
-    );
+    //   ★단 **멈출 것이 없었으면** `turn_end` 도 안 온다 (화면과 서버가 어긋난 경우).
+    //   그때는 여기서 풀어 준다 — 안 그러면 「일하는 중」에 영영 갇힌다.
+    void api<{ stopped?: boolean }>("/api/cli/stop", { method: "POST" })
+      .then((r) => {
+        if (!r?.stopped) set({ sending: false });
+      })
+      .catch(() => set({ sending: false }));
   },
 }));
 
@@ -581,6 +585,9 @@ function cliPost(text: string, s: S) {
       exe: useCli.getState().exe ?? "",
       // ★어느 CLI 인지 실어 보낸다 — 실행 깃발도 흘러오는 모양도 서로 다르다
       agent: useCli.getState().agent,
+      // ★★세션을 고르는 열쇠는 **대화 id** 다. 이것 없이 이어붙임 번호로만 고르면
+      //   「새 대화」를 눌러도 (번호가 비어 있으니) 앞 대화의 세션을 물려받는다
+      chat: s.id,
       resume: s.cliSession ?? "",
       model: useCli.getState().model,
       effort: useCli.getState().effort,

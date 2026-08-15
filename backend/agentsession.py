@@ -43,6 +43,10 @@ class Session:
         self.cwd = cwd
         self.backend = backend
         self.emit = emit
+        #: 어느 대화의 조수인가 (화면의 대화 id). ★**세션은 대화 단위다** —
+        #  이것 없이 "이어붙임 번호가 비었으면 아무거나"로 고르면, 「새 대화」를 눌러도
+        #  앞 대화의 세션을 그대로 물려받아 **옛 이야기가 이어진다.**
+        self.chat = ""
         #: 저쪽이 들고 있는 대화 번호 — 화면이 대화 파일에 함께 저장한다
         self.session_id = ""
         self.busy = False
@@ -80,10 +84,18 @@ class CodexSession(Session):
         with contextlib.suppress(RuntimeError):
             self._loop.call_soon_threadsafe(lambda: asyncio.ensure_future(self._forward(msg)))
 
+    #: 화면이 쓰는 알림만 내보낸다 — **나머지는 안 보낸다.**
+    #  ★그대로 흘리면 글자 조각(`item/agentMessage/delta`)이 쏟아진다: 실측 2026-08-15,
+    #    답 하나에 138건. 거기에 살림 알림(`mcpServer/startupStatus/updated` 24건 등)이 더해져,
+    #    끊겼을 때 되돌려 줄 버퍼(2000줄)가 **정작 필요한 줄을 밀어내고 조각으로 찬다.**
+    #  ★조각을 안 쓰는 까닭: 우리는 글자 단위로 안 그린다. 완성된 항목만 줄이 된다.
+    PASS = {"item/started", "item/completed", "turn/started", "turn/completed", "turn/failed"}
+
     async def _forward(self, msg: dict) -> None:
         method = msg.get("method")
         if method:
-            await self.emit({"type": str(method), **(msg.get("params") or {})})
+            if str(method) in self.PASS:
+                await self.emit({"type": str(method), **(msg.get("params") or {})})
             # ★턴의 끝은 우리가 한 가지 이름으로 알린다 (클래스 머리 주석)
             if method == "turn/completed":
                 self.busy = False

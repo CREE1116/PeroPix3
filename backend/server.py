@@ -402,6 +402,8 @@ class CliRun(BaseModel):
     exe: str = ""
     #: 어느 CLI 인가 (`cliagent.KNOWN` 의 id). ★비면 실행 파일 이름으로 짐작한다
     agent: str = ""
+    #: 어느 대화인가 (화면의 대화 id) — ★세션을 고르는 열쇠다
+    chat: str = ""
     # ★저쪽이 들고 있는 대화 id — 있으면 이어 붙인다 (없으면 새 대화)
     resume: str = ""
     #: 비우면 CLI 기본값. 별칭('sonnet'·'opus')도 전체 이름도 받는다
@@ -428,21 +430,27 @@ async def cli_session(sid: str, agent: str = "claude-code"):
 _sess: agentsession.Session | None = None
 
 
-async def _session_for(agent: str, exe: str, backend: str, resume: str) -> agentsession.Session:
+async def _session_for(agent: str, exe: str, backend: str, chat: str,
+                       resume: str) -> agentsession.Session:
     """지금 세션을 그대로 쓰거나, 다른 대화·다른 CLI 면 갈아 세운다.
 
-    ★이어붙임 번호(`resume`)가 다르면 **다른 대화**다. 그대로 쓰면 다른 대화에 말이 붙는다."""
+    ★★고르는 열쇠는 **대화 id** 다. 예전에 "이어붙임 번호가 비었으면 아무거나 쓴다"로
+      뒀더니, 「새 대화」를 눌러도 (번호가 비어 있으니) 앞 대화의 세션을 그대로 물려받아
+      **옛 이야기가 이어졌다.** 번호는 앱을 껐다 켠 뒤 저쪽 대화를 되찾는 데만 쓴다."""
     global _sess
     ok = (
         _sess is not None
         and _sess.kind == agent
         and _sess.exe == exe
-        and (not resume or _sess.session_id == resume)
+        and _sess.chat == chat
     )
     if ok:
         assert _sess is not None
         return _sess
     if _sess is not None:
+        # ★★돌던 세션을 닫으면 화면이 「일하는 중」에 갇힌다 — 끝을 알리고 닫는다
+        if _sess.busy:
+            await Q.broadcast(Q.add_cli_event(_sess.kind, {"type": "turn_end", "code": 0}))
         await _sess.close()
 
     async def emit(ev: dict):
@@ -454,6 +462,7 @@ async def _session_for(agent: str, exe: str, backend: str, resume: str) -> agent
 
     # ★워크스페이스가 아니라 **앱 안의 빈 폴더**(`data/agent/`)에서 돌린다
     _sess = agentsession.make(agent, exe, cliagent.work_dir(DATA_DIR), backend, emit)
+    _sess.chat = chat
     _sess.session_id = resume
     return _sess
 
@@ -469,7 +478,7 @@ async def cli_run(body: CliRun, port: int = 0):
     agent = body.agent or cliagent.agent_of(exe)
     backend = f"http://127.0.0.1:{port or CURRENT_PORT}"
     system = body.system or agent_mod.system_prompt(CONFIG.get("support_url", ""), GUIDE.block())
-    s = await _session_for(agent, exe, backend, body.resume)
+    s = await _session_for(agent, exe, backend, body.chat, body.resume)
     s.model, s.effort = body.model, body.effort
 
     # 도는 중이면 끼워 넣어 본다 — 되면 새 턴을 열지 않는다
@@ -510,10 +519,15 @@ async def cli_run(body: CliRun, port: int = 0):
 @app.post("/api/cli/stop")
 async def cli_stop():
     """★**그 턴만 멈춘다** — 대화는 살아 있다 (사용자 지시 2026-08-15).
-    예전에는 프로세스를 죽여서 이어 붙일 자리까지 함께 날아갔다."""
-    if _sess is not None:
+    예전에는 프로세스를 죽여서 이어 붙일 자리까지 함께 날아갔다.
+
+    ★**돌던 게 있었는지 돌려준다.** 없으면 `turn_end` 도 안 오는데, 화면이 그것을 기다리며
+      「일하는 중」에 갇힌다 (화면과 서버가 어긋난 경우)."""
+    running = _sess is not None and _sess.busy
+    if running:
+        assert _sess is not None
         await _sess.interrupt()
-    return {"ok": True}
+    return {"ok": True, "stopped": running}
 
 
 # ── LLM (BYOK) ────────────────────────────────────────────────────

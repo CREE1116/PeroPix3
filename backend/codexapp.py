@@ -30,8 +30,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
+import threading
 import sys
 from pathlib import Path
 from typing import Any, Callable
@@ -81,6 +83,8 @@ class Rpc:
         self._id = 0
         self._waiting: dict[int, asyncio.Future] = {}
         self._ready = asyncio.Event()
+        #: 저쪽 루프가 섰다 (스레드 사이에서 쓰므로 asyncio 가 아니라 threading 것)
+        self._loop_up = threading.Event()
 
     @property
     def alive(self) -> bool:
@@ -91,12 +95,14 @@ class Rpc:
         loop = asyncio.ProactorEventLoop() if os.name == "nt" else asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         self._loop = loop
+        self._loop_up.set()
         try:
             loop.run_until_complete(self._serve())
         finally:
             asyncio.set_event_loop(None)
             loop.close()
             self._loop = None
+            self._loop_up.clear()
 
     async def _serve(self) -> None:
         self.proc = await asyncio.create_subprocess_exec(
@@ -147,17 +153,16 @@ class Rpc:
         if self.alive:
             return
         self._ready = asyncio.Event()
+        self._loop_up.clear()
         await asyncio.to_thread(self._boot)
         await asyncio.wait_for(self._ready.wait(), 30)
 
     def _boot(self) -> None:
-        import threading
-
+        # ★**돌면서 기다리지 않는다.** 예전엔 `while self._loop is None: pass` 였는데
+        #   그동안 CPU 를 한 코어 태운다 (스레드풀 일꾼 하나가 100%로 돈다).
         t = threading.Thread(target=self._thread, daemon=True, name="codex-app-server")
         t.start()
-        # 루프가 설 때까지 잠깐 기다린다 (`_ready` 는 그 안에서 켜진다)
-        while self._loop is None and t.is_alive():
-            pass
+        self._loop_up.wait(30)
 
     async def call(self, method: str, params: dict | None = None, timeout: float = 120) -> dict:
         """요청 하나. ★**저쪽 루프에 넘겨** 보낸다 — 우리 루프와 다르다."""
@@ -179,7 +184,9 @@ class Rpc:
             msg = await asyncio.wait_for(asyncio.wrap_future(
                 asyncio.run_coroutine_threadsafe(_wait(fut), self._loop)), timeout)
         except asyncio.TimeoutError:
+            # ★매달아 둔 것을 **걷는다** — 안 걷으면 저쪽 루프에서 영영 기다린다
             self._waiting.pop(mid, None)
+            self._loop.call_soon_threadsafe(lambda: fut.cancel() if not fut.done() else None)
             raise
         if "error" in msg:
             raise RuntimeError(str(msg["error"]))
@@ -188,7 +195,7 @@ class Rpc:
     async def stop(self) -> None:
         p = self.proc
         if p and p.returncode is None:
-            with __import__("contextlib").suppress(Exception):
+            with contextlib.suppress(Exception):
                 p.terminate()
 
 
