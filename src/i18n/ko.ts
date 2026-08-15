@@ -464,7 +464,7 @@ export const ko: Dict = {
     placeholder: "시킬 일을 적으세요 (Enter 전송 · Shift+Enter 줄바꿈)",
     send: "보내기",
     stop: "중단",
-    queue: "이어서 보내기",
+    queue: "지금 턴이 끝나면 이어서 처리합니다",
     reset: "새 대화",
     busyLock: "응답을 기다리는 중입니다. 중단하면 바꿀 수 있습니다",
     history: "지난 대화",

@@ -359,16 +359,25 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
         <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
           <ModelChip onOpenSettings={onOpenSettings} />
           <span style={{ flex: 1 }} />
-          {/* ★도는 중에도 보낼 수 있으므로 **보내기는 늘 있다.** 멈추기는 그 왼쪽에 함께 둔다
-              (예전에는 둘이 자리를 바꿔서, 도는 동안에는 보낼 수단이 아예 없었다) */}
-          {sending && (
-            <button data-ai-stop onClick={stop} style={{ ...sendBtn, ...stopBtn }}>
+          {/* ★단추는 **하나**다 (사용자 지시 2026-08-15, CLI 들이 하는 방식).
+              평소엔 보내기 · 도는 중엔 정지 · 도는 중에 **뭔가 치면 다시 보내기**.
+              둘을 나란히 두면 도는 동안 어느 쪽을 누를지가 매번 판단거리가 된다. */}
+          {sending && !text.trim() ? (
+            <button data-ai-stop onClick={stop} style={sendBtn}>
               {t("ai.stop")}
             </button>
+          ) : (
+            <button
+              data-ai-send
+              onClick={submit}
+              disabled={!text.trim()}
+              // 도는 중에 보내면 곧바로 안 가고 이 턴이 끝난 뒤에 간다 — 그것을 미리 알린다
+              title={sending ? t("ai.queue") : undefined}
+              style={sendBtn}
+            >
+              {t("ai.send")}
+            </button>
           )}
-          <button data-ai-send onClick={submit} disabled={!text.trim()} style={sendBtn}>
-            {sending ? t("ai.queue") : t("ai.send")}
-          </button>
         </div>
       </div>
     </div>
@@ -768,10 +777,4 @@ const sendBtn: React.CSSProperties = {
   color: "var(--ink-soft)",
   padding: "3px var(--sp-5)",
   fontSize: "var(--text-2xs)",
-};
-/** 멈추기는 보내기 옆에 함께 뜬다 — 한 단 가라앉혀 두 버튼의 무게를 가른다 */
-const stopBtn: React.CSSProperties = {
-  background: "transparent",
-  color: "var(--ink-faint)",
-  padding: "3px var(--sp-4)",
 };
