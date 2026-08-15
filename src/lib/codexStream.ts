@@ -29,6 +29,15 @@ export type CodexOut = {
   error?: string;
   /** 화면에 붙일 조각 (없으면 빈 배열) */
   wire: Wire[];
+  /** ★이 항목의 **자리를 잡아 둔다.** 같은 id 로 다시 오면 뒤에 덧붙이지 않고 **그 자리를
+   *  갈아 끼운다.**
+   *
+   *  ★왜 필요한가 (사용자 지적 2026-08-15): 조수의 말은 **완성됐을 때** 줄이 되는데, 그
+   *    말은 그보다 한참 먼저 시작한다(글자가 흘러나오는 동안 계속 `delta` 가 온다).
+   *    그래서 그 사이에 사용자가 친 말이 **앞으로 밀려** 자기들끼리 뭉쳤다 — 화면에서
+   *    "아무 캐릭터나 만들어줘 / 여성으로" 가 붙어 뜨고 조수의 첫 마디가 그 뒤로 갔다.
+   *    자리는 **시작할 때** 잡고 내용만 나중에 채운다 (도구 줄이 이미 그렇게 한다). */
+  slot?: string;
   /** 다룰 줄 모르는 항목 종류 — 콘솔에만 남긴다 */
   unknown?: string;
 };
@@ -59,11 +68,10 @@ export function codexWire(ev: Record<string, unknown>, open: Set<string>): Codex
   if (SKIP.has(kind)) return NONE;
 
   if (kind === "agentMessage") {
-    // ★`item/started` 에는 아직 글이 없다 (`text: ""`) — 완성된 것만 싣는다
-    const text = String(it.text ?? "");
-    return done && text.trim()
-      ? { wire: [{ role: "assistant", content: [{ type: "text", text }] }] }
-      : NONE;
+    // ★`item/started` 에는 아직 글이 없다(`text: ""`). 그래도 **자리는 지금 잡는다** —
+    //   안 그러면 글이 흘러나오는 동안 사용자가 친 말이 이 말보다 앞에 놓인다 (`slot` 주석).
+    //   빈 줄은 화면이 안 그린다 (`linesOf`).
+    return { slot: id, wire: [{ role: "assistant", content: [{ type: "text", text: String(it.text ?? "") }] }] };
   }
   if (!SHOWN.has(kind)) return done ? { wire: [], unknown: kind } : NONE;
 

@@ -115,7 +115,11 @@ export function linesOf(wire: Wire[]): Line[] {
   const names = new Map<string, string>(); // tool_use id → 도구 이름
   for (const m of wire) {
     for (const b of m.content) {
-      if (b.type === "text") out.push({ kind: m.role === "user" ? "user" : "ai", text: b.text });
+      // ★빈 글은 안 그린다 — 조수의 말은 **시작할 때 자리만 잡고** 내용은 나중에 채운다
+      //   (`codexStream.ts` 의 `slot`). 그 사이의 빈 줄이 화면에 보이면 안 된다.
+      if (b.type === "text") {
+        if (b.text.trim()) out.push({ kind: m.role === "user" ? "user" : "ai", text: b.text });
+      }
       else if (b.type === "tool_use") names.set(b.id, b.name);
       else if (b.type === "tool_result") {
         let ok = true;
@@ -556,6 +560,7 @@ export function cliEvent(ev: Record<string, any>, agent = "claude-code") {
     }
     cliErr = [];
     codexOpen = new Set();
+    codexSlots = new Map();
     void save(useLlm.getState());
     // ★도는 중에 쌓인 말이 있으면 이어서 처리한다 (사용자 지시 2026-08-15)
     drain();
@@ -590,12 +595,31 @@ const COMMON = new Set(["stderr", "exit", "error", "turn_end", "session"]);
  *  같은 id 로 두 번 오므로, 결과 줄만 뒤에 붙이려고 들고 있는다. */
 let codexOpen = new Set<string>();
 
+/** 자리를 잡아 둔 항목 → 그 줄의 자리 (`codexStream.ts` 의 `slot`).
+ *  ★턴이 끝나면 비운다 — 다음 턴의 항목 번호와 섞이면 엉뚱한 줄을 갈아 끼운다. */
+let codexSlots = new Map<string, number>();
+
 /** 코덱스가 흘려보낸 한 줄을 받아 적는다 — 옮기는 규칙은 `lib/codexStream.ts` 가 갖는다
  *  (순수 함수라 저쪽이 실제로 뱉은 기록으로 확인할 수 있다). 여기서는 스토어에 앉힐 뿐이다. */
 function codexEvent(ev: Record<string, any>, push: (m: Wire) => void) {
   const out = codexWire(ev, codexOpen);
   if (out.error) useLlm.setState({ error: out.error });
   if (out.unknown) console.debug("[codex] 모르는 항목", out.unknown, ev);
+  if (!out.wire.length) return;
+  // ★자리를 잡아 둔 항목은 **그 자리를 갈아 끼운다** — 뒤에 덧붙이면 글이 흘러나오는 동안
+  //   사용자가 친 말이 이 말보다 앞으로 간다 (`codexStream.ts` 의 `slot` 주석)
+  if (out.slot) {
+    const at = codexSlots.get(out.slot);
+    const wire = [...useLlm.getState().wire];
+    if (at !== undefined && at < wire.length) {
+      wire[at] = out.wire[0];
+    } else {
+      codexSlots.set(out.slot, wire.length);
+      wire.push(out.wire[0]);
+    }
+    useLlm.setState({ wire, lines: linesOf(wire) });
+    return;
+  }
   for (const m of out.wire) push(m);
 }
 
