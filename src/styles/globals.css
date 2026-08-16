@@ -55,7 +55,7 @@ input::placeholder, textarea::placeholder { color: var(--ink-faint); }
 
 /* 포커스는 :focus-visible 로만 — 마우스 클릭에 테두리가 뜨지 않는다.
    ★페로픽스파이와 같은 표현: 입력은 **테두리 색만** 바뀌고(고리를 덧그리지 않는다),
-     버튼만 1px 강조 외곽선을 얻는다 (PeroPixComfy `ui/src/styles.css` 1152~1153행). */
+     버튼만 1px 강조 외곽선을 얻는다 (페로픽스파이 `ui/src/styles.css` 1152~1153행). */
 button:focus-visible {
   outline: 1px solid var(--accent);
 }
