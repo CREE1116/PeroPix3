@@ -12,7 +12,10 @@ export type Sub = { tier: number; anlas: number };
 type S = {
   sub: Sub | null;
   set: (s: Sub | null) => void;
-  load: () => Promise<void>;
+  /** ★**받아 온 값을 그대로 돌려준다.** 스토어를 다시 읽으면, 같은 순간에 도는 다른
+   *  `load()` 가 나중에 덮어써서 **내가 물어본 답이 아닌 것**을 읽게 된다
+   *  (`queue.ts` 는 `job_done` 마다 부른다). 실제 청구를 재는 쪽이 이 값을 쓴다. */
+  load: () => Promise<Sub | null>;
   /** 티어 3 이상 + 구독중 — 공홈의 무료 판정 조건 */
   opus: () => boolean;
 };
@@ -22,9 +25,12 @@ export const useSub = create<S>((set, get) => ({
   set: (s) => set({ sub: s }),
   async load() {
     try {
-      set({ sub: await api<Sub>("/api/subscription") });
+      const s = await api<Sub>("/api/subscription");
+      set({ sub: s });
+      return s;
     } catch {
       // 토큰이 없거나 통신이 안 되면 그냥 모르는 상태로 둔다 (앱은 계속 돈다)
+      return null;
     }
   },
   opus: () => (get().sub?.tier ?? 0) >= 3,

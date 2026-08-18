@@ -238,20 +238,22 @@ export const ko: Dict = {
 
   gen: {
     needToken: "설정에서 NAI 토큰을 넣어야 생성됩니다.",
-    count: "장 수",
     perSlot: "씬당",
     slotsTimes: "씬 {s} × {p} = {t}장",
     countCost: "{n}장 · {a} Anlas",
     countFree: "{n}장 · FREE",
     vibeEncode: "바이브 인코딩 {a} Anlas",
     /** 비용이 어떻게 나왔나 (v2 `총액 (장당 × N슬롯 × M회)`) */
-    costPer: "장당 {p} × {n}장",
     costPerSlots: "장당 {p} × 씬 {s} × {r}회",
     anlasRefresh: "잔액 새로고침",
     /** 한 장 비용 상한을 넘으면 공홈처럼 생성을 막는다 */
     overLimit: "한 장 비용이 상한 {a} Anlas 를 넘습니다. 해상도나 steps 를 줄여 주세요.",
     /** 씬이 있는데 전부 잠겨 있으면 조용히 아무 일도 안 하던 자리 (v2 index.html:15905) */
     allLocked: "모든 씬이 잠겨 있어 생성할 수 없습니다",
+    /** ★방금 끝난 배치가 **실제로 나간 값**. 예상과 같으면 숫자만, 다르면 둘 다 (`store/anlasMeter`) */
+    actualSame: "실제 {a} Anlas",
+    actualDiff: "예상 {e}, 실제 {a} Anlas",
+    actualHint: "이 배치 전후의 Anlas 잔액 차이입니다. 다른 창에서 함께 생성하거나 충전하면 값이 어긋날 수 있습니다.",
   },
 
   imgIn: {
@@ -363,25 +365,16 @@ export const ko: Dict = {
   },
 
   canvas: {
-    previewOnly: "미리보기 (저장 안 함)",
-    copyTo: "복제 ▾",
-    copyToHint: "다른 싱글 탭으로 복사 (원본은 그대로)",
-    copied: "{n}장을 {name} 탭으로 복사했습니다",
     hideHint: "휴지통으로 보냅니다 (Ctrl+Z 로 되돌립니다 · 24시간 뒤 비워집니다)",
     starOnly: "별표만 보기",
     starAll: "전체 보기",
-    noStarred: "별표한 그림이 없습니다",
-    noneYet: "아직 생성 없음",
-    pressGenerate: "생성을 눌러 시작하세요",
     generate: "생성",
     generateShortcut: "생성 (Ctrl+Enter)",
     generating: "생성 중…",
     generateAll: "전체 생성 ({n}셀)",
     generateCell: "이 셀만 생성",
-    star: "선별 표시",
     starKey: "선별 표시 (S)",
     takeHint: "seed {seed} · 우클릭 = 숨김",
-    takeDragHint: "seed {seed} · 왼쪽 배너로 끌면 카드 그림이 됩니다 · 우클릭 = 숨김",
     countTakes: "{n}장",
     saveLocation: "생성물이 저장되는 위치",
   },
@@ -747,13 +740,8 @@ export const ko: Dict = {
 
   tabs: {
     closeTab: "탭 닫기",
-    groupSingle: "싱글",
-    groupMulti: "멀티",
-    newSingleTab: "새 싱글 탭",
-    single: "컷",
     newSet: "새 세트",
     newSetTab: "새 씬 세트 탭",
-    renameHint: "더블클릭 = 이름 변경 (이미 만든 그림은 그대로 · 앞으로 저장될 폴더만 새 이름)",
     dragToSave: "더블클릭 = 이름 변경 · 핸드로 끌면 씬 세트 카드로 저장",
     posePrefix: "씬 {n}",
   },

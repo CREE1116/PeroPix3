@@ -6,6 +6,7 @@ import { useTagDrag, type Spot } from "./useTagDrag";
 import { BlockRow } from "./BlockRow";
 import { itemToBlock, useBlockLib } from "../store/blockLib";
 import { useDragSource, useDropZone } from "../cards/dragStore";
+import { DragGhost } from "../cards/DragGhost";
 
 /** 블록 시퀀스 — **블록의 위치가 곧 프롬프트의 위치**다.
  *
@@ -181,18 +182,11 @@ export function BlockList({
 
       {/* 커서를 따라오는 고스트 — 포인터 방식은 브라우저가 잔상을 만들어 주지 않는다 */}
       {ghost && dragIdx != null && blocks[dragIdx] && (
-        <div
-          style={{
-            position: "fixed",
-            left: ghost.x,
-            top: ghost.y,
-            width: ghost.w,
-            zIndex: 900,
-            pointerEvents: "none",
-            opacity: 0.92,
-            boxShadow: "var(--shadow-3)",
-            borderRadius: "var(--r-3)",
-          }}
+        <DragGhost
+          x={ghost.x}
+          y={ghost.y}
+          anchor="exact"
+          style={{ width: ghost.w, borderRadius: "var(--r-3)" }}
         >
           <BlockRow
             block={{ ...blocks[dragIdx], open: false }}
@@ -200,7 +194,7 @@ export function BlockList({
             onChange={() => {}}
             onRemove={() => {}}
           />
-        </div>
+        </DragGhost>
       )}
 
       {/* ── 칩 끌기의 표시들 — ★레이아웃을 밀지 않도록 전부 화면 좌표에 띄운다 ── */}

@@ -1,4 +1,5 @@
 import { useDrag } from "./dragStore";
+import { DragGhost } from "./DragGhost";
 import { artBackground } from "./CardArt";
 import { FittedImg } from "./FittedImg";
 import { useGen } from "../store/gen";
@@ -9,7 +10,8 @@ import { normThumb, thumbUrl } from "../store/prompt";
  *  ★스포트라이트: 드래그가 시작되면 화면 전체를 어둡게 깔고, **드롭 가능한 곳만** 원래
  *    밝기로 남긴다. 목적지마다 다른 색을 쓰지 않고 흰색으로 통일한다 —
  *    드롭은 즉발적인 행위라 신호가 강해야 하고, 색이 여럿이면 학습 대상이 된다.
- *  ★고스트: 포인터 드래그에는 브라우저가 만들어 주는 드래그 이미지가 없으므로 직접 그린다. */
+ *  ★고스트: 포인터 드래그에는 브라우저가 만들어 주는 드래그 이미지가 없으므로 직접 그린다.
+ *    자리·층·투명도는 `DragGhost` 가 갖는다 — 고스트를 그리는 자리가 넷이라 껍데기를 하나로 둔다. */
 export function DragLayer() {
   const drag = useDrag((s) => s.drag);
   const pos = useDrag((s) => s.pos);
@@ -19,25 +21,24 @@ export function DragLayer() {
   //   화면을 덮으면 정작 어디에 놓는지가 안 보인다. 칩 끌기와 같은 작은 고스트만 띄운다.
   if (drag.kind === "blocklib") {
     return (
-      <div
+      <DragGhost
+        x={pos.x}
+        y={pos.y}
+        tilt={0}
+        opacity={1}
+        z={902}
         style={{
-          position: "fixed",
-          left: pos.x + 10,
-          top: pos.y + 8,
-          zIndex: 902,
-          pointerEvents: "none",
           padding: "2px 9px",
           borderRadius: "var(--r-1)",
           background: "var(--chip-bg)",
           border: "1px solid var(--accent)",
           color: "var(--ink)",
           fontSize: "var(--text-2xs)",
-          boxShadow: "var(--shadow-3)",
           whiteSpace: "nowrap",
         }}
       >
         {drag.item?.label ?? drag.block?.label}
-      </div>
+      </DragGhost>
     );
   }
 
@@ -52,14 +53,13 @@ export function DragLayer() {
           background: "rgba(0,0,0,0.78)",
         }}
       />
-      <div
+      <DragGhost
+        x={pos.x}
+        y={pos.y}
+        anchor="center"
+        tilt={0}
+        z={60}
         style={{
-          position: "fixed",
-          left: pos.x,
-          top: pos.y,
-          zIndex: 60,
-          pointerEvents: "none",
-          transform: "translate(-50%, -50%)",
           width: 92,
           height: 126,
           borderRadius: 10,
@@ -67,7 +67,6 @@ export function DragLayer() {
           border: "1.5px solid rgba(255,255,255,0.7)",
           boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
           background: "var(--surface)",
-          opacity: 0.92,
         }}
       >
         {drag.img ? (
@@ -121,7 +120,7 @@ export function DragLayer() {
             </div>
           </>
         )}
-      </div>
+      </DragGhost>
     </>
   );
 }

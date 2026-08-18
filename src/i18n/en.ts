@@ -238,20 +238,22 @@ export const en = {
 
   gen: {
     needToken: "Enter your NAI token in Settings to generate.",
-    count: "Count",
     perSlot: "Per scene",
     slotsTimes: "{s} slots × {p} = {t}",
     countCost: "{n} × {a} Anlas",
     countFree: "{n} × FREE",
     vibeEncode: "Vibe encoding {a} Anlas",
     /** How the cost adds up (v2 `total (per image × N slots × M rounds)`) */
-    costPer: "{p} each × {n}",
     costPerSlots: "{p} each × {s} scenes × {r}",
     anlasRefresh: "Refresh balance",
     /** Over the per image cap, so generation is blocked just like the official site */
     overLimit: "One image costs more than the {a} Anlas cap. Lower the size or steps.",
     /** Every scene is locked, so there is nothing to generate (v2 index.html:15905) */
     allLocked: "Every scene is locked, so there is nothing to generate",
+    /** What the batch that just finished really cost (see `store/anlasMeter`) */
+    actualSame: "Actual {a} Anlas",
+    actualDiff: "Expected {e}, actual {a} Anlas",
+    actualHint: "The Anlas balance difference across this batch. Generating in another window or topping up can throw it off.",
   },
 
   imgIn: {
@@ -362,25 +364,16 @@ export const en = {
   },
 
   canvas: {
-    previewOnly: "Preview only (not saved)",
-    copyTo: "Copy to ▾",
-    copyToHint: "Copy to another single tab (original stays)",
-    copied: "Copied {n} to tab {name}",
     hideHint: "Moves to trash (Ctrl+Z undoes; emptied after 24h)",
     starOnly: "Starred only",
     starAll: "Show all",
-    noStarred: "No starred images",
-    noneYet: "Nothing generated yet",
-    pressGenerate: "Press Generate to start",
     generate: "Generate",
     generateShortcut: "Generate (Ctrl+Enter)",
     generating: "Generating…",
     generateAll: "Generate all ({n} cells)",
     generateCell: "Generate this cell",
-    star: "Mark as picked",
     starKey: "Mark as picked (S)",
     takeHint: "seed {seed} · right click = hide",
-    takeDragHint: "seed {seed} · drag onto a banner to use as card art · right click = hide",
     countTakes: "{n} images",
     saveLocation: "Where generated images are saved",
   },
@@ -743,13 +736,8 @@ export const en = {
 
   tabs: {
     closeTab: "Close tab",
-    groupSingle: "Single",
-    groupMulti: "Multi",
-    newSingleTab: "New single tab",
-    single: "Cut",
     newSet: "New set",
     newSetTab: "New scene set tab",
-    renameHint: "Double-click to rename (existing images stay; only new saves use the new folder)",
     dragToSave: "Double-click to rename · Drag to the hand to save as a scene set card",
     posePrefix: "Scene {n}",
   },

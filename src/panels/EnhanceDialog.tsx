@@ -16,6 +16,7 @@ import { imgUrl } from "../lib/imgUrl";
 import { Icon } from "../components/Icon";
 import { anlasCost, MAX_PER_IMAGE } from "../lib/anlas";
 import { useSub } from "../store/sub";
+import { useAnlasMeter } from "../store/anlasMeter";
 import { useSceneFocus } from "../store/sceneFocus";
 import { allScenes } from "../store/workspace";
 import { api } from "../lib/backend";
@@ -67,8 +68,10 @@ export function EnhanceDialog({
   const ws = useWs((s) => s.current);
   const records = useWs((s) => s.records);
   const tabNow = useWs((s) => s.activeTab());
-  const tabName = tabNow?.name ?? "싱글";
-  const charName = tabNow?.kind === "set" ? (useWs.getState().activeCharOf()?.name ?? null) : null;
+  // ★탭이 없으면 이 창이 뜰 수 없다 (부르는 두 자리가 다 탭 안이다). 옛 폴백은 `"싱글"`
+  //   이라는 글자를 저장 자리로 흘려보냈다 — 싱글/멀티 구분이 폐기된 지금은 뜻이 없다.
+  const tabName = tabNow?.name ?? "";
+  const charName = useWs.getState().activeCharOf()?.name ?? null;
   /** 실제로 돌릴 것과 뺀 것 — ★**열 때 한 번** 정한다 (v2 도 모달을 열 때 목록을 굳힌다).
    *  돌아가는 사이에 새 레코드가 들어와도 대상이 바뀌면 안 된다.
    *  ★한 장짜리는 거르지 않는다 — 걸러 내는 것은 **배치**의 규칙이다 (v2 단일 모달도 안 거른다). */
@@ -245,6 +248,15 @@ export function EnhanceDialog({
       // ★창을 **먼저** 닫는다 (사용자 지적 2026-08-14: 다 될 때까지 안 꺼졌다).
       //   큐는 보내기 전에 대기 칸을 미리 잡아 두므로, 닫자마자 그 자리가 보인다.
       onClose();
+      // ★큐에 넣기 직전의 잔액을 적어 둔다. 끝나면 실제 청구가 나온다 (`store/anlasMeter`).
+      //   ★기록에 남기는 해상도·steps 는 **첫 장의 것**이다. 배치는 장마다 크기가 달라
+      //     하나로 대표할 수 없다 (값 자체는 위 `each` 가 장마다 세서 더한 것이라 맞다).
+      const d0 = sizes?.[targets[0]];
+      const [w0, h0] = d0 ? enhanceTargetSize(d0[0], d0[1], scaleOf(targets[0])) : target;
+      useAnlasMeter.getState().arm(cost.total, {
+        width: w0, height: h0, steps: stepsOf(targets[0]), opus,
+        refs: 0, vibes: 0, inpaint: false, count: targets.length, from: "enhance",
+      });
       await useQueue.getState().enqueue(
         {
           ...useGen.getState().params,

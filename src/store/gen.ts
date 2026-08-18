@@ -158,9 +158,6 @@ type S = {
   /** @param extra 요청에 얹을 것 (강화의 `enhance_of` 등) */
   generate: (cell?: string | null, extra?: Record<string, unknown>) => Promise<void>;
   generateAll: () => Promise<void>;
-  /** ★싱글도 **큐로** 보낸다 (사용자 지적 2026-08-05: 한 장이 끝나야 다시 누를 수 있었다).
-   *  `generate()` 는 강화처럼 **한 장을 즉시** 만드는 자리에만 남는다. */
-  queueSingle: (count: number) => Promise<void>;
   /** 인페인트 한 장. 탭 종류를 안 가리고, 결과를 원본이 있던 씬 칸에 붙인다 */
   queueInpaint: (count: number) => Promise<void>;
 };
@@ -253,45 +250,9 @@ export const useGen = create<S>((set, get) => ({
     }
   },
 
-  /** 세트 탭: 셀마다 한 장씩 */
-  async queueSingle(count) {
-    const ws = useWs.getState();
-    const tab = ws.activeTab();
-    if (!tab || tab.kind === "set") return;
-    const raw = usePrompt.getState().compiled();
-    const pools = wildcardPools();
-    // ★요청 레벨에도 한 벌 싣는다. **대표값(폴백)** 이고, 실제로 나가는 것은 아래 항목들이다
-    //   (v2 `index.html:16080` 의 "req 레벨: 대표값 1회 해석" 과 같은 자리).
-    const { prompt, uc, chars } = resolveShot(pools, raw);
-    // ★★시드는 **여기서 장마다 확정**한다 — 예전에는 랜덤이면 `-1` 로 보내 서버가 뽑게
-    //   했는데, 그러면 **적힌 시드가 통째로 무시된다** (사용자 지적 2026-08-16).
-    //   첫 장은 적힌 값, 그 뒤로만 새로 뽑는다 (`lib/seedRounds` 머리 주석).
-    // ★★와일드카드도 **장마다** 다시 뽑는다. 여기서 한 번만 풀면 10장이 전부 같아진다.
-    const shots = rounds(Math.max(1, count), get().params, [null], (_, seed) => {
-      const s = resolveShot(pools, raw);
-      return { seed, prompt: s.prompt, negative_prompt: s.uc, characters: s.chars };
-    });
-    await useQueue.getState().enqueue(
-      {
-        ...get().params,
-        ...useImageInput.getState().payload(),
-        prompt,
-        negative_prompt: uc,
-        characters: chars,
-        workspace: ws.current,
-        tab: tab.name,
-        tab_id: tab.id,
-      },
-      shots,
-      1,
-    );
-    if (get().params.seed_mode !== "fixed") get().set("seed", randomSeed());
-  },
-
   /** 인페인트 한 장. **탭 종류를 안 가린다**.
    *
-   *  ★`queueSingle` 은 씬 탭에서 그냥 돌아가고(옛 싱글 탭 전용), `generateAll` 은 씬을 전부
-   *    돈다. 인페인트는 **그림 한 장을 고치는 일**이라 둘 다 아니다.
+   *  ★`generateAll` 은 씬을 전부 돈다. 인페인트는 **그림 한 장을 고치는 일**이라 그게 아니다.
    *  ★결과는 **원본이 있던 씬 칸**에 붙는다 (`origin`). 안 붙이면 씬 탭에서는 셀 없는
    *    레코드가 되어 화면 어디에도 안 뜬다 (`lib/takes.ts`).
    *  ★프롬프트는 **왼쪽 패널에 있는 그대로** 쓴다. 인페인트 중에는 그 패널이 씬 프롬프트가
@@ -331,7 +292,7 @@ export const useGen = create<S>((set, get) => ({
     // ★보냈으면 편집에서 나온다 (사용자 결정 2026-08-13). 여기 머물면 결과를 못 본다.
     //   마스크·사각형·프롬프트 사본은 남아, 다시 들어가면 그대로 이어진다
     useImageInput.getState().endEdit();
-    // ★시드도 와일드카드도 장마다 여기서 확정한다 (`queueSingle` 과 같은 규칙)
+    // ★시드도 와일드카드도 장마다 여기서 확정한다 (`generateAll` 과 같은 규칙)
     const shots = rounds(Math.max(1, count), get().params, [null], (_, seed) => {
       const s = resolveShot(pools, raw);
       return { seed, prompt: s.prompt, negative_prompt: s.uc, characters: s.chars };

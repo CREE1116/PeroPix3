@@ -5,6 +5,7 @@ import { alignTo64 } from "../store/gen";
 import { useImageInput } from "../store/imageInput";
 import { anlasCost } from "../lib/anlas";
 import { useSub } from "../store/sub";
+import { useAnlasMeter } from "../store/anlasMeter";
 import { useGen } from "../store/gen";
 import {
   MIN_RECT,
@@ -444,6 +445,13 @@ export function MaskEditor() {
           disabled={!canRun}
           onClick={() => {
             if (!canRun) return;
+            // ★큐에 넣기 직전의 잔액을 적어 둔다. 끝나면 실제 청구가 나온다
+            //   (`store/anlasMeter`). 인페인트는 강도 계수·바이브 면제가 걸린 자리라
+            //   예상이 맞는지 재 볼 값어치가 특히 크다 (9절의 `y` · `!mask`)
+            useAnlasMeter.getState().arm(cost.total, {
+              width: req.width, height: req.height, steps: params.steps, opus,
+              refs: 0, vibes: 0, inpaint: true, count: 1, from: "inpaint",
+            });
             // 나가는 것은 `queueInpaint` 가 페이로드를 굳힌 뒤에 한다 (순서가 걸려 있다)
             void queueInpaint(1);
           }}

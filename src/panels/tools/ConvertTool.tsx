@@ -8,6 +8,7 @@ import { useFiles } from "../../store/files";
 import { useUi } from "../../store/ui";
 import { toast } from "../../store/toast";
 import { Icon } from "../../components/Icon";
+import { DragGhost } from "../../cards/DragGhost";
 
 /** 이름 변환 — **형식과 이름을 한 번에** 바꾼다 (v2 `보조 도구 › 이미지 변환`).
  *
@@ -422,15 +423,13 @@ export function ConvertTool() {
 
       {/* 끌고 있는 줄의 잔상 — 브라우저가 안 만들어 주므로 우리가 그린다 (useReorder 주석) */}
       {ghost && dragIdx != null && (
-        <div
+        <DragGhost
+          x={ghost.x}
+          y={ghost.y}
+          anchor="exact"
           style={{
-            position: "fixed",
-            left: ghost.x,
-            top: ghost.y,
             width: ghost.w,
             height: ghost.h,
-            pointerEvents: "none",
-            zIndex: 80,
             borderRadius: "var(--r-2)",
             border: "1px solid var(--accent)",
             background: "var(--panel)",
@@ -443,7 +442,7 @@ export function ConvertTool() {
           }}
         >
           {items[dragIdx]?.name}
-        </div>
+        </DragGhost>
       )}
     </div>
   );

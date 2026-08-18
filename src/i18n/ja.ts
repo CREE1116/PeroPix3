@@ -238,19 +238,21 @@ export const ja: Dict = {
 
   gen: {
     needToken: "設定で NAI トークンを入れると生成できます。",
-    count: "枚数",
     perSlot: "スロットごと",
     slotsTimes: "{s}スロット × {p} = {t}枚",
     countCost: "{n}枚 · {a} Anlas",
     countFree: "{n}枚 · FREE",
     vibeEncode: "バイブエンコード {a} Anlas",
     /** 費用の内訳（v2 の `合計（1枚あたり × Nスロット × M回）`） */
-    costPer: "1枚 {p} × {n}枚",
     costPerSlots: "1枚 {p} × シーン {s} × {r}回",
     anlasRefresh: "残高を再取得",
     /** 1枚あたりの上限を超えると公式サイトと同じく生成を止める */
     overLimit: "1枚の費用が上限 {a} Anlas を超えています。解像度か steps を下げてください。",
     allLocked: "すべてのシーンがロックされているため生成できません",
+    /** 直前のバッチで実際にかかった値 (`store/anlasMeter`) */
+    actualSame: "実際 {a} Anlas",
+    actualDiff: "予想 {e}、実際 {a} Anlas",
+    actualHint: "このバッチの前後の Anlas 残高の差です。別のウィンドウで同時に生成したりチャージするとずれることがあります。",
   },
 
   imgIn: {
@@ -361,25 +363,16 @@ export const ja: Dict = {
   },
 
   canvas: {
-    previewOnly: "プレビューのみ（保存しません）",
-    copyTo: "複製 ▾",
-    copyToHint: "別のシングルタブへコピー (元は残ります)",
-    copied: "{n}枚を {name} タブへコピーしました",
     hideHint: "ゴミ箱へ移動します (Ctrl+Z で戻せます・24時間後に空に)",
     starOnly: "星のみ表示",
     starAll: "すべて表示",
-    noStarred: "星を付けた画像がありません",
-    noneYet: "まだ生成がありません",
-    pressGenerate: "生成を押して開始",
     generate: "生成",
     generateShortcut: "生成 (Ctrl+Enter)",
     generating: "生成中…",
     generateAll: "一括生成（{n} セル）",
     generateCell: "このセルだけ生成",
-    star: "選別マーク",
     starKey: "選別マーク (S)",
     takeHint: "seed {seed} · 右クリックで非表示",
-    takeDragHint: "seed {seed} · 左のバナーへドラッグでカードの絵になります · 右クリックで非表示",
     countTakes: "{n} 枚",
     saveLocation: "生成画像の保存先",
   },
@@ -742,13 +735,8 @@ export const ja: Dict = {
 
   tabs: {
     closeTab: "タブを閉じる",
-    groupSingle: "シングル",
-    groupMulti: "マルチ",
-    newSingleTab: "新しいシングルタブ",
-    single: "カット",
     newSet: "新しいセット",
     newSetTab: "新しいシーンセットタブ",
-    renameHint: "ダブルクリックで名前変更（既存の画像はそのまま・以後の保存先だけ新しい名前に）",
     dragToSave: "ダブルクリックで名前変更 · 手札へドラッグでシーンセットカードとして保存",
     posePrefix: "シーン {n}",
   },

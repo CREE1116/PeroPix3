@@ -204,8 +204,6 @@ type S = {
   setActiveTab: (id: string) => void;
   /** 셀은 이름만(빈 태그) 또는 이름+태그로 준다 — 포즈세트 카드가 후자다 */
   addSetTab: (name: string, cells: (string | { name: string; tags?: string; blocks?: Block[] })[]) => void;
-  /** 싱글 그룹에 서브 탭을 하나 더 (저장소 구분용) */
-  addSingleTab: (name?: string) => void;
   closeTab: (id: string) => void;
   renameTab: (id: string, name: string) => void;
 
@@ -247,14 +245,42 @@ type S = {
   removeChar: (id: string) => void;
 };
 
+/** 새 워크스페이스의 첫 모습.
+ *
+ *  ★**씬 탭 하나로 시작한다** (싱글 폐기 2026-08-11). 예전에는 싱글 탭을 만들어 놓고
+ *    `migrate` 의 `convertSingleTab` 이 그것을 옮겼다 — 그러면 새 워크스페이스가 옛 싱글
+ *    탭의 자국을 그대로 물려받는다: 씬에 `fromSingle` 표식이 박히고(셀 없는 레코드를
+ *    끌어오는 길이다), 탭·카드·캐릭터 이름이 전부 「컷」이 된다.
+ *  ★모양은 `addSetTab` 과 같다 — 카드 하나·씬 하나·`c0` 부터·`idOnly`.
+ *  ★캐릭터도 여기서 만든다. 안 만들면 `migrate` 의 고아 처리가 **탭 이름으로** 하나를
+ *    지어내서, 캐릭터 탭에 「새 세트」라고 뜬다. */
 const newSpec = (name: string): Spec => ({
   version: 1,
   id: "ws_" + Date.now().toString(36),
   name,
   prompt: { base: [], baseUc: [] },
   params: {},
-  tabs: [{ id: "tab_single", kind: "single", name: t("tabs.single") }],
-  activeTab: "tab_single",
+  tabs: [
+    {
+      id: "tab_1",
+      kind: "set",
+      name: t("tabs.newSet"),
+      idOnly: true,
+      charId: "ch_1",
+      cards: [
+        {
+          id: "k1",
+          name: t("tabs.newSet"),
+          cells: [{ id: "c0", name: t("tabs.posePrefix", { n: 1 }), blocks: [] }],
+        },
+      ],
+      cellSeq: 1,
+      cardSeq: 1,
+    },
+  ],
+  activeTab: "tab_1",
+  chars: [{ id: "ch_1", name: t("chars.first"), prompt: { base: defaultBase(), baseUc: defaultUc() } }],
+  activeChar: "ch_1",
   selection: { deleted: [], starred: [] },
 });
 
@@ -740,20 +766,6 @@ export const useWs = create<S>((set, get) => ({
     queueSave(get);
   },
 
-  addSingleTab(name) {
-    const spec = get().spec;
-    if (!spec) return;
-    const id = "tab_" + Date.now().toString(36);
-    const base = (name ?? t("tabs.single")).trim() || t("tabs.single");
-    const used = new Set(spec.tabs.map((x) => x.name));
-    let nm = base;
-    for (let i = 2; used.has(nm); i++) nm = `${base} ${i}`;
-    const stashed = stash(spec, spec.activeTab);
-    const tab: CanvasTab = { id, kind: "single", name: nm, idOnly: true, prompt: usePrompt.getState().snapshot() };
-    set({ spec: { ...stashed, tabs: [...stashed.tabs, tab], activeTab: id } });
-    queueSave(get);
-  },
-
   addSetTab(name, cells) {
     const spec = get().spec;
     if (!spec) return;
@@ -891,18 +903,25 @@ export const useWs = create<S>((set, get) => ({
     const spec = get().spec;
     if (!spec) return;
     const target = spec.tabs.find((x) => x.id === id);
-    // ★싱글이 하나도 없는 워크스페이스를 만들지 않는다 — 돌아갈 자리가 사라진다
-    if (target?.kind === "single" && spec.tabs.filter((x) => x.kind === "single").length <= 1) return;
+    const charId = target?.kind === "set" ? target.charId : undefined;
+    // ★★**그 캐릭터의 마지막 탭은 닫지 않는다.** 옛 규칙(「싱글이 하나도 없는 워크스페이스를
+    //   만들지 않는다」)이 싱글 폐기(2026-08-11)와 함께 이 자리로 왔다. 안 막으면 탭을 전부
+    //   닫을 수 있고, 그러면 아래 `neighbour` 가 undefined 라 `neighbour.id` 에서 앱이 죽는다
+    //   (새 워크스페이스는 탭이 하나라 ×를 한 번만 눌러도 그렇게 됐다).
+    //   캐릭터 단위로 세는 이유: 탭이 없는 캐릭터가 활성이면 탭 줄이 비는데, 같은 캐릭터를
+    //   다시 눌러도 `switchChar` 가 일찍 반환해 탭을 새로 만들어 주지 않는다.
+    const mine = spec.tabs.filter((x) => x.kind === "set" && x.charId === charId);
+    if (mine.length <= 1) return;
     const tabs = spec.tabs.filter((t) => t.id !== id);
     const wasActive = spec.activeTab === id;
-    // ★닫으면 **같은 층에 머문다.** `tabs[0]` 로 가면 싱글을 지웠는데 첫 탭이 세트일 때
-    //   멀티로 튕긴다 (사용자 지적 2026-08-04). 같은 층이 남아 있으면 그중 **가장 가까운 것**을 연다.
+    // ★닫으면 **같은 캐릭터에 머문다.** `tabs[0]` 로 가면 남의 캐릭터로 튕긴다
+    //   (사용자 지적 2026-08-04, 그때는 싱글↔멀티였다). 같은 캐릭터의 탭 중 **가장 가까운 것**을 연다.
     const wasAt = spec.tabs.findIndex((t) => t.id === id);
-    const sameKind = tabs.filter((t) => t.kind === target?.kind);
+    const siblings = tabs.filter((t) => t.kind === "set" && t.charId === charId);
     const neighbour =
-      sameKind.length === 0
+      siblings.length === 0
         ? tabs[0]
-        : sameKind.reduce((best, t) => {
+        : siblings.reduce((best, t) => {
             const at = spec.tabs.findIndex((x) => x.id === t.id);
             const bestAt = spec.tabs.findIndex((x) => x.id === best.id);
             return Math.abs(at - wasAt) < Math.abs(bestAt - wasAt) ? t : best;

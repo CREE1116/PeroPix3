@@ -11,6 +11,7 @@ import { Icon } from "../components/Icon";
 import { colorOf } from "../store/cards";
 import { cardBlocks, compileBlocks, makeBlock, parseSegs } from "../lib/blocks";
 import { useDragSource } from "../cards/dragStore";
+import { DragGhost } from "../cards/DragGhost";
 import { useLaneReorder, type LaneDrop } from "../lib/useReorder";
 import { useSceneFocus } from "../store/sceneFocus";
 import { BANNER_BG, bannerEmptyFill } from "../cards/banner";
@@ -284,12 +285,13 @@ export function SceneLane() {
   const offsets: number[] = [];
   tab.cards.reduce((n, k) => (offsets.push(n), n + k.cells.length), 0);
 
-  /** 끌고 있는 것의 이름 — ★잔상은 브라우저가 안 그려 주므로 우리가 그린다 (`useReorder` 머리 주석) */
-  const dragLabel = !lane.drag
-    ? ""
-    : lane.drag.kind === "card"
-      ? (tab.cards.find((k) => k.id === lane.drag!.id)?.name ?? "")
-      : (cells.find((c) => c.id === lane.drag!.id)?.name ?? "");
+  /** 끌고 있는 것 — ★잔상은 브라우저가 안 그려 주므로 우리가 그린다 (`useReorder` 머리 주석).
+   *  ★이름표 하나로는 무엇을 들고 있는지 약해서 **그 모습**을 그린다 (사용자 지시 2026-08-18):
+   *    씬이면 그 씬의 최신 장과 이름, 카드면 그 카드의 배너. */
+  const dragCard = lane.drag?.kind === "card" ? tab.cards.find((k) => k.id === lane.drag!.id) : null;
+  const dragCell = lane.drag?.kind === "scene" ? cells.find((c) => c.id === lane.drag!.id) : null;
+  /** 레코드는 만든 차례대로 쌓이므로 **마지막이 최신**이다 (줄은 그것을 뒤집어 왼쪽에 둔다) */
+  const dragTake = dragCell ? takesOfCell(dragCell).at(-1) : undefined;
 
   const pick = (file: string, add: boolean) => {
     const next = new Set(picked);
@@ -633,29 +635,111 @@ export function SceneLane() {
         </div>
       )}
 
-      {/* 커서를 따라오는 잔상 — 무엇을 끌고 있는지 (v2 는 슬롯을 통째로 띄웠는데, 씬 줄은
-          한 줄이 화면 폭만큼 길어서 이름표가 낫다) */}
-      {lane.ghost && dragLabel && (
-        <div
-          data-lane-ghost
-          style={{
-            position: "fixed",
-            left: lane.ghost.x + 12,
-            top: lane.ghost.y + 8,
-            zIndex: 90,
-            pointerEvents: "none",
-            padding: "2px var(--sp-3)",
-            borderRadius: "var(--r-2)",
-            border: "1px solid var(--accent)",
-            background: "var(--panel)",
-            color: "var(--ink)",
-            fontSize: "var(--text-2xs)",
-            boxShadow: "var(--shadow-3)",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {dragLabel}
-        </div>
+      {/* 커서를 따라오는 잔상 — **무엇을 들고 있나**. 놓일 자리는 `DropLine` 이 따로 말한다.
+          ★줄을 통째로 띄우지 않는다 (v2 는 슬롯이 짧아 그럴 수 있었다). 씬 한 줄은 화면 폭만큼
+            길어서 통째로 띄우면 뒤가 다 가려 어디에 놓는지가 안 보인다 — 그림 한 칸과 이름으로
+            줄인다 (덱 카드 고스트를 작게 그리는 이유와 같다, `DragLayer`). */}
+      {lane.ghost && (dragCard || dragCell) && (
+        <DragGhost x={lane.ghost.x} y={lane.ghost.y}>
+          {dragCard ? (
+            /* 카드 배너를 줄여 놓은 것 — 카드 머리와 같은 재료를 쓴다 (`bannerEmptyFill`) */
+            <div
+              data-lane-ghost
+              style={{
+                position: "relative",
+                width: 208,
+                height: HEAD_H,
+                borderRadius: "var(--r-2)",
+                overflow: "hidden",
+                background: BANNER_BG,
+                border: "1px solid var(--line)",
+              }}
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  background: bannerEmptyFill(dragCard.color ?? colorOf(dragCard.name)),
+                }}
+              />
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  background: "linear-gradient(180deg, rgba(0,0,0,0) 20%, rgba(0,0,0,0.5) 100%)",
+                }}
+              />
+              <span
+                style={{
+                  position: "absolute",
+                  left: 9,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: "var(--sp-3)",
+                  color: "#fff",
+                  textShadow: "0 1px 5px rgba(0,0,0,0.55)",
+                }}
+              >
+                <b style={{ fontSize: "0.8rem", fontWeight: "var(--w-bold)" }}>{dragCard.name}</b>
+                <span style={{ fontSize: 10, letterSpacing: "0.08em", opacity: 0.85 }}>
+                  {t("scenes.cardLabel", { n: dragCard.cells.length })}
+                </span>
+              </span>
+            </div>
+          ) : (
+            <div
+              data-lane-ghost
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--sp-3)",
+                maxWidth: 240,
+                padding: 4,
+                paddingRight: "var(--sp-4)",
+                borderRadius: "var(--r-2)",
+                border: "1px solid var(--accent)",
+                background: "var(--panel)",
+              }}
+            >
+              {/* 그림이 없는 씬이면 빈 칸 그대로 — 줄에서 보던 모습과 같다 */}
+              <span
+                style={{
+                  flexShrink: 0,
+                  width: 34,
+                  height: 34,
+                  borderRadius: "var(--r-1)",
+                  overflow: "hidden",
+                  background: "var(--bg)",
+                  border: "1px solid var(--line)",
+                  display: "block",
+                }}
+              >
+                {dragTake && (
+                  <img
+                    src={thumbUrlOf(base, ws, dragTake.file)}
+                    alt=""
+                    draggable={false}
+                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                  />
+                )}
+              </span>
+              <span
+                style={{
+                  minWidth: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  fontSize: "var(--text-2xs)",
+                  color: "var(--ink)",
+                }}
+              >
+                {dragCell!.name}
+              </span>
+            </div>
+          )}
+        </DragGhost>
       )}
 
       {enhance && <EnhanceDialog files={enhance} onClose={() => setEnhance(null)} />}

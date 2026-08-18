@@ -6,11 +6,12 @@ const SEED_LABELS = ["options.seedFixed", "options.seedRound", "options.seedScen
 const SEED_HINTS = ["options.seedFixedHint", "options.seedRoundHint", "options.seedSceneHint"] as const;
 import { SEED_MODES, randomSeed, useGen } from "../store/gen";
 import { useQueue } from "../store/queue";
-import { allCells, useWs } from "../store/workspace";
+import { allScenes, useWs } from "../store/workspace";
 import { useImageInput } from "../store/imageInput";
 import { useUi } from "../store/ui";
 import { anlasCost, MAX_PER_IMAGE } from "../lib/anlas";
 import { useSub } from "../store/sub";
+import { useAnlasMeter } from "../store/anlasMeter";
 import { useHasToken } from "../store/health";
 import { Icon } from "../components/Icon";
 
@@ -30,7 +31,9 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
   const t = useI18n((s) => s.t);
   // 구독 상태는 **스토어 하나**가 들고 있다 (업스케일 값 표시도 같은 곳을 본다)
   const sub = useSub((s) => s.sub);
-  const { params, set, busy, error, generateAll, queueSingle } = useGen();
+  /** 방금 끝난 배치가 **실제로 얼마를 썼나.** 잴 수 없었으면 `null` 이라 아무것도 안 뜬다 */
+  const measured = useAnlasMeter((s) => s.measured);
+  const { params, set, busy, error, generateAll } = useGen();
   const { progress, phase, cancelAll } = useQueue();
   /** 잔액을 다시 물어본 횟수 — 누를 때마다 아이콘을 **한 바퀴 더** 돌린다 (v2 `refreshAnlasBtn`).
    *  ★각도를 원위치시키지 않고 누적한다. 되돌리면 애니메이션이 거꾸로 돌아 흔들려 보인다. */
@@ -38,15 +41,21 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
   const tab = useWs((s) => s.activeTab());
   const img = useImageInput();
 
-  const isSet = tab?.kind === "set";
-  // ★락한 슬롯은 생성에서 빠진다 — 장 수도 그만큼 줄여야 값이 맞는다 (gen.ts `generateAll`)
+  // ★탭은 언제나 씬 탭이다 (싱글 폐기 2026-08-11) — 옛 싱글 탭은 열 때 옮겨진다.
+  //   그래도 한 번 좁히는 이유는 `CanvasTab` 이 옛 파일을 읽으려고 두 갈래를 남겨 두기 때문이다.
+  const setTab = tab?.kind === "set" ? tab : null;
   const perSlot = useUi((s) => s.perSlot);
   const setPerSlot = useUi((s) => s.setPerSlot);
-  const slots = isSet ? allCells(tab).filter((c) => !c.locked).length : 1;
-  // ★싱글도 **한 번에 여러 장**을 넣는다 (사용자 지시 2026-08-05, v2 batch count).
-  //   슬롯이 없을 뿐 쓰임은 같아서 `perSlot` 을 그대로 쓴다 — 값을 둘로 나누면 어느 쪽이
-  //   먹는지 헷갈린다.
-  const count = isSet ? slots * perSlot : perSlot;
+  /** ★잠긴 것은 생성에서 빠지므로 장 수도 그만큼 줄여야 한다.
+   *
+   *  ★★**카드 잠금도 함께 본다** — `gen.ts generateAll` 은 `!cell.locked && !card.locked` 로
+   *    거르는데 여기는 씬 잠금만 세고 있었다. 카드를 잠그면 **푸터가 실제보다 많이 세고**,
+   *    비용도 그만큼 부풀었다 (실측 장치가 「예상 > 실제」로 잡아낸 자리, `lib/anlasMeter`).
+   *    세는 규칙이 둘이면 어느 쪽이 맞는지 화면으로는 알 수 없다. */
+  const slots = setTab
+    ? allScenes(setTab).filter((x) => !x.cell.locked && !x.card.locked).length
+    : 1;
+  const count = slots * perSlot;
   /** ★인페인트 중에는 **이 버튼을 잠근다** (사용자 지적 2026-08-13).
    *
    *  이 버튼의 뜻은 언제나 「슬롯 전체」다. 인페인트는 「이 한 장」이라 단위가 다르고,
@@ -85,7 +94,20 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
   /** 이 버튼이 지금 하는 일 — 토큰이 없으면 「만들기」가 아니라 「넣으러 가기」다 */
   const fire = () => {
     if (noToken) return openSettings("general");
-    void (isSet ? generateAll() : queueSingle(perSlot));
+    // ★큐에 넣기 **직전**의 잔액을 적어 둔다. 배치가 끝나면 다시 물어 실제 청구를 낸다
+    //   (`store/anlasMeter`). 위 `cost` 는 예상값일 뿐이라 맞는지 확인할 길이 이것뿐이다
+    useAnlasMeter.getState().arm(cost.total, {
+      width: params.width,
+      height: params.height,
+      steps: params.steps,
+      opus: (sub?.tier ?? 0) >= 3,
+      refs: img.refOn ? img.refs.length : 0,
+      vibes: img.vibeOn ? img.vibes.length : 0,
+      inpaint: img.costInpaint(),
+      count,
+      from: "generate",
+    });
+    void generateAll();
   };
 
   /** ★`Ctrl+Enter` 로 생성 (v2 `index.html:18459`).
@@ -109,7 +131,7 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [off, isSet, perSlot, noToken, generateAll, queueSingle]);
+  }, [off, perSlot, noToken, generateAll]);
 
   /** 상태 문구 — v2 `statusText` (`index.html:16121-16125, 16464-16471`).
    *  ★돌 때는 진행 숫자, 끝나면 성패를 말한다. 「준비」는 줄 자체가 사라지는 것으로 대신한다. */
@@ -133,7 +155,7 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
 
   const genBtn = (
     <button
-      data-generate={isSet ? "all" : "one"}
+      data-generate="all"
       data-gen-blocked={blocked ? "" : undefined}
       onClick={fire}
       disabled={off}
@@ -287,10 +309,10 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
         </div>
       )}
 
-      {/* ★몇 장 — 멀티는 슬롯당, 싱글은 그냥 장 수. 한 번에 여러 장을 뽑아 고르는 것이 본래 쓰임이다 */}
+      {/* ★몇 장 — **씬 하나당**이다. 한 번에 여러 장을 뽑아 고르는 것이 본래 쓰임이다 */}
       <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
           <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)", flexShrink: 0 }}>
-            {isSet ? t("gen.perSlot") : t("gen.count")}
+            {t("gen.perSlot")}
           </span>
           {/* ★상한이 없다 (사용자 결정 2026-08-18 — v2 도 `min="1"` 뿐이었다).
               `step={1}` 과 `setPerSlot` 의 반올림이 음수·0·소수를 막는다 */}
@@ -311,11 +333,9 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
               fontFamily: "var(--font-mono)",
             }}
           />
-          {isSet && (
-            <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-ghost)" }}>
-              {t("gen.slotsTimes", { s: slots, p: perSlot, t: count })}
-            </span>
-          )}
+          <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-ghost)" }}>
+            {t("gen.slotsTimes", { s: slots, p: perSlot, t: count })}
+          </span>
       </div>
 
       {/* 시드 — 매번 만지는 값이라 생성 버튼 바로 위에 고정 */}
@@ -420,6 +440,9 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
           display: "flex",
           alignItems: "center",
           gap: "var(--sp-2)",
+          // ★칸이 좁으면 접는다. 실제 청구 값이 한 자리 더 붙어 잔액이 밀려나지 않게
+          flexWrap: "wrap",
+          rowGap: 2,
           fontSize: "var(--text-2xs)",
           color: "var(--ink-faint)",
         }}
@@ -428,12 +451,29 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
             총액은 버튼에 있으므로 여기서는 분해만 보인다 (같은 값을 두 번 두지 않는다) */}
         {!cost.free && count > 1 && (
           <span data-cost-break style={{ fontVariantNumeric: "tabular-nums" }}>
-            {isSet
-              ? t("gen.costPerSlots", { p: cost.perImage, s: slots, r: perSlot })
-              : t("gen.costPer", { p: cost.perImage, n: count })}
+            {t("gen.costPerSlots", { p: cost.perImage, s: slots, r: perSlot })}
           </span>
         )}
         {cost.encoding > 0 && <span>{t("gen.vibeEncode", { a: cost.encoding })}</span>}
+        {/* ★**실제로 나간 값** — 방금 끝난 배치의 잔액 차이다 (`store/anlasMeter`).
+            같으면 조용히 숫자만, 다르면 눈에 띄게 둘 다 보여 준다. 그 어긋남이 곧
+            우리가 찾던 정보라서다 (감사 D12·D13, `docs/nai-web-reference.md` 9절).
+            ★잴 수 없었던 배치는 여기 아무것도 안 뜬다 (스토어가 `null` 로 둔다). */}
+        {measured && (
+          <span
+            data-anlas-actual={measured.match ? "match" : "diff"}
+            title={t("gen.actualHint")}
+            style={{
+              fontVariantNumeric: "tabular-nums",
+              color: measured.match ? "var(--ink-faint)" : "var(--warn)",
+              fontWeight: measured.match ? 400 : "var(--w-semi)",
+            }}
+          >
+            {measured.match
+              ? t("gen.actualSame", { a: measured.actual })
+              : t("gen.actualDiff", { e: measured.est, a: measured.actual })}
+          </span>
+        )}
         <span style={{ flex: 1 }} />
         <span data-anlas-balance title={sub ? `tier ${sub.tier}` : undefined}>
           Anlas{" "}

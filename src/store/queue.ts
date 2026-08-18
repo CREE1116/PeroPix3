@@ -7,6 +7,7 @@ import { notifyByTitle } from "../lib/titleNotify";
 import { useCards } from "./cards";
 import { useFiles } from "./files";
 import { useSub } from "./sub";
+import { useAnlasMeter } from "./anlasMeter";
 import type { Block } from "../lib/blocks";
 import { allCells, useWs } from "./workspace";
 import { useUi } from "./ui";
@@ -181,6 +182,8 @@ export const useQueue = create<S>((set, get) => ({
       // 보내지 못했으면 잡아 둔 자리를 도로 뺀다
       const ids = new Set(add.map((x) => x.id));
       set({ pending: get().pending.filter((x) => !ids.has(x.id)) });
+      // ★재려고 적어 둔 기준선도 버린다. 안 버리면 **다음 배치**가 이 기준선으로 재진다
+      useAnlasMeter.getState().disarm();
       throw e;
     }
   },
@@ -226,13 +229,17 @@ async function runAction(action: string, args: Record<string, any>): Promise<Rec
       }
       const tab = ws.activeTab();
       if (!tab) return { error: "열려 있는 탭이 없습니다." };
-      if (tab.kind === "set") {
-        for (let i = 0; i < count; i++) await useGen.getState().generateAll();
-        const live = allCells(tab).filter((c) => !c.locked).length;
-        return { ok: true, tab: tab.name, queued: live * count };
-      }
-      await useGen.getState().queueSingle(count);
-      return { ok: true, tab: tab.name, queued: count };
+      // ★★**`count` 는 「몇 바퀴」다** (싱글 폐기 2026-08-11 이후로는 그것 하나뿐이다).
+      //   예전에는 싱글 탭이면 `queueSingle(count)` 로 **count 장**이었는데, 탭이 전부
+      //   씬 탭이 되면서 그 갈래가 도달 불가가 됐다. 한 바퀴 = 잠기지 않은 씬 전부이고,
+      //   씬 하나짜리 탭(새 워크스페이스의 기본)에서는 옛 싱글과 결과가 같다.
+      //   ★한 바퀴가 만드는 장 수는 여기가 아니라 화면의 `슬롯당`(`useUi.perSlot`)이 정한다 —
+      //     `generateAll` 이 그 값으로 `rounds` 를 편다. 그래서 아래 `queued` 도 그것을 곱한다.
+      if (tab.kind !== "set")
+        return { error: `'${tab.name}' 탭은 씬 탭이 아니라 생성에 쓸 수 없습니다.` };
+      for (let i = 0; i < count; i++) await useGen.getState().generateAll();
+      const live = allCells(tab).filter((c) => !c.locked).length;
+      return { ok: true, tab: tab.name, queued: live * count * useUi.getState().perSlot };
     }
     // ★물음은 **답이 올 때까지** 안 끝난다 — 도구가 기다리고 있다
     if (action === "ask_user") {
@@ -418,6 +425,12 @@ function settleBatch(cancelled: boolean, set: Setter, get: () => S) {
   batchOk = 0;
   batchErr = 0;
   set({ phase });
+
+  // ★**실제로 청구된 Anlas 를 잰다** (`store/anlasMeter`). 잰다는 것은 잔액 차이다.
+  //   ★온전히 끝난 배치에서만 잰다. 취소·실패·일부 실패는 몇 장이 실제로 나갔는지
+  //     알 수 없어 숫자가 틀리게 나온다. 그때는 아무 말도 하지 않는다.
+  if (phase === "done") void useAnlasMeter.getState().settle();
+  else useAnlasMeter.getState().disarm();
 
   if (!cancelled) announceDone(done);
 
