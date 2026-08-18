@@ -4,7 +4,6 @@
 
     outputs/<ws>/thumbs/t_*.png    섹션 배너용 사본
     data/cards/thumbs/<cid>.png    카드 앞면용 사본
-    data/cards/covers/<kind>.png   덱 커버용 사본
 
 새 구조는 `data/thumbs/<tid>.webp` 하나이고, 셋 다 그걸 가리킨다 (thumbs.py 참조).
 
@@ -40,31 +39,6 @@ def _migrate_cards(cards, pins, log: list[str]) -> None:
             keep = {k: v for k, v in t.items() if k in ("banner", "face", "zoom", "px", "py")}
             cards.set_thumb(kind, card["id"], tid, keep)
             log.append(f"카드 {kind}/{card['id']} → {tid}")
-
-
-def _migrate_covers(cards, pins, log: list[str]) -> None:
-    # ★옛 위치(covers/covers.json)와 새 위치(covers.json)를 **합쳐서** 본다.
-    #   "새 파일이 있으면 옛 파일을 안 읽는다"로 짰다가, 다른 종류가 먼저 새 파일을 만들면
-    #   나머지가 통째로 이전되지 않는 것을 테스트가 잡았다. 순서에 기대지 않는다.
-    old: dict = {}
-    old_json = cards.root / "covers" / "covers.json"
-    if old_json.exists():
-        try:
-            old = json.loads(old_json.read_text(encoding="utf-8"))
-        except Exception:
-            old = {}
-
-    merged = {**old, **cards._covers_meta()}
-    for kind, v in merged.items():
-        if not isinstance(v, dict) or v.get("tid"):
-            continue
-        src = cards.root / "covers" / f"{kind}.png"
-        tid = pins.pin(src, f"legacy:cover:{kind}")
-        if not tid:
-            log.append(f"커버 그림 없음: {kind}")
-            continue
-        cards.set_cover(kind, tid, _view(v, "zoom", "px", "py"))
-        log.append(f"커버 {kind} → {tid}")
 
 
 def _walk(node, fn) -> None:
@@ -133,7 +107,6 @@ def run(cards, store, pins) -> list[str]:
     log: list[str] = []
     try:
         _migrate_cards(cards, pins, log)
-        _migrate_covers(cards, pins, log)
         _migrate_specs(store, cards, pins, log)
     except Exception as e:  # 이전이 실패해도 앱은 떠야 한다
         log.append(f"이전 중 오류(무시하고 계속): {e!r}")

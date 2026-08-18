@@ -896,19 +896,7 @@ async def get_pinned_thumb(tid: str):
 # ── 카드 (공용) ───────────────────────────────────────────────────
 @app.get("/api/cards")
 async def list_cards():
-    # 그림 파일이 실제로 있는 커버만 — json 만 남고 파일이 없으면 빈 커버로 그리게 된다
-    covers = {k: v for k, v in cards.covers().items() if pins.path(v["tid"])}
-    return {**cards.list_all(), "covers": covers}
-
-
-@app.post("/api/cards/cover/{kind}")
-async def set_card_cover(kind: str, body: ThumbBody):
-    """덱 커버 — 종류당 하나. 이미 굳힌 tid 를 걸기만 한다."""
-    if kind not in KINDS:
-        raise HTTPException(400, f"알 수 없는 카드 종류: {kind}")
-    if not pins.path(body.tid):
-        raise HTTPException(404, f"고정 썸네일이 없습니다: {body.tid}")
-    return {"covers": cards.set_cover(kind, body.tid, body.view)}
+    return cards.list_all()
 
 
 @app.put("/api/cards/{kind}")

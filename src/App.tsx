@@ -49,8 +49,7 @@ import type { DragImage } from "./cards/dragStore";
  *    덮어쓰는 것이 유일한 길이었다. 지금은 **덱이 오른쪽에 펼쳐져 있어** 카드가 그대로
  *    노출되므로 거기 바로 떨군다 (사용자 원문: *"이제 다 펼쳐져 있어서 바로 드롭해도 될듯.
  *    대신 해당 카드가 받을 수 있게 노출된 상태일 때만"*).
- *  ★종류당 하나였던 **덱 커버**(`useCards.covers`)는 그리던 손패가 사라져 보이는 곳이
- *    없다 — 그 목적지는 걷었다. */
+ *  ★종류당 하나였던 **덱 커버**는 그리던 손패와 함께 통째로 걷었다 (2026-08-19). */
 type ThumbTarget =
   | { type: "section"; section: string; img: DragImage }
   | { type: "card"; kind: CardKind; card: AnyCard; img: DragImage };

@@ -88,10 +88,10 @@ function Section({
       else void saveCardWithThumb(kind, { ...card, id: undefined }, d.thumb ?? null);
     },
   });
-  // ★★**종류별 「덱 커버」 그림 존을 걷었다** (사용자 결정 2026-08-19).
-  //   그것을 그리던 손패(`cards/Hand.tsx`)가 화면에서 빠진 뒤로 `useCards.covers` 를
-  //   아무 데도 안 보여 줘서, 덱에 그림을 떨구면 성공하고도 **눈에는 아무 일도 없었다.**
-  //   이제 그림은 **카드 한 장 한 장**이 받는다 (`PanelCard`).
+  // ★★그림은 **카드 한 장 한 장**이 받는다 (`PanelCard`), 섹션이 아니다.
+  //   예전에는 섹션이 받아 종류당 하나인 「덱 커버」가 됐는데, 그것을 그리던 손패가
+  //   화면에서 빠진 뒤로 보여 주는 곳이 없어 **성공하고도 눈에는 아무 일도 없었다.**
+  //   그 계통은 2026-08-19 에 통째로 걷었다 (사용자 지시: 죽은 것은 그때그때 정리).
   const over = save.over;
   const active = save.active;
 

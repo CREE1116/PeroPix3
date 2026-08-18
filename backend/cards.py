@@ -8,7 +8,6 @@
       styles/<id>.json
       characters/<id>.json
       posesets/<id>.json
-      covers.json          ← 덱(종류)마다 하나뿐인 얼굴
 
 ★그림 바이트는 여기 없다. 카드도 커버도 **공용 고정 썸네일 저장소**(`data/thumbs/<tid>.webp`,
   thumbs.Pins)를 `tid` 로 가리킬 뿐이다. 배너·카드 앞면·덱 커버가 같은 그림을 쓰면
@@ -107,35 +106,3 @@ class Cards:
         card = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {"id": cid}
         card["thumb"] = {"tid": tid, **(view or {})}
         return self.save(kind, card)
-
-    # ── 덱 커버 (핸드에 보이는 그 카드의 그림) ─────────────────
-    # ★카드가 아니라 **덱 자체**의 얼굴이다. 종류당 하나뿐이라 id 없이 kind 로 갈무리한다.
-    def _covers_path(self) -> Path:
-        return self.root / "covers.json"
-
-    def _covers_meta(self) -> dict:
-        p = self._covers_path()
-        if p.exists():
-            try:
-                return json.loads(p.read_text(encoding="utf-8"))
-            except Exception:
-                pass
-        return {}
-
-    def _write_covers(self, meta: dict) -> dict:
-        p = self._covers_path()
-        tmp = p.with_suffix(".tmp")
-        tmp.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(p)
-        return meta
-
-    def set_cover(self, kind: str, tid: str, view: dict | None = None) -> dict:
-        if kind not in KINDS:
-            raise ValueError(f"알 수 없는 카드 종류: {kind}")
-        meta = self._covers_meta()
-        meta[kind] = {"tid": tid, **(view or {"zoom": 1, "px": 50, "py": 35})}
-        return self._write_covers(meta)
-
-    def covers(self) -> dict:
-        """tid 가 있는 것만 — 그림이 실재하는지는 부르는 쪽(Pins)이 판정한다."""
-        return {k: v for k, v in self._covers_meta().items() if v.get("tid")}

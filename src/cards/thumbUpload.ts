@@ -48,23 +48,3 @@ export async function setCardThumb(
     return null;
   }
 }
-
-/** 덱 커버 — 종류당 하나뿐인 덱의 얼굴. 성공하면 스토어의 covers 를 갱신한다 */
-export async function setCover(kind: CardKind, tid: string, view: View): Promise<boolean> {
-  try {
-    const r = await api<{ covers: Record<string, View & { tid: string }> }>(
-      `/api/cards/cover/${kind}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tid, view }),
-      },
-    );
-    const { useCards } = await import("../store/cards");
-    useCards.setState({ covers: r.covers });
-    return true;
-  } catch (e) {
-    console.error("[thumb] 덱 커버를 걸지 못했습니다:", kind, e);
-    return false;
-  }
-}

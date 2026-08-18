@@ -38,7 +38,6 @@ type S = {
   characters: CharCard[];
   posesets: PoseCard[];
   /** 덱 커버 — 종류당 하나. 그림은 tid 로 가리키는 공용 고정 썸네일이다 */
-  covers: Partial<Record<CardKind, View & { tid: string }>>;
   loaded: boolean;
   load: () => Promise<void>;
   save: (kind: CardKind, card: Partial<AnyCard> & { name: string }) => Promise<AnyCard>;
@@ -71,12 +70,11 @@ export const useCards = create<S>((set, get) => ({
   styles: [],
   characters: [],
   posesets: [],
-  covers: {},
   loaded: false,
 
   async load() {
     const r = await api<
-      Record<CardKind, AnyCard[]> & { covers?: Partial<Record<CardKind, View & { tid: string }>> }
+      Record<CardKind, AnyCard[]>
     >("/api/cards");
     set({
       styles: (r.styles ?? []).map(hydrate) as StyleCard[],
@@ -86,7 +84,6 @@ export const useCards = create<S>((set, get) => ({
         const p = hydrate(c) as PoseCard;
         return { ...p, cells: (p.cells ?? []).map((x) => ({ name: x.name, blocks: slotBlocks(x) })) };
       }) as PoseCard[],
-      covers: r.covers ?? {},
       loaded: true,
     });
   },
