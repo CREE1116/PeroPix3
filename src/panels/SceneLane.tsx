@@ -13,7 +13,7 @@ import { cardBlocks } from "../lib/blocks";
 import { useDragSource } from "../cards/dragStore";
 import { useReorder } from "../lib/useReorder";
 import { useSceneFocus } from "../store/sceneFocus";
-import { BANNER_BG, BANNER_CUT, BANNER_IMG_W, BANNER_STEP, bannerEmptyFill } from "../cards/banner";
+import { BANNER_BG, bannerEmptyFill } from "../cards/banner";
 
 /** 씬 칸 — **그릇**이고, 그 위에 **씬 세트 카드**를 얹는다 (사용자 결정 2026-08-11).
  *
@@ -562,6 +562,13 @@ type GroupProps = {
   onReorder: (from: number, to: number) => void;
 };
 
+/** 씬 세트 머리의 높이 — ★절반으로 줄였다 (사용자 지적 2026-08-16: 56 은 너무 두꺼웠다) */
+const HEAD_H = 28;
+/** 머리에서 그림이 보이는 폭 — 줄 머리(이름·단추)가 얹히는 자리와 같다 */
+const HEAD_W = 302;
+/** ★자르지 않고 **끝만 부드럽게 뺀다** — 잘라 두면 줄 가운데서 뚝 끊긴 것처럼 보인다 */
+const HEAD_FADE = "linear-gradient(90deg, #000 0 72%, transparent 100%)";
+
 /** 씬 세트 카드 하나 — ★스타일·캐릭터 카드와 **같은 생김새**다 (둥근 모서리 + 그라데이션 배너).
  *  ★`overflow: hidden` 을 주지 않는다 — 주면 스크롤 컨테이너가 새로 생겨서 줄 머리의
  *    `position: sticky; left: 0` 이 씬 칸이 아니라 **이 카드**에 붙는다. */
@@ -593,7 +600,8 @@ function CardGroup(p: GroupProps) {
         style={{
           cursor: "grab",
           minWidth: "100%",
-          height: 56,
+          // ★높이를 절반으로 (사용자 지적 2026-08-16: 56 은 너무 두꺼웠다)
+          height: HEAD_H,
           background: BANNER_BG,
           borderRadius: "11px 11px 0 0",
           borderBottom: "1px solid var(--line)",
@@ -603,37 +611,41 @@ function CardGroup(p: GroupProps) {
           style={{
             position: "sticky",
             left: 0,
-            width: 302,
-            height: 56,
+            // ★줄 머리 폭에 맞춘다 — 이름·단추가 여기 얹힌다
+            width: HEAD_W,
+            height: HEAD_H,
             overflow: "hidden",
             borderRadius: "11px 0 0 0",
           }}
         >
+          {/* ★★그림은 **끝까지 이어진다** (사용자 지적 2026-08-16).
+              덱 카드는 좁아서 240px 에서 비스듬히 잘리는 것이 곧 모양이지만, 이 머리는
+              줄 전체 폭이라 그 자리에서 잘리면 **가운데서 뚝 끊긴 것처럼** 보였다.
+              그래서 여기서는 자르지 않고(`BANNER_CUT` 미사용) 오른쪽 끝을 부드럽게 뺀다. */}
           <div
             style={{
               position: "absolute",
               inset: 0,
-              width: BANNER_IMG_W,
               pointerEvents: "none",
-              maskImage: BANNER_CUT,
-              WebkitMaskImage: BANNER_CUT,
+              maskImage: HEAD_FADE,
+              WebkitMaskImage: HEAD_FADE,
               background: bannerEmptyFill(grad),
             }}
           />
-          <div style={{ position: "absolute", inset: 0, background: BANNER_STEP, pointerEvents: "none" }} />
           <div
             style={{
               position: "absolute",
               inset: 0,
               pointerEvents: "none",
-              background: "linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(0,0,0,0.58) 100%)",
+              background: "linear-gradient(180deg, rgba(0,0,0,0) 20%, rgba(0,0,0,0.5) 100%)",
             }}
           />
           <div
             style={{
               position: "absolute",
               left: 11,
-              bottom: 6,
+              top: "50%",
+              transform: "translateY(-50%)",
               display: "flex",
               alignItems: "baseline",
               gap: "var(--sp-3)",
@@ -641,7 +653,7 @@ function CardGroup(p: GroupProps) {
               textShadow: "0 1px 5px rgba(0,0,0,0.55)",
             }}
           >
-            <b style={{ fontSize: "0.86rem", fontWeight: "var(--w-bold)" }}>{p.card.name}</b>
+            <b style={{ fontSize: "0.8rem", fontWeight: "var(--w-bold)" }}>{p.card.name}</b>
             <span style={{ fontSize: 10, letterSpacing: "0.08em", opacity: 0.85 }}>
               {t("scenes.cardLabel", { n: p.card.cells.length })}
             </span>

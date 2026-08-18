@@ -62,6 +62,16 @@ export const Icon = {
   bookmark: s(<path d="M6 4h12v16l-6-4.5L6 20z" />, 13),
   /** 생성 — 예전엔 ✦ 글자를 썼다 */
   spark12: s(<path d="M12 3l2.1 5.6L20 11l-5.9 2.4L12 19l-2.1-5.6L4 11l5.9-2.4z" />, 11),
+  /** 주사위 — 시드를 그 자리에서 새로 뽑는다 */
+  dice: s(
+    <>
+      <rect x="4" y="4" width="16" height="16" rx="3" />
+      <circle cx="9" cy="9" r="1.3" fill="currentColor" />
+      <circle cx="15" cy="15" r="1.3" fill="currentColor" />
+      <circle cx="15" cy="9" r="1.3" fill="currentColor" />
+      <circle cx="9" cy="15" r="1.3" fill="currentColor" />
+    </>,
+  ),
   spark: s(
     <>
       <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" />

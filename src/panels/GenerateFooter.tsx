@@ -3,7 +3,7 @@ import { useI18n } from "../i18n";
 /** ★키를 조립하지 않는다 — i18n 검사가 동적 접두사를 잡는다 (`i18n.test.ts`) */
 const SEED_LABELS = ["options.seedFixed", "options.seedRound", "options.seedScene"] as const;
 const SEED_HINTS = ["options.seedFixedHint", "options.seedRoundHint", "options.seedSceneHint"] as const;
-import { SEED_MODES, useGen } from "../store/gen";
+import { SEED_MODES, randomSeed, useGen } from "../store/gen";
 import { useQueue } from "../store/queue";
 import { allCells, useWs } from "../store/workspace";
 import { useImageInput } from "../store/imageInput";
@@ -207,7 +207,10 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
             const v = parseInt(e.target.value, 10);
             set("seed", Number.isFinite(v) ? v : 0);
           }}
-          disabled={params.seed_mode !== "fixed"}
+          // ★★**랜덤이어도 고칠 수 있다** (사용자 지적 2026-08-16). 랜덤은 아무 숫자를
+          //   넣는 게 아니라 **여기 적힌 값으로 뽑고 나서** 이 칸을 굴리는 것이라,
+          //   잠그면 "이 시드로 한 장 더" 를 아예 못 한다 (`lib/seedRounds` 머리 주석).
+          title={t("options.seedHint")}
           style={{
             flex: 1,
             minWidth: 0,
@@ -217,9 +220,17 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
             padding: "3px var(--sp-3)",
             fontSize: "var(--text-2xs)",
             fontFamily: "var(--font-mono)",
-            opacity: params.seed_mode === "fixed" ? 1 : 0.5,
           }}
         />
+        {/* 주사위 — 지금 자리에서 바로 새 시드를 뽑아 본다 */}
+        <button
+          data-seed-roll
+          onClick={() => set("seed", randomSeed())}
+          title={t("options.seedRoll")}
+          style={{ flexShrink: 0, color: "var(--ink-faint)", display: "grid", padding: "0 2px" }}
+        >
+          {Icon.dice}
+        </button>
         {/* ★배타적 3택이다 — 체크박스 둘이면 「고정 + 씬마다 랜덤」 같은 뜻 없는 상태가
             생긴다 (사용자 지적 2026-08-11). v2 의 `랜덤/고정/슬롯마다 랜덤` 이관. */}
         <div

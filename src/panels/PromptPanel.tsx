@@ -3,6 +3,7 @@ import { useState } from "react";
 import { compileBlocks } from "../lib/blocks";
 import { usePrompt } from "../store/prompt";
 import { StyleSection, CharSection, JoinZone, type SectionProps } from "./PromptSections";
+import { BlockLibButton } from "../blocks/BlockDrawer";
 
 /** 좌측 패널 — 카드형 섹션 안에 블록 시퀀스.
  *  스타일 섹션(= NAI 의 공통 prompt/uc) 하나 + 캐릭터 섹션 여럿(= characterPrompts[]). */
@@ -20,7 +21,7 @@ export function PromptPanel({ onThumb }: SectionProps) {
             (사용자 지시 2026-08-11). 그래서 베이스만 쓰는 사람은 카드를 안 꽂고 그 칸에 바로
             적으면 되고, 스타일을 저장해 두는 사람은 「스타일 카드」로 알아본다.
             ★그릇은 **평면**(이름표만)이고 그 안에 얹히는 **카드가 둥글다** — 씬 칸과 같은 규칙. */}
-        <Container label={t("prompt.baseBox")}>
+        <Container label={t("prompt.baseBox")} right={<BlockLibButton />}>
           <StyleSection onThumb={onThumb} />
         </Container>
 
@@ -93,18 +94,34 @@ export function PromptPanel({ onThumb }: SectionProps) {
 }
 
 /** 그릇 — 이름표 한 줄 + 그 안의 카드들. ★상자를 그리지 않는다 (평면) */
-function Container({ label, children }: { label: string; children: React.ReactNode }) {
+/** 그릇 하나 — 이름표 한 줄과 그 아래 카드들.
+ *  ★이름표 줄 오른쪽은 **그 그릇에 딸린 창구** 자리다 (블록 저장소 등). 패널 머리에 두면
+ *    무엇에 딸린 단추인지 안 보인다 (사용자 지시 2026-08-16). */
+function Container({
+  label,
+  right,
+  children,
+}: {
+  label: string;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <div style={{ marginBottom: "var(--sp-6)" }}>
       <div
         style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--sp-2)",
           padding: "0 var(--sp-1) var(--sp-2)",
           fontSize: "var(--text-2xs)",
           fontWeight: "var(--w-semi)",
           color: "var(--ink-dim)",
         }}
       >
-        {label}
+        <span>{label}</span>
+        <span style={{ flex: 1 }} />
+        {right}
       </div>
       {children}
     </div>

@@ -91,7 +91,7 @@ export function StyleSection({ onThumb }: SectionProps) {
           kind: "styles",
           card: { id: style.ref ?? "", name: style.name, color: style.color, base, uc: baseUc },
           thumb: style.thumb,
-        })
+        }, undefined, () => toggleFold("base"))
       }
     >
       <SectionBody
@@ -165,7 +165,7 @@ export function CharSection({ ch, index, onThumb }: { ch: Char; index: number } 
             kind: "characters",
             card: { id: ch.ref ?? "", name, color: ch.color, prompt: ch.prompt, uc: ch.uc },
             thumb: ch.thumb,
-          })
+          }, undefined, () => toggleFold(ch.id))
         }
         bannerActions={
           <>

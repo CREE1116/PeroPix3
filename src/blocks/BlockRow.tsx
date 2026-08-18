@@ -121,8 +121,15 @@ export function BlockRow({
         // ★머리는 **두 가지**를 한다: 그냥 누르면 접기/펼치기, 끌면 저장소로 넣기.
         //   문턱(4px)을 넘어야 끌기가 되고, 안 넘기면 `onTap` 이 접기를 한다 —
         //   카드 배너의 역드래그 저장과 같은 규칙이다 (`useDragSource`).
-        onPointerDown={onSave}
-        onClick={() => {
+        // ★★머리 위의 **누르는 것들**(색·이름·토글·삭제)은 끌기에서 비켜 간다.
+        //   안 비키면 `pointerdown` 의 기본 동작 막기가 **호환 click 을 삼켜** 그 단추들이
+        //   통째로 죽는다 — 저장소를 열었을 때만 죽어서 원인이 안 보였다 (실측 2026-08-16).
+        onPointerDown={(e) => {
+          if ((e.target as HTMLElement).closest("button, [data-head-action]")) return;
+          onSave?.(e);
+        }}
+        onClick={(e) => {
+          if ((e.target as HTMLElement).closest("button, [data-head-action]")) return;
           // 끌기 제스처가 잡았으면 클릭은 오지 않는다 (pointerdown 에서 기본 동작을 막는다)
           if (!onSave) onChange({ ...block, open: !block.open });
         }}
@@ -166,6 +173,8 @@ export function BlockRow({
           />
         ) : (
           <span
+            data-head-action
+            data-block-color
             onClick={(e) => {
               e.stopPropagation();
               const i = COLORS.indexOf(block.color);

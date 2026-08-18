@@ -10,9 +10,9 @@ import { sizeForBase } from "../lib/baseSize";
 import { toast } from "./toast";
 import { t } from "../i18n";
 
-/** 시드를 언제 새로 뽑나 (아래 `GenParams.seed_mode` 주석) */
-export type SeedMode = "fixed" | "round" | "scene";
-export const SEED_MODES: SeedMode[] = ["fixed", "round", "scene"];
+// 시드 규칙은 `lib/seedRounds.ts` 하나뿐이다 (거기 머리 주석)
+import { randomSeed, rounds, type SeedMode } from "../lib/seedRounds";
+export { randomSeed, rounds, SEED_MODES, type SeedMode } from "../lib/seedRounds";
 
 export type GenParams = {
   model: string;
@@ -68,10 +68,6 @@ export const SIZE_PRESETS: { group: string; items: [number, number, boolean][] }
 /** ★NAI 가 받는 범위. 넘기면 400 이 온다 (v2 enforceNaiLimits, index.html:14476) */
 export const NAI_MAX = { steps: 50, cfg: 10 };
 
-/** ★랜덤이어도 **구체적인 숫자**를 박는다 (페로픽스파이 `randomSeed`).
- *  `-1`(서버가 알아서 뽑기)로 보내면 화면에 재현할 값이 안 남는다 — 마음에 든 장의 시드를
- *  다시 쓰려면 그 숫자가 보여야 한다. NAI 시드 범위 안에서 뽑는다. */
-export const randomSeed = () => Math.floor(Math.random() * 4294967295);
 
 /** ★NAI 는 64 배수 해상도만 받는다. 식은 `lib/align.ts` 하나뿐이다 —
  *  화면과 서버가 다른 식을 쓰면 표시 해상도·Anlas 가 실제 청구와 어긋난다. */
@@ -145,29 +141,6 @@ type S = {
   queueInpaint: (count: number) => Promise<void>;
 };
 
-/** 바퀴 × 씬을 펴면서 **시드를 확정**한다 — 큐에 넣기 전 마지막 판정이다.
- *
- *  ★`round` 는 **한 바퀴에 하나**를 뽑아 그 바퀴의 씬들이 나눠 쓴다. 그래야 그 바퀴가
- *    같은 조건이 되어 씬끼리 견줄 수 있다 (사용자 결정 2026-08-11).
- *    ★예전 규칙("씬마다 따로 뽑는다 — 같은 시드면 씬이 서로 닮는다")을 뒤집은 것이다.
- *      닮는 것이 문제면 `scene` 을 고르면 된다 — 이제 고를 수 있다.
- *  ★순서는 **바퀴가 바깥**이다. `server.py` 의 큐 루프·화면의 대기 칸과 같아야 한다. */
-export function rounds<S, R>(
-  count: number,
-  params: { seed_mode: SeedMode; seed: number },
-  scenes: S[],
-  make: (scene: S, seed: number) => R,
-): R[] {
-  const out: R[] = [];
-  for (let r = 0; r < Math.max(1, count); r++) {
-    const roundSeed = params.seed_mode === "fixed" ? params.seed : randomSeed();
-    for (const sc of scenes) {
-      out.push(make(sc, params.seed_mode === "scene" ? randomSeed() : roundSeed));
-    }
-  }
-  return out;
-}
-
 export const useGen = create<S>((set, get) => ({
   params: DEFAULT_PARAMS,
   set: (k, v) => set({ params: { ...get().params, [k]: v } }),
@@ -196,8 +169,9 @@ export const useGen = create<S>((set, get) => ({
         : null;
 
     set({ busy: true, error: "" });
-    // 이번 장에 쓸 시드를 **여기서 확정**한다
-    const shot = get().params.seed_mode === "fixed" ? get().params.seed : randomSeed();
+    // ★이번 장에 쓸 시드 — **적힌 값 그대로**다 (`lib/seedRounds` 머리 주석).
+    //   랜덤이어도 아무 숫자가 아니라 이 값으로 뽑고, 끝난 뒤에 칸을 굴린다.
+    const shot = get().params.seed;
     try {
       const { prompt, uc, chars } = usePrompt.getState().compiled();
       const r = await api<{ file: string; seed: number }>("/api/generate", {
@@ -253,13 +227,14 @@ export const useGen = create<S>((set, get) => ({
     const tab = ws.activeTab();
     if (!tab || tab.kind === "set") return;
     const { prompt, uc, chars } = usePrompt.getState().compiled();
-    // ★랜덤이면 **-1 로 보낸다** — 큐 한 항목이 여러 장을 만들 수 있어, 장마다 다른 시드가
-    //   나오려면 서버가 뽑아야 한다 (generateAll 의 슬롯 시드와 같은 이유).
+    // ★★시드는 **여기서 장마다 확정**한다 — 예전에는 랜덤이면 `-1` 로 보내 서버가 뽑게
+    //   했는데, 그러면 **적힌 시드가 통째로 무시된다** (사용자 지적 2026-08-16).
+    //   첫 장은 적힌 값, 그 뒤로만 새로 뽑는다 (`lib/seedRounds` 머리 주석).
+    const shots = rounds(Math.max(1, count), get().params, [null], (_, seed) => ({ seed }));
     await useQueue.getState().enqueue(
       {
         ...get().params,
         ...useImageInput.getState().payload(),
-        seed: get().params.seed_mode === "fixed" ? get().params.seed : -1,
         prompt,
         negative_prompt: uc,
         characters: chars,
@@ -267,9 +242,10 @@ export const useGen = create<S>((set, get) => ({
         tab: tab.name,
         tab_id: tab.id,
       },
-      undefined,
-      Math.max(1, count),
+      shots,
+      1,
     );
+    if (get().params.seed_mode !== "fixed") get().set("seed", randomSeed());
   },
 
   /** 인페인트 한 장. **탭 종류를 안 가린다**.
@@ -295,7 +271,6 @@ export const useGen = create<S>((set, get) => ({
     const body = {
       ...get().params,
       ...useImageInput.getState().payload(),
-      seed: get().params.seed_mode === "fixed" ? get().params.seed : -1,
       prompt,
       negative_prompt: uc,
       characters: chars,
@@ -308,7 +283,9 @@ export const useGen = create<S>((set, get) => ({
     // ★보냈으면 편집에서 나온다 (사용자 결정 2026-08-13). 여기 머물면 결과를 못 본다.
     //   마스크·사각형·프롬프트 사본은 남아, 다시 들어가면 그대로 이어진다
     useImageInput.getState().endEdit();
-    await useQueue.getState().enqueue(body, undefined, Math.max(1, count));
+    // ★시드는 장마다 여기서 확정한다 (`queueSingle` 과 같은 규칙)
+    const shots = rounds(Math.max(1, count), get().params, [null], (_, seed) => ({ seed }));
+    await useQueue.getState().enqueue(body, shots, 1);
     if (get().params.seed_mode !== "fixed") get().set("seed", randomSeed());
   },
 

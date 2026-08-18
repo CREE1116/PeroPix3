@@ -83,12 +83,15 @@ export function SectionCard({
       {/* 배너 */}
       <div
         onPointerDown={onBannerPointerDown}
+        // ★역드래그가 없는 카드는 평범한 클릭으로 접는다 (있으면 `onTap` 이 받는다)
+        onClick={onBannerPointerDown ? undefined : onFold}
         onMouseEnter={() => hoverLift && setHover(true)}
         onMouseLeave={() => setHover(false)}
+        title={onFold ? t(folded ? "prompt.unfold" : "prompt.fold") : undefined}
         style={{
           position: "relative",
           height: 56,
-          cursor: onBannerPointerDown ? "grab" : "default",
+          cursor: onBannerPointerDown ? "grab" : onFold ? "pointer" : "default",
           // ★살짝 떠오르게 해서 "끌 수 있다"를 알린다. 크게 움직이면 목록이 출렁인다
           transform: hover ? "translateY(-2px)" : undefined,
           boxShadow: hover ? "0 4px 12px rgba(0,0,0,0.28)" : undefined,
@@ -159,7 +162,7 @@ export function SectionCard({
             {sub}
           </span>
         </div>
-        {(bannerActions || onFold) && (
+        {bannerActions && (
           <div
             style={{
               position: "absolute",
@@ -171,27 +174,27 @@ export function SectionCard({
             }}
           >
             {bannerActions}
-            {/* ★접기는 **맨 오른쪽**에 둔다 — 카드마다 자리가 같아야 연달아 접을 수 있다 */}
-            {onFold && (
-              <button
-                data-fold
-                title={t(folded ? "prompt.unfold" : "prompt.fold")}
-                onPointerDown={(e) => e.stopPropagation()} // 배너의 역드래그가 걸리지 않게
-                onClick={onFold}
-                style={{
-                  width: 20,
-                  height: 20,
-                  borderRadius: 5,
-                  background: "rgba(0,0,0,0.42)",
-                  color: "#fff",
-                  display: "grid",
-                  placeItems: "center",
-                }}
-              >
-                {folded ? Icon.chevronDown : Icon.chevronUp}
-              </button>
-            )}
           </div>
+        )}
+        {/* ★★접기 단추를 따로 두지 않는다 (사용자 지시 2026-08-16) — **머리를 누르면 접힌다.**
+            지금 상태만 화살표로 알린다 (누르는 것은 머리 전체라 `pointer-events` 를 끈다).
+            ★클릭과 끌기는 `useDragSource` 가 가른다: 4px 문턱을 안 넘고 떼면 `onTap`,
+              넘으면 덱으로 저장하는 역드래그다 (그쪽 주석). */}
+        {onFold && (
+          <span
+            data-fold={folded ? "folded" : "open"}
+            style={{
+              position: "absolute",
+              right: bannerActions ? 34 : 10,
+              bottom: 8,
+              zIndex: 2,
+              pointerEvents: "none",
+              color: "rgba(255,255,255,0.66)",
+              display: "grid",
+            }}
+          >
+            {folded ? Icon.chevronDown : Icon.chevronUp}
+          </span>
         )}
       </div>
 

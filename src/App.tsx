@@ -32,7 +32,7 @@ import { DragLayer } from "./cards/DragLayer";
 import { SaveDialog, type SaveAsk } from "./cards/SaveDialog";
 import { useSub } from "./store/sub";
 import { useImageInput } from "./store/imageInput";
-import { BlockDrawer, BlockLibButton } from "./blocks/BlockDrawer";
+import { BlockDrawer } from "./blocks/BlockDrawer";
 import { ThumbDialog } from "./cards/ThumbDialog";
 import { saveCardWithThumb } from "./cards/saveCard";
 import { pinImage, setCover } from "./cards/thumbUpload";
@@ -194,7 +194,6 @@ export function App() {
           )
         }
         /* ★블록 저장소는 **프롬프트를 볼 때만** 뜻이 있다 — 갤러리에는 놓을 목록이 없다 */
-        leftHeaderRight={mode === "generate" ? <BlockLibButton /> : undefined}
         leftDrawer={mode === "generate" ? <BlockDrawer /> : undefined}
         /* 위 두 줄(싱글·멀티 · 캐릭터)만 세 기둥 위에. 포즈세트는 캔버스 위로 내려갔다 */
         /* ★워크스페이스 탭이 **위**, 싱글/멀티가 아래다. 검열·보조도구는 워크스페이스를
