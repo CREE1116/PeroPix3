@@ -253,6 +253,8 @@ export const en = {
   },
 
   options: {
+    autoSave: "Auto save",
+    autoSaveHint: "Off: nothing is written to disk, preview only. It will not appear in scenes or the gallery.",
     excludeSlotNo: "Drop the scene number from filenames",
     catNai: "NAI settings",
     catGeneration: "Generation",
@@ -292,6 +294,7 @@ export const en = {
   },
 
   canvas: {
+    previewOnly: "Preview only (not saved)",
     copyTo: "Copy to ▾",
     copyToHint: "Copy to another single tab (original stays)",
     copied: "Copied {n} to tab {name}",
@@ -323,6 +326,9 @@ export const en = {
   },
 
   settings: {
+    notifySound: "Also play a sound",
+    notifyVolume: "Volume",
+    notifyTest: "Play a test",
     title: "Settings",
     tabGeneral: "General",
     token: "NAI token",

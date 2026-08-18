@@ -253,6 +253,8 @@ export const ko: Dict = {
   },
 
   options: {
+    autoSave: "자동 저장",
+    autoSaveHint: "끄면 파일로 안 남고 미리보기만 뜹니다. 씬 칸·갤러리에도 안 뜹니다.",
     excludeSlotNo: "파일 이름에서 씬 번호 빼기",
     catNai: "NAI 설정",
     catGeneration: "생성",
@@ -292,6 +294,7 @@ export const ko: Dict = {
   },
 
   canvas: {
+    previewOnly: "미리보기 (저장 안 함)",
     copyTo: "복제 ▾",
     copyToHint: "다른 싱글 탭으로 복사 (원본은 그대로)",
     copied: "{n}장을 {name} 탭으로 복사했습니다",
@@ -323,6 +326,9 @@ export const ko: Dict = {
   },
 
   settings: {
+    notifySound: "소리로도 알림",
+    notifyVolume: "크기",
+    notifyTest: "들어 보기",
     title: "설정",
     tabGeneral: "일반",
     token: "NAI 토큰",

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { api, backendUrl } from "../lib/backend";
 import { cliEvent } from "./llm";
 import { cliCursor, takeCliSeq } from "../lib/cliCursor";
+import { playDoneSound } from "../lib/notifySound";
 import { useCards } from "./cards";
 import { useFiles } from "./files";
 import type { Block } from "../lib/blocks";
@@ -291,6 +292,8 @@ function applyStatus(status: Record<string, any> | undefined, set: Setter, get: 
   const total = status.total_images ?? 0;
   if (idle && wasBusy && total > 0 && done >= total) {
     if (useUi.getState().notifyDone) toast(t("queue.allDone", { n: done }));
+    // ★화면을 안 보고 있을 때를 위해 소리로도 알린다 (v2 `notifySoundOnComplete`)
+    if (useUi.getState().notifySound) void playDoneSound();
   }
   wasBusy = !idle;
   set({

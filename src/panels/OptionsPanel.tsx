@@ -152,6 +152,13 @@ export function OptionsPanel() {
                   onChange={(v) => set("strip_metadata", v)}
                 />
                 {p.strip_metadata && <Hint>{t("options.stripHint")}</Hint>}
+        {/* ★v2 `autoSaveToggle` — 끄면 파일도 기록도 안 남기고 미리보기만 (대조 2026-08-16) */}
+        <Check
+          label={t("options.autoSave")}
+          checked={p.auto_save}
+          onChange={(v) => set("auto_save", v)}
+        />
+        {!p.auto_save && <Hint>{t("options.autoSaveHint")}</Hint>}
         {/* ★v2 `excludeSlotNumber` — 옮기다 빠져 있었다 (대조 2026-08-16).
             번호는 탐색기에서 씬 순서를 만드는 것이라, 순서가 필요 없을 때만 끈다. */}
         <Check

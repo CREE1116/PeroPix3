@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useI18n, LOCALES } from "../i18n";
 import { api } from "../lib/backend";
 import { useTheme } from "../store/theme";
+import { playDoneSound } from "../lib/notifySound";
 import { useUi, FONTS } from "../store/ui";
 import { toast } from "../store/toast";
 import { Icon } from "../components/Icon";
@@ -36,6 +37,10 @@ export function Settings({
   const font = useUi((s) => s.font);
   const setFont = useUi((s) => s.setFont);
   const notify = useUi((s) => s.notifyDone);
+  const sound = useUi((s) => s.notifySound);
+  const setSound = useUi((s) => s.setNotifySound);
+  const vol = useUi((s) => s.notifyVolume);
+  const setVol = useUi((s) => s.setNotifyVolume);
   const setNotify = useUi((s) => s.setNotifyDone);
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
@@ -203,6 +208,55 @@ export function Settings({
                     {t("settings.notifyDone")}
                   </label>
                   <Hint>{t("settings.notifyHint")}</Hint>
+                  {/* ★소리로도 알린다 (v2 `notifySoundOnComplete` 이식 2026-08-16).
+                      ★생성 옵션이 아니라 **앱 설정**이라 여기 있다 (사용자 지시). */}
+                  <label
+                    style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", cursor: "pointer" }}
+                  >
+                    <input
+                      type="checkbox"
+                      data-notify-sound
+                      checked={sound}
+                      onChange={(e) => setSound(e.target.checked)}
+                    />
+                    {t("settings.notifySound")}
+                  </label>
+                  {sound && (
+                    <label
+                      style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}
+                    >
+                      <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
+                        {t("settings.notifyVolume")}
+                      </span>
+                      <input
+                        type="range"
+                        data-notify-volume
+                        min={1}
+                        max={100}
+                        value={vol}
+                        onChange={(e) => setVol(Number(e.target.value))}
+                        style={{ flex: 1 }}
+                      />
+                      <span
+                        style={{
+                          width: 30,
+                          textAlign: "right",
+                          fontSize: "var(--text-2xs)",
+                          fontVariantNumeric: "tabular-nums",
+                        }}
+                      >
+                        {vol}
+                      </span>
+                      <button
+                        data-notify-test
+                        onClick={() => void playDoneSound()}
+                        title={t("settings.notifyTest")}
+                        style={{ color: "var(--ink-faint)", display: "grid" }}
+                      >
+                        {Icon.spark}
+                      </button>
+                    </label>
+                  )}
                 </Group>
               </>
             )}

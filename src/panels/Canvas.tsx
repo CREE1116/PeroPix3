@@ -23,7 +23,7 @@ import { api } from "../lib/backend";
 /** 캔버스 — 탭 줄 + 본문(싱글 / 세트 그리드 / 셀 라이트박스) + 생성 바.
  *  ★우하단 카드 핸드는 걷었다 (2026-08-16) — 덱이 오른쪽 기둥에 상시로 있다. */
 export function Canvas() {
-  const { current, select, base } = useGen();
+  const { current, select, base, preview } = useGen();
   const { records, current: ws, spec, activeTab, isStarred, isDeleted, toggleStar, toggleDeleted,
     undoSelection, deleteFiles } = useWs();
   /** ★여러 장을 한 번에 — Ctrl 은 하나씩, Shift 는 **범위** (페로픽스파이 `onThumbClick`) */
@@ -224,6 +224,32 @@ export function Canvas() {
                   ...dragSourceStyle,
                 }}
               />
+            ) : preview ? (
+              // ★자동 저장을 껐을 때 — **파일도 기록도 없는 그림**이라 여기 말고 뜰 자리가 없다
+              //   (v2 `auto_save` 이식 2026-08-16). 씬 칸·갤러리에는 안 뜬다.
+              <div style={{ position: "relative", maxWidth: "100%", maxHeight: "100%" }}>
+                <img
+                  data-preview-img
+                  src={preview}
+                  alt=""
+                  draggable={false}
+                  style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
+                />
+                <span
+                  style={{
+                    position: "absolute",
+                    left: 8,
+                    top: 8,
+                    padding: "2px var(--sp-3)",
+                    borderRadius: "var(--r-2)",
+                    background: "rgba(0,0,0,0.6)",
+                    color: "#fff",
+                    fontSize: "var(--text-2xs)",
+                  }}
+                >
+                  {tr("canvas.previewOnly")}
+                </span>
+              </div>
             ) : waiting.length ? (
               // ★기다리는 자리도 **자리를 차지한다** — 빈 화면이면 눌렀는지 알 수 없다
               <div data-single-placeholder style={{ textAlign: "center", color: "var(--ink-faint)" }}>

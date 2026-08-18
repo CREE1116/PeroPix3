@@ -36,6 +36,10 @@ export type GenParams = {
   jpg_quality: number;
   /** ★켜면 알파 LSB 스테가노그래피까지 지운다 (backend/meta.strip) */
   strip_metadata: boolean;
+  /** ★끄면 **파일로 안 남기고 미리보기만** 한다 (v2 `auto_save`).
+   *  마음에 드는 것만 골라 저장하고 싶을 때 쓴다. 끈 동안 만든 것은 **기록에도 안 남는다** —
+   *  그래서 씬 칸·갤러리에는 안 뜨고 캔버스의 미리보기 자리에만 뜬다. */
+  auto_save: boolean;
   /** ★켜면 파일 이름 앞의 **씬 번호를 뺀다** (v2 `exclude_slot_number`).
    *  번호는 탐색기에서 씬 순서를 만드는 것이라, 순서가 필요 없을 때만 끈다. */
   exclude_slot_number: boolean;
@@ -125,6 +129,7 @@ const DEFAULT_PARAMS: GenParams = {
   save_format: "png",
   jpg_quality: 95,
   strip_metadata: false,
+  auto_save: true,
   exclude_slot_number: false,
   seed_mode: "round",
 };
@@ -136,6 +141,9 @@ type S = {
   cell: string | null;
   setCell: (c: string | null) => void;
   current: string | null;
+  /** ★자동 저장을 껐을 때의 **미리보기** (data URL). 파일도 기록도 없는 그림이라
+   *  여기 말고는 있을 자리가 없다 (v2 `auto_save` 이식 2026-08-16). */
+  preview: string | null;
   select: (file: string | null) => void;
   busy: boolean;
   error: string;
@@ -157,6 +165,7 @@ export const useGen = create<S>((set, get) => ({
   cell: null,
   setCell: (c) => set({ cell: c }),
   current: null,
+  preview: null,
   select: (file) => set({ current: file }),
   busy: false,
   error: "",
@@ -184,7 +193,7 @@ export const useGen = create<S>((set, get) => ({
     const shot = get().params.seed;
     try {
       const { prompt, uc, chars } = usePrompt.getState().compiled();
-      const r = await api<{ file: string; seed: number }>("/api/generate", {
+      const r = await api<{ file: string | null; b64?: string; fmt?: string; seed: number }>("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -210,6 +219,12 @@ export const useGen = create<S>((set, get) => ({
           cell_id: slotId,
         }),
       });
+      // ★자동 저장을 껐으면 파일이 없다 — 미리보기로만 띄운다 (기록도 안 남긴다)
+      if (!r.file) {
+        set({ preview: `data:image/${r.fmt ?? "png"};base64,${r.b64}`, current: null });
+        if (get().params.seed_mode !== "fixed") get().set("seed", randomSeed());
+        return;
+      }
       ws.addRecord({
         ts: new Date().toISOString(),
         file: r.file,

@@ -60,6 +60,10 @@ type Persisted = {
   perSlot: number;
   /** ★큐가 다 끝나면 알린다 — 여러 장을 돌려 놓고 다른 일을 하다 놓치는 것을 막는다 */
   notifyDone: boolean;
+  /** ★끝났을 때 **소리로도** 알린다 (v2 `notifySoundOnComplete`). 화면을 안 보고 있을 때 쓴다 */
+  notifySound: boolean;
+  /** 알림음 크기 1~100 (v2 `notifySoundVolume`, 기본 50) */
+  notifyVolume: number;
   font: FontId;
 };
 
@@ -77,6 +81,8 @@ const DEFAULTS: Persisted = {
   curated: false,
   perSlot: 1,
   notifyDone: true,
+  notifySound: false,
+  notifyVolume: 50,
   font: "pretendard",
 };
 
@@ -107,6 +113,8 @@ type S = Persisted & {
   setCurated: (v: boolean) => void;
   setPerSlot: (n: number) => void;
   setNotifyDone: (v: boolean) => void;
+  setNotifySound: (v: boolean) => void;
+  setNotifyVolume: (v: number) => void;
   setFont: (f: FontId) => void;
   toggleLeft: () => void;
   toggleRight: () => void;
@@ -152,6 +160,14 @@ export const useUi = create<S>((set, get) => ({
   setCurated: (v) => set({ curated: v }),
   setNotifyDone: (v) => {
     set({ notifyDone: v });
+    get().commitLayout();
+  },
+  setNotifySound: (v) => {
+    set({ notifySound: v });
+    get().commitLayout();
+  },
+  setNotifyVolume: (v) => {
+    set({ notifyVolume: Math.min(100, Math.max(1, Math.round(v))) });
     get().commitLayout();
   },
   setPerSlot: (n) => {

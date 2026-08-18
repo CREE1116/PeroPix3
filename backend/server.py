@@ -293,6 +293,8 @@ class GenBody(BaseModel):
     save_format: str = "png"          # png | jpg | webp
     jpg_quality: int = 95
     strip_metadata: bool = False
+    #: 끄면 **파일로 안 남기고 미리보기만** 돌려준다 (v2 `auto_save`)
+    auto_save: bool = True
     #: 켜면 파일 이름 앞의 씬 번호를 뺀다 (v2 `exclude_slot_number`)
     exclude_slot_number: bool = False
     # ── 이미지 입력 (5단계) ──
@@ -1019,6 +1021,15 @@ async def _generate_one(body: GenBody) -> dict:
         data = png  # NAI 원본 그대로가 가장 정확하다 (다시 인코딩하지 않는다)
     else:
         data = meta.write(png, meta.read_raw(png), fmt, body.jpg_quality, original_chunks)
+
+    # ★자동 저장을 끄면 **파일도 기록도 안 남긴다** — 미리보기로만 돌려준다 (v2 `auto_save`).
+    #   골라서 저장하고 싶을 때 쓰는 것이라, 여기서 남기면 그 뜻이 사라진다.
+    if not body.auto_save:
+        return {"ok": True, "file": None, "b64": base64.b64encode(data).decode(),
+                "fmt": fmt, "seed": seed, "bytes": len(data),
+                "tab": body.tab, "cell": body.cell,
+                "tab_id": body.tab_id, "cell_id": body.cell_id,
+                "workspace": body.workspace}
 
     # ★씬 번호는 탐색기에서 순서를 만든다 — 뺄지는 사용자가 정한다 (v2 `exclude_slot_number`)
     lead = "" if body.exclude_slot_number else (f"{body.cell_no:03d}" if is_set and body.cell_no else "")

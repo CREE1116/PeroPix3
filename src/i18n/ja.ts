@@ -253,6 +253,8 @@ export const ja: Dict = {
   },
 
   options: {
+    autoSave: "自動保存",
+    autoSaveHint: "オフにするとファイルに残らずプレビューのみです。シーン欄・ギャラリーにも出ません。",
     excludeSlotNo: "ファイル名からシーン番号を外す",
     catNai: "NAI 設定",
     catGeneration: "生成",
@@ -292,6 +294,7 @@ export const ja: Dict = {
   },
 
   canvas: {
+    previewOnly: "プレビューのみ（保存しません）",
     copyTo: "複製 ▾",
     copyToHint: "別のシングルタブへコピー (元は残ります)",
     copied: "{n}枚を {name} タブへコピーしました",
@@ -323,6 +326,9 @@ export const ja: Dict = {
   },
 
   settings: {
+    notifySound: "音でも通知",
+    notifyVolume: "音量",
+    notifyTest: "試聴",
     title: "設定",
     tabGeneral: "一般",
     token: "NAI トークン",
