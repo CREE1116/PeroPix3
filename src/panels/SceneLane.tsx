@@ -6,10 +6,9 @@ import { useQueue } from "../store/queue";
 import { LANE_MAX, LANE_MIN, useUi } from "../store/ui";
 import { useWs, takesOf, type Rec, type SceneCard, type Slot } from "../store/workspace";
 import { thumbUrlOf } from "../lib/imgUrl";
-import { BlockList } from "../blocks/BlockList";
 import { Icon } from "../components/Icon";
 import { colorOf } from "../store/cards";
-import { cardBlocks } from "../lib/blocks";
+import { cardBlocks, compileBlocks, makeBlock, parseSegs } from "../lib/blocks";
 import { useDragSource } from "../cards/dragStore";
 import { useReorder } from "../lib/useReorder";
 import { useSceneFocus } from "../store/sceneFocus";
@@ -411,8 +410,10 @@ export function SceneLane() {
                       color: card.color ?? colorOf(card.name),
                       cells: card.cells.map((c) => ({ name: c.name, blocks: cardBlocks(c.blocks) })),
                     },
-                  })
+                  }, undefined, () => setCard(tab.id, card.id, { folded: !card.folded }))
                 }
+                folded={!!card.folded}
+                onFold={() => setCard(tab.id, card.id, { folded: !card.folded })}
                 onReorder={(from, to) => {
                   const next = [...card.cells];
                   const [moved] = next.splice(from, 1);
@@ -558,6 +559,9 @@ type GroupProps = {
   onExpand: (id: string | null) => void;
   /** 배너 역드래그 — 덱에 씬 세트 카드로 저장 */
   onDragSave: (e: React.PointerEvent) => void;
+  /** 카드째 접혔나 — ★머리를 누르면 바뀐다 (전용 단추를 두지 않는다) */
+  folded: boolean;
+  onFold: () => void;
   /** 카드 안에서 씬 순서 바꾸기 */
   onReorder: (from: number, to: number) => void;
 };
@@ -593,6 +597,8 @@ function CardGroup(p: GroupProps) {
           ★배너를 우하단 핸드로 끌면 **씬 세트 카드로 덱에 저장**된다 (역드래그).
             「추가」 블록은 담기지 않는다 — 그건 이 탭 것이다 (`cardBlocks`). */}
       <div
+        // ★머리를 누르면 **카드째 접힌다** (사용자 지적 2026-08-16: 씬 세트가 안 접혔다).
+        //   끌면 덱에 저장하는 역드래그다 — 4px 문턱으로 가른다 (`useDragSource` 의 `onTap`).
         onPointerDown={(e) => {
           if ((e.target as HTMLElement).closest("button")) return;
           p.onDragSave(e);
@@ -666,9 +672,13 @@ function CardGroup(p: GroupProps) {
               top: "50%",
               transform: "translateY(-50%)",
               display: "flex",
+              alignItems: "center",
               gap: 2,
             }}
           >
+            <span style={{ pointerEvents: "none", color: "rgba(255,255,255,0.6)", display: "grid" }}>
+              {p.folded ? Icon.chevronDown : Icon.chevronUp}
+            </span>
             <button
               data-card-lock={p.card.id}
               onClick={() => p.onPatch({ locked: !p.card.locked })}
@@ -689,6 +699,9 @@ function CardGroup(p: GroupProps) {
         </div>
       </div>
 
+      {/* ★접으면 머리만 남는다 */}
+      {p.folded ? null : (
+      <>
       {/* 공통 접두 — ★**첫 씬 바로 위**. 이 카드의 모든 씬에 걸리는 값이라 그 자리가 맞다 */}
       <div style={{ minWidth: "100%", borderBottom: "1px solid var(--line-soft)" }}>
         <span
@@ -745,6 +758,8 @@ function CardGroup(p: GroupProps) {
           {t("scenes.addScene")}
         </button>
       </div>
+      </>
+      )}
     </div>
   );
 }
@@ -804,7 +819,14 @@ function SceneRow(
     >
       <div
         data-scene-head
+        // ★머리를 누르면 펴진다. 단추·입력칸은 비켜 간다 — 안 비키면 잠금·삭제가 죽는다
+        onClick={(e) => {
+          if ((e.target as HTMLElement).closest("button, input, textarea, [data-head-action]")) return;
+          p.onExpand(expanded ? null : c.id);
+        }}
+        title={t(expanded ? "scenes.fold" : "scenes.unfold")}
         style={{
+          cursor: "pointer",
           position: "sticky",
           left: 0,
           zIndex: 2,
@@ -835,17 +857,15 @@ function SceneRow(
           <span style={{ fontSize: 11, color: "var(--ink-ghost)", fontVariantNumeric: "tabular-nums" }}>
             {takes.length}
           </span>
-          <button
+          {/* ★접기 단추를 따로 두지 않는다 (사용자 지시 2026-08-16) — **머리를 누르면** 펴진다.
+              지금 상태만 화살표로 알린다 (`pointer-events` 를 꺼서 누르는 것은 머리 전체다). */}
+          <span
             data-scene-expand={c.id}
-            onClick={(e) => {
-              e.stopPropagation();
-              p.onExpand(expanded ? null : c.id);
-            }}
-            title={t(expanded ? "scenes.fold" : "scenes.unfold")}
-            style={iconBtn}
+            data-open={expanded ? "" : undefined}
+            style={{ ...iconBtn, pointerEvents: "none", color: "var(--ink-ghost)" }}
           >
             {expanded ? Icon.chevronUp : Icon.chevronDown}
-          </button>
+          </span>
           <button
             data-scene-lock={c.id}
             onClick={(e) => {
@@ -875,10 +895,33 @@ function SceneRow(
             펼치면 프롬프트와 **같은 편집기**다 (칩 드래그·휠 가중치·Enter·자동완성 그대로). */}
         {expanded ? (
           <div onClick={(e) => e.stopPropagation()} style={{ minWidth: 0 }}>
-            <BlockList
-              blocks={c.blocks}
-              onChange={(b) => patchCell({ blocks: b })}
-              libZone={`scene-${c.id}`}
+            {/* ★블록 편집기가 아니라 **글 상자**다 (사용자 지시 2026-08-16) — 줄 안은 좁아서
+                칩을 놓을 자리가 안 나온다. 저장은 그대로 블록이라 컴파일·카드 저장은 그대로.
+                ★고치는 순간 켜진 블록이 **한 줄로 합쳐진다** (꺼진 것은 버린다). */}
+            <textarea
+              data-scene-text={c.id}
+              value={compileBlocks(c.blocks)}
+              onChange={(e) =>
+                patchCell({
+                  blocks: [
+                    makeBlock(c.name, [], { on: true, open: true, tags: parseSegs(e.target.value) }),
+                  ],
+                })
+              }
+              placeholder={t("slots.textPlaceholder")}
+              rows={3}
+              style={{
+                width: "100%",
+                minWidth: 0,
+                resize: "vertical",
+                background: "var(--panel)",
+                border: "1px solid var(--line)",
+                borderRadius: "var(--r-2)",
+                padding: "5px var(--sp-3)",
+                fontSize: "var(--text-2xs)",
+                lineHeight: 1.5,
+                color: "var(--ink)",
+              }}
             />
           </div>
         ) : (

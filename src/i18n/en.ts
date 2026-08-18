@@ -518,6 +518,7 @@ export const en = {
     emptyHint: "Empty · drop a scene card here to get scenes",
   },
   slots: {
+    textPlaceholder: "Comma-separated tags. 1.3::emphasis::",
     blockTags: "Tags",
     extra: "Extra",
     picked: "{n} selected",

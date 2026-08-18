@@ -518,6 +518,7 @@ export const ko: Dict = {
     emptyHint: "비어 있습니다 · 씬 카드를 얹으면 그 카드의 씬이 생깁니다",
   },
   slots: {
+    textPlaceholder: "태그를 쉼표로 적습니다. 1.3::강조::",
     blockTags: "태그",
     extra: "추가",
     picked: "{n}장 선택",

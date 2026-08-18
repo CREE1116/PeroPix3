@@ -518,6 +518,7 @@ export const ja: Dict = {
     emptyHint: "空です · シーンカードを置くとシーンができます",
   },
   slots: {
+    textPlaceholder: "タグをカンマ区切りで。1.3::強調::",
     blockTags: "タグ",
     extra: "追加",
     picked: "{n}枚選択",

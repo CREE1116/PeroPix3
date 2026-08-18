@@ -82,6 +82,8 @@ export type SceneCard = {
   prefix?: string;
   /** ★카드째 잠근다 — 옛 「전체 잠금」이 이 자리로 왔다 (사용자 결정 2026-08-11).
    *  잠긴 카드의 씬은 생성에서 빠진다. 씬 하나하나의 `locked` 와 **함께** 걸린다. */
+  /** 카드째 접혔나 — ★머리를 누르면 바뀐다. 화면 상태지만 탭에 남겨 껐다 켜도 유지된다 */
+  folded?: boolean;
   locked?: boolean;
   cells: Slot[];
 };
