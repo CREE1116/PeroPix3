@@ -5,7 +5,8 @@ import { usePrompt } from "../store/prompt";
 import { useQueue } from "../store/queue";
 import { LANE_MAX, LANE_MIN, useUi } from "../store/ui";
 import { useWs, takesOf, type Rec, type SceneCard, type Slot } from "../store/workspace";
-import { thumbUrlOf } from "../lib/imgUrl";
+import { imgUrl, thumbUrlOf } from "../lib/imgUrl";
+import { EnhanceDialog } from "./EnhanceDialog";
 import { Icon } from "../components/Icon";
 import { colorOf } from "../store/cards";
 import { cardBlocks, compileBlocks, makeBlock, parseSegs } from "../lib/blocks";
@@ -57,7 +58,17 @@ export function SceneLane() {
   const setFocus = (f: { cell: string; file: string | null }) => focus.focus(f.cell, f.file);
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  /** 이름을 그 자리에서 고치는 중인 씬 — ★**줄이 아니라 여기**가 들고 있다.
+   *  Tab 으로 다음 씬의 이름 칸으로 건너뛰려면 누가 열려 있는지를 한 곳이 알아야 한다. */
+  const [editingName, setEditingName] = useState<string | null>(null);
+  /** 고른 것을 한 번에 강화 — 창에 **목록**을 넘긴다 (`EnhanceDialog` 가 배치를 안다) */
+  const [enhance, setEnhance] = useState<string[] | null>(null);
+  const lanePip = useUi((u) => u.lanePip);
+  /** PIP 에 띄울 장 — 칸에 커서를 올리면 바뀐다 */
+  const [hover, setHover] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  /** PIP 가 그 안에서만 움직이도록 가두는 상자 (줄 영역) */
+  const boxRef = useRef<HTMLDivElement>(null);
   /** ★보이는 자리만 그리려고 재 두는 값 (사용자 지시 2026-08-14).
    *  칸이 560px 까지 커지고 한 줄에 수십 장이 붙으므로, 다 그리면 화면이 무거워진다. */
   const [view, setView] = useState({ x: 0, w: 0 });
@@ -246,6 +257,38 @@ export function SceneLane() {
     setPicked(next);
   };
 
+  /** 이름 칸을 열고 닫는다 — ★닫는 쪽은 **자기 것일 때만** 닫는다.
+   *  Tab 으로 옮기면 새 칸을 연 **뒤에** 옛 칸의 blur 가 오므로, 그냥 null 로 밀면
+   *  방금 연 칸이 다시 닫힌다. */
+  const onEditName = (id: string, v: boolean) =>
+    setEditingName((cur) => (v ? id : cur === id ? null : cur));
+
+  /** ★씬 사이 `Tab` 이동 (v2 `index.html:11809-11832`).
+   *
+   *  v2 는 슬롯마다 이름·태그 칸이 늘 떠 있어서 **같은 종류의 칸끼리** 건너뛰었다.
+   *  3.0 은 이름은 더블클릭, 태그는 펼쳤을 때만 뜨므로 **그 칸을 열면서** 옮긴다.
+   *  ★한 바퀴 돈다 (v2 와 같다) — 마지막에서 Tab 이면 첫 씬으로.
+   *  ★카드를 가로질러 센다: 화면에 보이는 순서가 곧 이 순서다. */
+  const stepField = (cellId: string, dir: 1 | -1, what: "name" | "text") => {
+    const flat = tab.cards.flatMap((k) => k.cells);
+    const i = flat.findIndex((c) => c.id === cellId);
+    if (i < 0 || flat.length < 2) return;
+    const next = flat[(i + dir + flat.length) % flat.length];
+    if (what === "name") {
+      setEditingName(next.id);
+      return;
+    }
+    setExpandedId(next.id);
+    // 편집기는 펼쳐야 생긴다 — 그려진 **다음 차례**에 커서를 넣는다
+    setTimeout(() => {
+      const el = document.querySelector<HTMLTextAreaElement>(
+        `[data-scene-text="${CSS.escape(next.id)}"]`,
+      );
+      el?.focus();
+      el?.select();
+    }, 0);
+  };
+
   return (
     <div
       data-scene-lane
@@ -312,9 +355,30 @@ export function SceneLane() {
         >
           {t("scenes.sizeHint", { s: laneSize })}
         </span>
+        {/* ★PIP — 칸은 작게 두고 **커서를 올린 장만** 크게 본다 (v2 `pipBarBtn`).
+            칸 크기를 키우면 한 줄에 몇 장 안 들어가므로, 훑기와 자세히 보기를 가른다 */}
+        <button
+          data-lane-pip={lanePip ? "on" : "off"}
+          onClick={() => useUi.getState().setLanePip(!lanePip)}
+          title={t("scenes.pip")}
+          style={{
+            display: "grid",
+            placeItems: "center",
+            width: 22,
+            height: 22,
+            borderRadius: "var(--r-1)",
+            color: lanePip ? "var(--accent)" : "var(--ink-faint)",
+            background: lanePip ? "var(--accent-bg)" : "transparent",
+          }}
+        >
+          {Icon.pip}
+        </button>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, minWidth: 0, position: "relative", display: "flex" }}>
+      <div
+        ref={boxRef}
+        style={{ flex: 1, minHeight: 0, minWidth: 0, position: "relative", display: "flex" }}
+      >
       {/* ★줄 머리 폭 손잡이. 머리는 왼쪽에 붙어 있으므로(sticky left:0) 손잡이는
           스크롤과 무관하게 늘 같은 자리에 선다 */}
       <div
@@ -335,6 +399,15 @@ export function SceneLane() {
       <div
         ref={scrollRef}
         data-lane-scroll
+        /* PIP 가 켜져 있을 때만 커서 아래 장을 따라간다 (꺼져 있으면 아무 일도 안 한다) */
+        onMouseOver={
+          lanePip
+            ? (e) => {
+                const f = (e.target as HTMLElement).closest?.("[data-take]")?.getAttribute("data-take");
+                if (f) setHover(f);
+              }
+            : undefined
+        }
         style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: "auto", background: "var(--bg)" }}
       >
         {!tab.cards.length ? (
@@ -396,10 +469,23 @@ export function SceneLane() {
                 onPatch={(patch) => setCard(tab.id, card.id, patch)}
                 onRemove={() => removeCard(tab.id, card.id)}
                 onAddScene={() => addSlot(tab.id, { cardId: card.id })}
+                /* ★씬 복제 — 태그·잠금까지 그대로 베껴 **바로 뒤에** 꽂는다 (v2 `duplicateSlot`).
+                   번호는 탭의 발급기가 새로 준다 (`addSlot` 주석) */
+                onDuplicate={(from, i) =>
+                  addSlot(tab.id, {
+                    cardId: card.id,
+                    after: i,
+                    from,
+                    name: t("slots.copyOf", { name: from.name }),
+                  })
+                }
                 onSeq={(n) => setTab(tab.id, { cellSeq: n })}
                 nextSeq={tab.cellSeq ?? 1}
                 expandedId={expandedId}
                 onExpand={setExpandedId}
+                editingName={editingName}
+                onEditName={onEditName}
+                onStepField={stepField}
                 onDragSave={(e) =>
                   startDrag(e, {
                     dir: "save",
@@ -445,6 +531,8 @@ export function SceneLane() {
           </div>
         )}
       </div>
+      {/* PIP — 줄 위에 떠 있는 작은 창. 켜 두면 커서를 올린 장이 여기 크게 뜬다 */}
+      {lanePip && <LanePip boxRef={boxRef} url={hover ? imgUrl(base, ws, hover) : null} />}
       </div>
 
       {/* 고른 것이 있을 때만 뜨는 줄 (멀티 무대의 선택 막대와 같은 자리) */}
@@ -464,6 +552,15 @@ export function SceneLane() {
         >
           <span data-sel-count>{t("slots.picked", { n: picked.size })}</span>
           <span style={{ flex: 1 }} />
+          {/* ★고른 것을 **한 번에 강화**한다 (v2 「슬롯 전체 인핸스」). 창이 이미 강화한 것을
+              걸러 내고, 못 쓰는 배율은 장마다 낮춘다 (`EnhanceDialog`) */}
+          <button
+            data-sel-enhance
+            onClick={() => setEnhance([...picked])}
+            style={{ border: "1px solid currentColor", borderRadius: "var(--r-1)", padding: "1px var(--sp-3)" }}
+          >
+            {t("enhance.button")}
+          </button>
           <button
             data-sel-hide
             onClick={() => {
@@ -483,9 +580,169 @@ export function SceneLane() {
           </button>
         </div>
       )}
+
+      {enhance && <EnhanceDialog files={enhance} onClose={() => setEnhance(null)} />}
     </div>
   );
 }
+
+/** 마지막으로 놓아 둔 자리·크기 — ★모듈에 둔다 (탭별 줌·위치와 같은 취급).
+ *  켰다 껐다 할 때마다 우하단으로 되돌아가면 자리를 다시 잡아야 한다. 저장하지는 않는다. */
+const pipBox = { left: null as number | null, top: null as number | null, w: 320, h: 320 };
+
+/** PIP 미리보기 — ★칸에 커서를 올리면 그 장이 여기 **원본 크기로** 뜬다 (v2 `pipFloat`).
+ *
+ *  ★썸네일이 아니라 원본을 쓴다. 자세히 보려고 여는 창이라 썸네일(긴 변 512)이면 뜻이 없다.
+ *  ★줄 영역 **안에서만** 움직인다 — 머리를 끌면 자리, 좌상단 손잡이를 끌면 크기다
+ *    (오른쪽 아래가 아니라 좌상단인 이유: 기본 자리가 우하단이라 그쪽이 붙박이여야 커진다). */
+function LanePip({
+  boxRef,
+  url,
+}: {
+  boxRef: React.RefObject<HTMLDivElement | null>;
+  url: string | null;
+}) {
+  const t = useI18n((s) => s.t);
+  const [, redraw] = useState(0);
+  /** 자리를 잡기 전에는 그리지 않는다 — 잡기 전 한 프레임이 좌상단에 번쩍인다 */
+  const [placed, setPlaced] = useState(pipBox.left !== null);
+  const drag = useRef<{ mode: "move" | "size"; x: number; y: number; box: typeof pipBox } | null>(null);
+
+  // 처음 뜰 때 자리를 잡는다 — 우하단에서 12px 띄운 자리
+  useEffect(() => {
+    const r = boxRef.current?.getBoundingClientRect();
+    if (!r) return;
+    // 줄 영역보다 클 수는 없다 (패널을 좁혀 두었을 때)
+    pipBox.w = Math.min(pipBox.w, Math.max(PIP_MIN, r.width - 24));
+    pipBox.h = Math.min(pipBox.h, Math.max(PIP_MIN, r.height - 24));
+    if (pipBox.left === null || pipBox.top === null) {
+      pipBox.left = Math.max(0, r.width - pipBox.w - 12);
+      pipBox.top = Math.max(0, r.height - pipBox.h - 12);
+    }
+    // 창이 줄어들어 밖으로 나가 있으면 도로 들여놓는다
+    pipBox.left = Math.min(pipBox.left, Math.max(0, r.width - pipBox.w));
+    pipBox.top = Math.min(pipBox.top, Math.max(0, r.height - pipBox.h));
+    setPlaced(true);
+    redraw((n) => n + 1);
+  }, [boxRef]);
+
+  const onDown = (mode: "move" | "size") => (e: React.PointerEvent) => {
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    drag.current = { mode, x: e.clientX, y: e.clientY, box: { ...pipBox } };
+    e.preventDefault();
+  };
+  const onMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    const r = boxRef.current?.getBoundingClientRect();
+    if (!d || !r) return;
+    const dx = e.clientX - d.x;
+    const dy = e.clientY - d.y;
+    if (d.mode === "move") {
+      pipBox.left = clamp((d.box.left ?? 0) + dx, 0, Math.max(0, r.width - pipBox.w));
+      pipBox.top = clamp((d.box.top ?? 0) + dy, 0, Math.max(0, r.height - pipBox.h));
+    } else {
+      // 좌상단을 끌면 우하단이 제자리에 남는다 — 폭·높이가 늘어난 만큼 자리가 당겨진다
+      const right = (d.box.left ?? 0) + d.box.w;
+      const bottom = (d.box.top ?? 0) + d.box.h;
+      const left = clamp((d.box.left ?? 0) + dx, 0, right - PIP_MIN);
+      const top = clamp((d.box.top ?? 0) + dy, 0, bottom - PIP_MIN);
+      pipBox.left = left;
+      pipBox.top = top;
+      pipBox.w = right - left;
+      pipBox.h = bottom - top;
+    }
+    redraw((n) => n + 1);
+  };
+  const onUp = () => {
+    drag.current = null;
+  };
+
+  return (
+    <div
+      data-lane-pip-panel
+      style={{
+        position: "absolute",
+        left: pipBox.left ?? 0,
+        top: pipBox.top ?? 0,
+        width: pipBox.w,
+        height: pipBox.h,
+        visibility: placed ? "visible" : "hidden",
+        zIndex: 8,
+        display: "flex",
+        flexDirection: "column",
+        borderRadius: "var(--r-3)",
+        border: "1px solid var(--line)",
+        background: "var(--panel)",
+        boxShadow: "var(--shadow-3)",
+        overflow: "hidden",
+      }}
+    >
+      {/* 머리 — 끌어서 자리를 옮긴다 */}
+      <div
+        onPointerDown={onDown("move")}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+        title={t("scenes.pipMove")}
+        style={{
+          flexShrink: 0,
+          height: 22,
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--sp-2)",
+          padding: "0 var(--sp-3)",
+          borderBottom: "1px solid var(--line-soft)",
+          background: "var(--bg)",
+          color: "var(--ink-dim)",
+          fontSize: "var(--text-2xs)",
+          cursor: "grab",
+          userSelect: "none",
+        }}
+      >
+        {t("scenes.pipTitle")}
+      </div>
+
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: "grid",
+          placeItems: "center",
+          padding: "var(--sp-2)",
+          background: "var(--bg)",
+        }}
+      >
+        {url ? (
+          <img
+            data-lane-pip-img
+            src={url}
+            alt=""
+            draggable={false}
+            style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
+          />
+        ) : (
+          <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-ghost)", textAlign: "center" }}>
+            {t("scenes.pipHint")}
+          </span>
+        )}
+      </div>
+
+      {/* 크기 손잡이 — 좌상단 */}
+      <div
+        data-lane-pip-resize
+        onPointerDown={onDown("size")}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+        title={t("scenes.pipResize")}
+        style={{ position: "absolute", left: 0, top: 0, width: 14, height: 14, cursor: "nwse-resize" }}
+      />
+    </div>
+  );
+}
+
+const PIP_MIN = 140;
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 /** 비었을 때 — ★그릇만 있는 상태. 여기서는 씬을 못 만든다 (씬은 카드에 속한다) */
 function Empty({ onAdd }: { onAdd: () => void }) {
@@ -552,11 +809,18 @@ type GroupProps = {
   onPatch: (patch: Partial<SceneCard>) => void;
   onRemove: () => void;
   onAddScene: () => void;
+  /** 씬 복제 — 그 씬을 그대로 베껴 바로 뒤에 꽂는다 (v2 슬롯 복제) */
+  onDuplicate: (from: Slot, index: number) => void;
   onSeq: (n: number) => void;
   nextSeq: number;
   /** 펼쳐 둔 씬 id — ★한 번에 하나만 펼친다. 여럿 펼치면 다시 줄 높이가 제각각이 된다 */
   expandedId: string | null;
   onExpand: (id: string | null) => void;
+  /** 이름을 고치는 중인 씬 — ★줄이 아니라 **그릇**이 든다 (Tab 으로 건너뛰기 때문에) */
+  editingName: string | null;
+  onEditName: (id: string, v: boolean) => void;
+  /** `Tab` 으로 옆 씬의 같은 칸으로 (v2 index.html:11809-11832) */
+  onStepField: (cellId: string, dir: 1 | -1, what: "name" | "text") => void;
   /** 배너 역드래그 — 덱에 씬 세트 카드로 저장 */
   onDragSave: (e: React.PointerEvent) => void;
   /** 카드째 접혔나 — ★머리를 누르면 바뀐다 (전용 단추를 두지 않는다) */
@@ -855,7 +1119,13 @@ function SceneRow(
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-ghost)" }}>
             {String(p.index + 1).padStart(3, "0")}
           </span>
-          <NameCell name={c.name} onRename={(v) => patchCell({ name: v })} />
+          <NameCell
+            name={c.name}
+            editing={p.editingName === c.id}
+            onEditing={(v) => p.onEditName(c.id, v)}
+            onRename={(v) => patchCell({ name: v })}
+            onTab={(dir) => p.onStepField(c.id, dir, "name")}
+          />
           <span style={{ fontSize: 11, color: "var(--ink-ghost)", fontVariantNumeric: "tabular-nums" }}>
             {takes.length}
           </span>
@@ -870,6 +1140,19 @@ function SceneRow(
           >
             {/* 블록의 켜기/끄기와 같은 모양 (카드 잠금 주석 참조) */}
             {c.locked ? Icon.dotOff : Icon.dotOn}
+          </button>
+          {/* ★복제 — 태그를 조금씩 바꿔 가며 비교하는 것이 씬의 쓰임이라, 베껴 놓고
+              고치는 길이 있어야 한다 (v2 슬롯 머리의 복제 단추 그대로) */}
+          <button
+            data-scene-duplicate={c.id}
+            onClick={(e) => {
+              e.stopPropagation();
+              p.onDuplicate(c, p.index);
+            }}
+            title={t("slots.duplicate")}
+            style={iconBtn}
+          >
+            {Icon.duplicate}
           </button>
           {!p.only && (
             <button
@@ -902,6 +1185,15 @@ function SceneRow(
                   ],
                 })
               }
+              /* ★`Tab` 으로 **옆 씬의 같은 칸**으로 (v2 index.html:11821-11832).
+                  기본 동작(다음 단추로 이동)을 막고 씬 사이를 오간다 — 여러 씬의 태그를
+                  이어서 적어 나가는 것이 이 칸의 쓰임이다 */
+              onKeyDown={(e) => {
+                if (e.key !== "Tab") return;
+                e.preventDefault();
+                p.onStepField(c.id, e.shiftKey ? -1 : 1, "text");
+              }}
+              title={t("scenes.tabHint")}
               placeholder={t("slots.textPlaceholder")}
               rows={3}
               style={{
@@ -1035,25 +1327,51 @@ function SceneRow(
   );
 }
 
-/** 이름 — 더블클릭으로 그 자리 편집 (한 번 클릭은 줄 고르기) */
-function NameCell({ name, onRename }: { name: string; onRename: (v: string) => void }) {
+/** 이름 — 더블클릭으로 그 자리 편집 (한 번 클릭은 줄 고르기).
+ *
+ *  ★열려 있는 것이 누구인지는 **그릇이 든다** (`editingName`) — `Tab` 으로 옆 씬의 이름 칸으로
+ *    건너뛰려면 한 곳이 알아야 하기 때문이다. 여기서 들고 있으면 자기 것만 열고 닫을 수 있다. */
+function NameCell({
+  name,
+  editing,
+  onEditing,
+  onRename,
+  onTab,
+}: {
+  name: string;
+  editing: boolean;
+  onEditing: (v: boolean) => void;
+  onRename: (v: string) => void;
+  onTab: (dir: 1 | -1) => void;
+}) {
   const t = useI18n((s) => s.t);
-  const [editing, setEditing] = useState(false);
   if (editing)
     return (
       <input
         autoFocus
+        // ★씬이 바뀌면 **입력칸도 새로 만든다** — 같은 요소를 물려주면 Tab 으로 옮겼을 때
+        //   옛 씬의 글자가 그대로 남는다 (`defaultValue` 는 처음 한 번만 먹는다)
+        key={name}
         defaultValue={name}
         onClick={(e) => e.stopPropagation()}
         onBlur={(e) => {
           const v = e.target.value.trim();
           if (v) onRename(v);
-          setEditing(false);
+          onEditing(false);
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-          if (e.key === "Escape") setEditing(false);
+          if (e.key === "Escape") onEditing(false);
+          if (e.key === "Tab") {
+            // ★고친 값을 **먼저 넣고** 옮긴다 (v2 index.html:11809-11820 과 같은 이동).
+            //   뒤따라 오는 blur 는 이미 연 다음 칸을 닫지 않는다 (`onEditName` 주석)
+            e.preventDefault();
+            const v = (e.target as HTMLInputElement).value.trim();
+            if (v) onRename(v);
+            onTab(e.shiftKey ? -1 : 1);
+          }
         }}
+        title={t("scenes.tabHint")}
         style={{
           flex: 1,
           minWidth: 0,
@@ -1069,7 +1387,7 @@ function NameCell({ name, onRename }: { name: string; onRename: (v: string) => v
     <span
       onDoubleClick={(e) => {
         e.stopPropagation();
-        setEditing(true);
+        onEditing(true);
       }}
       title={t("block.renameHint")}
       style={{

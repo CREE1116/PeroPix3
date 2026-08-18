@@ -17,6 +17,12 @@ export const thumbUrlOf = (base: string, ws: string, file: string) =>
 export const keepUrl = (base: string, rel: string) =>
   `${base}/api/keep/file/${rel.split("/").map(encodeURIComponent).join("/")}`;
 
+/** 보관함의 **썸네일** — 격자가 쓴다. 크게 볼 때만 `keepUrl`(원본)을 받는다.
+ *  ★파일 관리·캔버스가 쓰던 층을 갤러리도 쓴다. 격자에 원본 PNG 를 걸면 수백 장이
+ *    뜨는 화면이 그것만으로 무너진다 (`docs/v2-port-audit.md` A3). */
+export const keepThumb = (base: string, rel: string) =>
+  `${base}/api/keep/thumb/${rel.split("/").map(encodeURIComponent).join("/")}`;
+
 /** 파일 관리의 그림 — 뿌리가 **아웃풋 루트**라 워크스페이스가 경로 첫 칸이다 */
 const enc = (rel: string) => rel.split("/").map(encodeURIComponent).join("/");
 export const fileMgrThumb = (base: string, rel: string) => `${base}/api/files/thumb/${enc(rel)}`;

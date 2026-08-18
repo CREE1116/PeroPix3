@@ -1,5 +1,7 @@
 import { api } from "../lib/backend";
 import { compileBlocks } from "../lib/blocks";
+import { resolveWildcards } from "../lib/wildcards";
+import { wildcardPools } from "./wildcards";
 import { allScenes, promptOf, type CanvasTab, type Spec } from "./workspace";
 import { useQueue } from "./queue";
 import { useGen } from "./gen";
@@ -50,12 +52,14 @@ export async function queueToWorkspace(
         const cellPrompt = [(card.prefix || "").trim(), prompt, compileBlocks(c.blocks ?? [])]
           .filter(Boolean)
           .join(", ");
+        // ★와일드카드는 여기서도 **장마다** 뽑는다 (`lib/wildcards` 머리 주석).
+        //   풀은 워크스페이스를 안 가리는 공용 문서라 남의 워크스페이스에도 그대로 먹는다.
         await useQueue.getState().enqueue(
           {
             ...params,
             seed: params.seed_mode === "fixed" ? params.seed : -1,
-            prompt: cellPrompt,
-            negative_prompt: uc,
+            prompt: resolveWildcards(cellPrompt, wildcardPools()),
+            negative_prompt: resolveWildcards(uc, wildcardPools()),
             workspace,
             tab: tab.name,
             tab_id: tab.id,
@@ -73,6 +77,13 @@ export async function queueToWorkspace(
     return { ok: true, queued: live.length * n, tab: tab.name };
   }
 
+  // ★한 요청에 n 을 넘기지 않고 **장마다 항목을 편다**. 그래야 와일드카드가 장마다 다시
+  //   뽑힌다 (묶어 보내면 n 장이 전부 같은 태그로 나온다).
+  const pools = wildcardPools();
+  const shots = Array.from({ length: n }, () => ({
+    prompt: resolveWildcards(prompt, pools),
+    negative_prompt: resolveWildcards(uc, pools),
+  }));
   await useQueue.getState().enqueue(
     {
       ...params,
@@ -83,8 +94,8 @@ export async function queueToWorkspace(
       tab: tab.name,
       tab_id: tab.id,
     },
-    undefined,
-    n,
+    shots,
+    1,
   );
   return { ok: true, queued: n, tab: tab.name };
 }

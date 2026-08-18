@@ -1,15 +1,14 @@
 """파일 관리 — **아웃풋 폴더를 그대로** 다루는 자리 (v2 `보조 도구 › 파일 관리`).
 
-갤러리(`keep.py`)와 헷갈리지 말 것. 셋은 보는 대상이 다르다:
+갤러리(`keep.py`)와 헷갈리지 말 것. 둘은 보는 대상이 다르다:
 
     keep.py     골라 둔 것        <APP>/gallery/           "남길 것만"
-    gallery.py  한 워크스페이스    outputs/<ws>/            "이번 작업"
     files.py    아웃풋 폴더 전부   outputs/                 "디스크에 있는 그대로"
 
 ★여기는 **탐색기**다 — 워크스페이스 경계를 넘어 폴더 트리를 그대로 보여주고, 옮기고,
   이름을 바꾸고, 지운다. 그래서 경로는 워크스페이스가 아니라 **아웃풋 루트 기준**이다.
 ★한 발짝도 루트 밖으로 못 나간다 (`under`). 밖을 가리키면 즉시 ValueError.
-★지우는 것은 **받은 목록만.** 자동 정리·기간 만료를 만들지 말 것 (gallery.delete 주석과 같은 이유).
+★지우는 것은 **받은 목록만.** 자동 정리·기간 만료를 만들지 말 것 (keep.delete 주석과 같은 이유).
 """
 from __future__ import annotations
 
@@ -171,17 +170,30 @@ def delete(root: Path, files: list[str]) -> dict:
     return {"deleted": gone, "missing": missing}
 
 
+def _open(p: Path, select: bool) -> None:
+    """탐색기 호출 한 곳. `select` 면 그 파일을 고른 채로, 아니면 폴더만 연다."""
+    target = p if p.is_dir() else p.parent
+    if sys.platform == "win32":
+        if select and p.is_file():
+            subprocess.Popen(["explorer", "/select,", str(p)])
+        else:
+            os.startfile(str(target))  # noqa: S606
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", "-R", str(p)] if select and p.is_file() else ["open", str(target)])
+    else:
+        subprocess.Popen(["xdg-open", str(target)])
+
+
 def reveal(root: Path, rel: str = "") -> None:
     """탐색기에서 그 자리를 연다. ★파일이면 **고른 채로** 연다 (v2 와 같은 동작)."""
     p = under(root, rel)
     if not p.exists():
         raise ValueError("없는 항목입니다")
-    if sys.platform == "win32":
-        if p.is_file():
-            subprocess.Popen(["explorer", "/select,", str(p)])
-        else:
-            os.startfile(str(p))  # noqa: S606
-    elif sys.platform == "darwin":
-        subprocess.Popen(["open", "-R" if p.is_file() else "", str(p)])
-    else:
-        subprocess.Popen(["xdg-open", str(p if p.is_dir() else p.parent)])
+    _open(p, True)
+
+
+def open_dir(p: Path) -> None:
+    """폴더를 연다. ★`reveal` 과 달리 루트 밖도 연다 — 부르는 쪽이 **방금 자기가 쓴 자리**를
+    넘길 때만 쓴다 (변환의 「완료 후 폴더 열기」). 사용자가 준 경로를 그대로 넣지 말 것."""
+    if p.is_dir():
+        _open(p, False)

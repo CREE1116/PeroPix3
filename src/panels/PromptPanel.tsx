@@ -4,6 +4,7 @@ import { compileBlocks } from "../lib/blocks";
 import { usePrompt } from "../store/prompt";
 import { StyleSection, CharSection, JoinZone, type SectionProps } from "./PromptSections";
 import { BlockLibButton } from "../blocks/BlockDrawer";
+import { WildcardButton } from "./WildcardModal";
 import { OptionsPanel } from "./OptionsPanel";
 import { Category } from "./Category";
 
@@ -23,7 +24,18 @@ export function PromptPanel({ onThumb }: SectionProps) {
             (사용자 지시 2026-08-11). 그래서 베이스만 쓰는 사람은 카드를 안 꽂고 그 칸에 바로
             적으면 되고, 스타일을 저장해 두는 사람은 「스타일 카드」로 알아본다.
             ★그릇은 **평면**(이름표만)이고 그 안에 얹히는 **카드가 둥글다** — 씬 칸과 같은 규칙. */}
-        <Category id="p-base" label={t("prompt.baseBox")} right={<BlockLibButton />}>
+        {/* ★프롬프트 전체에 걸리는 도구 둘을 여기 모은다 (v2 도 프롬프트 라벨 줄에 있었다):
+            와일드카드(랜덤 풀) · 블록 저장소. 카테고리마다 흩뿌리지 않는다 */}
+        <Category
+          id="p-base"
+          label={t("prompt.baseBox")}
+          right={
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+              <WildcardButton />
+              <BlockLibButton />
+            </span>
+          }
+        >
           <StyleSection onThumb={onThumb} />
         </Category>
 

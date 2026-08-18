@@ -1,19 +1,31 @@
 import { create } from "zustand";
-import { api } from "../lib/backend";
+import { api, backendUrl } from "../lib/backend";
+import { fileMgrImg } from "../lib/imgUrl";
+import type { Dropped } from "../lib/dropImages";
 
-/** 검열 — **찾고, 고르고, 가린다.**
+/** 검열. **여러 장을 한 번에** 찾고, 고치고, 가린다 (v2 자동검열 이식).
  *
- *  ★찾기와 가리기는 **따로**다 (v2 도 그랬다). 찾은 것을 사람이 손보고 나서 가린다 —
- *    자동으로 바로 가려 버리면 잘못 찾은 것을 되돌릴 수 없다 (원본을 안 건드리니 파일은
- *    남지만, 사용자가 결과를 보기 전에는 무엇이 가려졌는지 모른다).
- *  ★모델은 **앱에 들어 있다** — 받아 오는 절차가 없다 (backend/censor.py 머리 주석).
+ *  v2 의 구조를 그대로 옮겼다. 세 탭이 곧 작업 순서다:
+ *
+ *      검열 전   담고 · 찾는다        모델·대상·문턱을 만지며 미리 본다
+ *      검열 중   고친다               찾은 박스를 옮기고 늘리고 돌리고 지우고 더 그린다
+ *      검열 후   다시 고친다          저장된 결과에 박스를 더해 다시 저장한다
+ *
+ *  ★찾기와 가리기는 **따로**다. 자동으로 바로 가려 버리면 잘못 찾은 것을 되돌릴 수 없다.
+ *  ★가리는 일은 **서버 하나가** 한다 (`/api/censor/preview` · `/api/censor/apply`).
+ *    v2 는 스팀만 화면 canvas 로 그려서, 확장·부드럽게를 준 미리보기와 저장본이 갈렸다.
+ *  ★모델은 **앱에 들어 있다**. 받아 오는 절차가 없다 (backend/censor.py 머리 주석).
  */
 export type Box = {
   label: string;
   confidence: number;
   box: [number, number, number, number];
+  /** 라디안. 코드가 아니라 사람이 손잡이로 돌린다 */
+  rotation?: number;
+  /** ★박스마다 다른 방식 (백엔드 `apply_boxes` 가 박스별 `method` 를 읽는다) */
+  method?: string;
   passes_threshold?: boolean;
-  /** 사람이 끈 것 — 목록에는 두고 적용에서만 뺀다 */
+  /** 사람이 끈 것. 목록에는 두고 적용에서만 뺀다 */
   off?: boolean;
   /** 사람이 그린 것 */
   manual?: boolean;
@@ -21,17 +33,34 @@ export type Box = {
 
 export type CensorModel = { id: string; file: string; classes: string[]; bytes: number; imgsz: number };
 
-type Source = { workspace?: string; file?: string; rel?: string };
+/** 검열할 그림 한 장. 세 갈래로 온다 (백엔드 `CensorSource` 와 같은 계약) */
+export type CensorImage = {
+  id: string;
+  name: string;
+  /** 아웃풋 루트 기준 (파일 관리에서 고른 것) */
+  rel?: string;
+  /** 절대 경로 (Tauri 창에 떨군 것) */
+  path?: string;
+  /** base64 (브라우저에서 고른 것) */
+  data?: string;
+  w?: number;
+  h?: number;
+  /** 목록에 그릴 작은 그림 */
+  thumb?: string;
+};
 
-type S = {
-  models: CensorModel[];
+export type Tab = "before" | "processing" | "after";
+export type Tool = "select" | "add" | "delete";
+
+const KEY = "peropix.censor";
+
+/** 저장하는 것. ★필드를 늘리면 **여기에도 더할 것** (ui.ts `commitLayout` 과 같은 함정) */
+type Saved = {
   model: string | null;
-  /** 지금 손보고 있는 그림 (아웃풋 루트 기준) */
-  target: string | null;
-  size: { w: number; h: number } | null;
-  boxes: Box[];
   targets: string[];
+  labelConf: Record<string, number>;
   conf: number;
+  floor: number;
   method: string;
   color: string;
   expand: number;
@@ -39,119 +68,584 @@ type S = {
   mosaic: number;
   mosaicOpacity: number;
   blur: number;
-  busy: boolean;
-  error: string | null;
-  saved: string | null;
-
-  loadModels: () => Promise<void>;
-  /** ★모델마다 **클래스 이름이 다르다** (기본 nipples… / XL nipple·female face…).
-   *  바꾸면 대상 목록도 그 모델 것으로 갈아 끼워야 한다 — 안 그러면 아무것도 안 찾는다. */
-  setModel: (file: string) => void;
-  open: (rel: string) => void;
-  detect: () => Promise<void>;
-  apply: () => Promise<void>;
-  toggleTarget: (label: string) => void;
-  toggleBox: (i: number) => void;
-  addBox: (b: [number, number, number, number]) => void;
-  removeBox: (i: number) => void;
-  set: (patch: Partial<S>) => void;
+  steamBright: number;
+  steamAlpha: number;
+  steamOpacity: number;
+  dest: string;
 };
 
-const post = <T,>(path: string, body: unknown) =>
-  api<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-
-export const useCensor = create<S>((set, get) => ({
-  models: [],
+const DEFAULTS: Saved = {
   model: null,
-  target: null,
-  size: null,
-  boxes: [],
   targets: [],
-  conf: 0.25,
-  method: "mosaic",
+  labelConf: {},
+  conf: 0.3,
+  floor: 0.1,
+  // ★기본은 **스팀**이다 (v2 의 기본값). 폐기 결정이 없어 그대로 옮겼다
+  method: "steam",
   color: "#000000",
   expand: 0,
   feather: 0,
   mosaic: 12,
   mosaicOpacity: 100,
   blur: 20,
+  steamBright: 100,
+  steamAlpha: 100,
+  steamOpacity: 30,
+  dest: "",
+};
+
+function load(): Saved {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
+  } catch {}
+  return DEFAULTS;
+}
+
+/** ★그림 캐시는 **30장까지** (v2 `imgCacheMaxSize`). 떨군 그림은 주소가 없어 서버에서
+ *  한 번 받아 와야 하는데, 좌우로 훑을 때마다 다시 받으면 넘기는 리듬이 끊긴다. */
+const LRU_MAX = 30;
+const srcCache = new Map<string, string>();
+
+function cacheGet(k: string) {
+  const v = srcCache.get(k);
+  if (v !== undefined) {
+    srcCache.delete(k);
+    srcCache.set(k, v);
+  }
+  return v;
+}
+
+function cacheSet(k: string, v: string) {
+  srcCache.delete(k);
+  srcCache.set(k, v);
+  while (srcCache.size > LRU_MAX) srcCache.delete(srcCache.keys().next().value!);
+}
+
+const post = <T,>(path: string, body: unknown) =>
+  api<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+/** 그림 하나를 가리키는 세 갈래를 요청 몸통으로 (`CensorSource`) */
+const sourceOf = (im: CensorImage) =>
+  im.rel ? { rel: im.rel } : im.path ? { path: im.path } : { data: im.data };
+
+let seq = 1;
+
+type S = Saved & {
+  models: CensorModel[];
+  tab: Tab;
+  /** 검열 전·중 탭이 다루는 목록 */
+  images: CensorImage[];
+  /** 검열 후 탭이 다루는 목록 (이번에 저장한 것) */
+  after: CensorImage[];
+  idx: number;
+  afterIdx: number;
+  /** 그림별 박스. 검열 전에서는 탐지 결과, 검열 중·후에서는 편집 대상 */
+  boxes: Record<string, Box[]>;
+  sizes: Record<string, { w: number; h: number }>;
+  /** 지금 무대에 그릴 원본 주소 (떨군 그림은 서버에서 받아 온 data URL) */
+  src: string | null;
+  /** 가린 모습 (검열 중·후 탭에서만) */
+  preview: string | null;
+  tool: Tool;
+  sel: number;
+  /** 손잡이를 잡고 있는 동안. 가린 모습을 옅게 해 아래를 보여 준다 */
+  editing: boolean;
+  scanning: boolean;
+  busy: boolean;
+  /** 여러 장을 도는 동안의 진행 (전체 검열 · 일괄 저장) */
+  progress: { done: number; total: number; what: "scan" | "save" } | null;
+  /** ★「전체 검열」을 한 번 돌렸나. 안 돌린 채로 검열 중 탭에 들어가면 문턱 미달·꺼 둔 박스가
+   *  그대로 편집 대상이 되어 무엇을 가리는지 알 수 없다 (v2 도 그때까지 탭을 숨겼다) */
+  staged: boolean;
+  error: string | null;
+
+  loadModels: () => Promise<void>;
+  setModel: (file: string) => void;
+  setTab: (t: Tab) => void;
+  set: (patch: Partial<S>) => void;
+  /** 설정 하나를 바꾼다. 저장하고, 필요하면 다시 찾거나 다시 그린다 */
+  tune: (patch: Partial<Saved>, redo?: "scan" | "draw") => void;
+  toggleTarget: (label: string) => void;
+  setLabelConf: (label: string, v: number) => void;
+
+  addImages: (items: Dropped[]) => Promise<void>;
+  toggleRel: (rel: string, name: string) => void;
+  removeImage: (i: number) => void;
+  clearImages: () => void;
+  select: (i: number) => void;
+  step: (d: number) => void;
+
+  scan: () => Promise<void>;
+  scanAll: () => Promise<void>;
+  saveAll: () => Promise<void>;
+  saveOne: () => Promise<void>;
+  cancelProcessing: () => void;
+
+  cur: () => CensorImage | undefined;
+  curBoxes: () => Box[];
+  putBoxes: (b: Box[]) => void;
+  addBox: (b: [number, number, number, number]) => void;
+  removeBox: (i: number) => void;
+  toggleBox: (i: number) => void;
+  setBoxMethod: (i: number, m: string) => void;
+  drawPreview: () => void;
+};
+
+/** 미리보기는 마지막 요청만 그린다. 슬라이더를 끄는 동안 응답이 뒤엉킨다 */
+let drawSeq = 0;
+let drawTimer: ReturnType<typeof setTimeout> | null = null;
+let scanTimer: ReturnType<typeof setTimeout> | null = null;
+let scanSeq = 0;
+
+export const useCensor = create<S>((set, get) => ({
+  ...load(),
+  models: [],
+  tab: "before",
+  images: [],
+  after: [],
+  idx: -1,
+  afterIdx: -1,
+  boxes: {},
+  sizes: {},
+  src: null,
+  preview: null,
+  tool: "select",
+  sel: -1,
+  editing: false,
+  scanning: false,
   busy: false,
+  progress: null,
+  staged: false,
   error: null,
-  saved: null,
+
+  set: (patch) => set(patch as S),
+
+  cur() {
+    const s = get();
+    return s.tab === "after" ? s.after[s.afterIdx] : s.images[s.idx];
+  },
+
+  curBoxes() {
+    const im = get().cur();
+    return im ? (get().boxes[im.id] ?? []) : [];
+  },
+
+  putBoxes(b) {
+    const im = get().cur();
+    if (!im) return;
+    set({ boxes: { ...get().boxes, [im.id]: b } });
+    get().drawPreview();
+  },
 
   async loadModels() {
     const r = await api<{ models: CensorModel[] }>("/api/censor/models");
     const first = r.models[0];
+    const keep = r.models.some((m) => m.file === get().model);
+    const model = keep ? get().model : (first?.file ?? null);
+    const classes = r.models.find((m) => m.file === model)?.classes ?? [];
+    const targets = get().targets.filter((t) => classes.includes(t));
     set({
       models: r.models,
-      model: get().model ?? first?.file ?? null,
-      // ★처음엔 **전부** 대상이다. 켜는 것을 잊어 아무것도 안 찾는 일이 없게.
-      targets: get().targets.length ? get().targets : (first?.classes ?? []),
+      model,
+      // ★처음엔 **전부** 대상이다. 켜는 것을 잊어 아무것도 안 찾는 일이 없게
+      targets: targets.length ? targets : classes,
+      labelConf: fillConf(get().labelConf, classes, get().conf),
     });
   },
 
   setModel(file) {
-    const m = get().models.find((x) => x.file === file);
-    set({ model: file, targets: m?.classes ?? [], boxes: [], saved: null, error: null });
+    // ★모델마다 **클래스 이름이 다르다** (기본 nipples… / XL nipple·female face…).
+    //   바꾸면 대상 목록도 그 모델 것으로 갈아 끼워야 한다. 안 그러면 아무것도 안 찾는다
+    const classes = get().models.find((m) => m.file === file)?.classes ?? [];
+    set({ model: file, targets: classes, labelConf: fillConf(get().labelConf, classes, get().conf), error: null });
+    save(get());
+    void get().scan();
   },
 
-  open: (rel) => set({ target: rel, boxes: [], saved: null, error: null }),
-
-  async detect() {
-    const { target, model, targets, conf } = get();
-    if (!target || get().busy) return;
-    set({ busy: true, error: null, saved: null });
-    try {
-      const r = await post<{ detections: Box[]; width: number; height: number }>("/api/censor/detect", {
-        rel: target,
-        model,
-        targets,
-        default_conf: conf,
-      });
-      set({ boxes: r.detections, size: { w: r.width, h: r.height } });
-    } catch (e) {
-      set({ error: String(e) });
-    } finally {
-      set({ busy: false });
-    }
-  },
-
-  async apply() {
+  setTab(t) {
+    if (t === get().tab) return;
+    set({ tab: t, sel: -1, tool: "select", preview: null, src: null, error: null });
     const s = get();
-    if (!s.target || s.busy) return;
-    const boxes = s.boxes.filter((b) => !b.off).map((b) => ({ box: b.box }));
-    if (!boxes.length) return set({ error: "가릴 곳이 없습니다" });
-    set({ busy: true, error: null });
-    try {
-      const r = await post<{ file: string; name: string }>("/api/censor/apply", {
-        rel: s.target,
-        boxes,
-        method: s.method,
-        color: s.color,
-        expand: s.expand,
-        feather: s.feather,
-        mosaic_strength: s.mosaic,
-        mosaic_opacity: s.mosaicOpacity,
-        blur_strength: s.blur,
-      });
-      set({ saved: r.name });
-    } catch (e) {
-      set({ error: String(e) });
-    } finally {
-      set({ busy: false });
-    }
+    if (t === "after") s.select(s.afterIdx >= 0 ? s.afterIdx : 0);
+    else s.select(s.idx >= 0 ? s.idx : 0);
+  },
+
+  tune(patch, redo) {
+    set(patch as S);
+    save(get());
+    if (redo === "scan" && get().tab === "before") void get().scan();
+    if (redo === "draw") get().drawPreview();
   },
 
   toggleTarget(label) {
     const t = get().targets;
-    set({ targets: t.includes(label) ? t.filter((x) => x !== label) : [...t, label] });
+    get().tune({ targets: t.includes(label) ? t.filter((x) => x !== label) : [...t, label] }, "scan");
   },
 
-  toggleBox: (i) => set({ boxes: get().boxes.map((b, n) => (n === i ? { ...b, off: !b.off } : b)) }),
-  addBox: (box) =>
-    set({ boxes: [...get().boxes, { label: "직접", confidence: 1, box, manual: true }] }),
-  removeBox: (i) => set({ boxes: get().boxes.filter((_, n) => n !== i) }),
-  set: (patch) => set(patch as S),
+  setLabelConf(label, v) {
+    get().tune({ labelConf: { ...get().labelConf, [label]: v } }, "scan");
+  },
+
+  async addImages(items) {
+    if (!items.length) return;
+    const base = await backendUrl();
+    // 목록에 그릴 작은 그림·크기는 서버가 준다. 앱에는 경로만 오므로 화면이 못 읽는다
+    let probed: { thumb?: string; width?: number; height?: number }[] = [];
+    try {
+      const r = await post<{ items: { thumb?: string; width?: number; height?: number }[] }>(
+        "/api/tools/probe",
+        { items: items.map((it) => ({ name: it.name, rel: it.rel, path: it.path, data: it.data })) },
+      );
+      probed = r.items;
+    } catch {}
+    const cur = get().images;
+    const have = new Set(cur.map((x) => x.rel ?? x.path ?? x.name));
+    const add: CensorImage[] = [];
+    items.forEach((it, i) => {
+      const key = it.rel ?? it.path ?? it.name;
+      if (have.has(key)) return;
+      have.add(key);
+      add.push({
+        id: `c${seq++}`,
+        name: it.name,
+        rel: it.rel,
+        path: it.path,
+        data: it.data,
+        thumb: probed[i]?.thumb || (it.rel ? undefined : undefined),
+        w: probed[i]?.width,
+        h: probed[i]?.height,
+      });
+    });
+    if (!add.length) return;
+    void base;
+    const images = [...cur, ...add];
+    // 담은 것이 늘면 「전체 검열」을 다시 돌려야 한다. 새 장에는 아직 박스가 없다
+    set({ images, staged: false });
+    if (get().tab === "before") get().select(images.indexOf(add[0]));
+  },
+
+  /** 파일 트리 격자에서 누르면 목록에 담고, 다시 누르면 뺀다 */
+  toggleRel(rel, name) {
+    const at = get().images.findIndex((x) => x.rel === rel);
+    if (at >= 0) return get().removeImage(at);
+    void get().addImages([{ name, rel }]);
+  },
+
+  removeImage(i) {
+    const s = get();
+    if (s.tab === "after") return;
+    const images = s.images.filter((_, n) => n !== i);
+    const idx = images.length ? Math.min(s.idx > i ? s.idx - 1 : s.idx, images.length - 1) : -1;
+    set({ images, idx: -1 });
+    // ★인덱스를 한 번 -1 로 떨어뜨린 뒤 다시 고른다. 같은 번호에 다른 그림이 오면
+    //   select 가 "이미 그 자리"라고 보고 아무것도 안 한다
+    if (idx >= 0) get().select(idx);
+    else set({ src: null, preview: null, idx: -1 });
+  },
+
+  clearImages() {
+    scanSeq++;
+    set({ images: [], idx: -1, src: null, preview: null, boxes: {}, scanning: false, staged: false, error: null });
+  },
+
+  select(i) {
+    const s = get();
+    const list = s.tab === "after" ? s.after : s.images;
+    if (i < 0 || i >= list.length) return set({ src: null, preview: null, sel: -1 });
+    const im = list[i];
+    set(s.tab === "after" ? { afterIdx: i } : { idx: i });
+    set({ sel: -1, preview: null, error: null });
+    void resolveSrc(im).then(({ src, size }) => {
+      // 넘기는 사이에 다른 장으로 갔으면 버린다
+      if (get().cur()?.id !== im.id) return;
+      set({ src });
+      if (size && !get().sizes[im.id]) set({ sizes: { ...get().sizes, [im.id]: size } });
+    });
+    prefetch(list, i);
+    if (s.tab === "before") {
+      if (!get().boxes[im.id]) void get().scan();
+    } else {
+      get().drawPreview();
+    }
+  },
+
+  step(d) {
+    const s = get();
+    const list = s.tab === "after" ? s.after : s.images;
+    const at = s.tab === "after" ? s.afterIdx : s.idx;
+    const next = at + d;
+    if (next >= 0 && next < list.length) s.select(next);
+  },
+
+  async scan() {
+    const s = get();
+    const im = s.cur();
+    if (!im || s.tab !== "before" || !s.model) return;
+    if (!s.targets.length) return set({ boxes: { ...s.boxes, [im.id]: [] } });
+    if (scanTimer) clearTimeout(scanTimer);
+    const mine = ++scanSeq;
+    set({ scanning: true });
+    scanTimer = setTimeout(() => {
+      void (async () => {
+        try {
+          const r = await post<{ detections: Box[]; width: number; height: number }>("/api/censor/detect", {
+            ...sourceOf(im),
+            model: s.model,
+            targets: s.targets,
+            label_conf: s.labelConf,
+            default_conf: s.conf,
+            // ★문턱 미달도 받아 온다. 화면의 「낮은 신뢰도 숨김」이 다시 거른다.
+            //   문턱을 올렸다 내릴 때마다 다시 찾지 않아도 된다
+            return_all: true,
+          });
+          if (mine !== scanSeq) return;
+          set({
+            boxes: { ...get().boxes, [im.id]: r.detections },
+            sizes: { ...get().sizes, [im.id]: { w: r.width, h: r.height } },
+            error: null,
+          });
+        } catch (e) {
+          if (mine === scanSeq) set({ error: String(e) });
+        } finally {
+          if (mine === scanSeq) set({ scanning: false });
+        }
+      })();
+    }, 250);
+  },
+
+  /** 전체 검열. 담아 둔 것을 **전부 찾아** 검열 중 탭으로 넘긴다 (v2 `runBatchCensor`).
+   *
+   *  ★이미 찾아 둔 장은 **다시 찾지 않는다.** v2 는 전부 새로 돌려서, 검열 전 탭에서
+   *    꺼 둔 오탐이 되살아났다 (장당 0.4초·XL 은 4초라 기다림도 그만큼 길었다). */
+  async scanAll() {
+    const s = get();
+    if (s.busy || !s.images.length || !s.model) return;
+    if (!s.targets.length) return set({ error: "찾을 것을 하나 이상 고르세요" });
+    set({ busy: true, error: null, progress: { done: 0, total: s.images.length, what: "scan" } });
+    const boxes = { ...s.boxes };
+    const sizes = { ...s.sizes };
+    for (let i = 0; i < s.images.length; i++) {
+      const im = s.images[i];
+      try {
+        if (!boxes[im.id]) {
+          const r = await post<{ detections: Box[]; width: number; height: number }>("/api/censor/detect", {
+            ...sourceOf(im),
+            model: s.model,
+            targets: s.targets,
+            label_conf: s.labelConf,
+            default_conf: s.conf,
+            return_all: true,
+          });
+          boxes[im.id] = r.detections;
+          sizes[im.id] = { w: r.width, h: r.height };
+        }
+        // 검열 중 탭에서 고칠 것이므로 지금 방식을 박스마다 박아 둔다 (박스별로 바꿀 수 있게)
+        boxes[im.id] = boxes[im.id]
+          .filter((b) => !b.off && passes(b, s.labelConf, s.conf))
+          .map((b) => ({ ...b, method: b.method ?? s.method }));
+      } catch (e) {
+        boxes[im.id] = boxes[im.id] ?? [];
+        set({ error: String(e) });
+      }
+      set({ progress: { done: i + 1, total: s.images.length, what: "scan" } });
+    }
+    set({ boxes, sizes, busy: false, progress: null, staged: true });
+    get().setTab("processing");
+  },
+
+  /** 일괄 저장. ★**박스가 0개인 장도 저장한다**. 결과 폴더가 원본 묶음의 대역이 되어야 한다 */
+  async saveAll() {
+    const s = get();
+    if (s.busy || !s.images.length) return;
+    set({ busy: true, error: null, progress: { done: 0, total: s.images.length, what: "save" } });
+    const made: CensorImage[] = [];
+    for (let i = 0; i < s.images.length; i++) {
+      const im = s.images[i];
+      try {
+        const r = await post<{ file: string; name: string }>("/api/censor/apply", {
+          ...sourceOf(im),
+          name: im.name,
+          boxes: liveBoxes(get().boxes[im.id] ?? []),
+          ...coverArgs(get()),
+        });
+        made.push({ id: `a${seq++}`, name: r.name, rel: r.file });
+      } catch (e) {
+        set({ error: String(e) });
+      }
+      set({ progress: { done: i + 1, total: s.images.length, what: "save" } });
+    }
+    set({ after: made, afterIdx: -1, busy: false, progress: null, staged: false });
+    get().setTab("after");
+  },
+
+  /** 검열 후 탭에서 한 장을 다시 저장한다 (v2 `saveAfterEdit`) */
+  async saveOne() {
+    const s = get();
+    const im = s.cur();
+    if (!im || s.busy) return;
+    const boxes = liveBoxes(s.boxes[im.id] ?? []);
+    if (!boxes.length) return set({ error: "더한 박스가 없습니다" });
+    set({ busy: true, error: null });
+    try {
+      const r = await post<{ file: string; name: string }>("/api/censor/apply", {
+        ...sourceOf(im),
+        name: im.name,
+        boxes,
+        ...coverArgs(s),
+      });
+      const made: CensorImage = { id: `a${seq++}`, name: r.name, rel: r.file };
+      set({ after: [...get().after, made], boxes: { ...get().boxes, [im.id]: [] } });
+      get().select(get().after.length - 1);
+    } catch (e) {
+      set({ error: String(e) });
+    } finally {
+      set({ busy: false });
+    }
+  },
+
+  cancelProcessing() {
+    set({ tab: "before", sel: -1, tool: "select", preview: null, staged: false, error: null });
+    get().select(get().idx >= 0 ? get().idx : 0);
+  },
+
+  addBox(box) {
+    const s = get();
+    const im = s.cur();
+    if (!im) return;
+    const cur = s.boxes[im.id] ?? [];
+    s.putBoxes([...cur, { label: "직접", confidence: 1, box, manual: true, method: s.method }]);
+    set({ sel: cur.length });
+  },
+
+  removeBox(i) {
+    const s = get();
+    s.putBoxes(s.curBoxes().filter((_, n) => n !== i));
+    set({ sel: -1 });
+  },
+
+  toggleBox(i) {
+    const s = get();
+    s.putBoxes(s.curBoxes().map((b, n) => (n === i ? { ...b, off: !b.off } : b)));
+  },
+
+  setBoxMethod(i, m) {
+    const s = get();
+    s.putBoxes(s.curBoxes().map((b, n) => (n === i ? { ...b, method: m } : b)));
+  },
+
+  /** 가린 모습을 서버에 그려 달라고 한다. ★마지막 요청만 그린다.
+   *
+   *  ★덮개가 **옅어진 상태를 새 그림이 올 때까지** 유지한다 (`editing`). 손을 떼는 순간
+   *    진하게 되돌리면, 아직 옛 자리를 가린 그림이 한 박자 동안 진하게 서 있어
+   *    "안 따라왔다"로 보인다. */
+  drawPreview() {
+    const s = get();
+    if (s.tab === "before") return set({ preview: null, editing: false });
+    const im = s.cur();
+    if (!im) return set({ preview: null, editing: false });
+    const boxes = liveBoxes(s.boxes[im.id] ?? []);
+    if (!boxes.length) return set({ preview: null, editing: false });
+    if (drawTimer) clearTimeout(drawTimer);
+    const mine = ++drawSeq;
+    drawTimer = setTimeout(() => {
+      void (async () => {
+        try {
+          const r = await post<{ image: string }>("/api/censor/preview", {
+            ...sourceOf(im),
+            boxes,
+            ...coverArgs(get()),
+          });
+          if (mine === drawSeq && get().cur()?.id === im.id) set({ preview: r.image, editing: false });
+        } catch (e) {
+          if (mine === drawSeq) set({ error: String(e), editing: false });
+        }
+      })();
+    }, 260);
+  },
 }));
 
-export type { Source };
+/** 이 박스가 **문턱을 넘었나.** ★저장된 `passes_threshold` 를 그대로 믿지 않는다.
+ *  찾은 뒤에 클래스별 문턱을 고쳤으면 그 값은 옛것이다. 지금 설정으로 다시 판정한다. */
+export const passes = (b: Box, labelConf: Record<string, number>, conf: number) =>
+  !!b.manual || b.confidence >= (labelConf[b.label] ?? conf);
+
+/** 새 클래스에는 지금 문턱을 채워 준다 (v2 는 0.3 을 박아 뒀다. 여기서는 공통 문턱을 쓴다) */
+function fillConf(cur: Record<string, number>, classes: string[], base: number) {
+  const out = { ...cur };
+  for (const c of classes) if (!(c in out)) out[c] = base;
+  return out;
+}
+
+function save(s: Saved) {
+  const { model, targets, labelConf, conf, floor, method, color, expand, feather, mosaic,
+    mosaicOpacity, blur, steamBright, steamAlpha, steamOpacity, dest } = s;
+  try {
+    localStorage.setItem(KEY, JSON.stringify({ model, targets, labelConf, conf, floor, method,
+      color, expand, feather, mosaic, mosaicOpacity, blur, steamBright, steamAlpha, steamOpacity, dest }));
+  } catch {}
+}
+
+/** 실제로 가릴 박스만. 끈 것은 뺀다 */
+export const liveBoxes = (b: Box[]) =>
+  b
+    .filter((x) => !x.off)
+    .map((x) => ({
+      box: x.box.map((v) => Math.round(v)) as [number, number, number, number],
+      method: x.method,
+      rotation: x.rotation ?? 0,
+    }));
+
+/** 가리는 방법 한 벌. 미리보기와 저장이 **같은 값**을 보낸다 */
+function coverArgs(s: Saved) {
+  return {
+    method: s.method,
+    color: s.color,
+    expand: s.expand,
+    feather: s.feather,
+    mosaic_strength: s.mosaic,
+    mosaic_opacity: s.mosaicOpacity,
+    blur_strength: s.blur,
+    steam_brightness: s.steamBright,
+    steam_alpha: s.steamAlpha,
+    dest: s.dest || undefined,
+  };
+}
+
+/** 무대에 그릴 주소. 아웃풋 안의 그림은 그대로 가리키고, 밖의 것은 서버에서 한 번 받는다.
+ *
+ *  ★밖의 그림은 **줄여서** 온다. 그래서 크기를 함께 받아 둔다. 화면이 `naturalWidth` 를
+ *    믿으면 줄인 크기를 원본 크기로 알고, 박스 좌표가 통째로 어긋난다. */
+async function resolveSrc(im: CensorImage): Promise<{ src: string; size?: { w: number; h: number } }> {
+  const hit = cacheGet(im.id);
+  if (hit) return { src: hit, size: im.w && im.h ? { w: im.w, h: im.h } : undefined };
+  if (im.rel) {
+    const src = fileMgrImg(await backendUrl(), im.rel);
+    cacheSet(im.id, src);
+    return { src };
+  }
+  // ★떨군 그림에는 **주소가 없다.** 가리기 0개짜리 미리보기가 곧 그 그림이다
+  const r = await post<{ image: string; width: number; height: number }>("/api/censor/preview", {
+    ...sourceOf(im),
+    boxes: [],
+  });
+  cacheSet(im.id, r.image);
+  im.w = r.width;
+  im.h = r.height;
+  return { src: r.image, size: { w: r.width, h: r.height } };
+}
+
+/** 좌우 세 장을 미리 받아 둔다 (v2 `prefetchCensorImages`) */
+function prefetch(list: CensorImage[], at: number) {
+  for (let d = 1; d <= 3; d++) {
+    for (const i of [at + d, at - d]) {
+      const im = list[i];
+      if (!im || srcCache.has(im.id)) continue;
+      void resolveSrc(im).then(({ src }) => {
+        // 브라우저 캐시에도 올려 둔다. 넘기는 순간 다시 내려받지 않게
+        const img = new Image();
+        img.src = src;
+      });
+    }
+  }
+}

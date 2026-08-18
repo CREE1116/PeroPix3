@@ -1,19 +1,23 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useI18n } from "../i18n";
-import { useCensor } from "../store/censor";
+import { useCensor, type Tab } from "../store/censor";
 import { useFiles, type FileNode } from "../store/files";
 import { useGen } from "../store/gen";
-import { fileMgrImg, fileMgrThumb } from "../lib/imgUrl";
+import { fileMgrThumb } from "../lib/imgUrl";
+import { useImageDrop } from "../lib/dropImages";
 import { toast } from "../store/toast";
 import { Icon } from "../components/Icon";
 import { onNearBottom } from "../lib/nearBottom";
+import { CensorStage } from "./censor/CensorStage";
+import { CensorSide } from "./censor/CensorSide";
+import { card, box } from "./censor/ui";
 
-/** 검열 — 가릴 곳을 찾아 가린다 (8단계).
+/** 자동 검열. **여러 장을 한 번에** 찾고 가린다 (v2 이식).
  *
- *  ★**찾기와 가리기 사이에 사람이 있다.** 찾은 박스를 보고 끄거나 더 그린 뒤에 적용한다 —
- *    자동으로 바로 덮으면 잘못 찾은 것을 눈으로 잡을 기회가 없다.
- *  ★결과는 **새 파일**이다 (`_censored`). 원본은 그대로 남는다.
- *  ★고를 그림은 **파일 관리와 같은 트리**에서 고른다 (`useFiles`) — 목록을 두 벌 만들지 않는다.
+ *  ★탭 셋이 곧 작업 순서다: 담아서 찾고(검열 전) · 손보고(검열 중) · 다시 손본다(검열 후).
+ *  ★그림은 **두 길로** 들어온다: 아웃풋 폴더에서 고르거나(왼쪽 트리), 밖에서 떨구거나.
+ *    떨군 것은 경로만 서버로 가고 바이트는 안 실린다 (`lib/dropImages.ts` 머리 주석).
+ *  ★결과는 **새 파일**이다. 원본은 그대로 남는다. 덮어쓰기 경로를 만들지 말 것.
  */
 export function Censor() {
   const t = useI18n((s) => s.t);
@@ -21,8 +25,19 @@ export function Censor() {
   const c = useCensor();
   const { tree, folder, items, open: opened, hasMore, loadTree, go, more, toggleOpen } = useFiles();
   const onScroll = onNearBottom(() => void more());
-  const [draw, setDraw] = useState<{ x: number; y: number; x2: number; y2: number } | null>(null);
-  const imgRef = useRef<HTMLImageElement | null>(null);
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+
+  const list = c.tab === "after" ? c.after : c.images;
+  const at = c.tab === "after" ? c.afterIdx : c.idx;
+  const picked = new Set(c.images.map((x) => x.rel).filter(Boolean) as string[]);
+
+  // ★떨군 그림은 **검열 전 탭에서만** 받는다 (v2 `canAcceptDrop`).
+  //   결과를 보는 탭에 떨군 것이 조용히 다른 목록으로 들어가면 어디로 갔는지 알 수 없다
+  const { zone, over, pick } = useImageDrop((dropped) => {
+    if (useCensor.getState().tab !== "before") return;
+    void c.addImages(dropped);
+  });
 
   useEffect(() => {
     void c.loadModels();
@@ -30,21 +45,54 @@ export function Censor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 고른 장이 띠 밖으로 나가지 않게 (v2 `scrollIntoView`)
   useEffect(() => {
-    if (c.saved) toast(t("censor.saved", { n: c.saved }));
-  }, [c.saved, t]);
+    stripRef.current?.querySelector<HTMLElement>('[data-censor-thumb-active="1"]')?.scrollIntoView({
+      block: "nearest",
+      inline: "center",
+      behavior: "smooth",
+    });
+  }, [at, c.tab]);
 
-  const classes = c.models.find((m) => m.file === c.model)?.classes ?? [];
+  /** 무대의 휠 = 장 넘기기.
+   *
+   *  ★**네이티브 리스너로 붙인다.** React 의 `onWheel` 은 뿌리에 passive 로 달려서
+   *    `preventDefault()` 가 안 먹고, 그러면 넘기면서 화면까지 함께 밀린다
+   *    (`SceneLane` 의 Ctrl+휠과 같은 함정). */
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      const s = useCensor.getState();
+      const n = (s.tab === "after" ? s.after : s.images).length;
+      if (n < 2) return;
+      e.preventDefault();
+      s.step(e.deltaY > 0 ? 1 : -1);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [c.tab]);
 
-  /** 화면 좌표 → 그림 좌표 */
-  const toImage = (e: React.PointerEvent) => {
-    const el = imgRef.current;
-    if (!el || !c.size) return null;
-    const r = el.getBoundingClientRect();
-    const sx = c.size.w / r.width;
-    const sy = c.size.h / r.height;
-    return { x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy };
-  };
+  /** 단축키. ★입력칸에 커서가 있으면 먹지 않는다 (숫자칸에 1 을 못 치면 곤란하다) */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      const s = useCensor.getState();
+      if (s.tab !== "before" && (e.key === "1" || e.key === "2" || e.key === "3")) {
+        e.preventDefault();
+        return s.set({ tool: e.key === "1" ? "select" : e.key === "2" ? "add" : "delete", sel: -1 });
+      }
+      if (e.key === "Delete" && s.tab !== "before" && s.sel >= 0) {
+        e.preventDefault();
+        return s.removeBox(s.sel);
+      }
+      if (e.key === "ArrowLeft") return s.step(-1);
+      if (e.key === "ArrowRight") return s.step(1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const Row = ({ node, depth }: { node: FileNode; depth: number }) => (
     <>
@@ -60,7 +108,7 @@ export function Censor() {
           fontSize: "var(--text-2xs)",
           cursor: "pointer",
           color: folder === node.path ? "var(--ink)" : "var(--ink-soft)",
-          background: folder === node.path ? "var(--raise)" : undefined,
+          background: folder === node.path ? "var(--accent-bg)" : undefined,
         }}
       >
         <button
@@ -89,352 +137,409 @@ export function Censor() {
   );
 
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", gap: "var(--sp-4)", padding: "var(--sp-4)" }}>
-      {/* 왼쪽 — 어느 그림 */}
-      <div style={{ width: 220, flexShrink: 0, display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
-        <div style={{ ...card, flex: "0 0 40%", overflowY: "auto", padding: "var(--sp-2)" }}>
-          {tree.map((n) => (
-            <Row key={n.path} node={n} depth={0} />
-          ))}
-        </div>
-        <div
-          data-censor-picker
-          onScroll={onScroll}
-          style={{
-            ...card,
-            flex: 1,
-            minHeight: 0,
-            overflowY: "auto",
-            padding: "var(--sp-2)",
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(60px, 1fr))",
-            gridAutoRows: "min-content",
-            gap: "var(--sp-2)",
-            alignContent: "start",
-          }}
-        >
-          {items.map((it) => (
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: "var(--sp-3)", padding: "var(--sp-4)" }}>
+      {/* ── 머리: 어디까지 왔나 · 어디에 저장하나 ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
+        {TABS.map(([id, key]) => {
+          const active = c.tab === id;
+          const dim = id === "processing" && !c.staged;
+          return (
             <button
-              key={it.file}
-              data-censor-pick={it.file}
-              onClick={() => c.open(it.file)}
-              title={it.name}
+              key={id}
+              data-censor-tab={id}
+              onClick={() => c.setTab(id)}
+              disabled={dim}
               style={{
-                aspectRatio: "1 / 1",
+                padding: "var(--sp-2) var(--sp-4)",
+                borderRadius: "var(--r-2)",
+                fontSize: "var(--text-xs)",
+                fontWeight: "var(--w-semi)",
+                border: `1px solid ${active ? "var(--accent)" : "transparent"}`,
+                background: active ? "var(--accent-bg)" : "transparent",
+                color: active ? "var(--ink)" : dim ? "var(--ink-ghost)" : "var(--ink-dim)",
+              }}
+            >
+              {t(key)}
+            </button>
+          );
+        })}
+
+        <span style={{ flex: 1 }} />
+
+        {/* 저장 폴더. 결과가 갈 자리 (v2 의 `censored` 폴더 드롭다운) */}
+        <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>{t("censor.dest")}</span>
+        <select
+          data-censor-dest
+          value={c.dest}
+          onChange={(e) => c.tune({ dest: e.target.value })}
+          style={{ ...box, maxWidth: 220 }}
+        >
+          <option value="">{t("censor.destBeside")}</option>
+          {/* ★들여쓰기가 아니라 **온 경로**를 적는다. option 은 앞 공백을 접어 버려
+              층이 안 보이고, 저장할 자리는 끝 이름만으로는 못 가린다 */}
+          {flatten(tree).map((path) => (
+            <option key={path} value={path}>
+              {path}
+            </option>
+          ))}
+        </select>
+        <button
+          data-censor-mkdir
+          title={t("censor.newFolder")}
+          onClick={() => void newFolder(c.dest, t)}
+          style={{ ...box, display: "grid", placeItems: "center", padding: "3px var(--sp-2)" }}
+        >
+          {Icon.folderPlus}
+        </button>
+        <button
+          data-censor-open-folder
+          title={t("censor.openFolder")}
+          onClick={() => void useFiles.getState().reveal(c.dest)}
+          style={{ ...box, display: "grid", placeItems: "center", padding: "3px var(--sp-2)" }}
+        >
+          {Icon.folderOpen}
+        </button>
+      </div>
+
+      {/* ── 썸네일 띠: 지금 다루는 목록 ── */}
+      <div
+        ref={stripRef}
+        data-censor-strip
+        onWheelCapture={(e) => {
+          // ★띠에서는 휠이 **가로 스크롤**이다 (무대의 장 넘기기와 갈라 둔다)
+          if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+          e.stopPropagation();
+          e.currentTarget.scrollLeft += e.deltaY;
+        }}
+        style={{
+          ...card,
+          flexShrink: 0,
+          height: 68,
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--sp-2)",
+          padding: "var(--sp-2)",
+          overflowX: "auto",
+          overflowY: "hidden",
+        }}
+      >
+        {list.map((im, i) => (
+          <div key={im.id} style={{ position: "relative", flexShrink: 0 }}>
+            <button
+              data-censor-thumb={i}
+              data-censor-thumb-active={at === i ? "1" : "0"}
+              onClick={() => c.select(i)}
+              title={im.name}
+              style={{
+                width: 50,
+                height: 50,
                 borderRadius: "var(--r-2)",
                 overflow: "hidden",
-                border: `2px solid ${c.target === it.file ? "var(--accent)" : "transparent"}`,
                 padding: 0,
                 background: "var(--bg)",
+                border: `2px solid ${at === i ? "var(--accent)" : "transparent"}`,
               }}
             >
               <img
-                src={fileMgrThumb(base, it.file)}
+                src={im.thumb ?? (im.rel ? fileMgrThumb(base, im.rel) : undefined)}
                 alt=""
                 loading="lazy"
                 decoding="async"
-                style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                style={{ width: "100%", height: "100%", objectFit: "cover" }}
               />
             </button>
-          ))}
-          {hasMore && (
-            <span style={{ gridColumn: "1/-1", textAlign: "center", fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
-              …
-            </span>
-          )}
-          {!items.length && (
-            <span style={{ gridColumn: "1/-1", margin: "auto", fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
-              {t("files.empty")}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* 가운데 — 찾은 것을 눈으로 */}
-      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--sp-3)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)" }}>
-          <span style={{ fontSize: "var(--text-xs)", color: "var(--ink-soft)", fontWeight: "var(--w-semi)" }}>
-            {c.target ? c.target.split("/").pop() : t("censor.pickImage")}
-          </span>
-          <span style={{ flex: 1 }} />
-          {!!c.boxes.length && (
-            <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
-              {t("censor.found", { n: c.boxes.filter((b) => !b.off).length })}
-            </span>
-          )}
-          <button data-censor-detect onClick={() => void c.detect()} disabled={!c.target || c.busy} style={btn}>
-            {t("censor.detect")}
-          </button>
-        </div>
-
-        <div
-          data-censor-stage
-          style={{
-            flex: 1,
-            minHeight: 0,
-            ...card,
-            display: "grid",
-            placeItems: "center",
-            overflow: "hidden",
-            position: "relative",
-          }}
-        >
-          {c.target ? (
-            <div style={{ position: "relative", maxWidth: "100%", maxHeight: "100%", lineHeight: 0 }}>
-              <img
-                ref={imgRef}
-                data-censor-img
-                src={fileMgrImg(base, c.target)}
-                alt=""
-                draggable={false}
-                onLoad={(e) =>
-                  c.set({ size: { w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight } })
-                }
-                style={{ maxWidth: "100%", maxHeight: "72vh", objectFit: "contain", userSelect: "none" }}
-              />
-              {/* 박스 층 — ★그림 위에 얹지만 그림을 가리지 않는다 (반투명 테두리만) */}
-              <svg
-                viewBox={c.size ? `0 0 ${c.size.w} ${c.size.h}` : undefined}
-                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", cursor: "crosshair" }}
-                onPointerDown={(e) => {
-                  const p = toImage(e);
-                  if (!p) return;
-                  (e.target as Element).setPointerCapture?.(e.pointerId);
-                  setDraw({ x: p.x, y: p.y, x2: p.x, y2: p.y });
-                }}
-                onPointerMove={(e) => {
-                  if (!draw) return;
-                  const p = toImage(e);
-                  if (p) setDraw({ ...draw, x2: p.x, y2: p.y });
-                }}
-                onPointerUp={() => {
-                  if (!draw) return;
-                  const b: [number, number, number, number] = [
-                    Math.round(Math.min(draw.x, draw.x2)),
-                    Math.round(Math.min(draw.y, draw.y2)),
-                    Math.round(Math.max(draw.x, draw.x2)),
-                    Math.round(Math.max(draw.y, draw.y2)),
-                  ];
-                  // ★손이 떨린 정도는 박스가 아니다 — 너무 작으면 버린다
-                  if (b[2] - b[0] > 8 && b[3] - b[1] > 8) c.addBox(b);
-                  setDraw(null);
-                }}
-              >
-                {c.boxes.map((b, i) => (
-                  <g key={i} opacity={b.off ? 0.3 : 1}>
-                    <rect
-                      data-censor-box={i}
-                      x={b.box[0]}
-                      y={b.box[1]}
-                      width={b.box[2] - b.box[0]}
-                      height={b.box[3] - b.box[1]}
-                      fill={b.off ? "none" : "rgba(220,60,60,0.14)"}
-                      stroke={b.manual ? "var(--accent)" : "#dc3c3c"}
-                      strokeWidth={Math.max(1, (c.size?.w ?? 1000) / 400)}
-                      onPointerDown={(e) => {
-                        e.stopPropagation();
-                        c.toggleBox(i);
-                      }}
-                      style={{ cursor: "pointer" }}
-                    />
-                    <text
-                      x={b.box[0] + 4}
-                      y={b.box[1] - 4}
-                      fill="#dc3c3c"
-                      fontSize={Math.max(10, (c.size?.w ?? 1000) / 50)}
-                      style={{ pointerEvents: "none" }}
-                    >
-                      {b.label} {b.manual ? "" : b.confidence}
-                    </text>
-                  </g>
-                ))}
-                {draw && (
-                  <rect
-                    x={Math.min(draw.x, draw.x2)}
-                    y={Math.min(draw.y, draw.y2)}
-                    width={Math.abs(draw.x2 - draw.x)}
-                    height={Math.abs(draw.y2 - draw.y)}
-                    fill="rgba(90,140,255,0.2)"
-                    stroke="var(--accent)"
-                    strokeWidth={Math.max(1, (c.size?.w ?? 1000) / 400)}
-                  />
-                )}
-              </svg>
-            </div>
-          ) : (
-            <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>{t("censor.pickImage")}</span>
-          )}
-        </div>
-
-        <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>{t("censor.boxHint")}</span>
-      </div>
-
-      {/* 오른쪽 — 어떻게 가릴까 */}
-      <div style={{ width: 250, flexShrink: 0, display: "flex", flexDirection: "column", gap: "var(--sp-4)", overflowY: "auto" }}>
-        <Sec label={t("censor.model")}>
-          <select
-            data-censor-model
-            value={c.model ?? ""}
-            onChange={(e) => c.setModel(e.target.value)}
-            style={{ ...box, width: "100%" }}
-          >
-            {c.models.map((m) => (
-              <option key={m.file} value={m.file}>
-                {m.id} · {Math.round(m.bytes / 1e6)}MB · {m.imgsz}px
-              </option>
-            ))}
-          </select>
-          <Hint>{t("censor.modelHint")}</Hint>
-        </Sec>
-
-        <Sec label={t("censor.targets")}>
-          {classes.map((k) => (
-            <label key={k} style={lbl}>
-              <input
-                type="checkbox"
-                data-censor-target={k}
-                checked={c.targets.includes(k)}
-                onChange={() => c.toggleTarget(k)}
-              />
-              {k}
-            </label>
-          ))}
-          <Line label={t("censor.conf")}>
-            <input
-              type="range"
-              data-censor-conf
-              min={0.05}
-              max={0.9}
-              step={0.05}
-              value={c.conf}
-              onChange={(e) => c.set({ conf: Number(e.target.value) })}
-              style={{ flex: 1 }}
-            />
-            <span style={{ width: 28, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{c.conf}</span>
-          </Line>
-          <Hint>{t("censor.confHint")}</Hint>
-        </Sec>
-
-        <Sec label={t("censor.method")}>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sp-2)" }}>
-            {METHODS.map(([m, key]) => (
+            {c.tab === "before" && (
               <button
-                key={m}
-                data-censor-method={m}
-                onClick={() => c.set({ method: m })}
-                style={{ ...box, ...(c.method === m ? on : {}) }}
+                data-censor-thumb-del={i}
+                title={t("censor.removeOne")}
+                onClick={() => c.removeImage(i)}
+                style={{
+                  position: "absolute",
+                  top: -2,
+                  right: -2,
+                  width: 16,
+                  height: 16,
+                  display: "grid",
+                  placeItems: "center",
+                  borderRadius: "50%",
+                  background: "var(--panel)",
+                  border: "1px solid var(--line)",
+                  color: "var(--ink-dim)",
+                }}
               >
-                {t(key)}
+                {Icon.close12}
               </button>
-            ))}
+            )}
           </div>
-          {c.method === "color" && (
-            <input type="color" value={c.color} onChange={(e) => c.set({ color: e.target.value })} style={{ width: "100%" }} />
-          )}
-          {c.method === "mosaic" && (
-            <>
-              <Line label={t("censor.grain")}>
-                <input type="range" min={2} max={60} value={c.mosaic} onChange={(e) => c.set({ mosaic: Number(e.target.value) })} style={{ flex: 1 }} />
-                <span style={num}>{c.mosaic}</span>
-              </Line>
-              <Line label={t("censor.opacity")}>
-                <input type="range" min={0} max={100} value={c.mosaicOpacity} onChange={(e) => c.set({ mosaicOpacity: Number(e.target.value) })} style={{ flex: 1 }} />
-                <span style={num}>{c.mosaicOpacity}</span>
-              </Line>
-            </>
-          )}
-          {c.method === "blur" && (
-            <Line label={t("censor.blur")}>
-              <input type="range" min={2} max={60} value={c.blur} onChange={(e) => c.set({ blur: Number(e.target.value) })} style={{ flex: 1 }} />
-              <span style={num}>{c.blur}</span>
-            </Line>
-          )}
-          <Line label={t("censor.expand")}>
-            <input type="range" min={0} max={40} value={c.expand} onChange={(e) => c.set({ expand: Number(e.target.value) })} style={{ flex: 1 }} />
-            <span style={num}>{c.expand}</span>
-          </Line>
-          <Line label={t("censor.feather")}>
-            <input type="range" min={0} max={40} value={c.feather} onChange={(e) => c.set({ feather: Number(e.target.value) })} style={{ flex: 1 }} />
-            <span style={num}>{c.feather}</span>
-          </Line>
-        </Sec>
-
-        {c.error && (
-          <span data-censor-error style={{ fontSize: "var(--text-2xs)", color: "var(--danger)" }}>
-            {c.error}
+        ))}
+        {c.tab === "before" && (
+          <button
+            data-censor-add
+            onClick={() => void pick()}
+            title={t("censor.add")}
+            style={{
+              flexShrink: 0,
+              width: 50,
+              height: 50,
+              display: "grid",
+              placeItems: "center",
+              borderRadius: "var(--r-2)",
+              border: "1px dashed var(--line-strong)",
+              color: "var(--ink-faint)",
+              background: "transparent",
+            }}
+          >
+            {Icon.plus}
+          </button>
+        )}
+        {!list.length && c.tab !== "before" && (
+          <span style={{ margin: "auto", fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
+            {t("censor.emptyList")}
           </span>
         )}
+        <span style={{ flex: 1 }} />
+        {!!list.length && (
+          <span style={{ flexShrink: 0, paddingRight: "var(--sp-2)", fontSize: "var(--text-2xs)", color: "var(--ink-faint)", fontVariantNumeric: "tabular-nums" }}>
+            {at + 1} / {list.length}
+          </span>
+        )}
+        {c.tab === "before" && !!list.length && (
+          <button data-censor-clear onClick={() => c.clearImages()} style={{ ...box, flexShrink: 0 }}>
+            {t("censor.clear")}
+          </button>
+        )}
+      </div>
 
-        <button
-          data-censor-apply
-          onClick={() => void c.apply()}
-          disabled={c.busy || !c.boxes.some((b) => !b.off)}
-          style={runBtn}
-        >
-          {t("censor.apply")}
-        </button>
-        <Hint>{t("censor.applyHint")}</Hint>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", gap: "var(--sp-4)" }}>
+        {/* ── 왼쪽: 아웃풋 폴더에서 담기 (검열 전 탭에만) ── */}
+        {c.tab === "before" && (
+          <div style={{ width: 210, flexShrink: 0, display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
+            <div style={{ ...card, flex: "0 0 38%", overflowY: "auto", padding: "var(--sp-2)" }}>
+              {tree.map((n) => (
+                <Row key={n.path} node={n} depth={0} />
+              ))}
+            </div>
+            <div
+              data-censor-picker
+              onScroll={onScroll}
+              style={{
+                ...card,
+                flex: 1,
+                minHeight: 0,
+                overflowY: "auto",
+                padding: "var(--sp-2)",
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(56px, 1fr))",
+                gridAutoRows: "min-content",
+                gap: "var(--sp-2)",
+                alignContent: "start",
+              }}
+            >
+              {items.map((it) => {
+                const inList = picked.has(it.file);
+                return (
+                  <button
+                    key={it.file}
+                    data-censor-pick={it.file}
+                    onClick={() => c.toggleRel(it.file, it.name)}
+                    title={it.name}
+                    style={{
+                      position: "relative",
+                      aspectRatio: "1 / 1",
+                      borderRadius: "var(--r-2)",
+                      overflow: "hidden",
+                      border: `2px solid ${inList ? "var(--accent)" : "transparent"}`,
+                      padding: 0,
+                      background: "var(--bg)",
+                    }}
+                  >
+                    <img
+                      src={fileMgrThumb(base, it.file)}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      style={{ width: "100%", height: "100%", objectFit: "contain", opacity: inList ? 1 : 0.85 }}
+                    />
+                    {inList && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          right: 2,
+                          top: 2,
+                          display: "grid",
+                          placeItems: "center",
+                          width: 15,
+                          height: 15,
+                          borderRadius: "50%",
+                          background: "var(--accent)",
+                          color: "var(--accent-on)",
+                        }}
+                      >
+                        {Icon.check}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+              {hasMore && (
+                <span style={{ gridColumn: "1/-1", textAlign: "center", fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
+                  …
+                </span>
+              )}
+              {!items.length && (
+                <span style={{ gridColumn: "1/-1", margin: "auto", fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
+                  {t("files.empty")}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── 가운데: 무대 ── */}
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
+          <div
+            {...zone}
+            ref={(el) => {
+              stageRef.current = el;
+              // ★드롭존의 ref 와 **같은 요소**를 가리켜야 한다. 떨군 자리를 좌표로 가려내므로
+              (zone.ref as React.MutableRefObject<HTMLDivElement | null>).current = el;
+            }}
+            data-censor-stage
+            style={{
+              ...card,
+              flex: 1,
+              minHeight: 0,
+              display: "grid",
+              placeItems: "center",
+              overflow: "hidden",
+              position: "relative",
+              borderColor: over && c.tab === "before" ? "var(--accent)" : "var(--line)",
+              background: over && c.tab === "before" ? "var(--accent-bg)" : "var(--bg)",
+            }}
+          >
+            {list.length ? <CensorStage /> : null}
+
+            {!list.length && (
+              <button
+                data-censor-dropzone
+                onClick={() => c.tab === "before" && void pick()}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "var(--sp-2)",
+                  padding: "var(--sp-8)",
+                  background: "transparent",
+                  border: "none",
+                  color: "var(--ink-faint)",
+                }}
+              >
+                <span style={{ display: "grid", color: "var(--ink-ghost)" }}>{Icon.folderOpen}</span>
+                <span style={{ fontSize: "var(--text-xs)", color: "var(--ink-dim)" }}>
+                  {t(c.tab === "before" ? "censor.dropHere" : "censor.emptyList")}
+                </span>
+                {c.tab === "before" && <span style={{ fontSize: "var(--text-2xs)" }}>{t("censor.dropHint")}</span>}
+              </button>
+            )}
+
+            {list.length > 1 && (
+              <>
+                <Arrow side="left" disabled={at <= 0} onClick={() => c.step(-1)} />
+                <Arrow side="right" disabled={at >= list.length - 1} onClick={() => c.step(1)} />
+              </>
+            )}
+
+            {c.scanning && (
+              <span
+                data-censor-scanning
+                style={{
+                  position: "absolute",
+                  top: "var(--sp-3)",
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  padding: "3px var(--sp-4)",
+                  borderRadius: "var(--r-4)",
+                  background: "var(--panel)",
+                  border: "1px solid var(--line)",
+                  fontSize: "var(--text-2xs)",
+                  color: "var(--ink-soft)",
+                }}
+              >
+                {t("censor.scanningOne")}
+              </span>
+            )}
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)", minHeight: 18 }}>
+            <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {c.cur()?.name ?? t("censor.pickImage")}
+            </span>
+            <span style={{ flex: 1 }} />
+            {!!c.curBoxes().length && (
+              <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
+                {t("censor.found", { n: c.curBoxes().filter((b) => !b.off).length })}
+              </span>
+            )}
+            <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
+              {t(c.tab === "before" ? "censor.hintBefore" : "censor.hintEdit")}
+            </span>
+          </div>
+        </div>
+
+        {/* ── 오른쪽: 무엇을 찾고 어떻게 가릴까 ── */}
+        <CensorSide />
       </div>
     </div>
   );
 }
 
-/** ★키를 **문자열로 이어 만들지 않는다** — i18n 회귀가 잡고, 무엇보다 키가 조용히 빠져도
- *  아무도 모른다 (Settings.tsx 의 THEMES 와 같은 이유). */
-const METHODS = [
-  ["mosaic", "censor.m_mosaic"],
-  ["blur", "censor.m_blur"],
-  ["black", "censor.m_black"],
-  ["white", "censor.m_white"],
-  ["color", "censor.m_color"],
-] as const;
+const TABS: [Tab, "censor.tabBefore" | "censor.tabDuring" | "censor.tabAfter"][] = [
+  ["before", "censor.tabBefore"],
+  ["processing", "censor.tabDuring"],
+  ["after", "censor.tabAfter"],
+];
 
-const Sec = ({ label, children }: { label: string; children: React.ReactNode }) => (
-  <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
-    <span style={{ fontSize: "var(--text-xs)", fontWeight: "var(--w-semi)", color: "var(--ink-soft)" }}>{label}</span>
-    {children}
-  </div>
-);
+function Arrow({ side, disabled, onClick }: { side: "left" | "right"; disabled: boolean; onClick: () => void }) {
+  return (
+    <button
+      data-censor-nav={side}
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        position: "absolute",
+        [side]: "var(--sp-2)",
+        top: "50%",
+        transform: "translateY(-50%)",
+        width: 30,
+        height: 44,
+        display: "grid",
+        placeItems: "center",
+        borderRadius: "var(--r-2)",
+        border: "1px solid var(--line)",
+        background: "var(--panel)",
+        color: "var(--ink-soft)",
+        opacity: disabled ? 0.25 : 0.85,
+      }}
+    >
+      {side === "left" ? Icon.chevL : Icon.chevR}
+    </button>
+  );
+}
 
-const Line = ({ label, children }: { label: string; children: React.ReactNode }) => (
-  <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
-    <span style={{ width: 46, flexShrink: 0, fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>{label}</span>
-    {children}
-  </div>
-);
+/** 폴더 트리를 한 줄짜리 목록으로 (드롭다운에 들여쓰기로 그린다) */
+function flatten(tree: FileNode[]): string[] {
+  return tree.flatMap((n) => [n.path, ...flatten(n.children)]);
+}
 
-const Hint = ({ children }: { children: React.ReactNode }) => (
-  <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>{children}</span>
-);
-
-const card: React.CSSProperties = {
-  background: "var(--panel)",
-  border: "1px solid var(--line)",
-  borderRadius: "var(--r-3)",
-};
-const box: React.CSSProperties = {
-  background: "var(--panel)",
-  border: "1px solid var(--line)",
-  borderRadius: "var(--r-2)",
-  padding: "3px var(--sp-3)",
-  fontSize: "var(--text-2xs)",
-  color: "var(--ink-soft)",
-};
-const btn: React.CSSProperties = { ...box, fontWeight: "var(--w-semi)" };
-const on: React.CSSProperties = { borderColor: "var(--accent)", background: "var(--accent-bg)", color: "var(--ink)" };
-const lbl: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: "var(--sp-2)",
-  fontSize: "var(--text-2xs)",
-  color: "var(--ink-soft)",
-};
-const num: React.CSSProperties = { width: 28, textAlign: "right", fontVariantNumeric: "tabular-nums", fontSize: "var(--text-2xs)" };
-const runBtn: React.CSSProperties = {
-  background: "var(--accent)",
-  color: "var(--accent-on)",
-  borderRadius: "var(--r-2)",
-  padding: "var(--sp-2)",
-  fontSize: "var(--text-xs)",
-  fontWeight: "var(--w-semi)",
-};
+async function newFolder(parent: string, t: (k: string, p?: Record<string, string | number>) => string) {
+  const name = window.prompt(t("files.newFolderPrompt"), "censored");
+  if (!name) return;
+  try {
+    await useFiles.getState().mkdir(parent, name);
+    const path = parent ? `${parent}/${name}` : name;
+    useCensor.getState().tune({ dest: path });
+    toast(t("censor.folderMade", { n: name }));
+  } catch (e) {
+    toast(String(e), "warn");
+  }
+}

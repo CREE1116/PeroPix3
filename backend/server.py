@@ -26,7 +26,6 @@ from pydantic import BaseModel
 
 import censor
 import files
-import gallery
 import imgutil
 import keep
 import genqueue
@@ -46,6 +45,7 @@ import nai
 import vibe as vibe_mod
 from cards import KINDS, Cards
 from blocklib import BlockLib
+from wildcards import Wildcards
 import thumbs
 from thumbs import Pins
 from workspace import Store, safe_name
@@ -77,6 +77,8 @@ store = Store(WS_ROOT)
 cards = Cards(DATA_DIR / "cards")
 # ★블록 저장소도 카드와 같은 자리다 — 공용이고 워크스페이스를 안 가린다
 blocklib = BlockLib(DATA_DIR / "blocks.json")
+# ★와일드카드 정의 문서도 같은 자리다. 어느 워크스페이스에서 생성하든 같은 풀을 뽑는다
+wildcards = Wildcards(DATA_DIR / "wildcards.txt")
 # ★꽂은 그림의 **유일한** 창고. 배너·카드 앞면·덱 커버가 전부 여기를 tid 로 가리킨다
 pins = Pins(DATA_DIR / "thumbs")
 # ★AI 대화 — 카드와 같은 **공용** 저장소 (워크스페이스를 넘나들며 시킬 수 있다)
@@ -309,6 +311,13 @@ class GenBody(BaseModel):
     base_mask: str = ""
 
 
+class VibeCheckBody(BaseModel):
+    """이미 구워 둔 인코딩이 있는지 묻는다. `items` 는 `{image, info_extracted}` 목록."""
+
+    model: str = "nai-diffusion-4-5-full"
+    items: list[dict] = []
+
+
 class SpecBody(BaseModel):
     spec: dict
 
@@ -323,6 +332,12 @@ class BlockItemBody(BaseModel):
 
 class BlockOrderBody(BaseModel):
     ids: list[str]
+
+
+class WildcardBody(BaseModel):
+    """와일드카드 정의 문서 전문 (`#이름` 절 + 한 줄 한 후보)"""
+
+    content: str
 
 
 class PinBody(BaseModel):
@@ -348,14 +363,51 @@ IMMUTABLE_IMG = {"Cache-Control": "public, max-age=31536000, immutable"}
 # ── 기본 ──────────────────────────────────────────────────────────
 @app.get("/api/health")
 async def health():
+    # ★버전·요청 창구도 여기서 준다 — 화면에 박아 두면 두 곳이 어긋난다 (감사 C5).
     return {"ok": True, "version": APP_VERSION, "hasToken": bool(nai_token()),
+            "support": CONFIG.get("support_url") or agent_mod.SUPPORT_URL,
             "hasLlm": bool(llm_settings().get("key"))}
 
 
 @app.post("/api/token")
 async def set_token(body: TokenBody):
-    SECRETS.set("nai_token", body.token)
-    return {"ok": True, "hasToken": bool(nai_token())}
+    """토큰 저장·삭제. ★**검사하고 받는다** (backend.py:4470-4500 이식).
+
+    빈 값이면 지운다 (`secretstore.Secrets.set`). 값이 있으면 형태를 먼저 보고,
+    그 다음 NAI 에 물어본다 — ★**401 일 때만 막는다.** 그 밖의 응답·타임아웃·
+    네트워크 오류는 토큰이 틀렸다는 증거가 아니라서, 저장하고 경고만 남긴다
+    (NAI 쪽 일시적 400 으로 멀쩡한 토큰이 등록조차 안 되던 문제)."""
+    token = (body.token or "").strip()
+    warning = ""
+    if token:
+        if any(c.isspace() for c in token):
+            raise HTTPException(400, "토큰에 공백이 섞여 있습니다. 공백 없이 토큰만 붙여 넣으세요.")
+        try:
+            token.encode("ascii")
+        except UnicodeEncodeError:
+            raise HTTPException(400, "토큰에 쓸 수 없는 문자가 있습니다. 다시 복사해 주세요.")
+        if not token.startswith("pst-"):
+            raise HTTPException(400, "Persistent API Token 이 아닙니다. pst- 로 시작하는 값을 넣어 주세요.")
+
+        import httpx
+
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.get(
+                    "https://image.novelai.net/user/subscription",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+            if r.status_code == 401:
+                raise HTTPException(400, "토큰이 만료됐거나 유효하지 않습니다. 새로 발급해 주세요.")
+            if r.status_code != 200:
+                warning = f"저장했지만 NAI 확인은 못 했습니다 (응답 {r.status_code}). 생성이 되면 문제없습니다."
+        except HTTPException:
+            raise
+        except Exception as e:
+            warning = f"저장했지만 NAI 확인은 못 했습니다 ({type(e).__name__}). 인터넷 연결을 확인해 주세요."
+
+    SECRETS.set("nai_token", token)
+    return {"ok": True, "hasToken": bool(nai_token()), "warning": warning}
 
 
 # ── 에이전트 다리 (바깥에서 앱 도구를 부른다) ─────────────────────
@@ -868,6 +920,20 @@ async def reorder_blocks(body: BlockOrderBody):
     return {"items": blocklib.reorder(body.ids)}
 
 
+# ── 와일드카드 정의 문서 (공용) ───────────────────────────────────
+# ★서버는 **글을 나르기만 한다.** 문법을 아는 곳은 `src/lib/wildcards.ts` 하나다
+#   (`backend/wildcards.py` 머리 주석).
+@app.get("/api/wildcards")
+async def get_wildcards():
+    return {"content": wildcards.read()}
+
+
+@app.post("/api/wildcards")
+async def save_wildcards(body: WildcardBody):
+    wildcards.write(body.content)
+    return {"ok": True}
+
+
 # ── 생성 ──────────────────────────────────────────────────────────
 def _req_of(body: GenBody) -> nai.GenRequest:
     return nai.GenRequest(
@@ -1205,6 +1271,14 @@ async def _process_job(job: dict) -> None:
             await Q.broadcast(msg)
 
     await Q.broadcast({"type": "job_done", "job_id": job_id, "progress": Q.progress()})
+    # ★★큐가 비면 진행률 회계를 0 으로 되돌린다 (v2 `backend.py:3209-3211` 이식).
+    #   안 되돌리면 completed/total 이 앱을 켠 뒤로 계속 쌓여서, 다음 배치가 "0/2" 가 아니라
+    #   "8/10" 으로 보이고 진행바가 처음부터 80% 에서 시작한다.
+    #   ★알림을 보낸 **뒤에** 되돌린다 — 순서를 바꾸면 끝난 배치의 장 수가 0 으로 나간다.
+    #   ★`recent_images`·`image_sequence` 는 그대로 둔다 (새로고침 복원의 근거다).
+    if not Q.queue:
+        Q.completed_images = 0
+        Q.total_images = 0
 
 
 @app.on_event("startup")
@@ -1253,14 +1327,74 @@ async def vibe_cache_list():
     return {"items": vibes.entries()}
 
 
+@app.post("/api/vibe-cache/check")
+async def vibe_cache_check(body: VibeCheckBody):
+    """이 그림들이 **이미 구워져 있나** (v2 backend.py:4653-4685 의 판정 그대로).
+
+    ★화면의 「구워 둠」 배지와 비용(인코딩 개당 2 Anlas)이 여기에 걸려 있다. v2 는 비용
+      창구가 이 판정을 겸했는데, 3.0 은 비용을 화면이 계산하므로(의도된 차이) **캐시 여부만**
+      돌려준다.
+    ★**판정을 화면에 옮겨 적지 말 것.** 키 산식(`cache_key`)도 재사용 판정(`reuse_ok`)도
+      여기 하나뿐이다 — 두 벌이 되면 화면은 공짜라고 하는데 실제로는 돈이 나간다.
+      그래서 화면은 **인코딩을 들고 있는지 여부와 그 모델·info 만** 보내고(`has_encoded`),
+      큰 인코딩 자체는 올리지 않는다.
+
+    돌려주는 것: `keep` 이면 화면이 든 인코딩을 그대로 쓴다. 아니면 `encoded` 가 디스크
+    캐시에서 찾은 것이고(없으면 null), 그때 화면은 자기 것을 버린다."""
+    out: list[dict] = []
+    v4 = "diffusion-4" in body.model
+    for it in body.items or []:
+        img = str(it.get("image") or "")
+        info = float(it.get("info_extracted", 1.0) or 1.0)
+        probe: dict = {
+            "encoded": "y" if it.get("has_encoded") else "",
+            "encoded_model": it.get("encoded_model") or "",
+        }
+        if it.get("encoded_info_extracted") is not None:
+            probe["encoded_info_extracted"] = float(it["encoded_info_extracted"])
+        if vibe_mod.reuse_ok(probe, body.model, info):
+            out.append({"keep": True, "encoded": None})
+            continue
+        enc = None
+        if v4 and img:
+            try:
+                key = vibe_mod.cache_key(imgutil.ensure_png_base64(img), body.model, info)
+                enc = vibes.get(key)
+            except Exception:
+                enc = None
+        out.append({
+            "keep": False,
+            "encoded": enc,
+            "encoded_model": body.model if enc else None,
+            "encoded_info_extracted": info if enc else None,
+        })
+    return {"items": out}
+
+
+@app.get("/api/vibe-cache/{name}/data")
+async def vibe_cache_detail(name: str):
+    """캐시 한 항목을 **그림과 인코딩까지** (v2 `/api/vibe-cache/{filename}`).
+
+    ★그림이 없으면 꺼내 쓸 수 없다 — 생성 때 재인코딩이 빈 그림을 열다 500 으로 죽는다."""
+    d = vibes.detail(name)
+    if d is None:
+        raise HTTPException(404, "없는 캐시 항목")
+    return d
+
+
+@app.delete("/api/vibe-cache/{name}")
+async def vibe_cache_delete(name: str):
+    """캐시 한 장을 지운다 (v2 backend.py:4321-)."""
+    if not vibes.delete(name):
+        raise HTTPException(404, "없는 캐시 항목")
+    return {"ok": True}
+
+
 @app.get("/api/vibe-cache/{name}")
 async def vibe_cache_thumb(name: str):
     """캐시 PNG 한 장 (썸네일). 경로 탈출을 막는다."""
-    from fastapi.responses import FileResponse
-
-    base = (DATA_DIR / "vibe-cache").resolve()
-    f = (base / name).resolve()
-    if not str(f).startswith(str(base)) or not f.exists():
+    f = vibes.path_of(name)
+    if f is None:
         raise HTTPException(404, "없는 캐시 항목")
     return FileResponse(f, media_type="image/png")
 
@@ -1319,23 +1453,10 @@ async def get_file(ws: str, rel: str):
     return FileResponse(p, media_type="image/png")
 
 
-# ── 갤러리 ────────────────────────────────────────────────────
-# ★파일을 훑는다 (gallery.py 주석 참조). records.jsonl 에 기대지 않는다.
-
-
-class GalleryFiles(BaseModel):
-    files: list[str]
-    dest: str | None = None
-
-
-@app.get("/api/gallery/{ws}/folders")
-async def gallery_folders(ws: str):
-    return {"items": gallery.folders(store, ws)}
-
-
-@app.get("/api/gallery/{ws}/images")
-async def gallery_images(ws: str, folder: str | None = None):
-    return {"items": gallery.images(store, ws, folder)}
+# ── 워크스페이스 그림의 메타데이터 ────────────────────────────
+# ★훑고 옮기고 지우는 창구는 여기 없다 — 보관함은 `/api/keep/*`, 아웃풋 트리는
+#   `/api/files/*` 다. 옛 `/api/gallery/{ws}/folders|images|move|delete` 는 갤러리가
+#   보관함으로 옮겨 가며 남은 자국이라 걷어냈다 (`docs/v2-port-audit.md` F절).
 
 
 @app.get("/api/gallery/{ws}/meta")
@@ -1345,21 +1466,6 @@ async def gallery_meta(ws: str, file: str):
     if not p:
         raise HTTPException(404, "not found")
     return {"file": file, "meta": meta.read(p)}
-
-
-@app.post("/api/gallery/{ws}/move")
-async def gallery_move(ws: str, body: GalleryFiles):
-    if not body.dest:
-        raise HTTPException(400, "dest 가 필요합니다")
-    try:
-        return gallery.move(store, ws, body.files, body.dest)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-
-
-@app.post("/api/gallery/{ws}/delete")
-async def gallery_delete(ws: str, body: GalleryFiles):
-    return gallery.delete(store, ws, body.files)
 
 
 KEEP_DIR = APP_DIR / "gallery"
@@ -1378,9 +1484,97 @@ class KeepFiles(BaseModel):
     dest: str = ""
 
 
+class KeepName(BaseModel):
+    """폴더 만들기·지우기·탐색기로 열기 — 이름 하나만 받는다."""
+
+    name: str = ""
+
+
+class KeepRename(BaseModel):
+    file: str
+    name: str
+
+
+class KeepPath(BaseModel):
+    """탐색기로 열 자리. ★키 이름을 `/api/files/reveal` 과 **맞춰 둔다** — 화면의
+    같은 버튼(`ImageActions`)이 뿌리만 바꿔 두 창구를 그대로 쓴다."""
+
+    path: str = ""
+
+
+class KeepStar(BaseModel):
+    file: str
+    on: bool
+
+
+# ★워크스페이스에 매여 있던 옛 별표를 보관함으로 데려온다 (2026-08-18).
+#   갤러리는 워크스페이스를 넘는 화면인데 별표만 `spec.selection.starred` 에 쌓여서,
+#   작업을 바꾸면 같은 그림의 별표가 달라졌다. 켤 때 한 번 옮기고 원래 자리에서 뺀다 —
+#   **날리지 않는다.** 보관함에 실제로 있는 경로만 옮기므로 워크스페이스 그림의 별표는
+#   그대로 남는다 (이름 공간이 다르다).
+def _adopt_keep_stars() -> None:
+    for _info in store.list():
+        _ws = _info["name"]
+        _spec = store.load(_ws)
+        if not _spec:
+            continue
+        _mine = (_spec.get("selection") or {}).get("starred") or []
+        if not _mine:
+            continue
+        _took = keep.adopt_stars(KEEP_DIR, _mine)
+        if not _took:
+            continue
+        _spec["selection"]["starred"] = [f for f in _mine if f not in set(_took)]
+        store.save(_ws, _spec)
+        print(f"[갤러리 별표] {_ws} 에 있던 {len(_took)}개를 보관함으로 옮김")
+
+
+try:
+    _adopt_keep_stars()
+except Exception as _e:  # 이전이 실패해도 앱은 떠야 한다
+    print(f"[갤러리 별표] 옮기지 못했습니다 (무시하고 계속): {_e!r}")
+
+
 @app.get("/api/keep/folders")
 async def keep_folders():
     return {"folders": keep.folders(KEEP_DIR)}
+
+
+@app.post("/api/keep/folder")
+async def keep_make_folder(body: KeepName):
+    try:
+        return keep.make_folder(KEEP_DIR, body.name)
+    except (ValueError, OSError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/keep/folder/delete")
+async def keep_drop_folder(body: KeepName):
+    """★빈 폴더만 지운다 (keep.drop_folder 주석)."""
+    try:
+        return keep.drop_folder(KEEP_DIR, body.name)
+    except (ValueError, OSError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/keep/reveal")
+async def keep_reveal(body: KeepPath):
+    """탐색기에서 연다 — ★파일이면 고른 채로 (files.reveal 을 보관함 뿌리로 쓴다)."""
+    try:
+        files.reveal(KEEP_DIR, body.path)
+        return {"ok": True}
+    except (ValueError, OSError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/keep/stars")
+async def keep_stars():
+    return {"starred": keep.stars(KEEP_DIR)}
+
+
+@app.post("/api/keep/star")
+async def keep_star(body: KeepStar):
+    return {"starred": keep.set_star(KEEP_DIR, body.file, body.on)}
 
 
 # ★한 쪽에 몇 장인가 — v2 는 50 이었다. 60 은 3열·4열 어느 쪽에도 딱 떨어진다
@@ -1397,13 +1591,24 @@ async def keep_images(folder: str = "", page: int = 1, limit: int = PAGE):
 
 @app.post("/api/keep/save")
 async def keep_save(body: KeepSave):
-    """작업 폴더의 그림을 보관함으로 **복사**한다 (원본은 그대로)."""
+    """작업 폴더의 그림을 보관함으로 **복사**한다 (원본은 그대로).
+
+    ★이미 보관돼 있으면 **무른다** (`removed: true`). 같은 그림에 보관을 두 번 누르면
+      사본이 둘 생기던 것을 고친 것이다 (keep.save 주석)."""
     src = store.file_path(body.workspace, body.file)
     if not src:
         raise HTTPException(404, "그림을 찾지 못했습니다")
     try:
-        return keep.save(KEEP_DIR, src, body.folder, body.meta)
+        return keep.save(KEEP_DIR, src, body.folder, body.meta, f"{body.workspace}/{body.file}")
     except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/keep/rename")
+async def keep_rename(body: KeepRename):
+    try:
+        return keep.rename(KEEP_DIR, body.file, body.name)
+    except (ValueError, OSError) as e:
         raise HTTPException(400, str(e))
 
 
@@ -1415,6 +1620,29 @@ async def keep_delete(body: KeepFiles):
 @app.post("/api/keep/move")
 async def keep_move(body: KeepFiles):
     return keep.move(KEEP_DIR, body.files, body.dest)
+
+
+@app.get("/api/keep/thumb/{rel:path}")
+def keep_thumb(rel: str):
+    """보관함 격자용 **썸네일** (긴 변 512 WebP).
+
+    ★격자에 원본 PNG 를 걸면 수백 장이 뜨는 화면이 그것만으로 무너진다 — 파일 관리·
+      캔버스가 이미 쓰던 층을 갤러리도 쓴다 (`docs/v2-port-audit.md` A3, v2 는 512 JPEG
+      를 구워 캐시했다: `backend.py:3926-3960`).
+    ★캐시는 보관함 안 `.thumbs/` 에 둔다. 점으로 시작하는 것은 목록에서 통째로 빠지므로
+      (`keep._visible`) 캐시 webp 가 보관한 그림인 척 뜨지 않는다.
+    ★`def` 로 둔다 (`async def` 아님) — LANCZOS 축소는 CPU 일이라 async 안에서 하면
+      그동안 서버 전체가 멈춘다. FastAPI 는 `def` 를 스레드풀로 돌린다."""
+    try:
+        p = keep.safe_folder(KEEP_DIR, rel)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if not p.is_file():
+        raise HTTPException(404, "not found")
+    # ★여기는 `immutable` 을 안 붙인다 — 보관함은 이름을 바꿀 수 있어서 같은 주소가
+    #   다른 그림을 가리킬 수 있다 (생성물은 매번 새 파일명이라 붙여도 됐다).
+    t = thumbs.derive(p, KEEP_DIR / keep.THUMB_DIR / thumbs.flat_name(rel))
+    return FileResponse(t or p)
 
 
 @app.get("/api/keep/file/{rel:path}")
@@ -1458,6 +1686,7 @@ class ToolConvert(BaseModel):
     start: int = 1
     pad: int = 3
     dest: str = ""
+    open_folder: bool = False
 
 
 @app.post("/api/tools/convert")
@@ -1476,9 +1705,31 @@ async def tools_convert(body: ToolConvert):
             body.start,
             body.pad,
             body.dest,
+            body.open_folder,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+class ToolProbe(BaseModel):
+    items: list[ToolItem] = []
+
+
+@app.post("/api/tools/probe")
+async def tools_probe(body: ToolProbe):
+    """변환 목록의 썸네일·크기 — ★**서버가 줄여서 준다.** 앱에는 경로만 오므로
+    화면이 그 파일을 가리킬 주소가 없다 (`tools.probe` 주석)."""
+    return tools.probe(WS_ROOT, [i.model_dump() for i in body.items])
+
+
+@app.post("/api/tools/read")
+async def tools_read(body: ToolItem):
+    """앱 창에 떨군 파일 하나를 통째로 (`tools.read_dropped` 주석).
+    ★저장하지 않는다. 읽어서 돌려주고 끝이다."""
+    try:
+        return tools.read_dropped(WS_ROOT, body.model_dump())
+    except (ValueError, OSError) as e:
+        raise HTTPException(400, str(e)) from e
 
 
 @app.post("/api/tools/meta")
@@ -1528,7 +1779,22 @@ class CensorApply(CensorSource):
     mosaic_strength: int = 12
     mosaic_opacity: int = 100
     blur_strength: int = 20
+    steam_brightness: int = 100
+    steam_alpha: int = 100
     suffix: str = "_censored"
+    # ★결과를 둘 폴더 (아웃풋 루트 기준). 비면 원본 옆에 둔다. v2 의 `censored` 폴더 자리다
+    dest: str | None = None
+    # 밖에서 떨군 그림에는 원본 경로가 없다. 저장할 이름을 화면이 준다
+    name: str | None = None
+
+
+class CensorPreview(CensorApply):
+    """저장하지 않고 **가린 그림만** 돌려준다 (검열중·검열 후 탭의 미리보기).
+
+    ★가리는 일은 서버 하나가 한다. 화면에 같은 렌더러를 또 두면 미리보기와 저장본이 갈린다
+      (v2 가 그랬다: 스팀만 화면이 그려서, 확장·부드럽게를 준 미리보기와 결과가 달랐다)."""
+
+    max_side: int = 1280
 
 
 def _censor_open(b: CensorSource):
@@ -1563,8 +1829,11 @@ async def censor_models():
 
 
 @app.post("/api/censor/detect")
-async def censor_detect(body: CensorDetect):
-    """가릴 곳 찾기. ★그림을 **고치지 않는다** — 좌표만 돌려준다."""
+def censor_detect(body: CensorDetect):
+    """가릴 곳 찾기. ★그림을 **고치지 않는다** — 좌표만 돌려준다.
+
+    ★`def` 다 (async 아님). ONNX 추론은 장당 0.4초(XL 은 4초)를 CPU 로 쥔다. async 로 두면
+      「전체 검열」이 도는 동안 서버 전체가 멈춘다."""
     im, _ = _censor_open(body)
     try:
         dets = censor.detect(
@@ -1575,13 +1844,9 @@ async def censor_detect(body: CensorDetect):
     return {"detections": dets, "width": im.width, "height": im.height}
 
 
-@app.post("/api/censor/apply")
-async def censor_apply(body: CensorApply):
-    """가린 그림을 **새 파일로** 저장한다 (원본은 그대로).
-
-    ★덮어쓰기 경로를 만들지 말 것 — 생성물은 Anlas 가 든 원본이다."""
-    im, src = _censor_open(body)
-    out = censor.apply_boxes(
+def _censor_cover(body: CensorApply, im: Image.Image) -> Image.Image:
+    """가리기 한 번. 미리보기와 저장이 **같은 함수를 지난다.**"""
+    return censor.apply_boxes(
         im,
         body.boxes,
         body.method,
@@ -1591,26 +1856,73 @@ async def censor_apply(body: CensorApply):
         body.mosaic_strength,
         body.mosaic_opacity,
         body.blur_strength,
+        body.steam_brightness,
+        body.steam_alpha,
     )
-    if src is None:
+
+
+@app.post("/api/censor/preview")
+def censor_preview(body: CensorPreview):
+    """가린 모습만 보여 준다. **파일을 만들지 않는다.**
+
+    ★`def` 다 (async 아님). 스팀 노이즈와 흐리기는 CPU 를 오래 쥐는 계산이라 async 안에서
+      돌리면 그동안 서버 전체가 멈춘다. FastAPI 는 `def` 를 스레드풀로 돌린다."""
+    im, _ = _censor_open(body)
+    out = _censor_cover(body, im)
+    if body.max_side and max(out.width, out.height) > body.max_side:
+        r = body.max_side / max(out.width, out.height)
+        out = out.resize((max(1, int(out.width * r)), max(1, int(out.height * r))), Image.LANCZOS)
+    buf = io.BytesIO()
+    out.save(buf, format="WEBP", quality=88)
+    return {
+        "image": "data:image/webp;base64," + base64.b64encode(buf.getvalue()).decode(),
+        "width": im.width,
+        "height": im.height,
+    }
+
+
+@app.post("/api/censor/apply")
+def censor_apply(body: CensorApply):
+    """가린 그림을 **새 파일로** 저장한다 (원본은 그대로).
+
+    ★덮어쓰기 경로를 만들지 말 것 — 생성물은 Anlas 가 든 원본이다.
+    ★박스가 **0개여도 저장한다.** 일괄 저장에서 "찾은 게 없는 장"이 결과 폴더에서 빠지면
+      그 폴더가 원본 묶음의 대역이 되지 못한다 (v2 `completeCensoring` 도 그대로 넘긴다)."""
+    im, src = _censor_open(body)
+    out = _censor_cover(body, im)
+
+    # 어디에 둘까. 폴더를 골랐으면 거기, 아니면 원본 옆
+    stem = Path(body.name).stem if body.name else (src.stem if src else "censored")
+    folder = src.parent if src else WS_ROOT.resolve()
+    if body.dest is not None:
+        try:
+            folder = files.under(WS_ROOT, body.dest)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        folder.mkdir(parents=True, exist_ok=True)
+    if src is None and not body.name:
+        # 갈 곳도 이름도 없다. 옛 계약대로 바이트로 돌려준다
         buf = io.BytesIO()
         out.save(buf, format="PNG")
         return {"image": "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()}
 
-    dst = src.with_name(f"{src.stem}{body.suffix}.png")
+    dst = folder / f"{stem}{body.suffix}.png"
     n = 2
     while dst.exists():
-        dst = src.with_name(f"{src.stem}{body.suffix}_{n}.png")
+        dst = folder / f"{stem}{body.suffix}_{n}.png"
         n += 1
     # ★생성 설정을 데려간다 — 검열본에서도 재생성할 수 있어야 한다
     try:
+        if src is None:
+            raise ValueError("원본 파일이 없다")
         raw = meta.read_raw(src.read_bytes())
         buf = io.BytesIO()
         out.save(buf, format="PNG")
         dst.write_bytes(meta.write(buf.getvalue(), raw, "PNG", 95, dict(Image.open(src).info)))
     except Exception:
         out.save(dst, format="PNG")
-    rel = dst.relative_to(WS_ROOT.resolve()) if str(dst).startswith(str(WS_ROOT.resolve())) else dst
+    root = WS_ROOT.resolve()
+    rel = dst.relative_to(root) if str(dst).startswith(str(root)) else dst
     return {"file": str(rel).replace("\\", "/"), "name": dst.name}
 
 

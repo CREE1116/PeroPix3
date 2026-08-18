@@ -13,6 +13,10 @@ export const MODES: { id: ModeId; label: string; color: string }[] = [
 
 const KEY = "peropix.ui";
 
+/** 설정 창의 좌측 탭. ★`app/Settings.tsx` 가 이 이름을 그대로 쓴다 — 여는 자리마다
+ *  다른 이름을 쓰면 "어느 탭이 열리나"가 흩어진다. */
+export type SettingsTabId = "general" | "look" | "llm";
+
 
 /** 본문 폰트 — 넷을 번들해 두고 고른다 (styles/fonts.css). 비교해 보려고 넣은 것이다. */
 export type FontId = "pretendard" | "spoqa" | "gothic" | "noto";
@@ -65,6 +69,21 @@ type Persisted = {
   /** 알림음 크기 1~100 (v2 `notifySoundVolume`, 기본 50) */
   notifyVolume: number;
   font: FontId;
+  /** 태그 자동완성을 켜 두나 (v2 `tagAutocompleteToggle`). 끄면 목록이 아예 안 뜬다 —
+   *  Enter·Esc 도 블록 것으로 되돌아간다 (`TagSuggest.onKeyDown`) */
+  tagSuggest: boolean;
+  /** 파일 관리의 보기 — 썸네일 격자 / 이름·크기·수정일 목록 (v2 `fmViewThumbnail`·`fmViewList`) */
+  fmView: "grid" | "list";
+  /** 파일 관리의 PIP — 칸에 커서를 올리면 큰 그림이 따라다닌다 (v2 `fmPipModeBtn`) */
+  fmPip: boolean;
+  /** 변환이 끝나면 저장한 폴더를 연다 (v2 `convertOpenFolder`, 기본 켬) */
+  convertOpenFolder: boolean;
+  /** 씬 줄의 PIP — 칸에 커서를 올리면 그 장이 떠 있는 창에 크게 뜬다 (v2 `pipModeEnabled`) */
+  lanePip: boolean;
+  /** ★인핸스 창을 **마지막에 쓴 강도로** 연다 (v2 `enhanceLast`, index.html:24045).
+   *  열 때마다 3 으로 되돌아가면 같은 값을 매번 다시 맞춰야 한다. 배율은 여기 없다 —
+   *  그것은 원본 크기가 정한다 (`lib/enhance.ts`). */
+  enhanceLast: { mag: number; adv: boolean; strength: number; noise: number };
 };
 
 const DEFAULTS: Persisted = {
@@ -84,6 +103,13 @@ const DEFAULTS: Persisted = {
   notifySound: false,
   notifyVolume: 50,
   font: "pretendard",
+  tagSuggest: true,
+  fmView: "grid",
+  fmPip: false,
+  convertOpenFolder: true,
+  lanePip: false,
+  // v2 `enhanceLast` 의 초기값 그대로 (magnitude 3 = strength 0.5 · noise 0)
+  enhanceLast: { mag: 3, adv: false, strength: 0.5, noise: 0 },
 };
 
 /** 한 번에 뽑는 최대 — 큐가 길어지면 취소하기 번거롭다 */
@@ -115,7 +141,19 @@ type S = Persisted & {
   setNotifyDone: (v: boolean) => void;
   setNotifySound: (v: boolean) => void;
   setNotifyVolume: (v: number) => void;
+  setTagSuggest: (v: boolean) => void;
+  setFmView: (v: "grid" | "list") => void;
+  setFmPip: (v: boolean) => void;
+  setConvertOpenFolder: (v: boolean) => void;
+  setLanePip: (v: boolean) => void;
+  setEnhanceLast: (v: { mag: number; adv: boolean; strength: number; noise: number }) => void;
   setFont: (f: FontId) => void;
+  /** 설정 창 — 열려 있으면 그 탭, 닫혀 있으면 null.
+   *  ★상태를 스토어에 두는 이유: 여는 자리가 셋이다 (타이틀바 톱니 · AI 채팅의 엔진 칩 ·
+   *    토큰 없이 생성을 누를 때). 프롭으로 내리면 생성 푸터까지 세 겹을 지나야 한다. */
+  settingsTab: SettingsTabId | null;
+  openSettings: (tab: SettingsTabId) => void;
+  closeSettings: () => void;
   toggleLeft: () => void;
   toggleRight: () => void;
   /** 방금 바뀐 자리들 — 키를 담아 두고 잠깐 뒤 스스로 지운다 */
@@ -174,11 +212,38 @@ export const useUi = create<S>((set, get) => ({
     set({ perSlot: Math.min(PER_SLOT_MAX, Math.max(1, Math.round(n))) });
     get().commitLayout();
   },
+  setTagSuggest: (v) => {
+    set({ tagSuggest: v });
+    get().commitLayout();
+  },
+  setFmView: (v) => {
+    set({ fmView: v });
+    get().commitLayout();
+  },
+  setFmPip: (v) => {
+    set({ fmPip: v });
+    get().commitLayout();
+  },
+  setConvertOpenFolder: (v) => {
+    set({ convertOpenFolder: v });
+    get().commitLayout();
+  },
+  setLanePip: (v) => {
+    set({ lanePip: v });
+    get().commitLayout();
+  },
+  setEnhanceLast: (v) => {
+    set({ enhanceLast: v });
+    get().commitLayout();
+  },
   setFont: (f) => {
     applyFont(f);
     set({ font: f });
     get().commitLayout();
   },
+  settingsTab: null,
+  openSettings: (tab) => set({ settingsTab: tab }),
+  closeSettings: () => set({ settingsTab: null }),
   toggleLeft: () => {
     set({ leftCollapsed: !get().leftCollapsed });
     get().commitLayout();
@@ -201,7 +266,8 @@ export const useUi = create<S>((set, get) => ({
     //   돌아갔다 (감사 2026-08-16). 필드를 늘리면 **여기에도 더할 것.**
     const { leftWidth, rightWidth, leftCollapsed, rightCollapsed, cols, laneSize, laneHeadW,
       laneHeight, font, aiWidth, aiCollapsed,
-      notifyDone, notifySound, notifyVolume, perSlot, curated } = get();
+      notifyDone, notifySound, notifyVolume, perSlot, curated,
+      tagSuggest, fmView, fmPip, convertOpenFolder, lanePip, enhanceLast } = get();
     try {
       localStorage.setItem(
         KEY,
@@ -222,6 +288,12 @@ export const useUi = create<S>((set, get) => ({
           notifyVolume,
           perSlot,
           curated,
+          tagSuggest,
+          fmView,
+          fmPip,
+          convertOpenFolder,
+          lanePip,
+          enhanceLast,
         }),
       );
     } catch {}

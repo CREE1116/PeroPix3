@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useI18n } from "../i18n";
 
 /** ★키를 조립하지 않는다 — i18n 검사가 동적 접두사를 잡는다 (`i18n.test.ts`) */
@@ -8,8 +9,9 @@ import { useQueue } from "../store/queue";
 import { allCells, useWs } from "../store/workspace";
 import { useImageInput } from "../store/imageInput";
 import { useUi, PER_SLOT_MAX } from "../store/ui";
-import { anlasCost } from "../lib/anlas";
+import { anlasCost, MAX_PER_IMAGE } from "../lib/anlas";
 import { useSub } from "../store/sub";
+import { useHasToken } from "../store/health";
 import { Icon } from "../components/Icon";
 
 /** 생성 푸터 — 페로픽스파이 `params-footer` 를 그대로 옮긴 것이다
@@ -29,7 +31,10 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
   // 구독 상태는 **스토어 하나**가 들고 있다 (업스케일 값 표시도 같은 곳을 본다)
   const sub = useSub((s) => s.sub);
   const { params, set, busy, error, generateAll, queueSingle } = useGen();
-  const { progress, cancel, clear } = useQueue();
+  const { progress, phase, cancel, clear } = useQueue();
+  /** 잔액을 다시 물어본 횟수 — 누를 때마다 아이콘을 **한 바퀴 더** 돌린다 (v2 `refreshAnlasBtn`).
+   *  ★각도를 원위치시키지 않고 누적한다. 되돌리면 애니메이션이 거꾸로 돌아 흔들려 보인다. */
+  const [turns, setTurns] = useState(0);
   const tab = useWs((s) => s.activeTab());
   const img = useImageInput();
 
@@ -57,20 +62,93 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
     // ★활성 5개 초과분은 개당 +2 — 구워 둔 것도 센다 (요청당 한 번)
     activeVibes: img.vibeOn ? img.vibes.length : 0,
     refCount: img.refOn ? img.refs.length : 0,
-    strength: img.baseImage ? img.baseStrength : 1,
+    // ★강도 계수는 모드마다 다르다 (`imageInput.costStrength` — 9절의 `y`). 인페인트에서
+    //   i2i 강도로 세면 실제보다 싸게 보인다
+    strength: img.costStrength(),
     count,
   });
   const running = progress.total > progress.completed;
+  /** ★한 장이 140 Anlas 를 넘으면 **생성을 막는다** — 공홈과 같은 판정이다
+   *  (v2 `index.html:15878-15882`. 합계가 아니라 개별 장 비용 기준이라, 여러 장을 걸어
+   *  둔 정상 상황에서 헛되이 걸리지 않는다). 값만 세어 두고 아무도 안 읽던 자리다 (감사 B3). */
+  const blocked = cost.overLimit;
+  /** ★토큰이 없으면 NAI 생성이 통째로 안 된다. v2 는 누르는 순간 토큰 창을 띄웠고
+   *  (`index.html:15859-15862`), 우리는 토큰을 넣는 창구가 **설정 하나**뿐이라 그리로
+   *  데려간다. 지금까지는 검사가 없어 눌러 놓고 실패를 기다려야 했다 (감사 C5). */
+  const noToken = !useHasToken();
+  const openSettings = useUi((s) => s.openSettings);
+  const off = busy || editing || blocked;
+  /** 이 버튼이 지금 하는 일 — 토큰이 없으면 「만들기」가 아니라 「넣으러 가기」다 */
+  const fire = () => {
+    if (noToken) return openSettings("general");
+    void (isSet ? generateAll() : queueSingle(perSlot));
+  };
+
+  /** ★`Ctrl+Enter` 로 생성 (v2 `index.html:18459`).
+   *
+   *  ★버튼과 **같은 자리**에 매단다 — 버튼이 하는 일과 잠기는 조건이 하나여야 둘이 안 갈린다.
+   *    이 컴포넌트는 생성 모드에서만 뜨므로(App 의 `leftFooter`) 갤러리·검열에서는 안 먹는다.
+   *  ★창(모달)이 떠 있으면 넘긴다 — 그 안의 Enter 는 그 창 것이다 (v2 도 카드 편집기를 뺐다).
+   *  ★입력칸은 **막지 않는다.** 프롬프트를 치다가 그대로 누르는 것이 이 단축키의 쓰임이다
+   *    (평범한 Enter 와 달리 수식키가 붙어 글자 입력과 부딪히지 않는다). */
+  useEffect(() => {
+    // ★펼친 푸터와 접힌 레일은 **둘 중 하나만** 뜬다 (`Shell` 의 `leftCollapsed` 갈래) —
+    //   그래서 접어 둔 채로도 단축키가 살아 있고, 두 번 걸리지도 않는다.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Enter" || !(e.ctrlKey || e.metaKey) || e.repeat) return;
+      if (document.querySelector("[data-enhance], [data-settings], [data-mask-editor], [data-ask], [data-prompt-view]"))
+        return;
+      if (off) return;
+      e.preventDefault();
+      fire();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [off, isSet, perSlot, noToken, generateAll, queueSingle]);
+
+  /** 상태 문구 — v2 `statusText` (`index.html:16121-16125, 16464-16471`).
+   *  ★돌 때는 진행 숫자, 끝나면 성패를 말한다. 「준비」는 줄 자체가 사라지는 것으로 대신한다. */
+  const stateText =
+    phase === "done"
+      ? t("queue.stDone")
+      : phase === "failed"
+        ? t("queue.stFailed")
+        : phase === "partial"
+          ? t("queue.stPartial")
+          : `${progress.completed}/${progress.total}`;
+  const stateInk =
+    phase === "failed" ? "var(--err)" : phase === "partial" ? "var(--warn)" : phase === "done" ? "var(--ok)" : "var(--accent)";
+  /** 끝났으면 100% 로 채워 둔다 (v2 `progressFill.style.width = '100%'`) */
+  const pct =
+    phase === "done" || phase === "failed" || phase === "partial"
+      ? 100
+      : progress.total > 0
+        ? Math.min(100, Math.round((progress.completed / progress.total) * 100))
+        : 0;
 
   const genBtn = (
     <button
       data-generate={isSet ? "all" : "one"}
-      onClick={() => (isSet ? generateAll() : queueSingle(perSlot))}
-      disabled={busy || editing}
-      title={compact ? t(editing ? "focus.lockedByInpaint" : "canvas.generate") : undefined}
+      data-gen-blocked={blocked ? "" : undefined}
+      onClick={fire}
+      disabled={off}
+      /* ★펼쳐 놓았을 때는 **단축키를 알려 준다** — 있는 줄 모르면 없는 것과 같다 */
+      title={t(
+        blocked
+          ? "gen.overLimit"
+          : noToken
+            ? "gen.needToken"
+            : editing
+              ? "focus.lockedByInpaint"
+              : compact
+                ? "canvas.generate"
+                : "canvas.generateShortcut",
+        { a: MAX_PER_IMAGE },
+      )}
       style={{
-        background: busy || editing ? "var(--panel)" : "var(--accent)",
-        color: busy || editing ? "var(--ink-faint)" : "var(--accent-on)",
+        background: off ? "var(--panel)" : "var(--accent)",
+        color: off ? "var(--ink-faint)" : "var(--accent-on)",
         borderRadius: "var(--r-2)",
         padding: compact ? "var(--sp-3) 0" : "var(--sp-3)",
         fontWeight: "var(--w-semi)",
@@ -84,10 +162,12 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
     >
       {!busy && Icon.spark}
       {!compact && (busy ? t("canvas.generating") : t("canvas.generate"))}
-      {/* ★몇 장을 만들지·얼마가 드는지를 **누르기 전에** 보여 준다 */}
+      {/* ★몇 장을 만들지·얼마가 드는지를 **누르기 전에** 보여 준다.
+          ★Opus 무료 구간이면 숫자 대신 **FREE** 다 (v2 `anlasFreeTag`, index.html:9438).
+            `anlas.ts` 가 세 두고도 아무도 안 읽던 값이다 (감사 C3). */}
       {!compact && (
         <span style={{ opacity: 0.82, fontVariantNumeric: "tabular-nums" }}>
-          {t("gen.countCost", { n: count, a: cost.total })}
+          {cost.free ? t("gen.countFree", { n: count }) : t("gen.countCost", { n: count, a: cost.total })}
         </span>
       )}
     </button>
@@ -130,31 +210,78 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
     >
       {error && <span style={{ fontSize: "var(--text-2xs)", color: "var(--err)" }}>{error}</span>}
 
-      {/* 큐 줄 — 돌고 있을 때만. 눌렀다는 신호이자 멈추는 창구다 */}
-      {running && (
-        <div data-queue-bar style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
-          <span
-            style={{
-              flex: 1,
-              minWidth: 0,
-              fontSize: "var(--text-2xs)",
-              color: "var(--ink-dim)",
-              fontVariantNumeric: "tabular-nums",
-            }}
+      {/* ★토큰이 없으면 **누르기 전에** 말해 준다 — 눌러야 알 수 있으면 그건 안내가 아니다.
+          누르면 설정 ▸ 일반으로 데려간다 (버튼도 같은 자리로 간다). */}
+      {noToken && (
+        <button
+          data-need-token
+          onClick={() => openSettings("general")}
+          style={{
+            textAlign: "left",
+            fontSize: "var(--text-2xs)",
+            color: "var(--warn)",
+            lineHeight: 1.5,
+            border: "1px solid var(--warn)",
+            borderRadius: "var(--r-2)",
+            padding: "var(--sp-2) var(--sp-3)",
+          }}
+        >
+          {t("gen.needToken")}
+        </button>
+      )}
+
+      {/* 큐 줄 — 돌고 있을 때와 **막 끝났을 때**만. 눌렀다는 신호이자 멈추는 창구다.
+          ★v2 는 「준비」를 늘 띄워 뒀지만 우리는 줄 자체가 없는 것이 그 자리다
+            (CLAUDE.md 「큐 줄은 돌고 있을 때만 뜬다」, 사용자 지시 2026-08-04). */}
+      {(running || phase !== "idle") && (
+        <div data-queue-bar style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
+            <span
+              data-queue-state={phase}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                fontSize: "var(--text-2xs)",
+                color: stateInk,
+                fontVariantNumeric: "tabular-nums",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {stateText}
+              {running && progress.queue_length > 0 && ` · ${t("queue.waiting", { n: progress.queue_length })}`}
+            </span>
+            {running && (
+              <>
+                <button data-queue-cancel onClick={() => void cancel()} title={t("queue.cancelHint")} style={qbtn}>
+                  {t("queue.cancel")}
+                </button>
+                <button
+                  data-queue-clear
+                  onClick={() => void clear()}
+                  title={t("queue.clearHint")}
+                  style={{ ...qbtn, color: "var(--err)", borderColor: "var(--err)" }}
+                >
+                  {t("queue.clear")}
+                </button>
+              </>
+            )}
+          </div>
+          {/* 진행바 — v2 `progressFill` 이관 (index.html:9442-9444, 16119-16127) */}
+          <div
+            data-queue-progress={pct}
+            style={{ height: 3, borderRadius: "var(--r-1)", background: "var(--line)", overflow: "hidden" }}
           >
-            {t("queue.waiting", { n: progress.queue_length })} · {progress.completed}/{progress.total}
-          </span>
-          <button data-queue-cancel onClick={() => void cancel()} title={t("queue.cancelHint")} style={qbtn}>
-            {t("queue.cancel")}
-          </button>
-          <button
-            data-queue-clear
-            onClick={() => void clear()}
-            title={t("queue.clearHint")}
-            style={{ ...qbtn, color: "var(--err)", borderColor: "var(--err)" }}
-          >
-            {t("queue.clear")}
-          </button>
+            <div
+              style={{
+                height: "100%",
+                width: `${pct}%`,
+                background: stateInk,
+                transition: "width 0.18s linear",
+              }}
+            />
+          </div>
         </div>
       )}
 
@@ -276,18 +403,60 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
           {t("focus.lockedByInpaint")}
         </span>
       )}
+      {/* ★막았으면 **왜 막혔는지**를 같은 자리에서 말한다. v2 는 눌렀을 때 토스트였는데,
+          버튼이 잠긴 채 이유가 없으면 무엇을 고쳐야 하는지 알 수 없다 */}
+      {blocked && (
+        <span data-gen-over-limit style={{ fontSize: "var(--text-2xs)", color: "var(--err)" }}>
+          {t("gen.overLimit", { a: MAX_PER_IMAGE })}
+        </span>
+      )}
 
-      <div style={{ display: "flex", alignItems: "center", fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
-        {cost.encoding > 0 && <span>{t("gen.vibeEncode", { a: cost.encoding })}</span>}
-        <span style={{ flex: 1 }} />
-        {sub && (
-          <span title={`tier ${sub.tier}`}>
-            Anlas{" "}
-            <b style={{ fontFamily: "var(--font-mono)", color: "var(--ink-soft)" }}>
-              {sub.anlas.toLocaleString()}
-            </b>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--sp-2)",
+          fontSize: "var(--text-2xs)",
+          color: "var(--ink-faint)",
+        }}
+      >
+        {/* ★비용이 **어떻게 나왔나** — v2 의 `총액 (장당 × N슬롯 × M회)` (index.html:19031-19039).
+            총액은 버튼에 있으므로 여기서는 분해만 보인다 (같은 값을 두 번 두지 않는다) */}
+        {!cost.free && count > 1 && (
+          <span data-cost-break style={{ fontVariantNumeric: "tabular-nums" }}>
+            {isSet
+              ? t("gen.costPerSlots", { p: cost.perImage, s: slots, r: perSlot })
+              : t("gen.costPer", { p: cost.perImage, n: count })}
           </span>
         )}
+        {cost.encoding > 0 && <span>{t("gen.vibeEncode", { a: cost.encoding })}</span>}
+        <span style={{ flex: 1 }} />
+        <span data-anlas-balance title={sub ? `tier ${sub.tier}` : undefined}>
+          Anlas{" "}
+          <b style={{ fontFamily: "var(--font-mono)", color: "var(--ink-soft)" }}>
+            {sub ? sub.anlas.toLocaleString() : "--"}
+          </b>
+        </span>
+        {/* ★잔액을 **다시 물어보는 창구** (v2 `refreshAnlasBtn`, index.html:9434·19087-19093).
+            없으면 토큰을 넣거나 밖에서 충전해도 화면 값이 영영 안 바뀐다 */}
+        <button
+          data-anlas-refresh
+          title={t("gen.anlasRefresh")}
+          onClick={() => {
+            setTurns((n) => n + 1);
+            void useSub.getState().load();
+          }}
+          style={{
+            display: "grid",
+            placeItems: "center",
+            color: "var(--ink-faint)",
+            padding: "0 2px",
+            transform: `rotate(${turns * 360}deg)`,
+            transition: "transform 0.3s",
+          }}
+        >
+          {Icon.refresh12}
+        </button>
       </div>
     </div>
   );

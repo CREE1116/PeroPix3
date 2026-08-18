@@ -27,6 +27,7 @@ export function ImageActions({
   loadMeta,
   dims,
   revealPath,
+  revealApi = "/api/files/reveal",
   onEnhance,
   upscale,
   onKeep,
@@ -39,8 +40,11 @@ export function ImageActions({
   seed?: number;
   /** 실제 해상도 — 페로픽스파이 `res-tag`. 그림을 띄우는 쪽이 `onLoad` 로 재서 준다 */
   dims?: { w: number; h: number } | null;
-  /** 아웃풋 루트 기준 경로 — 있으면 「폴더 열기」가 뜬다 (페로픽스파이 📂 Folder) */
+  /** 뿌리 기준 경로 — 있으면 「폴더 열기」가 뜬다 (페로픽스파이 📂 Folder) */
   revealPath?: string;
+  /** ★뿌리가 자리마다 다르다 — 워크스페이스 파일은 아웃풋 루트, 보관함은 `<APP>/gallery`.
+   *  버튼은 하나로 두고 **창구만** 갈아 끼운다 (몸통 모양은 둘이 같다). */
+  revealApi?: string;
   /** 이 그림의 생성 설정. 없으면 「설정 불러오기」가 안 뜬다 */
   loadMeta?: () => Promise<ImageMeta | null>;
   onEnhance?: () => void;
@@ -219,7 +223,7 @@ export function ImageActions({
           <button
             data-act-reveal
             onClick={() =>
-              void api("/api/files/reveal", {
+              void api(revealApi, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ path: revealPath }),

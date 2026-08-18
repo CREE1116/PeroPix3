@@ -7,6 +7,7 @@ import { useSceneFocus } from "./sceneFocus";
 import { pausePromptSave, usePrompt } from "./prompt";
 import { t } from "../i18n";
 import { useGen } from "./gen";
+import { api } from "../lib/backend";
 
 /** 이미지 입력 — Vibe Transfer · Precise Reference · 베이스 이미지(i2i·인페인트).
  *
@@ -48,6 +49,10 @@ export type BaseMode = "img2img" | "inpaint";
 type S = {
   vibeOn: boolean;
   vibes: Vibe[];
+  /** ★강도 정규화 — 공홈에도 같은 토글이 있다 (기본 켜짐, `docs/nai-web-reference.md` 8절).
+   *  켜져 있고 2장 이상이며 강도 합이 1을 넘으면 각 값을 합으로 나눠 보낸다.
+   *  ★그 문서가 "정규화는 사용자 토글이다. 하드코딩하지 말 것"이라고 못 박은 항목이다. */
+  normalizeVibe: boolean;
   refOn: boolean;
   refs: PreciseRef[];
 
@@ -82,9 +87,16 @@ type S = {
   originCell: { id: string } | null;
 
   setVibeOn: (v: boolean) => void;
+  setNormalizeVibe: (v: boolean) => void;
   addVibe: (image: string, name: string) => void;
   patchVibe: (i: number, p: Partial<Vibe>) => void;
   removeVibe: (i: number) => void;
+  /** 목록을 통째로 갈아 끼운다 (그림 메타데이터에서 되살릴 때) */
+  setVibes: (v: Vibe[]) => void;
+  /** 서버에 구워 둔 인코딩이 있는지 물어 `encoded` 를 맞춘다 (`/api/vibe-cache/check`) */
+  syncVibeCache: () => Promise<void>;
+  /** 비용 계산에 쓰는 강도 계수 (`docs/nai-web-reference.md` 9절) */
+  costStrength: () => number;
 
   setRefOn: (v: boolean) => void;
   addRef: (r: PreciseRef) => void;
@@ -110,6 +122,9 @@ export const MAX_VIBES = 16;
 /** 베이스 그림 크기를 재는 중인 약속. `startEdit` 이 그 뒤에 자동 켜기를 판단한다 */
 let measuring: Promise<void> | null = null;
 
+/** 캐시 조회 회차. 늦게 온 답이 새 목록을 덮지 않게 한다 */
+let syncSeq = 0;
+
 /** ★인페인트는 **씬 프롬프트의 사본**을 편집한다 (사용자 결정 2026-08-13).
  *
  *  구조는 같아야 한다: 같은 왼쪽 패널에서 블록·캐릭터·UC 를 그대로 고친다. 다만 거기서
@@ -123,6 +138,7 @@ let inpaintPrompt: PromptSnap | null = null;
 export const useImageInput = create<S>((set, get) => ({
   vibeOn: false,
   vibes: [],
+  normalizeVibe: true,
   refOn: false,
   refs: [],
   baseImage: "",
@@ -160,6 +176,67 @@ export const useImageInput = create<S>((set, get) => ({
   patchVibe: (i, p) =>
     set((s) => ({ vibes: s.vibes.map((v, k) => (k === i ? { ...v, ...p } : v)) })),
   removeVibe: (i) => set((s) => ({ vibes: s.vibes.filter((_, k) => k !== i) })),
+  setVibes: (v) => set({ vibes: v.slice(0, MAX_VIBES) }),
+  setNormalizeVibe: (v) => set({ normalizeVibe: v }),
+
+  async syncVibeCache() {
+    // ★판정은 **서버 하나**가 한다 (`backend/vibe.reuse_ok`·`cache_key`). 여기서 다시
+    //   비교하지 말 것 — 두 벌이 되면 화면은 공짜라고 하는데 실제로는 Anlas 가 나간다.
+    //   큰 인코딩은 올리지 않고 "들고 있는가 + 어느 모델·info 로 구웠나"만 보낸다.
+    const items = get().vibes;
+    if (!items.length) return;
+    const model = useGen.getState().params.model;
+    const tag = ++syncSeq;
+    try {
+      const r = await api<{ items: { keep: boolean; encoded?: string | null;
+                                     encoded_model?: string | null;
+                                     encoded_info_extracted?: number | null }[] }>(
+        "/api/vibe-cache/check",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model,
+            items: items.map((v) => ({
+              image: v.image,
+              info_extracted: v.info_extracted,
+              has_encoded: !!v.encoded,
+              encoded_model: v.encoded_model ?? null,
+              encoded_info_extracted: v.encoded_info_extracted ?? null,
+            })),
+          }),
+        },
+      );
+      // ★늦게 도착한 답은 버린다 — 그 사이 목록이 바뀌었으면 자리가 어긋난다
+      if (tag !== syncSeq) return;
+      const now = get().vibes;
+      if (now.length !== items.length || now.some((v, i) => v.image !== items[i].image)) return;
+      set({
+        vibes: now.map((v, i) => {
+          const a = r.items[i];
+          if (!a || a.keep) return v;
+          if (a.encoded)
+            return { ...v, encoded: a.encoded, encoded_model: a.encoded_model ?? model,
+                     encoded_info_extracted: a.encoded_info_extracted ?? v.info_extracted };
+          // 들고 있던 인코딩이 지금 모델·info 에 안 맞고 캐시에도 없다 — 다시 구워야 한다
+          if (!v.encoded) return v;
+          return { ...v, encoded: undefined, encoded_model: undefined,
+                   encoded_info_extracted: undefined };
+        }),
+      });
+    } catch {
+      // 물어보지 못한 것은 **모르는 것**이다. 들고 있는 값을 건드리지 않는다
+    }
+  },
+
+  costStrength() {
+    // ★`y = mask ? (inpaintImg2ImgStrength ?? 1) : (image ? strength : 1)` (9절).
+    //   ★인페인트는 **칠하는 동안에만** 베이스가 실린다 (`payload()` 와 같은 규칙) —
+    //     나간 상태에서 인페인트 강도로 세면 실제로 안 나가는 값으로 값을 매기게 된다.
+    const s = get();
+    if (s.baseMode === "inpaint") return s.editing && s.baseImage ? s.baseInpaintStrength : 1;
+    return s.baseImage ? s.baseStrength : 1;
+  },
 
   setRefOn: (v) => set(v ? { refOn: true, vibeOn: false } : { refOn: false }),
   addRef: (r) => set((s) => ({ refs: [...s.refs, r] })),
@@ -254,6 +331,7 @@ export const useImageInput = create<S>((set, get) => ({
         precise_references: s.refOn ? s.refs.map((r) => ({
           image: r.image, mode: r.mode, strength: r.strength, fidelity: r.fidelity,
         })) : [],
+        normalize_reference_strength: s.normalizeVibe,
         base_image: "", base_mode: "img2img", base_strength: s.baseStrength,
         base_inpaint_strength: s.baseInpaintStrength, base_noise: s.baseNoise,
         base_mask: "", inpaint_from: "", inpaint_rect: null,
@@ -271,6 +349,8 @@ export const useImageInput = create<S>((set, get) => ({
       precise_references: s.refOn ? s.refs.map((r) => ({
         image: r.image, mode: r.mode, strength: r.strength, fidelity: r.fidelity,
       })) : [],
+      // ★사용자 토글이다 (8절). 꺼 두면 합이 1을 넘어도 값을 그대로 보낸다
+      normalize_reference_strength: s.normalizeVibe,
       base_image: s.baseImage,
       base_mode: s.baseMode,
       base_strength: s.baseStrength,
@@ -284,6 +364,28 @@ export const useImageInput = create<S>((set, get) => ({
     };
   },
 }));
+
+/** 바이브 한 장을 목록 끝에 **값까지 갖춘 채로** 붙인다.
+ *
+ *  ★`addVibe` 는 꽉 차면 조용히 아무것도 안 한다. 그 뒤에 「길이 − 1」을 고치면 엉뚱한
+ *    항목이 바뀌므로 여기서 먼저 막고 결과를 돌려준다. 캐시 뷰어와 `.naiv4vibe` 임포트가
+ *    같은 길을 쓴다 — 넣는 창구가 여럿이 되면 켬/끔 처리가 갈린다. */
+export function pushVibe(v: Vibe): boolean {
+  const s = useImageInput.getState();
+  if (s.vibes.length >= MAX_VIBES) return false;
+  // ★Vibe 와 Precise Reference 는 함께 못 쓴다 — 켜면 다른 쪽이 꺼진다 (v2 와 같다)
+  s.setVibeOn(true);
+  s.addVibe(v.image, v.name);
+  const i = useImageInput.getState().vibes.length - 1;
+  s.patchVibe(i, {
+    strength: v.strength,
+    info_extracted: v.info_extracted,
+    encoded: v.encoded,
+    encoded_model: v.encoded_model,
+    encoded_info_extracted: v.encoded_info_extracted,
+  });
+  return true;
+}
 
 /** 파일 → base64 (접두어 없음). v2 `fileToBase64` (index.html:18400) 와 같다 */
 export function fileToBase64(file: File): Promise<string> {

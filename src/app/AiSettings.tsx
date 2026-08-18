@@ -5,6 +5,7 @@ import { useLlm } from "../store/llm";
 import { useCli, CLI_EFFORTS } from "../store/cli";
 // ★같은 모양을 두 벌 만들지 않는다 — 설정 화면의 묶음 상자를 그대로 쓴다
 import { Group } from "./Settings";
+import { openExternal } from "../lib/openExternal";
 
 /** AI 조수 설정 — **어떤 엔진으로 도는가**가 먼저다 (스튜디오 `SettingsPanel` 의 구성 참고).
  *
@@ -24,13 +25,7 @@ function AskForModel({ url }: { url: string }) {
       {t("settings.modelMissing")}{" "}
       <button
         data-llm-ask-link
-        onClick={() => {
-          // ★Tauri 웹뷰에서 <a target="_blank"> 는 안 열린다 — opener 플러그인이 기본 브라우저로 넘긴다.
-          //   브라우저(Vite)로 열었을 때는 그냥 새 탭.
-          void import("@tauri-apps/api/core")
-            .then((m) => m.invoke("plugin:opener|open_url", { url }))
-            .catch(() => window.open(url, "_blank", "noreferrer"));
-        }}
+        onClick={() => openExternal(url)}
         title={url}
         style={{ color: "var(--accent)", textDecoration: "underline" }}
       >

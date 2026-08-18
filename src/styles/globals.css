@@ -144,6 +144,11 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
    ★인라인 스타일로는 :hover 를 못 걸어서 여기 둔다 (페로픽스파이 .thumb-star 이식). */
 *:hover > .thumb-star { opacity: 1 !important; }
 
+/* 갤러리 폴더 줄의 지우는 단추 — 같은 요령이다. 늘 보이면 폴더 목록이 단추 줄로 읽힌다. */
+.keep-folder-del { opacity: 0; transition: opacity 120ms; }
+.keep-folder-row:hover .keep-folder-del { opacity: 1; }
+.keep-folder-del:hover { color: var(--err); }
+
 /* 켜는 동안의 진행 막대 — 얼마나 남았는지는 알 수 없으므로 **왕복**한다 (App.tsx `Booting`).
    ★사이드카(파이썬)가 뜨는 데 실측 1.7초가 걸리고 그건 정식 빌드에서도 그대로다. */
 @keyframes peropix-boot {

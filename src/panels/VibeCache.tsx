@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { useI18n } from "../i18n";
 import { api, backendUrl } from "../lib/backend";
-import { useImageInput } from "../store/imageInput";
+import { MAX_VIBES, pushVibe } from "../store/imageInput";
+import { ask } from "../store/ask";
+import { toast } from "../store/toast";
 import { Icon } from "../components/Icon";
 
 type Entry = {
@@ -13,19 +15,30 @@ type Entry = {
   size: [number, number];
 };
 
+/** 한 항목의 속살 — 그림과 인코딩까지 (`/api/vibe-cache/{name}/data`) */
+type Detail = {
+  image: string;
+  vibe_data: string | null;
+  model: string;
+  strength: number;
+  info_extracted: number;
+};
+
 /** 바이브 캐시 뷰어 — **구워 둔 인코딩**을 보고 다시 쓰는 자리 (v2 6단계).
  *
  *  ★인코딩은 **돈이 나가는 호출**이다 (바이브당 2 Anlas). 같은 그림·같은 모델·같은 정보추출이면
  *    다시 굽지 않는데(`vibe.reuse_ok`), 그 판정이 보이지 않으면 사용자는 "또 돈이 나가나"를
  *    알 수 없다. 여기서 **무엇이 구워져 있는지**를 보이고, 눌러서 그대로 꺼내 쓴다.
- *  ★캐시에 남는 것은 **인코딩과 미리보기 PNG** 다. 원본 그림은 없다 — 그래서 꺼내 쓸 때
- *    `encoded` 를 채워 넣는다 (서버가 그 값을 보고 네트워크를 안 탄다).
+ *  ★캐시에 남는 것은 **인코딩과 그림 한 장**이다 (긴 변 512 로 줄여 굽는다). 꺼내 쓸 때는
+ *    **둘 다** 받아 온다 — 인코딩만 받으면 모델을 바꿨을 때 다시 구울 그림이 없고, 그림만
+ *    받으면 돈이 다시 나간다. 예전에는 썸네일 주소만 알고 그림 자리를 비워 둬서
+ *    **생성이 500 으로 죽었다** (빈 그림을 다시 인코딩하려다 났다).
  */
 export function VibeCache({ onClose }: { onClose: () => void }) {
   const t = useI18n((s) => s.t);
   const [items, setItems] = useState<Entry[] | null>(null);
   const [base, setBase] = useState("");
-  const img = useImageInput();
+  const [busy, setBusy] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -42,6 +55,52 @@ export function VibeCache({ onClose }: { onClose: () => void }) {
       alive = false;
     };
   }, []);
+
+  /** 꺼내 쓰기 — **그림과 인코딩을 함께** 받아 온다 (v2 index.html:22620-22646) */
+  const use = async (it: Entry) => {
+    if (busy) return;
+    setBusy(it.file);
+    try {
+      const d = await api<Detail>(`/api/vibe-cache/${encodeURIComponent(it.file)}/data`);
+      if (!d.vibe_data) return toast(t("imgIn.cacheNoData"), "warn");
+      const ok = pushVibe({
+        image: d.image,
+        name: it.file.replace(/\.png$/i, ""),
+        strength: d.strength,
+        info_extracted: d.info_extracted,
+        encoded: d.vibe_data,
+        encoded_model: d.model,
+        encoded_info_extracted: d.info_extracted,
+      });
+      if (!ok) return toast(t("imgIn.vibeFull", { n: MAX_VIBES }), "warn");
+      onClose();
+    } catch (e) {
+      toast(String(e), "warn");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const remove = async (it: Entry) => {
+    if (busy) return;
+    if (!(await ask({
+      title: t("imgIn.cacheDelete"),
+      body: t("imgIn.cacheDeleteBody"),
+      ok: t("common.delete"),
+      cancel: t("common.cancel"),
+      danger: true,
+    })))
+      return;
+    setBusy(it.file);
+    try {
+      await api(`/api/vibe-cache/${encodeURIComponent(it.file)}`, { method: "DELETE" });
+      setItems((xs) => (xs ?? []).filter((x) => x.file !== it.file));
+    } catch (e) {
+      toast(String(e), "warn");
+    } finally {
+      setBusy("");
+    }
+  };
 
   return (
     <div
@@ -100,48 +159,62 @@ export function VibeCache({ onClose }: { onClose: () => void }) {
             }}
           >
             {items.map((it) => (
-              <button
+              <div
                 key={it.file}
-                data-vibe-cache-item={it.file}
-                onClick={() => {
-                  // ★구워 둔 것을 그대로 쓴다 — 원본 그림이 없으므로 미리보기 PNG 를 그림 자리에 둔다.
-                  //   서버는 `encoded` 가 있고 모델·정보추출이 맞으면 **네트워크를 안 탄다**.
-                  img.setVibeOn(true);
-                  img.addVibe("", it.file.replace(/\.png$/, ""));
-                  const i = useImageInput.getState().vibes.length - 1;
-                  img.patchVibe(i, {
-                    strength: it.strength,
-                    info_extracted: it.info_extracted,
-                    encoded_model: it.model,
-                    encoded_info_extracted: it.info_extracted,
-                  });
-                  onClose();
-                }}
-                title={t("imgIn.cacheUse")}
                 style={{
+                  position: "relative",
                   border: "1px solid var(--line)",
                   borderRadius: "var(--r-2)",
                   overflow: "hidden",
                   background: "var(--panel)",
-                  padding: 0,
-                  textAlign: "left",
+                  opacity: busy === it.file ? 0.5 : 1,
                 }}
               >
-                <img
-                  src={`${base}/api/vibe-cache/${encodeURIComponent(it.file)}`}
-                  alt=""
-                  loading="lazy"
-                  style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", display: "block" }}
-                />
-                <div style={{ padding: "var(--sp-2) var(--sp-3)", fontSize: "var(--text-2xs)" }}>
-                  <div style={{ color: "var(--ink-soft)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {it.model.replace("nai-diffusion-", "")}
+                <button
+                  data-vibe-cache-item={it.file}
+                  disabled={!!busy}
+                  onClick={() => void use(it)}
+                  title={t("imgIn.cacheUse")}
+                  style={{ display: "block", width: "100%", padding: 0, textAlign: "left" }}
+                >
+                  <img
+                    src={`${base}/api/vibe-cache/${encodeURIComponent(it.file)}`}
+                    alt=""
+                    loading="lazy"
+                    style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", display: "block" }}
+                  />
+                  <div style={{ padding: "var(--sp-2) var(--sp-3)", fontSize: "var(--text-2xs)" }}>
+                    <div style={{ color: "var(--ink-soft)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {it.model.replace("nai-diffusion-", "")}
+                    </div>
+                    <div style={{ color: "var(--ink-faint)", fontFamily: "var(--font-mono)" }}>
+                      {t("imgIn.strength")} {it.strength} · {t("imgIn.info")} {it.info_extracted}
+                    </div>
                   </div>
-                  <div style={{ color: "var(--ink-faint)", fontFamily: "var(--font-mono)" }}>
-                    {t("imgIn.strength")} {it.strength} · {t("imgIn.info")} {it.info_extracted}
-                  </div>
-                </div>
-              </button>
+                </button>
+                {/* ★지우면 그 그림은 **다시 사야 한다** (인코딩은 유료라 캐시가 곧 돈이다).
+                    그래서 확인을 받고, 되돌릴 수 없다고 알린다 */}
+                <button
+                  data-vibe-cache-del={it.file}
+                  disabled={!!busy}
+                  onClick={() => void remove(it)}
+                  title={t("imgIn.cacheDelete")}
+                  style={{
+                    position: "absolute",
+                    top: "var(--sp-2)",
+                    right: "var(--sp-2)",
+                    display: "grid",
+                    placeItems: "center",
+                    width: 24,
+                    height: 24,
+                    borderRadius: "var(--r-1)",
+                    background: "rgba(6,8,12,0.62)",
+                    color: "var(--ink-soft)",
+                  }}
+                >
+                  {Icon.trash}
+                </button>
+              </div>
             ))}
           </div>
         )}

@@ -17,6 +17,10 @@ type S = {
   folder: string;
   items: FileItem[];
   picked: Set<string>;
+  /** ★Shift 범위의 기준점 (v2 `fm.anchorIndex`, index.html:26945-26987).
+   *  탐색기와 같다: Ctrl 은 하나씩 토글하고 **Shift 는 앵커부터 여기까지**를 통째로 고른다.
+   *  예전에는 둘을 똑같이 토글로 처리해서 범위 선택이 아예 없었다 (감사 C7). */
+  anchor: number;
   open: Set<string>;
   loading: boolean;
   /** ★쪽 나눠 받는다 (gallery 와 같은 규칙) */
@@ -29,7 +33,10 @@ type S = {
   more: () => Promise<void>;
   reload: () => Promise<void>;
   toggleOpen: (path: string) => void;
-  pick: (file: string, add: boolean) => void;
+  /** 한 칸을 누른 결과 — 수식키가 뜻을 가른다 (`ctrl` 토글 · `shift` 범위) */
+  pick: (index: number, mod?: { ctrl?: boolean; shift?: boolean }) => void;
+  /** 마키(드래그)로 훑은 범위를 **더한다** — 시작 칸부터 지금 칸까지 */
+  pickRange: (from: number, to: number) => void;
   pickAll: () => void;
   clearPick: () => void;
   mkdir: (parent: string, name: string) => Promise<void>;
@@ -45,6 +52,7 @@ export const useFiles = create<S>((set, get) => ({
   folder: "",
   items: [],
   picked: new Set(),
+  anchor: -1,
   open: new Set(),
   loading: false,
   page: 1,
@@ -59,7 +67,7 @@ export const useFiles = create<S>((set, get) => ({
   },
 
   async go(folder) {
-    set({ folder, loading: true, picked: new Set() });
+    set({ folder, loading: true, picked: new Set(), anchor: -1 });
     try {
       const r = await api<FilePage>(`/api/files/list?page=1&folder=${encodeURIComponent(folder)}`);
       set({ items: r.items, page: r.page, total: r.total, hasMore: r.page < r.pages });
@@ -99,20 +107,48 @@ export const useFiles = create<S>((set, get) => ({
     set({ open: next });
   },
 
-  pick(file, add) {
-    const cur = get().picked;
-    if (!add) return set({ picked: new Set(cur.has(file) && cur.size === 1 ? [] : [file]) });
-    const next = new Set(cur);
-    next.has(file) ? next.delete(file) : next.add(file);
-    set({ picked: next });
+  pick(index, mod) {
+    const { items, picked, anchor } = get();
+    const it = items[index];
+    if (!it) return;
+
+    // ★Shift — 앵커부터 여기까지. 앞선 선택은 버린다 (탐색기와 같다)
+    if (mod?.shift && anchor >= 0) {
+      const [a, b] = anchor < index ? [anchor, index] : [index, anchor];
+      return set({ picked: new Set(items.slice(a, b + 1).map((x) => x.file)) });
+    }
+
+    // Ctrl — 하나씩 더하고 뺀다. 앵커는 **더할 때만** 새로 잡는다
+    if (mod?.ctrl) {
+      const next = new Set(picked);
+      if (next.has(it.file)) {
+        next.delete(it.file);
+        return set({ picked: next, anchor: next.size ? anchor : -1 });
+      }
+      next.add(it.file);
+      return set({ picked: next, anchor: anchor < 0 ? index : anchor });
+    }
+
+    // 맨 클릭 — 이것 하나만. 같은 것을 또 누르면 푼다
+    const only = picked.has(it.file) && picked.size === 1;
+    set({ picked: new Set(only ? [] : [it.file]), anchor: only ? -1 : index });
+  },
+
+  pickRange(from, to) {
+    const { items, picked, anchor } = get();
+    const [a, b] = from < to ? [from, to] : [to, from];
+    const next = new Set(picked);
+    for (const it of items.slice(a, b + 1)) next.add(it.file);
+    set({ picked: next, anchor: anchor < 0 ? from : anchor });
   },
 
   pickAll() {
     const { items, picked } = get();
-    set({ picked: new Set(picked.size === items.length ? [] : items.map((i) => i.file)) });
+    const all = picked.size === items.length;
+    set({ picked: new Set(all ? [] : items.map((i) => i.file)), anchor: all ? -1 : 0 });
   },
 
-  clearPick: () => set({ picked: new Set() }),
+  clearPick: () => set({ picked: new Set(), anchor: -1 }),
 
   async mkdir(parent, name) {
     await api("/api/files/mkdir", {

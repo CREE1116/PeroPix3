@@ -1,9 +1,13 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useI18n, LOCALES } from "../i18n";
 import { api } from "../lib/backend";
 import { useTheme } from "../store/theme";
 import { playDoneSound } from "../lib/notifySound";
-import { useUi, FONTS } from "../store/ui";
+import { useUi, FONTS, type SettingsTabId } from "../store/ui";
+import { useSub } from "../store/sub";
+import { useHealth } from "../store/health";
+import { ask } from "../store/ask";
+import { openExternal } from "../lib/openExternal";
 import { toast } from "../store/toast";
 import { Icon } from "../components/Icon";
 import { AiSettings } from "./AiSettings";
@@ -20,11 +24,9 @@ import { AiSettings } from "./AiSettings";
  */
 export function Settings({
   onClose,
-  hasToken,
   tab: initialTab = "general",
 }: {
   onClose: () => void;
-  hasToken: boolean;
   /** 어느 탭으로 열 것인가 — ★**연 자리에 맞춘다.** AI 채팅의 엔진 칩에서 오면 LLM 탭이다
    *  (사용자 지시 2026-08-12). 거기서 일반 탭이 열리면 한 번 더 눌러야 한다 */
   tab?: TabId;
@@ -42,30 +44,61 @@ export function Settings({
   const vol = useUi((s) => s.notifyVolume);
   const setVol = useUi((s) => s.setNotifyVolume);
   const setNotify = useUi((s) => s.setNotifyDone);
+  const suggest = useUi((s) => s.tagSuggest);
+  const setSuggest = useUi((s) => s.setTagSuggest);
+  // ★토큰 유무·앱 버전·요청 창구는 **백엔드가 정본**이다 (`store/health.ts`)
+  const has = useHealth((s) => !!s.health?.hasToken);
+  const version = useHealth((s) => s.health?.version ?? "");
+  const support = useHealth((s) => s.health?.support ?? "");
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
-  const [has, setHas] = useState(hasToken);
+  /** 저장이 되짚어야 할 것을 알려 왔을 때 — ★토스트로 흘리지 않는다. "왜 안 되지"의 답이라
+   *  **칸 옆에 남아 있어야** 한다 (v2 `naiTokenSettingsError`) */
+  const [note, setNote] = useState("");
   const [tab, setTab] = useState<TabId>(initialTab);
 
-  useEffect(() => setHas(hasToken), [hasToken]);
-
-  const saveToken = async () => {
-    if (busy || !token.trim()) return;
+  /** 저장과 삭제가 **같은 창구**를 쓴다 — 빈 값이 곧 삭제다 (`backend/secretstore.py:36-41`).
+   *
+   *  ★검사는 서버가 한다 (공백·비ASCII·`pst-` 접두 + NAI 401 확인). 화면에서 한 번 더 재면
+   *    두 곳이 어긋나고, 401 확인은 어차피 화면에서 못 한다. 지금까지는 오타 난 토큰이
+   *    조용히 저장돼 생성할 때가 되어서야 실패했다 (감사 C5). */
+  const putToken = async (value: string) => {
+    if (busy) return;
     setBusy(true);
+    setNote("");
     try {
-      const r = await api<{ hasToken: boolean }>("/api/token", {
+      const r = await api<{ hasToken: boolean; warning?: string }>("/api/token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: token.trim() }),
+        body: JSON.stringify({ token: value }),
       });
-      setHas(r.hasToken);
+      useHealth.getState().setHasToken(r.hasToken);
       setToken("");
-      toast(t("settings.tokenSaved"));
+      if (r.warning) setNote(r.warning);
+      toast(t(value ? "settings.tokenSaved" : "settings.tokenRemoved"));
+      // ★토큰이 생겼으니 **곧바로 잔액을 묻는다** (v2 `index.html:15736, 15828`).
+      //   부팅 때 한 번만 읽던 값이라, 여기서 안 부르면 앱을 다시 켜기 전까지 Anlas 가 빈다
+      if (r.hasToken) void useSub.getState().load();
+      else useSub.getState().set(null);
     } catch (e) {
-      toast(String(e), "warn");
+      setNote(String(e).replace(/^Error:\s*/, ""));
     } finally {
       setBusy(false);
     }
+  };
+
+  const removeToken = async () => {
+    if (
+      !(await ask({
+        title: t("settings.tokenDelete"),
+        body: t("settings.tokenDeleteBody"),
+        ok: t("common.delete"),
+        cancel: t("common.cancel"),
+        danger: true,
+      }))
+    )
+      return;
+    await putToken("");
   };
 
   return (
@@ -165,7 +198,10 @@ export function Settings({
                       value={token}
                       placeholder={has ? t("settings.tokenSet") : t("settings.tokenEmpty")}
                       onChange={(e) => setToken(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && void saveToken()}
+                      // ★빈 칸에서 Enter 로 지워지지 않게 — 삭제는 삭제 단추뿐이다
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && token.trim()) void putToken(token.trim());
+                      }}
                       style={{
                         flex: 1,
                         minWidth: 0,
@@ -179,14 +215,56 @@ export function Settings({
                     />
                     <button
                       data-token-save
-                      onClick={() => void saveToken()}
+                      onClick={() => void putToken(token.trim())}
                       disabled={busy || !token.trim()}
                       style={btn}
                     >
-                      {t("settings.save")}
+                      {t(busy ? "settings.tokenChecking" : "settings.save")}
                     </button>
+                    {/* ★지우는 창구 — 백엔드는 빈 값이면 지우도록 이미 돼 있었고 여기만 없었다 */}
+                    {has && (
+                      <button
+                        data-token-delete
+                        onClick={() => void removeToken()}
+                        disabled={busy}
+                        style={{ ...btn, color: "var(--err)" }}
+                      >
+                        {t("common.delete")}
+                      </button>
+                    )}
                   </div>
+                  {note && (
+                    <span data-token-note style={{ fontSize: "var(--text-2xs)", color: "var(--warn)", lineHeight: 1.6 }}>
+                      {note}
+                    </span>
+                  )}
                   <Hint>{t("settings.tokenHint")}</Hint>
+                  {/* ★NAI 계정이 걸린 경고라 눈에 띄어야 한다 (v2 index.html:10558) */}
+                  <span style={{ fontSize: "var(--text-2xs)", color: "var(--warn)", lineHeight: 1.6 }}>
+                    {t("settings.bulkWarn")}
+                  </span>
+                </Group>
+
+                <Group label={t("settings.editing")}>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "var(--sp-2)",
+                      fontSize: "var(--text-2xs)",
+                      color: "var(--ink-soft)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      data-tag-suggest-toggle
+                      checked={suggest}
+                      onChange={(e) => setSuggest(e.target.checked)}
+                    />
+                    {t("settings.tagSuggest")}
+                  </label>
+                  <Hint>{t("settings.tagSuggestHint")}</Hint>
                 </Group>
 
                 <Group label={t("settings.queue")}>
@@ -258,6 +336,35 @@ export function Settings({
                     </label>
                   )}
                 </Group>
+
+                {/* ★앱 정보 — 버전은 백엔드가 준다(`/api/health`). 화면에 박아 두면 어긋난다.
+                    ★업데이트 확인은 여기 없다: 배포처가 안 정해져 있다 (감사 E절 「보류」). */}
+                <Group label={t("settings.about")}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)", flexWrap: "wrap" }}>
+                    <span
+                      data-about-version
+                      style={{
+                        fontSize: "var(--text-2xs)",
+                        color: "var(--ink-dim)",
+                        fontFamily: "var(--font-mono)",
+                      }}
+                    >
+                      {version || t("settings.loading")}
+                    </span>
+                    {support && (
+                      <button
+                        data-support-link
+                        onClick={() => openExternal(support)}
+                        title={support}
+                        style={{ ...btn, display: "inline-flex", alignItems: "center", gap: "var(--sp-2)" }}
+                      >
+                        {Icon.external}
+                        {t("settings.support")}
+                      </button>
+                    )}
+                  </div>
+                  <Hint>{t("settings.supportHint")}</Hint>
+                </Group>
               </>
             )}
 
@@ -295,8 +402,9 @@ export function Settings({
   );
 }
 
-/** 좌측 탭 — ★이름을 문자열로 이어 만들지 않는다 (아래 THEMES 와 같은 이유) */
-export type TabId = "general" | "look" | "llm";
+/** 좌측 탭 — ★이름을 문자열로 이어 만들지 않는다 (아래 THEMES 와 같은 이유).
+ *  ★값 자체는 `store/ui.ts` 가 든다 (여는 자리가 셋이라 스토어에 있어야 한다) */
+export type TabId = SettingsTabId;
 const TABS = [
   ["general", "settings.tabGeneral"],
   ["look", "settings.look"],

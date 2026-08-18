@@ -307,6 +307,132 @@ def _mosaic(region: Image.Image, block: int) -> Image.Image:
     return small.resize((w, h), Image.NEAREST)
 
 
+# ── 스팀/구름 ────────────────────────────────────────────────
+# ★v2 의 **기본 방식**이다 (`index.html` 의 `censorMethod` 첫 항목). v2 는 이것을 화면의
+#   canvas 에서 그렸고 백엔드는 아예 몰랐다. 그래서 스팀이 섞이면 화면이 렌더해 base64 로
+#   올려 보내는 우회로가 있었다 (`renderCensoredImageOnCanvas`).
+#   3.0 은 **가리는 일을 서버 하나가 한다.** 두 벌로 두면 미리보기와 저장본이 갈린다.
+# ★알고리즘은 v2 원문 그대로다: 심플렉스 노이즈로 밝기와 가장자리를 흔든 타원 구름.
+#   난수표(`_simplex_perm`)의 섞는 규칙까지 옮겼다. 같은 씨앗이면 같은 무늬가 나온다.
+
+_F2 = 0.5 * (math.sqrt(3.0) - 1.0)
+_G2 = (3.0 - math.sqrt(3.0)) / 6.0
+# grad3 12개의 x·y 성분만 (2D 노이즈는 z 를 안 쓴다)
+_GRAD2 = np.array(
+    [(1, 1), (-1, 1), (1, -1), (-1, -1), (1, 0), (-1, 0), (1, 0), (-1, 0), (0, 1), (0, -1), (0, 1), (0, -1)],
+    dtype=np.float32,
+)
+# ★노이즈를 만드는 판의 상한. 큰 박스(전신)는 텍스처가 3000px 를 넘어 픽셀당 6번의 노이즈가
+#   수천만 번이 된다. 구름은 **판 크기에 비례한 무늬**라(noiseScale = 판/2) 작게 만들어
+#   늘려도 같은 그림이 나온다. 줄어드는 것은 비용뿐이다.
+_STEAM_MAX = 512
+
+
+def _simplex_perm(seed: int):
+    """v2 `SimplexNoise.seed` 그대로. LCG 로 256개를 섞어 512로 늘린다."""
+    p = list(range(256))
+    s = int(seed)
+    for i in range(255, 0, -1):
+        s = (s * 16807 + 1) % 2147483647
+        j = s % (i + 1)
+        p[i], p[j] = p[j], p[i]
+    perm = np.array([p[i & 255] for i in range(512)], dtype=np.int32)
+    return perm, perm % 12
+
+
+def _noise2(x: np.ndarray, y: np.ndarray, perm: np.ndarray, pm12: np.ndarray) -> np.ndarray:
+    """2D 심플렉스 노이즈 (v2 `noise2D` 의 벡터화). 결과 범위는 대략 -1..1."""
+    s = (x + y) * _F2
+    i = np.floor(x + s)
+    j = np.floor(y + s)
+    t = (i + j) * _G2
+    x0 = x - (i - t)
+    y0 = y - (j - t)
+    upper = x0 > y0
+    i1 = upper.astype(np.int32)
+    j1 = (~upper).astype(np.int32)
+    x1 = x0 - i1 + _G2
+    y1 = y0 - j1 + _G2
+    x2 = x0 - 1.0 + 2.0 * _G2
+    y2 = y0 - 1.0 + 2.0 * _G2
+    ii = i.astype(np.int64) & 255
+    jj = j.astype(np.int64) & 255
+
+    def corner(dx, dy, gi):
+        tt = 0.5 - dx * dx - dy * dy
+        g = _GRAD2[gi]
+        return np.where(tt < 0, 0.0, np.square(np.maximum(tt, 0.0)) ** 2 * (g[..., 0] * dx + g[..., 1] * dy))
+
+    n0 = corner(x0, y0, pm12[ii + perm[jj]])
+    n1 = corner(x1, y1, pm12[ii + i1 + perm[jj + j1]])
+    n2 = corner(x2, y2, pm12[ii + 1 + perm[jj + 1]])
+    return 70.0 * (n0 + n1 + n2)
+
+
+def steam_scale(w: float, h: float) -> float:
+    """박스가 클수록 구름을 더 넓게 편다 (v2 `getSteamBoxScale`)."""
+    size = max(min(w, h), 2.0)
+    return max(1.05, min(1 + 0.04 * math.log2(size), 1.5))
+
+
+def _steam_texture(w: float, h: float, feather: int, brightness: int, alpha: int, seed: int):
+    """구름 한 덩이를 만든다 (RGB, 알파, 판 크기). v2 `generateSteamTexture` 이식.
+
+    ★`feather` 는 여기서 **가장자리 흔들림**을 줄이는 값이다 (다른 방식의 깃털과 다르다).
+      값이 커질수록 무늬가 커지고(`featherFactor`) 윤곽의 요철이 얕아진다."""
+    expand_x = w * 0.35
+    expand_y = h * 0.35
+    tw = max(1, math.ceil(w + expand_x * 2))
+    th = max(1, math.ceil(h + expand_y * 2))
+    # 노이즈는 작은 판에서 만들고 늘린다 (_STEAM_MAX 주석)
+    k = min(1.0, _STEAM_MAX / max(tw, th))
+    nw = max(2, int(round(tw * k)))
+    nh = max(2, int(round(th * k)))
+
+    perm, pm12 = _simplex_perm(seed)
+    px = np.arange(nw, dtype=np.float32)[None, :] / k
+    py = np.arange(nh, dtype=np.float32)[:, None] / k
+    px = np.broadcast_to(px, (nh, nw)).astype(np.float32)
+    py = np.broadcast_to(py, (nh, nw)).astype(np.float32)
+
+    feather = max(0, int(feather))
+    ns = max(tw, th) / 2 * (1 + feather / 25)
+    n = lambda sx, ox=0.0: _noise2(px / sx + ox, py / sx + ox, perm, pm12)  # noqa: E731
+
+    bright = n(ns) * 1.0 + n(ns / 2) * 0.5 + n(ns / 4) * 0.25
+    bright = (bright / 1.75 + 1) / 2
+    bright = 0.5 + bright * 0.5
+
+    dx = (px - tw / 2) / max(w / 2, 1e-6)
+    dy = (py - th / 2) / max(h / 2, 1e-6)
+    ellipse = np.sqrt(dx * dx + dy * dy)
+
+    edge_strength = 1 - feather / 62.5
+    edge = n(ns * 0.5, 50.0) * 0.5 + n(ns * 0.25, 150.0) * 0.35 + n(ns * 0.12, 250.0) * 0.15
+    warped = ellipse + edge * 0.25 * edge_strength
+
+    tsm = np.clip((warped - 0.6) / 0.55, 0, 1)
+    a = np.where(warped < 0.6, 255.0, np.where(warped < 1.15, (1 - tsm * tsm * (3 - 2 * tsm)) * 255.0, 0.0))
+
+    # 판 가장자리는 반드시 0 으로 떨어뜨린다. 구름이 네모나게 잘리면 티가 난다
+    safe = min(expand_x, expand_y) * 0.25
+    gx = np.minimum(px, tw - 1 - px)
+    gy = np.minimum(py, th - 1 - py)
+    from_edge = np.minimum(gx, gy)
+    fade_end = safe * 4
+    if fade_end > safe:
+        a = a * np.clip((from_edge - safe) / (fade_end - safe), 0, 1)
+    a = np.where(from_edge < safe, 0.0, a)
+
+    b_pct = max(0, min(100, int(brightness))) / 100
+    rgb = math.floor(b_pct * 230) + np.floor(bright * math.floor(b_pct * 25))
+    a = a * (max(0, min(100, int(alpha))) / 100)
+
+    rgb_img = Image.fromarray(np.clip(rgb, 0, 255).astype(np.uint8), "L").resize((tw, th), Image.BILINEAR)
+    a_img = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), "L").resize((tw, th), Image.BILINEAR)
+    return rgb_img, a_img, tw, th
+
+
 def apply_boxes(
     img: Image.Image,
     boxes: list[dict],
@@ -317,6 +443,8 @@ def apply_boxes(
     mosaic_strength: int = 12,
     mosaic_opacity: int = 100,
     blur_strength: int = 20,
+    steam_brightness: int = 100,
+    steam_alpha: int = 100,
 ) -> Image.Image:
     """찾은 자리를 가린다 — v2 `apply_censor_boxes` 이식.
 
@@ -333,7 +461,14 @@ def apply_boxes(
         except (TypeError, ValueError):
             continue
         how = b.get("method") or method
-        pts = _corners(x1, y1, x2, y2, float(b.get("rotation") or 0), int(expand))
+        rot = float(b.get("rotation") or 0)
+
+        if how == "steam":
+            _paste_steam(im, x1, y1, x2, y2, rot, int(expand), int(feather),
+                         steam_brightness, steam_alpha)
+            continue
+
+        pts = _corners(x1, y1, x2, y2, rot, int(expand))
         xs = [p[0] for p in pts]
         ys = [p[1] for p in pts]
         pad = feather + 2
@@ -357,9 +492,36 @@ def apply_boxes(
             fill = (0, 0, 0)
             if how == "white":
                 fill = (255, 255, 255)
-            elif how == "color" and color and color.startswith("#") and len(color) >= 7:
-                fill = (int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16))
+            else:
+                # ★색은 박스가 따로 가질 수 있다 (머리 주석의 계약). 없으면 전체 설정을 쓴다
+                c = b.get("color") or color
+                if how == "color" and isinstance(c, str) and c.startswith("#") and len(c) >= 7:
+                    fill = (int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16))
             layer = Image.new("RGB", region.size, fill)
 
         im.paste(Image.composite(layer, region, m), (bx1, by1))
     return im
+
+
+def _paste_steam(im: Image.Image, x1, y1, x2, y2, rot: float, expand: int, feather: int,
+                 brightness: int, alpha: int) -> None:
+    """구름을 박스 **가운데에 맞춰** 얹는다 (v2 `applySteamEffect`).
+
+    ★다른 방식과 달리 박스 안에 갇히지 않는다. 확장·동적 배율·노이즈 여백만큼 밖으로 번진다.
+      그래서 자를 사각형을 따로 계산하지 않고 텍스처의 중심을 박스 중심에 맞춘다
+      (v2 의 오프셋 셋을 정리하면 중심이 정확히 박스 중심으로 떨어진다)."""
+    w, h = x2 - x1, y2 - y1
+    if w <= 0 or h <= 0:
+        return
+    k = steam_scale(w, h)
+    ew = w * k + expand * 2
+    eh = h * k + expand * 2
+    seed = math.floor(x1 * 1000 + y1)
+    rgb, a, tw, th = _steam_texture(ew, eh, feather, brightness, alpha, seed)
+    tex = Image.merge("RGBA", (rgb, rgb, rgb, a))
+    if rot:
+        # 캔버스는 화면 좌표(y 아래)에서 시계 방향으로 돈다. PIL 은 반시계라 부호를 뒤집는다
+        tex = tex.rotate(-math.degrees(rot), resample=Image.BICUBIC, expand=True)
+        tw, th = tex.size
+    cx, cy = x1 + w / 2, y1 + h / 2
+    im.paste(tex, (int(round(cx - tw / 2)), int(round(cy - th / 2))), tex)

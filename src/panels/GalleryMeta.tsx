@@ -196,18 +196,47 @@ export function applyMeta(m: ImageMeta, what: "prompt" | "all" = "all") {
   // ★시드를 되살렸으면 **랜덤을 끈다** — 안 끄면 다음 생성이 새 시드로 굴러 재현이 안 된다
   if (m.seed !== undefined) g.set("seed_mode", "fixed");
 
-  // ★바이브는 **강도만** 되살린다 (v2 도 그렇다). 그림 자체는 메타데이터에 없고
-  //   인코딩만 남아 있어서, 원본 없이 다시 굽지 못한다 — 목록에 자리를 만들어
-  //   "이 그림에 무엇이 걸려 있었는지"를 보이고, 그림은 사용자가 다시 넣는다.
+  // ★바이브는 **인코딩으로** 되살린다 (v2 index.html:18114-18150).
+  //
+  //  그림 자체는 메타데이터에 없고 구워진 인코딩만 남아 있다. 그 인코딩이 곧 쓸 수 있는
+  //  물건이라, 모델과 정보추출을 함께 실어 두면 **다시 굽지 않고** 그대로 나간다 (무료).
+  //  ★그림 자리에는 1×1 투명 PNG 를 둔다 (v2 와 같다). 빈 문자열을 두면 모델을 바꿨을 때
+  //    재인코딩이 빈 그림을 열다 죽는다.
+  //  ★`map` 으로 기존 목록을 고치던 예전 방식은 **목록이 비어 있으면 아무것도 안 만들었다** —
+  //    되살리기가 통째로 헛돌았다. 목록을 새로 만든다.
+  //  ★세는 기준은 **인코딩(`images`)** 이다 (v2 `naiVibes.images.length`). 강도 배열로 세면
+  //    인코딩이 없는 자리에도 1×1 투명 PNG 짜리 항목이 생겨, 생성할 때 그 빈 그림을
+  //    인코딩하려다 죽는다. 강도가 없는 자리는 v2 와 같이 0.6 으로 채운다.
   const vibes = m.nai_vibes;
-  if (vibes?.strengths?.length) {
-    const im = useImageInput.getState();
+  const im = useImageInput.getState();
+  if (vibes?.images?.length) {
+    const model = m.nai_model || "nai-diffusion-4-5-full";
     im.setVibeOn(true);
-    vibes.strengths.forEach((st, i) => {
-      im.patchVibe(i, { strength: st, info_extracted: vibes.info_extracted?.[i] ?? 1 });
-    });
+    im.setVibes(
+      vibes.images.map((enc, i) => {
+        const ie = vibes.info_extracted?.[i] ?? 1;
+        return {
+          image: BLANK_PNG,
+          name: `NAI Vibe ${i + 1}`,
+          strength: vibes.strengths?.[i] ?? 0.6,
+          info_extracted: ie,
+          encoded: enc,
+          encoded_model: model,
+          encoded_info_extracted: ie,
+        };
+      }),
+    );
+  } else if (im.vibes.length) {
+    // ★바이브가 없는 그림의 설정을 적용하면 **들고 있던 바이브를 비운다** (v2 index.html:18153-18161).
+    //   안 비우면 이 그림에 없던 바이브가 섞인 채로 생성돼, 「이 그림을 재현한다」가 어긋난다.
+    im.setVibes([]);
+    im.setVibeOn(false);
   }
 }
+
+/** 1×1 투명 PNG — 인코딩만 있고 원본이 없는 바이브의 자리 그림 (v2 `placeholderImage`) */
+const BLANK_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 
 /** ★제목은 패널 머리글(Shell)이 이미 달고 있다 — 여기서 또 적으면 두 겹이 된다 */
 function Frame({ children }: { children: React.ReactNode }) {

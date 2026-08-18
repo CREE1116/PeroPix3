@@ -15,7 +15,8 @@ import { WorkspaceGate } from "./app/WorkspaceGate";
 import { WorkspaceTabs } from "./app/WorkspaceTabs";
 import { LeftPanel } from "./panels/LeftPanel";
 import { GenerateFooter } from "./panels/GenerateFooter";
-import { Settings, type TabId as SettingsTab } from "./app/Settings";
+import { Settings } from "./app/Settings";
+import { useHealth, type Health } from "./store/health";
 import { Toasts } from "./app/Toasts";
 import { AskDialog } from "./app/AskDialog";
 import { AiChat } from "./panels/AiChat";
@@ -32,6 +33,8 @@ import { SaveDialog, type SaveAsk } from "./cards/SaveDialog";
 import { useSub } from "./store/sub";
 import { useImageInput } from "./store/imageInput";
 import { BlockDrawer } from "./blocks/BlockDrawer";
+import { WildcardModal } from "./panels/WildcardModal";
+import { useWildcards } from "./store/wildcards";
 import { ThumbDialog } from "./cards/ThumbDialog";
 import { saveCardWithThumb } from "./cards/saveCard";
 import { pinImage, setCover } from "./cards/thumbUpload";
@@ -46,11 +49,11 @@ type ThumbTarget =
   | { type: "section"; section: string; img: DragImage }
   | { type: "cover"; kind: CardKind; img: DragImage };
 
-type Health = { ok: boolean; version: string; hasToken: boolean };
-
 export function App() {
-  const [health, setHealth] = useState<Health | null>(null);
-  const [dead, setDead] = useState(false);
+  // ★백엔드 상태는 **스토어 하나**가 든다 — 보는 자리가 넷이다 (타이틀바 점 · 설정의 앱
+  //   정보 · 부팅 화면 · 생성 푸터의 토큰 검사). 여기 지역 상태로 두면 못 내려간다.
+  const health = useHealth((s) => s.health);
+  const dead = useHealth((s) => s.dead);
   const mode = useUi((s) => s.mode);
   // ★여기서 구독해야 언어를 바꿨을 때 패널 머리글이 따라 바뀐다 (tGlobal 은 구독이 아니다)
   const tr = useI18n((s) => s.t);
@@ -62,8 +65,12 @@ export function App() {
   const loadCards = useCards((s) => s.load);
   const [ask, setAsk] = useState<SaveAsk | null>(null);
   const [thumbAsk, setThumbAsk] = useState<ThumbTarget | null>(null);
-  // ★어느 탭으로 열지까지 담는다 — 연 자리가 곧 볼 탭이다 (AI 채팅 → LLM)
-  const [settings, setSettings] = useState<SettingsTab | null>(null);
+  // ★어느 탭으로 열지까지 담는다 — 연 자리가 곧 볼 탭이다 (AI 채팅 → LLM).
+  //   ★상태는 `useUi` 에 있다: 여는 자리가 셋이라(톱니·엔진 칩·토큰 없이 생성) 프롭으로
+  //   내리면 생성 푸터까지 세 겹을 지나야 한다.
+  const settings = useUi((s) => s.settingsTab);
+  const openSettings = useUi((s) => s.openSettings);
+  const closeSettings = useUi((s) => s.closeSettings);
   // ★탭 줄의 「+」 — 게이트를 그 자리에서 띄운다 (워크스페이스를 닫지 않고 하나 더 연다)
   const [gate, setGate] = useState(false);
   /** ★인페인트 중에는 왼쪽 패널이 **씬 프롬프트가 아니라 그 인페인트의 사본**을 편집한다
@@ -85,7 +92,7 @@ export function App() {
         try {
           const h = await api<Health>("/api/health");
           if (!alive) return;
-          setHealth(h);
+          useHealth.getState().set(h);
           if (h.hasToken) {
             try {
               await useSub.getState().load();
@@ -104,12 +111,16 @@ export function App() {
           void connectQueue();
           // 카드는 워크스페이스와 무관한 공용 저장소라 여기서 한 번만 읽는다
           await loadCards();
+          // ★와일드카드 풀도 여기서 한 번 읽는다 (카드와 같은 공용 문서).
+          //   ★**생성보다 먼저 준비돼야 한다.** 비어 있으면 `#이름` 이 그대로 프롬프트에
+          //   나간다. 좌 패널에 매달면 패널을 접었을 때 안 읽힌다 (CLAUDE.md 「잊기 쉬운 것」).
+          void useWildcards.getState().load().catch(() => {});
           return;
         } catch {
           await new Promise((r) => setTimeout(r, 400));
         }
       }
-      if (alive) setDead(true);
+      if (alive) useHealth.getState().setDead(true);
     })();
     return () => {
       alive = false;
@@ -126,7 +137,7 @@ export function App() {
     return (
       <WindowFrame>
         <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg-deep)" }}>
-          <TitleBar right={<Status health={health} dead={dead} />} />
+          <TitleBar right={<Status />} />
           <div style={{ flex: 1, display: "grid", placeItems: "center" }}>
             {wsLoading && <Booting ready={!!health} dead={dead} />}
           </div>
@@ -143,12 +154,12 @@ export function App() {
       <Shell
         titleRight={
           <>
-            <Status health={health} dead={dead} />
+            <Status />
             {/* ★언어·글꼴·테마는 **설정 안**으로 모았다 — 자주 안 쓰는 것이 타이틀바를 채우고 있었다 */}
             <ThemeButton />
             <button
               data-settings-open
-              onClick={() => setSettings("general")}
+              onClick={() => openSettings("general")}
               title={tr("settings.title")}
               style={{
                 display: "inline-flex",
@@ -166,7 +177,7 @@ export function App() {
         navRight={<QueueStatus />}
         /* ★AI 는 **모드와 무관하게** 늘 있다 — 갤러리에서 정리를 시키고 검열 중에
            프롬프트를 손볼 수 있어야 한다. 기본은 접힌 레일이라 자리를 안 먹는다 */
-        ai={<AiChat onOpenSettings={() => setSettings("llm")} />}
+        ai={<AiChat onOpenSettings={() => openSettings("llm")} />}
         /* ★모드마다 양옆이 바뀐다 — 갤러리에서 프롬프트 편집기를 띄워 두면
            "지금 편집하는 것이 무엇인지"가 흐려진다 (갤러리는 과거를 보는 화면이다).
            머리글도 함께 바뀌어야 한다 — 안 그러면 "프롬프트" 아래 폴더가 뜬다. */
@@ -286,8 +297,11 @@ export function App() {
         }}
       />
       {settings && (
-        <Settings tab={settings} onClose={() => setSettings(null)} hasToken={!!health?.hasToken} />
+        <Settings tab={settings} onClose={closeSettings} />
       )}
+      {/* ★모달이라 어느 모드에서나 한 자리에 매단다. 확인 창(`AskDialog`)보다 **위에**
+          두지 않는다. 닫을 때 저장 여부를 묻는 창이 이 위에 떠야 한다 */}
+      <WildcardModal />
       <AskDialog />
       <Toasts />
       <DragLayer />
@@ -430,8 +444,10 @@ function Booting({ ready, dead }: { ready: boolean; dead: boolean }) {
   );
 }
 
-function Status({ health, dead }: { health: Health | null; dead: boolean }) {
+function Status() {
   const t = useI18n((s) => s.t);
+  const health = useHealth((s) => s.health);
+  const dead = useHealth((s) => s.dead);
   const color = health ? (health.hasToken ? "var(--ok)" : "var(--warn)") : dead ? "var(--err)" : "var(--ink-faint)";
   const label = health
     ? health.hasToken

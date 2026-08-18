@@ -153,6 +153,71 @@ class VibeCache:
             pass
         self._data[key] = encoded
 
+    # ── 한 항목 ──
+    def path_of(self, name: str) -> Path | None:
+        """이름 하나를 캐시 폴더 안의 파일로 푼다. ★경로 탈출은 여기 한 곳에서 막는다."""
+        base = self.dir.resolve()
+        f = (base / name).resolve()
+        if not str(f).startswith(str(base)) or not f.exists() or not f.is_file():
+            return None
+        return f
+
+    def detail(self, name: str) -> dict | None:
+        """캐시 한 항목의 **인코딩과 그림**까지 (v2 backend.py:4286-4318).
+
+        ★목록(`entries`)과 갈라 둔 이유는 크기다. vibe 데이터는 목록에 실으면 무겁고
+          화면이 쓸 일도 없다 — 꺼내 쓰는 순간에만 한 항목을 이쪽으로 받아 간다.
+        ★`image` 를 반드시 함께 준다. 예전에는 썸네일 PNG 만 내보내고 화면이 빈 그림으로
+          항목을 만들어서, 생성 때 재인코딩이 빈 문자열을 열다 500 으로 죽었다.
+          여기 담기는 그림은 캐시에 저장된 PNG 그대로다 (v2 도 같다 — 긴 변 512 로 줄여 굽는다)."""
+        f = self.path_of(name)
+        if f is None:
+            return None
+        try:
+            data = f.read_bytes()
+            with Image.open(io.BytesIO(data)) as img:
+                info = dict(img.info)
+                size = [img.width, img.height]
+        except Exception:
+            return None
+        return {
+            "file": f.name,
+            "image": base64.b64encode(data).decode(),
+            "vibe_data": info.get("vibe_data"),
+            "cache_key": info.get("cache_key", ""),
+            "model": info.get("model", ""),
+            "strength": float(info.get("strength", 0.6) or 0.6),
+            "info_extracted": float(info.get("info_extracted", 1) or 1),
+            "size": size,
+        }
+
+    def delete(self, name: str) -> bool:
+        """캐시 한 장을 지운다 (v2 backend.py:4321-4345).
+
+        ★`key_map.json` 을 **먼저** 정리한다. 안 지우면 다음 생성이 없는 파일을 가리키는
+          키를 찾다가 캐시 미스로 떨어져 같은 그림을 다시 굽는다 (유료)."""
+        f = self.path_of(name)
+        if f is None:
+            return False
+        km = self.dir / KEY_MAP_NAME
+        gone: list[str] = []
+        if km.exists():
+            try:
+                m = json.loads(km.read_text(encoding="utf-8"))
+                gone = [k for k, v in m.items() if v == f.name]
+                for k in gone:
+                    del m[k]
+                km.write_text(json.dumps(m, indent=2), encoding="utf-8")
+                self._key_map = m
+                self._key_map_mtime = km.stat().st_mtime
+            except Exception:
+                pass
+        f.unlink()
+        # ★메모리 층도 함께 비운다 — 안 비우면 지운 뒤에도 그 인코딩이 살아 있다
+        for k in gone:
+            self._data.pop(k, None)
+        return True
+
     def entries(self) -> list[dict]:
         """캐시 뷰어용 목록 — vibe 데이터 자체는 빼고 메타만."""
         out: list[dict] = []

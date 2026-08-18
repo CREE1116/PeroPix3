@@ -8,7 +8,9 @@ import { api } from "../lib/backend";
  *
  *  ★메타데이터는 **고른 한 장만** 읽는다. 목록 전체를 읽으면 수백 장에서 몇 초가 나간다. */
 
-export type GalleryImage = { file: string; name: string; bytes: number; mtime: number };
+/** ★칸 이름은 **서버가 주는 그대로**다 (`size`). 예전엔 `bytes` 로 적어 두고 서버는
+ *  `size` 를 줘서 값이 언제나 undefined 였다 (`docs/v2-port-audit.md` F절). */
+export type GalleryImage = { file: string; name: string; size: number; mtime: number };
 export type GalleryFolder = { path: string; count: number };
 
 export type ImageMeta = {
@@ -56,6 +58,10 @@ type S = {
   metaFor: string | null;
   /** 일괄 작업 대상 (여러 장) */
   picked: Set<string>;
+  /** ★별표 — **보관함이 든다** (`/api/keep/stars`). 워크스페이스에 매달지 말 것:
+   *  갤러리는 워크스페이스를 넘는 화면이라, 매달면 작업을 바꾸는 순간 같은 그림의
+   *  별표가 달라진다 (`docs/v2-port-audit.md` A4). */
+  starred: Set<string>;
   loading: boolean;
   /** ★쪽 나눠 받는다 (v2 `/api/outputs-list`). 한 번에 다 그리면 DOM 이 그만큼 늘어난다 */
   page: number;
@@ -70,10 +76,20 @@ type S = {
   togglePick: (file: string) => void;
   pickAll: () => void;
   clearPick: () => void;
+  isStarred: (file: string) => boolean;
+  toggleStar: (file: string) => Promise<void>;
   remove: (ws: string) => Promise<number>;
   moveTo: (ws: string, dest: string) => Promise<number>;
-  /** ★작업 폴더의 그림을 **보관함으로 복사**한다 (원본은 그대로). 생성 옵션은 PNG 가 안고 간다 */
-  keep: (ws: string, file: string, folder?: string) => Promise<void>;
+  /** ★작업 폴더의 그림을 **보관함으로 복사**한다 (원본은 그대로). 생성 옵션은 PNG 가 안고 간다.
+   *  ★이미 보관돼 있으면 **무른다** — 두 번 눌러 사본이 둘 생기지 않는다 (`removed`). */
+  keep: (ws: string, file: string, folder?: string) => Promise<{ file: string; removed: boolean }>;
+  /** 보관함 안에 하위 폴더를 만든다 (앱 안에서 정리할 유일한 창구) */
+  newFolder: (ws: string, name: string) => Promise<void>;
+  /** ★빈 폴더만 지운다 — 그림째 지우는 창구는 두지 않는다 */
+  dropFolder: (ws: string, name: string) => Promise<void>;
+  rename: (ws: string, file: string, name: string) => Promise<string>;
+  /** 탐색기에서 연다. 비우면 보관함 뿌리 */
+  reveal: (path?: string) => Promise<void>;
 };
 
 const q = (s: string) => encodeURIComponent(s);
@@ -89,6 +105,7 @@ export const useGallery = create<S>((set, get) => ({
   meta: null,
   metaFor: null,
   picked: new Set(),
+  starred: new Set(),
   loading: false,
   page: 1,
   total: 0,
@@ -98,9 +115,10 @@ export const useGallery = create<S>((set, get) => ({
     if (!ws) return;
     set({ loading: true });
     const f = get().folder;
-    const [folders, r] = await Promise.all([
+    const [folders, r, s] = await Promise.all([
       api<{ folders: GalleryFolder[] }>(`/api/keep/folders`),
       api<Page<GalleryImage>>(`/api/keep/images?page=1${f ? `&folder=${q(f)}` : ""}`),
+      api<{ starred: string[] }>(`/api/keep/stars`),
     ]);
     // ★사라진 파일은 선택에서도 뺀다 — 지운 뒤 목록만 갱신하면 유령이 남는다
     const alive = new Set(r.images.map((i) => i.file));
@@ -110,6 +128,8 @@ export const useGallery = create<S>((set, get) => ({
       folders: folders.folders,
       items: r.images,
       picked,
+      // ★별표는 **목록에 없는 것도 그대로 둔다** — 다른 폴더를 보고 있을 뿐이다
+      starred: new Set(s.starred),
       focus,
       loading: false,
       page: r.page,
@@ -140,10 +160,68 @@ export const useGallery = create<S>((set, get) => ({
   },
 
   async keep(ws, file, folder = "") {
-    await api(`/api/keep/save`, {
+    return await api<{ file: string; removed: boolean }>(`/api/keep/save`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ workspace: ws, file, folder }),
+    });
+  },
+
+  isStarred: (file) => get().starred.has(file),
+
+  async toggleStar(file) {
+    const on = !get().starred.has(file);
+    // 눌린 것이 바로 보여야 한다 — 서버 답을 기다리지 않고 켜 두고, 답이 오면 맞춘다
+    const now = new Set(get().starred);
+    on ? now.add(file) : now.delete(file);
+    set({ starred: now });
+    const r = await api<{ starred: string[] }>(`/api/keep/star`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file, on }),
+    });
+    set({ starred: new Set(r.starred) });
+  },
+
+  async newFolder(ws, name) {
+    await api(`/api/keep/folder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    await get().load(ws);
+  },
+
+  async dropFolder(ws, name) {
+    await api(`/api/keep/folder/delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    // 보고 있던 폴더를 지웠으면 전체로 돌아간다 (없는 폴더를 계속 부르지 않게)
+    if (get().folder === name) return void (await get().setFolder(ws, ALL));
+    await get().load(ws);
+  },
+
+  async rename(ws, file, name) {
+    const r = await api<{ file: string }>(`/api/keep/rename`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file, name }),
+    });
+    // ★보고 있던 그림이면 새 이름으로 따라간다 — 안 그러면 크게 보기가 없는 파일을 가리킨다
+    const following = get().focus === file;
+    if (following) set({ focus: r.file, meta: null, metaFor: null });
+    await get().load(ws);
+    if (following) await get().setFocus(ws, r.file);
+    return r.file;
+  },
+
+  async reveal(path = "") {
+    await api(`/api/keep/reveal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
     });
   },
 

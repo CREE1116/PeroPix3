@@ -17,6 +17,57 @@ export type Dropped = { name: string; path?: string; rel?: string; data?: string
 const IMG = /\.(png|jpe?g|webp)$/i;
 const inTauri = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
+/** 앱 창에 떨어진 **경로**를 한 자리에서 받는다 (Tauri 전용).
+ *
+ *  ★창 하나에 드롭존이 여럿이므로 **좌표로 가려낸다** — 이벤트는 창 전체로 온다.
+ *    좌표는 물리 픽셀이라 dpr 로 나눠야 CSS 좌표가 된다.
+ *  ★`useImageDrop` 과 `ImageInputPanel` 의 고르기 단추가 **같은 이 함수**를 쓴다 —
+ *    좌표 계산을 두 벌 두면 한쪽만 고쳐져 조용히 갈린다.
+ */
+export function useTauriDrop(
+  ref: React.RefObject<HTMLElement | null>,
+  accept: RegExp,
+  onPaths: (paths: string[]) => void,
+  onOver?: (over: boolean) => void,
+) {
+  const cb = useRef(onPaths);
+  cb.current = onPaths;
+  const hov = useRef(onOver);
+  hov.current = onOver;
+
+  useEffect(() => {
+    if (!inTauri()) return;
+    let stop: (() => void) | undefined;
+    let dead = false;
+    void (async () => {
+      const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+      const mine = (p: { x: number; y: number }) => {
+        const dpr = window.devicePixelRatio || 1;
+        const el = document.elementFromPoint(p.x / dpr, p.y / dpr);
+        return !!(el && ref.current?.contains(el));
+      };
+      const un = await getCurrentWebview().onDragDropEvent((e) => {
+        const p = e.payload;
+        if (p.type === "leave") return hov.current?.(false);
+        if (p.type === "enter" || p.type === "over") return hov.current?.(mine(p.position));
+        if (p.type === "drop") {
+          hov.current?.(false);
+          if (!mine(p.position)) return;
+          const paths = p.paths.filter((x) => accept.test(x));
+          if (paths.length) cb.current(paths);
+        }
+      });
+      if (dead) un();
+      else stop = un;
+    })();
+    return () => {
+      dead = true;
+      stop?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+}
+
 const readAsData = (f: File) =>
   new Promise<string>((res, rej) => {
     const r = new FileReader();
@@ -31,40 +82,12 @@ export function useImageDrop(onDrop: (items: Dropped[]) => void) {
   const cb = useRef(onDrop);
   cb.current = onDrop;
 
-  useEffect(() => {
-    if (!inTauri()) return;
-    let stop: (() => void) | undefined;
-    let dead = false;
-    void (async () => {
-      const { getCurrentWebview } = await import("@tauri-apps/api/webview");
-      // ★창 하나에 드롭존이 여럿이므로 **좌표로 가려낸다** — 이벤트는 창 전체로 온다.
-      //   좌표는 물리 픽셀이라 dpr 로 나눠야 CSS 좌표가 된다.
-      const mine = (p: { x: number; y: number }) => {
-        const dpr = window.devicePixelRatio || 1;
-        const el = document.elementFromPoint(p.x / dpr, p.y / dpr);
-        return !!(el && ref.current?.contains(el));
-      };
-      const un = await getCurrentWebview().onDragDropEvent((e) => {
-        const p = e.payload;
-        if (p.type === "leave") return setOver(false);
-        if (p.type === "enter" || p.type === "over") return setOver(mine(p.position));
-        if (p.type === "drop") {
-          setOver(false);
-          if (!mine(p.position)) return;
-          const items = p.paths
-            .filter((x) => IMG.test(x))
-            .map((x) => ({ name: x.split(/[\\/]/).pop() || x, path: x }));
-          if (items.length) cb.current(items);
-        }
-      });
-      if (dead) un();
-      else stop = un;
-    })();
-    return () => {
-      dead = true;
-      stop?.();
-    };
-  }, []);
+  useTauriDrop(
+    ref,
+    IMG,
+    (paths) => cb.current(paths.map((x) => ({ name: x.split(/[\\/]/).pop() || x, path: x }))),
+    setOver,
+  );
 
   /** 브라우저 쪽 손잡이. Tauri 에서는 이 이벤트가 안 오므로 그냥 놀고 있는다. */
   const zone = {

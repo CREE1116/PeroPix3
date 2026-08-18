@@ -32,7 +32,8 @@ export function Canvas() {
   const stripRef = useRef<HTMLDivElement>(null);
   const tr = useI18n((s) => s.t);
   const startDrag = useDragSource();
-  const [enhance, setEnhance] = useState<string | null>(null);
+  /** 인핸스 창에 넘길 그림들 — ★**목록**이다. 선택 막대에서 여러 장을 한 번에 보낸다 */
+  const [enhance, setEnhance] = useState<string[] | null>(null);
   /** ★별표는 **거르는 장치**다 (사용자 지시 2026-08-05) — 내보내기 같은 것을 달지 않는다 */
   const [starOnly, setStarOnly] = useState(false);
   /** 큰 그림의 실제 해상도 — 페로픽스파이 `res-tag` 자리 (없으면 설정값으로 적는다) */
@@ -290,12 +291,13 @@ export function Canvas() {
                 }
                 dims={dims}
                 revealPath={`${ws}/${cur.file}`}
-                onEnhance={() => setEnhance(cur.file)}
+                onEnhance={() => setEnhance([cur.file])}
                 upscale={{ ws, file: cur.file }}
                 onKeep={async () => {
                   try {
-                    await useGallery.getState().keep(ws, cur.file);
-                    toast(tr("gallery.kept"));
+                    // ★두 번 누르면 **무른다** — 사본이 둘 생기지 않는다 (keep.save 주석)
+                    const r = await useGallery.getState().keep(ws, cur.file);
+                    toast(tr(r.removed ? "gallery.unkept" : "gallery.kept"));
                   } catch (e) {
                     toast(String(e), "warn");
                   }
@@ -349,7 +351,7 @@ export function Canvas() {
             </div>
           )}
 
-          {enhance && <EnhanceDialog files={[enhance]} onClose={() => setEnhance(null)} />}
+          {enhance && <EnhanceDialog files={enhance} onClose={() => setEnhance(null)} />}
 
           {/* ★고른 것이 있을 때만 뜨는 줄 (페로픽스파이 `.multi-bar`) */}
           {sel.size > 0 && (
@@ -372,6 +374,11 @@ export function Canvas() {
               <span>{tr("gallery.selected", { n: sel.size })}</span>
               <span style={{ flex: 1 }} />
               <CopySelect tabs={singleTabs} files={[...sel]} onDone={() => setSel(new Set())} />
+              {/* ★고른 것을 **한 번에 강화**한다 (v2 「슬롯 전체 인핸스」의 자리).
+                  창이 이미 강화한 것을 걸러 내고 몇 장이 남았는지 보여 준다 (`EnhanceDialog`) */}
+              <button data-multi-enhance onClick={() => setEnhance([...sel])} style={miniBtn}>
+                {tr("enhance.button")}
+              </button>
               <button data-multi-delete onClick={hideCurrent} style={miniBtn}>
                 {tr("common.delete")}
               </button>
@@ -582,7 +589,7 @@ function SceneActions() {
   const { base } = useGen();
   const { current: ws, records, deleteFiles } = useWs();
   const file = useSceneFocus((s) => s.file);
-  const [enhance, setEnhance] = useState<string | null>(null);
+  const [enhance, setEnhance] = useState<string[] | null>(null);
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
   useEffect(() => setDims(null), [file]);
   if (!file) return null;
@@ -602,12 +609,12 @@ function SceneActions() {
         }
         dims={dims}
         revealPath={`${ws}/${file}`}
-        onEnhance={() => setEnhance(file)}
+        onEnhance={() => setEnhance([file])}
         upscale={{ ws, file }}
         onKeep={async () => {
           try {
-            await useGallery.getState().keep(ws, file);
-            toast(tr("gallery.kept"));
+            const r = await useGallery.getState().keep(ws, file);
+            toast(tr(r.removed ? "gallery.unkept" : "gallery.kept"));
           } catch (e) {
             toast(String(e), "warn");
           }
@@ -637,7 +644,7 @@ function SceneActions() {
           </button>
         }
       />
-      {enhance && <EnhanceDialog files={[enhance]} onClose={() => setEnhance(null)} />}
+      {enhance && <EnhanceDialog files={enhance} onClose={() => setEnhance(null)} />}
     </div>
   );
 }

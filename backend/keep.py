@@ -7,8 +7,11 @@
      "이번 작업"이 아니라 "내가 모아 둔 것"이라서.
   2. **생성 옵션을 통째로 안고 간다.** 복사할 때 PNG 메타데이터를 그대로 옮기고,
      원본에 없으면 화면이 준 것을 `Comment` 로 써 넣는다. 나중에 그대로 불러 쓸 수 있어야 한다.
+  3. **별표도 여기가 든다** (`.peropix.json`, 2026-08-18). 워크스페이스에 매달아 두면
+     작업을 바꾸는 순간 같은 그림의 별표가 달라진다 (`docs/v2-port-audit.md` A4).
 
 ★원본을 옮기지 않는다 — **복사**다. 작업 폴더의 그림은 그대로 남는다.
+★같은 그림에 보관을 두 번 누르면 **무른다** — 사본이 둘 생기지 않는다 (A8).
 """
 from __future__ import annotations
 
@@ -22,6 +25,12 @@ from PIL.PngImagePlugin import PngInfo
 
 IMG_EXT = {".png", ".jpg", ".jpeg", ".webp"}
 
+# 파생 썸네일 캐시. ★점으로 시작하는 것은 목록에서 통째로 뺀다 (`_visible`) —
+# 안 그러면 캐시 webp 가 보관한 그림인 척 격자에 뜬다.
+THUMB_DIR = ".thumbs"
+# 보관함 곁장부 — 별표와 "이 그림은 어디서 왔나" 표가 여기 산다 (아래 주석)
+STATE = ".peropix.json"
+
 
 def safe_folder(root: Path, folder: str) -> Path:
     """폴더 경로 검증 — 밖으로 나가지 못하게 한다."""
@@ -31,8 +40,87 @@ def safe_folder(root: Path, folder: str) -> Path:
     return p
 
 
-def _count(d: Path) -> int:
-    return sum(1 for f in d.glob("*") if f.is_file() and f.suffix.lower() in IMG_EXT)
+def _visible(root: Path, p: Path) -> bool:
+    """점으로 시작하는 칸이 하나라도 있으면 우리 내부용이다 (캐시·곁장부)."""
+    return not any(part.startswith(".") for part in p.relative_to(root).parts)
+
+
+def _imgs(root: Path, d: Path, deep: bool):
+    it = d.rglob("*") if deep else d.glob("*")
+    return (f for f in it if f.is_file() and f.suffix.lower() in IMG_EXT and _visible(root, f))
+
+
+# ── 곁장부 ────────────────────────────────────────────────────────
+# ★별표는 **워크스페이스가 아니라 보관함이 든다.** 갤러리는 워크스페이스를 넘는 화면인데
+#   별표만 매여 있으면, 작업을 바꾸는 순간 같은 그림의 별표가 달라진다.
+# ★"이 그림은 어디서 왔나"(sources)도 같이 든다 — 같은 그림을 두 번 보관하면 사본이 둘
+#   생기던 것을 무르는(토글) 근거다. 파일명은 보관 시각이 붙어 매번 달라지므로
+#   이름만으로는 판정할 수 없다.
+
+
+def _state(root: Path) -> dict:
+    try:
+        d = json.loads((root / STATE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"starred": [], "sources": {}}
+    return {
+        "starred": [x for x in (d.get("starred") or []) if isinstance(x, str)],
+        "sources": {k: v for k, v in (d.get("sources") or {}).items() if isinstance(v, str)},
+    }
+
+
+def _put_state(root: Path, st: dict) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    tmp = root / (STATE + ".tmp")
+    tmp.write_text(json.dumps(st, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(root / STATE)
+
+
+def _remap(st: dict, moved: dict[str, str]) -> None:
+    """옮기거나 이름을 바꾼 그림의 별표·출처를 새 경로로 따라 보낸다.
+
+    빈 문자열로 매핑하면 **지운 것**이다 (별표·출처에서 뺀다)."""
+    st["starred"] = [moved.get(f, f) for f in st["starred"] if moved.get(f, f)]
+    st["sources"] = {k: moved.get(v, v) for k, v in st["sources"].items() if moved.get(v, v)}
+
+
+def stars(root: Path) -> list[str]:
+    return _state(root)["starred"]
+
+
+def set_star(root: Path, file: str, on: bool) -> list[str]:
+    st = _state(root)
+    cur = [f for f in st["starred"] if f != file]
+    if on:
+        cur.append(file)
+    st["starred"] = cur
+    _put_state(root, st)
+    return cur
+
+
+def adopt_stars(root: Path, files: list[str]) -> list[str]:
+    """다른 데 쌓여 있던 별표를 보관함으로 데려온다 (워크스페이스에 매여 있던 옛 별표).
+
+    ★보관함에 **실제로 있는 파일만** 받는다. 받은 것을 돌려주므로 부르는 쪽이
+      원래 자리에서 뺄 수 있다."""
+    st = _state(root)
+    have = set(st["starred"])
+    took = []
+    for f in files:
+        if f in have:
+            took.append(f)
+            continue
+        try:
+            p = safe_folder(root, f)
+        except ValueError:
+            continue
+        if p.is_file():
+            st["starred"].append(f)
+            have.add(f)
+            took.append(f)
+    if took:
+        _put_state(root, st)
+    return took
 
 
 def folders(root: Path) -> list[dict]:
@@ -41,10 +129,39 @@ def folders(root: Path) -> list[dict]:
     ★첫 줄(`""`)은 **전체**다 — 루트에 놓인 것만이 아니라 보관함에 든 전부를 센다.
       폴더에 넣어 둔 그림이 "전체"에서 안 보이면 넣는 순간 사라진 것처럼 보인다
       (실측 2026-08-05: 폴더에 3장을 넣었는데 전체가 0장)."""
-    out = [{"path": "", "count": sum(1 for f in root.rglob("*") if f.is_file() and f.suffix.lower() in IMG_EXT)}]
-    for d in sorted(p for p in root.rglob("*") if p.is_dir()):
-        out.append({"path": d.relative_to(root).as_posix(), "count": _count(d)})
+    out = [{"path": "", "count": sum(1 for _ in _imgs(root, root, True))}]
+    for d in sorted(p for p in root.rglob("*") if p.is_dir() and _visible(root, p)):
+        out.append({"path": d.relative_to(root).as_posix(), "count": sum(1 for _ in _imgs(root, d, False))})
     return out
+
+
+def make_folder(root: Path, name: str) -> dict:
+    """보관함 안에 하위 폴더를 만든다 (v2 `POST /api/gallery/folders`)."""
+    rel = (name or "").strip().strip("/")
+    if not rel:
+        raise ValueError("폴더 이름이 필요합니다")
+    d = safe_folder(root, rel)
+    if d == root.resolve():
+        raise ValueError("폴더 이름이 필요합니다")
+    if d.exists():
+        raise ValueError("이미 있는 폴더입니다")
+    d.mkdir(parents=True)
+    return {"path": d.relative_to(root.resolve()).as_posix()}
+
+
+def drop_folder(root: Path, name: str) -> dict:
+    """폴더를 지운다. ★**빈 폴더만** (v2 와 같다) — 안에 그림이 있으면 거절한다.
+    그림째 지우는 창구를 따로 두지 않는다: 생성물은 Anlas 가 든 원본이다."""
+    rel = (name or "").strip().strip("/")
+    if not rel:
+        raise ValueError("보관함 자체는 지울 수 없습니다")
+    d = safe_folder(root, rel)
+    if not d.is_dir():
+        raise ValueError("없는 폴더입니다")
+    if any(d.iterdir()):
+        raise ValueError("비어 있지 않은 폴더입니다")
+    d.rmdir()
+    return {"path": rel}
 
 
 def images(root: Path, folder: str = "", page: int = 1, limit: int = 0) -> dict:
@@ -56,12 +173,7 @@ def images(root: Path, folder: str = "", page: int = 1, limit: int = 0) -> dict:
     d = safe_folder(root, folder)
     if not d.exists():
         return {"images": [], "total": 0, "page": 1, "pages": 1}
-    it = d.rglob("*") if not folder else d.glob("*")
-    files = sorted(
-        (f for f in it if f.is_file() and f.suffix.lower() in IMG_EXT),
-        key=lambda x: x.name,
-        reverse=True,
-    )
+    files = sorted(_imgs(root, d, not folder), key=lambda x: x.name, reverse=True)
     total = len(files)
     page, pages, chunk = _slice(files, page, limit)
     return {
@@ -90,11 +202,28 @@ def _slice(items: list, page: int, limit: int):
     return page, pages, items[start : start + limit]
 
 
-def save(root: Path, src: Path, folder: str, meta: dict | None) -> dict:
+def save(root: Path, src: Path, folder: str, meta: dict | None, key: str = "") -> dict:
     """작업 폴더의 그림 하나를 보관함으로 **복사**한다.
 
     ★PNG 메타데이터를 그대로 옮긴다 — 그것이 "그대로 다시 쓸 수 있다"의 전부다.
-      원본에 `Comment` 가 없으면(포맷을 바꿨거나 밖에서 온 그림) 화면이 준 것을 써 넣는다."""
+      원본에 `Comment` 가 없으면(포맷을 바꿨거나 밖에서 온 그림) 화면이 준 것을 써 넣는다.
+
+    ★**이미 보관돼 있으면 무른다** (v2 `index.html:12274-12330` 과 같은 토글). 전에는
+      같은 그림에 보관을 두 번 누르면 사본이 둘 생겼다 — 보관은 켜고 끄는 것이지
+      누른 횟수만큼 쌓이는 것이 아니다. 무엇이 이미 보관됐는지는 `key`(워크스페이스/파일)로
+      가른다: 보관 파일명에는 보관 시각이 붙어 매번 달라지므로 이름으로는 못 가른다."""
+    st = _state(root)
+    prev = st["sources"].get(key) if key else None
+    if prev:
+        p = root / prev
+        if p.is_file():
+            p.unlink()
+            _remap(st, {prev: ""})
+            _put_state(root, st)
+            return {"file": prev, "removed": True}
+        # 밖에서 지운 그림이다 — 표만 걷어내고 새로 보관한다
+        st["sources"].pop(key, None)
+
     d = safe_folder(root, folder)
     d.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -110,15 +239,31 @@ def save(root: Path, src: Path, folder: str, meta: dict | None) -> dict:
         if src.suffix.lower() == ".png" and (has_comment or not meta):
             # 손대지 않는 것이 가장 정확하다 (다시 인코딩하지 않는다)
             shutil.copy2(src, dst)
-            return {"file": dst.relative_to(root).as_posix()}
-        png = PngInfo()
-        for k, v in info.items():
-            if isinstance(v, str):
-                png.add_text(k, v)
-        if not has_comment and meta:
-            png.add_text("Comment", json.dumps(meta, ensure_ascii=False))
-        im.convert("RGBA" if im.mode in ("RGBA", "LA") else "RGB").save(dst, format="PNG", pnginfo=png)
-    return {"file": dst.relative_to(root).as_posix()}
+        else:
+            png = PngInfo()
+            for k, v in info.items():
+                if isinstance(v, str):
+                    png.add_text(k, v)
+            if not has_comment and meta:
+                png.add_text("Comment", json.dumps(meta, ensure_ascii=False))
+            im.convert("RGBA" if im.mode in ("RGBA", "LA") else "RGB").save(dst, format="PNG", pnginfo=png)
+
+    rel = dst.relative_to(root.resolve()).as_posix()
+    if key:
+        st["sources"][key] = rel
+        _put_state(root, st)
+    return {"file": rel, "removed": False}
+
+
+def kept_of(root: Path, keys: list[str]) -> dict[str, str]:
+    """"이 그림들이 지금 보관돼 있나" — 화면의 보관 버튼이 켜짐/꺼짐을 그리는 근거."""
+    st = _state(root)
+    out = {}
+    for k in keys:
+        rel = st["sources"].get(k)
+        if rel and (root / rel).is_file():
+            out[k] = rel
+    return out
 
 
 def delete(root: Path, files: list[str]) -> dict:
@@ -128,13 +273,17 @@ def delete(root: Path, files: list[str]) -> dict:
         if p.is_file():
             p.unlink()
             gone.append(rel)
+    if gone:
+        st = _state(root)
+        _remap(st, {f: "" for f in gone})
+        _put_state(root, st)
     return {"deleted": gone}
 
 
 def move(root: Path, files: list[str], dest: str) -> dict:
     d = safe_folder(root, dest)
     d.mkdir(parents=True, exist_ok=True)
-    moved = []
+    moved, changed = [], {}
     for rel in files:
         p = safe_folder(root, rel)
         if not p.is_file():
@@ -145,5 +294,38 @@ def move(root: Path, files: list[str], dest: str) -> dict:
             tgt = d / f"{p.stem}_{n}{p.suffix}"
             n += 1
         p.rename(tgt)
-        moved.append(tgt.relative_to(root).as_posix())
+        now = tgt.relative_to(root.resolve()).as_posix()
+        moved.append(now)
+        changed[rel] = now
+    if changed:
+        st = _state(root)
+        _remap(st, changed)
+        _put_state(root, st)
     return {"moved": moved}
+
+
+def rename(root: Path, file: str, name: str) -> dict:
+    """보관한 그림의 이름을 바꾼다 (v2 `PATCH /api/gallery/{filename}`).
+
+    ★폴더는 그대로다 — 옮기는 것은 `move` 의 일이다."""
+    new = (name or "").strip()
+    if not new:
+        raise ValueError("이름이 필요합니다")
+    if "/" in new or "\\" in new or ".." in new:
+        raise ValueError("이름에 쓸 수 없는 글자가 있습니다")
+    p = safe_folder(root, file)
+    if not p.is_file():
+        raise ValueError("없는 그림입니다")
+    if not Path(new).suffix:
+        new += p.suffix
+    tgt = p.with_name(new)
+    if tgt == p:
+        return {"file": file}
+    if tgt.exists():
+        raise ValueError("같은 이름이 이미 있습니다")
+    p.rename(tgt)
+    now = tgt.relative_to(root.resolve()).as_posix()
+    st = _state(root)
+    _remap(st, {file: now})
+    _put_state(root, st)
+    return {"file": now}

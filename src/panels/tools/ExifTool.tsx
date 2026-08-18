@@ -10,14 +10,57 @@ import { Icon } from "../../components/Icon";
  *  ★읽기만 한다. 저장하지도, 고치지도 않는다 — 남의 그림을 여는 자리라 그게 전부여야 한다.
  *  ★프롬프트와 설정을 **갈라 놓는다** (v2 의 2열). 한 덩어리로 쏟아 놓으면
  *    "이 그림 어떻게 뽑았지"를 눈으로 못 따라간다.
+ *  ★**키를 짐작하지 않는다.** 예전에는 `negative_prompt`·`character_prompts` 같은 있지도 않은
+ *    이름으로 두 열을 갈라서, 네거티브와 캐릭터 프롬프트가 「설정」 열로 떨어지고 `raw`·
+ *    `nai_vibes` 가 통째로 쏟아졌다 (감사 A5). 서버가 내는 이름은 `backend/meta.py`
+ *    `normalize()` 의 반환문 하나가 정본이다.
+ *  ★형식 배지·미리보기·「그 밖」 목록도 **서버가 준다** (`backend/tools.py read_meta`) —
+ *    앱(Tauri)에는 경로만 와서 화면이 그 파일을 가리킬 주소가 없다.
  */
-const PROMPT_KEYS = ["prompt", "negative_prompt", "uc", "character_prompts"];
+type Character = { prompt: string; negative?: string; center?: { x: number; y: number } | null };
+
+type Meta = {
+  kind?: string;
+  preview?: string;
+  bytes?: number;
+  prompt?: string;
+  negative?: string;
+  characters?: Character[];
+  slot_prompt?: string;
+  seed?: number | string;
+  width?: number;
+  height?: number;
+  steps?: number;
+  cfg?: number;
+  sampler?: string;
+  scheduler?: string;
+  nai_model?: string;
+  smea?: string;
+  uc_preset?: string;
+  quality_tags?: boolean;
+  cfg_rescale?: number;
+  variety_plus?: boolean;
+  furry_mode?: boolean;
+  nai_vibes?: { images?: unknown[]; strengths?: number[]; info_extracted?: number[] };
+  precise_ref_count?: number;
+  comfy?: { model?: string; denoise?: number; nodes?: number };
+  vibe?: { model?: string; strength?: string; info_extracted?: string };
+  extra?: Record<string, string>;
+};
+
+/** 배지에 쓸 이름 — ★i18n 키를 문자열로 이어 만들지 않는다 (회귀 테스트가 잡는다) */
+const KIND_LABEL: Record<string, string> = {
+  nai: "NAI",
+  peropix: "PeroPix",
+  comfyui: "ComfyUI",
+  vibe: "Vibe Cache",
+  custom: "Custom",
+};
 
 export function ExifTool() {
   const t = useI18n((s) => s.t);
   const [name, setName] = useState("");
-  const [preview, setPreview] = useState("");
-  const [meta, setMeta] = useState<Record<string, unknown> | null>(null);
+  const [meta, setMeta] = useState<Meta | null>(null);
   const [busy, setBusy] = useState(false);
 
   const read = async (items: Dropped[]) => {
@@ -25,16 +68,14 @@ export function ExifTool() {
     if (!it || busy) return;
     setBusy(true);
     try {
-      const r = await api<{ meta: Record<string, unknown> }>("/api/tools/meta", {
+      const r = await api<{ meta: Meta }>("/api/tools/meta", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(it),
       });
       setName(it.name);
-      // 미리보기: base64 면 그대로, 경로면 서버가 읽어 준 것이 없으니 비워 둔다
-      setPreview(it.data || "");
       setMeta(r.meta);
-      if (!Object.keys(r.meta).length) toast(t("tools.exifNone"), "warn");
+      if (!r.meta.kind) toast(t("tools.exifNone"), "warn");
     } catch (e) {
       toast(String(e), "warn");
     } finally {
@@ -43,38 +84,100 @@ export function ExifTool() {
   };
 
   const { zone, over, pick } = useImageDrop(read);
-
-  const entries = Object.entries(meta ?? {}).filter(([, v]) => v !== null && v !== "" && v !== undefined);
-  const prompts = entries.filter(([k]) => PROMPT_KEYS.includes(k));
-  const settings = entries.filter(([k]) => !PROMPT_KEYS.includes(k));
+  const clear = () => {
+    setMeta(null);
+    setName("");
+  };
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}>
-      <div
-        {...zone}
-        data-exif-drop
-        onClick={() => void pick()}
-        style={{
-          border: `1px dashed ${over ? "var(--accent)" : "var(--line)"}`,
-          background: over ? "var(--accent-bg)" : "var(--bg)",
-          borderRadius: "var(--r-3)",
-          padding: meta ? "var(--sp-3)" : "var(--sp-8)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: "var(--sp-3)",
-          cursor: "pointer",
-          flexShrink: 0,
-        }}
-      >
-        {preview && <img src={preview} alt="" style={{ height: 64, borderRadius: "var(--r-2)" }} />}
-        <div style={{ display: "flex", flexDirection: "column", gap: 2, alignItems: preview ? "start" : "center" }}>
-          <span style={{ fontSize: "var(--text-xs)", color: "var(--ink-soft)" }}>
-            {name || t("tools.exifDrop")}
-          </span>
+      {/* 머리 — 그림이 없으면 드롭 안내, 있으면 미리보기 + 형식 배지 + 교체·닫기 */}
+      {!meta ? (
+        <div
+          {...zone}
+          data-exif-drop
+          onClick={() => void pick()}
+          style={{
+            border: `1px dashed ${over ? "var(--accent)" : "var(--line)"}`,
+            background: over ? "var(--accent-bg)" : "var(--bg)",
+            borderRadius: "var(--r-3)",
+            padding: "var(--sp-8)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 2,
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+        >
+          <span style={{ fontSize: "var(--text-xs)", color: "var(--ink-soft)" }}>{t("tools.exifDrop")}</span>
           <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>{t("tools.dropHint")}</span>
         </div>
-      </div>
+      ) : (
+        <div
+          {...zone}
+          data-exif-drop
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--sp-3)",
+            border: `1px solid ${over ? "var(--accent)" : "var(--line)"}`,
+            background: over ? "var(--accent-bg)" : "var(--panel)",
+            borderRadius: "var(--r-3)",
+            padding: "var(--sp-3)",
+            flexShrink: 0,
+          }}
+        >
+          {meta.preview && (
+            <img
+              data-exif-preview
+              src={meta.preview}
+              alt=""
+              style={{ height: 72, borderRadius: "var(--r-2)", background: "var(--bg)" }}
+            />
+          )}
+          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
+            <span
+              style={{
+                fontSize: "var(--text-xs)",
+                color: "var(--ink)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {name}
+            </span>
+            <span style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
+              <span
+                data-exif-kind={meta.kind || "unknown"}
+                style={{
+                  border: "1px solid var(--accent)",
+                  color: "var(--accent)",
+                  background: "var(--accent-bg)",
+                  borderRadius: "var(--r-1)",
+                  padding: "1px var(--sp-2)",
+                  fontSize: "var(--text-2xs)",
+                }}
+              >
+                {KIND_LABEL[meta.kind || ""] ?? t("tools.exifUnknown")}
+              </span>
+              <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
+                {meta.width && meta.height ? `${meta.width} × ${meta.height}` : ""}
+                {meta.bytes ? `  ${fmtSize(meta.bytes)}` : ""}
+              </span>
+            </span>
+          </div>
+          <button data-exif-replace onClick={() => void pick()} style={hbtn}>
+            {Icon.refresh}
+            {t("tools.exifReplace")}
+          </button>
+          <button data-exif-clear onClick={clear} style={hbtn}>
+            {Icon.close12}
+            {t("common.close")}
+          </button>
+        </div>
+      )}
 
       {meta && (
         <div
@@ -87,15 +190,94 @@ export function ExifTool() {
             overflow: "hidden",
           }}
         >
-          <Col title={t("tools.exifPrompts")} rows={prompts} mono />
-          <Col title={t("tools.exifSettings")} rows={settings} />
+          <Col title={t("tools.exifPrompts")}>
+            {/* ★구획을 나눠 보여 준다 (v2 index.html:25714-25752). 빈 것도 자리를 지킨다 —
+                「없다」는 것도 알아야 하는 정보다 */}
+            <Prompt label={t("tools.pBase")} value={meta.prompt} empty={t("tools.exifEmpty")} />
+            <Prompt
+              label={t("tools.pChar")}
+              value={(meta.characters ?? []).map((c) => c.prompt).filter(Boolean).join("\n---\n")}
+              empty={t("tools.exifEmpty")}
+            />
+            {(meta.characters ?? []).some((c) => (c.negative || "").trim()) && (
+              <Prompt
+                label={t("tools.pCharNeg")}
+                value={(meta.characters ?? []).map((c) => c.negative || "").join("\n---\n")}
+                empty={t("tools.exifEmpty")}
+              />
+            )}
+            {!!meta.slot_prompt && <Prompt label={t("tools.pScene")} value={meta.slot_prompt} empty={t("tools.exifEmpty")} />}
+            <Prompt label={t("tools.pNeg")} value={meta.negative} empty={t("tools.exifEmpty")} />
+          </Col>
+
+          <Col title={t("tools.exifSettings")}>
+            <Fields label={t("tools.exifSettings")} rows={settingRows(meta)} />
+            {meta.comfy && (
+              <Fields
+                label={t("tools.exifWorkflow")}
+                rows={[
+                  ["Model", meta.comfy.model],
+                  ["Denoise", meta.comfy.denoise],
+                  ["Nodes", meta.comfy.nodes],
+                ]}
+              />
+            )}
+            {meta.vibe && (
+              <Fields
+                label={t("tools.exifVibe")}
+                rows={[
+                  ["Model", meta.vibe.model],
+                  ["Strength", meta.vibe.strength],
+                  ["Info extracted", meta.vibe.info_extracted],
+                ]}
+              />
+            )}
+            {!!(meta.nai_vibes?.images?.length ?? 0) && (
+              <Fields
+                label={t("tools.exifVibe")}
+                rows={[
+                  ["Count", meta.nai_vibes?.images?.length],
+                  ["Strength", (meta.nai_vibes?.strengths ?? []).join(", ")],
+                  ["Info extracted", (meta.nai_vibes?.info_extracted ?? []).join(", ")],
+                ]}
+              />
+            )}
+            {!!meta.precise_ref_count && (
+              <Fields label={t("tools.exifRefs")} rows={[["Count", meta.precise_ref_count]]} />
+            )}
+            {!!Object.keys(meta.extra ?? {}).length && (
+              <Fields label={t("tools.exifRaw")} rows={Object.entries(meta.extra ?? {})} />
+            )}
+          </Col>
         </div>
       )}
     </div>
   );
 }
 
-function Col({ title, rows, mono }: { title: string; rows: [string, unknown][]; mono?: boolean }) {
+/** 설정 열의 줄 — ★없는 값은 아예 안 낸다 (v2 `activeSettings` 와 같은 판정) */
+function settingRows(m: Meta): [string, unknown][] {
+  return [
+    ["Seed", m.seed],
+    ["Size", m.width && m.height ? `${m.width} × ${m.height}` : ""],
+    ["Steps", m.steps],
+    ["CFG", m.cfg],
+    ["Sampler", m.sampler],
+    ["Scheduler", m.scheduler],
+    ["Model", m.nai_model],
+    ["CFG rescale", m.cfg_rescale],
+    ["SMEA", m.smea === "none" ? "" : m.smea],
+    ["UC preset", m.uc_preset],
+    ["Quality tags", m.quality_tags],
+    ["Variety+", m.variety_plus],
+    ["Furry", m.furry_mode],
+  ];
+}
+
+const fmtSize = (n: number) =>
+  n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+
+function Col({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: 0, gap: "var(--sp-2)" }}>
       <span style={{ fontSize: "var(--text-xs)", fontWeight: "var(--w-semi)", color: "var(--ink-soft)" }}>
@@ -113,34 +295,77 @@ function Col({ title, rows, mono }: { title: string; rows: [string, unknown][]; 
           padding: "var(--sp-3)",
           display: "flex",
           flexDirection: "column",
-          gap: "var(--sp-3)",
+          gap: "var(--sp-4)",
         }}
       >
-        {rows.map(([k, v]) => (
-          <div key={k} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>{k}</span>
-            <span
-              onClick={() => void navigator.clipboard?.writeText(String(v)).then(() => toast(k))}
-              title={String(v)}
-              style={{
-                fontSize: "var(--text-2xs)",
-                color: "var(--ink)",
-                fontFamily: mono ? "var(--font-mono)" : undefined,
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
-                cursor: "copy",
-              }}
-            >
-              {typeof v === "object" ? JSON.stringify(v) : String(v)}
-            </span>
-          </div>
-        ))}
-        {!rows.length && (
-          <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)", display: "flex", gap: 6 }}>
-            {Icon.close12}
-          </span>
-        )}
+        {children}
       </div>
     </div>
   );
 }
+
+/** 프롬프트 한 구획 — 누르면 복사된다 (v2 `exif-copy-btn` 과 같은 쓰임) */
+function Prompt({ label, value, empty }: { label: string; value?: string; empty: string }) {
+  const has = !!(value || "").trim();
+  return (
+    <div data-exif-part={label} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>{label}</span>
+      <span
+        onClick={() => has && void navigator.clipboard?.writeText(value || "").then(() => toast(label))}
+        title={has ? value : undefined}
+        style={{
+          fontSize: "var(--text-2xs)",
+          lineHeight: 1.6,
+          color: has ? "var(--ink)" : "var(--ink-ghost)",
+          fontFamily: "var(--font-mono)",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          cursor: has ? "copy" : "default",
+        }}
+      >
+        {has ? value : empty}
+      </span>
+    </div>
+  );
+}
+
+/** 이름·값 줄 묶음 */
+function Fields({ label, rows }: { label: string; rows: [string, unknown][] }) {
+  const live = rows.filter(([, v]) => v !== undefined && v !== null && v !== "" && v !== false);
+  if (!live.length) return null;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>{label}</span>
+      {live.map(([k, v]) => (
+        <div key={k} style={{ display: "flex", alignItems: "baseline", gap: "var(--sp-3)" }}>
+          <span style={{ width: 92, flexShrink: 0, fontSize: "var(--text-2xs)", color: "var(--ink-dim)" }}>{k}</span>
+          <span
+            style={{
+              flex: 1,
+              minWidth: 0,
+              fontSize: "var(--text-2xs)",
+              color: "var(--ink)",
+              wordBreak: "break-word",
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            {v === true ? "on" : String(v)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const hbtn: React.CSSProperties = {
+  flexShrink: 0,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "var(--sp-2)",
+  background: "var(--panel)",
+  border: "1px solid var(--line)",
+  borderRadius: "var(--r-2)",
+  padding: "3px var(--sp-3)",
+  fontSize: "var(--text-2xs)",
+  color: "var(--ink-soft)",
+};

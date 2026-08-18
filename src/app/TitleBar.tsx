@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Icon } from "../components/Icon";
 import { appWindow } from "../lib/window";
 import { useWs } from "../store/workspace";
+import { useHealth } from "../store/health";
 
 /** 커스텀 타이틀바 — 시스템 타이틀바를 끄고(`decorations: false`) 그 기능을 전부 대신한다.
  *
@@ -14,6 +15,7 @@ import { useWs } from "../store/workspace";
  *  창 가장자리 리사이즈는 `WindowFrame` 이 담당한다. */
 export function TitleBar({ left, right }: { left?: ReactNode; right?: ReactNode }) {
   const t = useI18n((s) => s.t);
+  const version = useHealth((s) => s.health?.version ?? "");
   const [maxed, setMaxed] = useState(false);
 
   useEffect(() => {
@@ -43,8 +45,10 @@ export function TitleBar({ left, right }: { left?: ReactNode; right?: ReactNode 
       <b data-tauri-drag-region style={{ fontSize: "var(--text-md)", letterSpacing: "-0.01em" }}>
         Pero<span style={{ color: "var(--accent)" }}>Pix</span>
       </b>
-      <span data-tauri-drag-region style={{ fontSize: "var(--text-2xs)", color: "var(--ink-dim)" }}>
-        3.0
+      {/* ★버전을 여기 박아 두지 않는다 — 백엔드의 `APP_VERSION` 이 정본이다 (감사 C5).
+          아직 안 붙었으면 아무것도 안 쓴다: 틀린 숫자보다 빈 자리가 낫다 */}
+      <span data-app-version data-tauri-drag-region style={{ fontSize: "var(--text-2xs)", color: "var(--ink-dim)" }}>
+        {version}
       </span>
       <Crumb />
       {left}

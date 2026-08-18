@@ -35,6 +35,11 @@ export const appWindow = {
   async close() {
     (await win())?.close();
   },
+  /** 창 제목 — 화면에는 안 보이지만 **작업 표시줄과 Alt+Tab** 에 뜬다.
+   *  큐 완료 알림이 이걸 쓴다 (`lib/titleNotify.ts`). */
+  async setTitle(title: string) {
+    (await win())?.setTitle(title);
+  },
   async isMaximized(): Promise<boolean> {
     const w = await win();
     return w ? await w.isMaximized() : false;

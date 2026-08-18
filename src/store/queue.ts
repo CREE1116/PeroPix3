@@ -3,8 +3,10 @@ import { api, backendUrl } from "../lib/backend";
 import { cliEvent } from "./llm";
 import { cliCursor, takeCliSeq } from "../lib/cliCursor";
 import { playDoneSound } from "../lib/notifySound";
+import { notifyByTitle } from "../lib/titleNotify";
 import { useCards } from "./cards";
 import { useFiles } from "./files";
+import { useSub } from "./sub";
 import type { Block } from "../lib/blocks";
 import { allCells, useWs } from "./workspace";
 import { useUi } from "./ui";
@@ -26,6 +28,14 @@ import { t } from "../i18n";
 
 export type QueueProgress = { completed: number; total: number; queue_length: number };
 
+/** 큐가 지금 어느 상태인가 — v2 `statusText` 이식 (`index.html:16119-16127, 16467-16493`).
+ *
+ *  ★v2 는 `준비 / 3-8 / 완료! / 실패 / 완료 (일부 실패)` 다섯을 한 줄에 썼다. 우리는
+ *    「큐 줄은 돌고 있을 때만 뜬다」(CLAUDE.md, 사용자 지시 2026-08-04)라서 `idle` 은
+ *    **줄이 없는 것**으로 나타낸다 — 「준비」라는 글자를 따로 두지 않는다.
+ *  ★끝난 상태(`done`·`failed`·`partial`)는 2초 뒤 `idle` 로 돌아간다 (v2 `resetTimer`). */
+export type QueuePhase = "idle" | "running" | "done" | "failed" | "partial";
+
 /** ★큐에 넣은 **아직 안 나온 장**. 페로픽스파이는 큐에 넣는 순간 결과 객체를 만들어
  *  `queued` 카드를 띄운다 (`batch.ts start`) — 눌렀는지 알 수 있고 어디에 생길지도 보인다.
  *  우리 레코드는 **완료된 파일**뿐이라 이 목록이 그 자리를 대신한다.
@@ -35,6 +45,8 @@ export type Pending = { id: string; tabId: string | null; cellId: string | null 
 type S = {
   connected: boolean;
   progress: QueueProgress;
+  /** 상태 문구용 — 진행률만으로는 「실패」와 「완료」를 가를 수 없다 */
+  phase: QueuePhase;
   pending: Pending[];
   /** 이미 화면에 반영한 seq — 중복 렌더 방지의 근거 */
   seen: Set<number>;
@@ -57,10 +69,51 @@ let seqId = 1;
 /** 직전에 돌고 있었나 — 멈추는 **그 순간**만 알린다 */
 let wasBusy = false;
 let retry = 0;
+/** 이번 배치의 성공·실패 장 수 (v2 `batchImageCount`·`batchErrorCount`). 끝날 때 문구를 가른다 */
+let batchOk = 0;
+let batchErr = 0;
+/** 끝난 문구를 잠시 보여 준 뒤 `idle` 로 (v2 `resetTimer`, 2초) */
+let phaseTimer: ReturnType<typeof setTimeout> | null = null;
+/** 마지막 수신 시각 — 하트비트의 근거 (`performance.now()` 라 시계 변경과 무관하다) */
+let lastActivity = 0;
+let beat: ReturnType<typeof setInterval> | null = null;
+
+/** ★활동 기반 WS 하트비트 — v2 `index.html:16217-16234` 이식.
+ *
+ *  25초 동안 아무것도 못 받으면 `ping` 을 던져 보고, 50초까지 감감무소식이면 죽은 연결로
+ *  보고 닫는다 (`onclose` 가 재연결을 건다). **소켓이 조용히 죽으면 `onclose` 가 아예
+ *  안 와서** 영영 다시 안 붙는다 — 그때는 생성이 끝나도 화면에 아무것도 안 뜬다.
+ *  서버는 `ping` 을 받아 `pong` 을 돌려줄 준비가 이미 돼 있다 (`backend/server.py`).
+ *
+ *  ★프로브는 **`ping` 만** 보낸다. `sync` 를 주기로 보내면 이미 그린 그림이 다시 흘러와
+ *    라이브 브로드캐스트와 겹칠 때 같은 카드가 두 번 그려진다. 누락분 복원은 재연결
+ *    시점의 `sync` 하나에만 맡긴다. */
+function startHeartbeat() {
+  if (beat) return;
+  beat = setInterval(() => {
+    if (!sock || sock.readyState !== WebSocket.OPEN) return;
+    const idle = performance.now() - lastActivity;
+    if (idle < 25000) return; // 최근 수신 있음
+    if (idle > 50000) {
+      try {
+        sock.close();
+      } catch {
+        /* 이미 닫힌 소켓 */
+      }
+      return;
+    }
+    try {
+      sock.send(JSON.stringify({ type: "ping" }));
+    } catch {
+      /* 보내지 못하면 다음 회차에 50초를 넘겨 닫힌다 */
+    }
+  }, 20000);
+}
 
 export const useQueue = create<S>((set, get) => ({
   connected: false,
   progress: EMPTY,
+  phase: "idle",
   pending: [],
   seen: new Set(),
   lastSeq: 0,
@@ -77,6 +130,9 @@ export const useQueue = create<S>((set, get) => ({
 
     ws.onopen = () => {
       retry = 0;
+      // ★새 연결을 곧바로 「유휴」로 오판하지 않게 여기서 한 번 찍는다
+      lastActivity = performance.now();
+      startHeartbeat();
       set({ connected: true, error: "" });
       // 붙자마자 **놓친 것부터 달라고 한다** (새로고침·끊김 복원)
       ws.send(JSON.stringify({ type: "sync", last_seq: get().lastSeq, ...cliCursor() }));
@@ -88,7 +144,11 @@ export const useQueue = create<S>((set, get) => ({
       retry = Math.min(retry + 1, 10);
       setTimeout(() => void get().connect(), Math.min(500 * retry, 10000));
     };
-    ws.onmessage = (e) => handle(JSON.parse(e.data), set, get);
+    ws.onmessage = (e) => {
+      // 어떤 수신이든 **연결 생존 신호**로 본다 (진행률·브로드캐스트·pong 전부)
+      lastActivity = performance.now();
+      handle(JSON.parse(e.data), set, get);
+    };
   },
 
   async enqueue(base, items = [], count = 1) {
@@ -250,19 +310,41 @@ function handle(m: Record<string, any>, set: Setter, get: () => S) {
       void import("./gen").then(({ useGen }) =>
         useGen.setState({ preview: `data:image/${m.fmt ?? "png"};base64,${m.b64}`, current: null }),
       );
-      if (m.progress) set({ progress: m.progress });
+      takeProgress(m.progress, set);
+      batchOk++;
       break;
     }
     case "image":
       render(m, set, get);
-      if (m.progress) set({ progress: m.progress });
+      batchOk++;
+      takeProgress(m.progress, set);
       break;
     case "queued":
     case "job_start":
+      takeProgress(m.progress, set);
+      break;
     case "job_done":
+      takeProgress(m.progress, set);
+      // ★생성이 끝났으면 **잔액을 다시 묻는다** (v2 `index.html:16429-16432`).
+      //   안 물으면 화면의 Anlas 는 앱을 켠 순간 값에 영영 멈춰 있다
+      void useSub.getState().load();
+      // 대기 잡이 남아 있으면 아직 배치가 안 끝났다 (v2 도 `queue_length === 0` 으로 갈랐다)
+      if ((m.progress?.queue_length ?? 0) === 0) settleBatch(false, set, get);
+      break;
     case "job_cancelled":
+      takeProgress(m.progress, set);
+      // ★취소는 **끝난 문구를 안 남긴다** — v2 도 상태를 「준비」로 되돌리기만 했다
+      if ((m.progress?.queue_length ?? 0) === 0) settleBatch(true, set, get);
+      break;
     case "queue_cleared":
-      if (m.progress) set({ progress: m.progress });
+      takeProgress(m.progress, set);
+      // 대기분만 사라진 것이라 대기 카드는 건드리지 않는다 (`clear()` 가 이미 비웠다).
+      // 다만 배치 회계는 여기서 초기화한다 (v2 `index.html:16542-16544`)
+      batchOk = 0;
+      batchErr = 0;
+      break;
+    // 하트비트 응답 — 받은 것 자체가 생존 신호라 따로 할 일이 없다
+    case "pong":
       break;
     // ★AI 가 **데이터를 고쳤다** — 화면은 다시 읽는다. 사용자가 새로고침할 일이 없어야 한다
     case "data_changed":
@@ -288,9 +370,67 @@ function handle(m: Record<string, any>, set: Setter, get: () => S) {
       //   화면이 하나도 없어서, 20장이 전부 실패해도 아무 일도 안 일어났다 (감사 2026-08-16).
       set({ error: String(m.error ?? "") });
       toast(queueErrorText(String(m.error ?? "")), "warn");
-      if (m.progress) set({ progress: m.progress });
+      batchErr++;
+      takeProgress(m.progress, set);
       break;
   }
+}
+
+/** 브로드캐스트가 실어 온 진행률을 그대로 받는다.
+ *  ★남은 것이 있으면 **돌고 있는 중**으로 표시해 둔다 — 멈추는 순간을 잡는 근거다. */
+function takeProgress(p: QueueProgress | undefined, set: Setter) {
+  if (!p) return;
+  const running = p.total > p.completed || p.queue_length > 0;
+  if (running) wasBusy = true;
+  set({ progress: p, ...(running ? { phase: "running" as QueuePhase } : {}) });
+}
+
+/** 배치가 끝났다 — **브로드캐스트로 오는 끝**을 받는 자리.
+ *
+ *  ★예전에는 이 청소가 `applyStatus()` 안에만 있었는데 그 함수는 `connected`·`sync` 에서만
+ *    돌아서, 취소·실패로 큐가 끝나면 **대기 카드가 유령으로 남고** 완료 알림도 안 울렸다
+ *    (감사 A7). v2 는 `job_done`·`job_cancelled` 에서 각각 정리했다
+ *    (`index.html:16460, 16483, 16504-16511`). */
+function settleBatch(cancelled: boolean, set: Setter, get: () => S) {
+  // ★큐가 다 비면 남은 대기는 **오지 않는다** (취소·실패). 자리를 계속 잡고 있으면 유령이 된다
+  if (get().pending.length) set({ pending: [] });
+
+  // 취소는 성패를 따지지 않는다 — 그냥 「준비」로 돌아간다
+  const phase: QueuePhase = cancelled
+    ? "idle"
+    : batchErr > 0 && batchOk === 0
+      ? "failed"
+      : batchErr > 0
+        ? "partial"
+        : "done";
+  const done = batchOk;
+  batchOk = 0;
+  batchErr = 0;
+  set({ phase });
+
+  if (!cancelled) announceDone(done);
+
+  if (phaseTimer) clearTimeout(phaseTimer);
+  if (phase !== "idle") {
+    // ★끝난 문구를 2초만 보여 준다 (v2 `resetTimer`). 그 사이 새로 돌기 시작했으면 그대로 둔다
+    phaseTimer = setTimeout(() => {
+      if (get().phase === phase) set({ phase: "idle" });
+    }, 2000);
+  }
+}
+
+/** 「다 됐다」를 한 번만 알린다 — **돌다가 멈춘 그 순간**에만.
+ *  ★두 경로가 함께 쓴다: 브로드캐스트(`job_done`)와 재접속 복원(`applyStatus`). */
+function announceDone(n: number) {
+  if (!wasBusy) return;
+  wasBusy = false;
+  const ui = useUi.getState();
+  if (ui.notifyDone) toast(t("queue.allDone", { n }));
+  // ★화면을 안 보고 있을 때를 위해 소리로도 알린다 (v2 `notifySoundOnComplete`)
+  if (ui.notifySound) void playDoneSound();
+  // ★창을 안 보고 있으면 **창 제목**으로도 알린다. v2 에서 **항상 켜져** 있던 알림이라
+  //   설정으로 끄지 않는다 (`index.html:17502-17503`)
+  notifyByTitle(t("queue.titleDone"));
 }
 
 /** CLI 줄 하나를 화면에 태운다 — **실시간분·복원분 공통 창구**.
@@ -308,13 +448,11 @@ function applyStatus(status: Record<string, any> | undefined, set: Setter, get: 
   if (idle && get().pending.length) set({ pending: [] });
   // ★다 끝났으면 한 번만 알린다 — 여러 장 돌려 놓고 다른 일을 하다 놓치는 것을 막는다.
   //   `wasBusy` 로 **돌다가 멈춘 순간**만 잡는다 (가만히 있을 때 계속 울리지 않게).
+  //   ★평소의 끝은 `settleBatch` 가 받는다. 이 자리는 **끊겼다 다시 붙었더니 그 사이
+  //     끝나 있던** 경우를 위한 것이다 — 알리는 창구는 `announceDone` 하나로 모았다.
   const done = status.completed_images ?? 0;
   const total = status.total_images ?? 0;
-  if (idle && wasBusy && total > 0 && done >= total) {
-    if (useUi.getState().notifyDone) toast(t("queue.allDone", { n: done }));
-    // ★화면을 안 보고 있을 때를 위해 소리로도 알린다 (v2 `notifySoundOnComplete`)
-    if (useUi.getState().notifySound) void playDoneSound();
-  }
+  if (idle && total > 0 && done >= total) announceDone(done);
   wasBusy = !idle;
   set({
     progress: {
@@ -322,6 +460,7 @@ function applyStatus(status: Record<string, any> | undefined, set: Setter, get: 
       total: status.total_images ?? 0,
       queue_length: status.queue_length ?? 0,
     },
+    phase: idle ? "idle" : "running",
   });
   // ★백엔드 재시작 감지 — 서버 seq 가 우리가 본 값보다 **되돌아갔으면** 렌더 집합을 비운다.
   //   안 하면 새 이미지(seq 1..)가 옛 seq 와 충돌해 '이미 본 것'으로 오인되어 전부 건너뛰어진다.

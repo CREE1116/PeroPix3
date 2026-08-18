@@ -1,15 +1,20 @@
 import { useI18n } from "../i18n";
 import { ask } from "../store/ask";
+import { toast } from "../store/toast";
 import { useEffect, useRef, useState } from "react";
 import { useGen } from "../store/gen";
 import { useWs } from "../store/workspace";
 import { useGallery } from "../store/gallery";
-import { keepUrl } from "../lib/imgUrl";
+import { keepThumb, keepUrl } from "../lib/imgUrl";
 import { api } from "../lib/backend";
 import { ImageActions } from "./ImageActions";
 import type { ImageMeta } from "../store/gallery";
 import { Icon } from "../components/Icon";
 import { onNearBottom } from "../lib/nearBottom";
+
+/** 옮길 곳 드롭다운에서 **최상위**를 가리키는 값. 서버가 쓰는 값은 빈 문자열인데,
+ *  그것은 이 드롭다운에서 「고르지 않음」자리표시자가 이미 쓰고 있다. 보낼 때 되돌린다. */
+const ROOT_DEST = "/";
 
 /** 갤러리 — 워크스페이스에 쌓인 그림을 훑어 본다 (feature-inventory G절).
  *
@@ -22,8 +27,9 @@ export function Gallery() {
   const t = useI18n((s) => s.t);
   const base = useGen((s) => s.base);
   const ws = useWs((s) => s.current);
-  const { isStarred, toggleStar } = useWs();
-  const { items, folders, picked, focus, meta, loading, total, hasMore, load, more, setFocus, togglePick, pickAll, clearPick, remove, moveTo } =
+  /** ★별표는 **보관함이 든다** — 워크스페이스가 아니다 (store/gallery.ts `starred` 주석) */
+  const { items, folders, picked, focus, meta, loading, total, hasMore, load, more, setFocus,
+          togglePick, pickAll, clearPick, remove, moveTo, isStarred, toggleStar, rename } =
     useGallery();
   // ★바닥에 닿기 전에 다음 쪽을 당긴다 (v2 방식, lib/nearBottom)
   const onScroll = onNearBottom(() => void more(ws));
@@ -50,7 +56,7 @@ export function Gallery() {
       if (e.key === "ArrowLeft" && idx > 0) return void setFocus(ws, shown[idx - 1].file);
       if (e.key === "ArrowRight" && idx >= 0 && idx < shown.length - 1)
         return void setFocus(ws, shown[idx + 1].file);
-      if (e.key === "s" || e.key === "S") return toggleStar(focus);
+      if (e.key === "s" || e.key === "S") return void toggleStar(focus);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -86,7 +92,7 @@ export function Gallery() {
         onAll={pickAll}
         onClear={clearPick}
         onRemove={onRemove}
-        onMove={() => dest && void moveTo(ws, dest)}
+        onMove={() => dest && void moveTo(ws, dest === ROOT_DEST ? "" : dest)}
       />
 
       {items.length === 0 ? (
@@ -114,11 +120,12 @@ export function Gallery() {
           {shown.map((it) => (
             <Cell
               key={it.file}
-              src={keepUrl(base, it.file)}
+              /* ★칸에는 **썸네일**이다 (lib/imgUrl `keepThumb`). 크게 볼 때만 원본을 받는다 */
+              src={keepThumb(base, it.file)}
               name={it.name}
               starred={isStarred(it.file)}
               picked={picked.has(it.file)}
-              onStar={() => toggleStar(it.file)}
+              onStar={() => void toggleStar(it.file)}
               onOpen={(withMod) => (withMod ? togglePick(it.file) : void setFocus(ws, it.file))}
             />
           ))}
@@ -143,6 +150,7 @@ export function Gallery() {
              보관함 그림은 워크스페이스 파일이 아니라 강화·보관은 없다. */
           file={focus}
           seed={meta?.seed}
+          onRename={(name) => rename(ws, focus, name)}
           onClose={() => void setFocus(ws, null)}
           onPrev={idx > 0 ? () => void setFocus(ws, shown[idx - 1].file) : undefined}
           onNext={idx >= 0 && idx < shown.length - 1 ? () => void setFocus(ws, shown[idx + 1].file) : undefined}
@@ -234,9 +242,12 @@ function Toolbar({
             }}
           >
             <option value="">{t("gallery.moveTo")}</option>
+            {/* ★서버가 주는 첫 줄은 `path: ""`(전체)이라 그대로 쓰면 **빈 이름 항목**이
+                하나 더 생기고, 값이 자리표시자와 같아서 **최상위로 되돌리는 이동이 안 된다.**
+                여기서만 자리표시자와 갈리는 값을 붙이고, 보낼 때 다시 빈 문자열로 되돌린다. */}
             {folders.map((f) => (
-              <option key={f} value={f}>
-                {f}
+              <option key={f || ROOT_DEST} value={f || ROOT_DEST}>
+                {f || t("gallery.rootFolder")}
               </option>
             ))}
           </select>
@@ -352,6 +363,7 @@ function Big({
   pos,
   file,
   seed,
+  onRename,
   onClose,
   onPrev,
   onNext,
@@ -362,6 +374,8 @@ function Big({
   /** 보관함 기준 경로 — 설정 불러오기가 이걸로 메타데이터를 읽는다 */
   file: string;
   seed?: number;
+  /** 이름 변경 (v2 `PATCH /api/gallery/{filename}`) */
+  onRename: (name: string) => Promise<string>;
   onClose: () => void;
   onPrev?: () => void;
   onNext?: () => void;
@@ -369,6 +383,23 @@ function Big({
   const t = useI18n((s) => s.t);
   const box = useRef<HTMLDivElement>(null);
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
+  /** 이름 고치기 — 그 자리에서 입력칸으로 바뀐다 (v2 도 같은 방식이었다) */
+  const [editing, setEditing] = useState<string | null>(null);
+  /** ★적고 있는 글자를 **ref 로도** 든다. Esc 로 물린 직후 `blur` 가 오면 그 순간의
+   *  렌더가 들고 있던 옛 값으로 이름이 바뀐다 — ref 는 즉시 비울 수 있다. */
+  const draft = useRef("");
+  const commit = async () => {
+    const next = draft.current.trim();
+    draft.current = "";
+    setEditing(null);
+    if (!next || next === name) return;
+    try {
+      await onRename(next);
+      toast(t("gallery.renamed"));
+    } catch (e) {
+      toast(String(e), "warn");
+    }
+  };
   return (
     <div
       ref={box}
@@ -414,38 +445,60 @@ function Big({
             loadMeta={async () =>
               (await api<{ meta: ImageMeta | null }>(`/api/keep/meta?file=${encodeURIComponent(file)}`)).meta
             }
+            /* ★같은 줄에 「탐색기에서 열기」를 둔다 — 뿌리만 보관함으로 갈아 끼운다.
+               자리마다 다른 버튼을 만들면 어디서는 되고 어디서는 안 되는 상태가 생긴다. */
+            revealPath={file}
+            revealApi="/api/keep/reveal"
             onLeave={onClose}
           />
         </div>
       </div>
 
-      <button onClick={onClose} style={{ ...overlayBtn, left: "var(--sp-4)", top: "var(--sp-4)" }}>
+      {/* ★탐색기로 여는 길은 **아래 액션 줄**에 있다 (`revealApi`) — 여기 또 두지 않는다 */}
+      <button onClick={onClose} style={{ ...overlayBtn, position: "absolute", left: "var(--sp-4)", top: "var(--sp-4)" }}>
         {t("gallery.close")}
       </button>
       {/* ★별표 버튼은 **칸 우상단**에 있다 (사용자 지시 2026-08-05). 큰 그림 위에 두면
           지금 보는 한 장만 켤 수 있어, 견주며 고르는 흐름과 어긋난다. S 키는 그대로 둔다. */}
       {/* ★파일 이름·조작 안내는 **위로** 올렸다 — 아래는 액션 줄이 쓴다.
           바닥에 겹쳐 두면 시드·프롬프트 버튼이 배지 뒤로 숨는다 (실측 2026-08-05). */}
-      <span
-        style={{
-          position: "absolute",
-          left: "50%",
-          transform: "translateX(-50%)",
-          top: "var(--sp-4)",
-          padding: "2px var(--sp-3)",
-          borderRadius: "var(--r-1)",
-          background: "rgba(10,14,20,0.62)",
-          color: "#fff",
-          fontSize: "var(--text-2xs)",
-          fontFamily: "var(--font-mono)",
-          maxWidth: "46%",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {name} {pos && `· ${pos}`}
-      </span>
+      {/* ★이름은 **더블클릭으로 그 자리 편집**이다 (앱 공통 규칙). 클릭 한 번은 배경 클릭과
+          겹치므로 쓰지 않는다. Enter 로 확정, Esc 로 되돌린다. */}
+      {editing === null ? (
+        <span
+          data-keep-name
+          title={t("gallery.renameHint")}
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            draft.current = name;
+            setEditing(name);
+          }}
+          style={nameBadge}
+        >
+          {name} {pos && `· ${pos}`}
+        </span>
+      ) : (
+        <input
+          data-keep-rename
+          autoFocus
+          value={editing}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => {
+            draft.current = e.target.value;
+            setEditing(e.target.value);
+          }}
+          onBlur={() => void commit()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            else if (e.key === "Escape") {
+              draft.current = "";
+              setEditing(null);
+            }
+            e.stopPropagation();
+          }}
+          style={{ ...nameBadge, border: "1px solid var(--accent)", background: "rgba(10,14,20,0.92)", width: 260 }}
+        />
+      )}
       <span
         style={{
           position: "absolute",
@@ -461,8 +514,24 @@ function Big({
   );
 }
 
-const overlayBtn: React.CSSProperties = {
+const nameBadge: React.CSSProperties = {
   position: "absolute",
+  left: "50%",
+  transform: "translateX(-50%)",
+  top: "var(--sp-4)",
+  padding: "2px var(--sp-3)",
+  borderRadius: "var(--r-1)",
+  background: "rgba(10,14,20,0.62)",
+  color: "#fff",
+  fontSize: "var(--text-2xs)",
+  fontFamily: "var(--font-mono)",
+  maxWidth: "46%",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const overlayBtn: React.CSSProperties = {
   padding: "3px var(--sp-3)",
   borderRadius: "var(--r-1)",
   background: "rgba(10,14,20,0.55)",

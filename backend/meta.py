@@ -254,10 +254,119 @@ def _detect_uc_preset_from_diff(full_uc: str, base_neg: str):
     return None
 
 
+def _comfy_text(prompt: dict, ref: object) -> str:
+    """노드 참조(`[노드id, 출력번호]`)를 한 칸 따라가 CLIPTextEncode 의 글을 꺼낸다.
+
+    ★더 깊이 들어가지 않는 것도 v2 그대로다 (index.html:25851 `getTextFromNodeRef`).
+      노드 그래프는 끝이 없어서, 못 찾으면 지어내는 것보다 빈 값이 낫다."""
+    if not isinstance(ref, list) or not ref:
+        return ""
+    node = prompt.get(str(ref[0]))
+    if not isinstance(node, dict):
+        return ""
+    cls = str(node.get("class_type") or "")
+    if "CLIPTextEncode" in cls or "PromptEncode" in cls:
+        text = (node.get("inputs") or {}).get("text")
+        if isinstance(text, str):
+            return text
+    return ""
+
+
+def _from_comfyui(meta: dict) -> dict:
+    """ComfyUI 워크플로 → 내부 형식 (index.html:25851 `renderComfyUIContent` 이식).
+
+    ★분기가 없어서 EXIF 리더에 `prompt`·`workflow` 원문이 통째로 쏟아지고 있었다
+      (감사 C7). 여기서 한 번 풀어 주면 화면은 다른 그림과 똑같이 다루면 된다."""
+    prompt = meta.get("prompt") if isinstance(meta.get("prompt"), dict) else {}
+    workflow = meta.get("workflow")
+    pos: list[str] = []
+    neg: list[str] = []
+    s: dict = {}
+    for node in prompt.values():
+        if not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs") or {}
+        cls = str(node.get("class_type") or "")
+        if cls in ("KSampler", "KSamplerAdvanced"):
+            p = _comfy_text(prompt, inputs.get("positive"))
+            n = _comfy_text(prompt, inputs.get("negative"))
+            if p and p not in pos:
+                pos.append(p)
+            if n and n not in neg:
+                neg.append(n)
+            if "seed" in inputs:
+                # 시드가 다른 노드 참조면 값을 알 수 없다 — 모른다고 적는다
+                s["seed"] = "(dynamic)" if isinstance(inputs["seed"], list) else inputs["seed"]
+            for key, into in (("steps", "steps"), ("cfg", "cfg"),
+                              ("sampler_name", "sampler"), ("scheduler", "scheduler"),
+                              ("denoise", "denoise")):
+                if inputs.get(key) is not None:
+                    s[into] = inputs[key]
+        elif cls == "EmptyLatentImage":
+            for key in ("width", "height"):
+                if inputs.get(key):
+                    s[key] = inputs[key]
+        elif "CheckpointLoader" in cls and inputs.get("ckpt_name"):
+            s["model"] = inputs["ckpt_name"]
+
+    return {
+        "prompt": "\n---\n".join(pos),
+        "negative": "\n---\n".join(neg),
+        "characters": [],
+        "slot_prompt": "",
+        "seed": s.get("seed"),
+        "width": s.get("width"),
+        "height": s.get("height"),
+        "steps": s.get("steps"),
+        "cfg": s.get("cfg"),
+        "sampler": s.get("sampler"),
+        "scheduler": s.get("scheduler"),
+        "nai_model": "",
+        "smea": "none",
+        "uc_preset": "None",
+        "quality_tags": False,
+        "cfg_rescale": None,
+        "variety_plus": False,
+        "furry_mode": False,
+        "vibe_transfer": None,
+        "nai_vibes": {"images": [], "strengths": [], "info_extracted": []},
+        "precise_ref_count": 0,
+        "pure_nai": False,
+        # ComfyUI 만 갖는 것 — 화면이 「워크플로」 칸으로 따로 보여 준다
+        "comfy": {
+            "model": s.get("model") or "",
+            "denoise": s.get("denoise"),
+            "nodes": len((workflow or {}).get("nodes") or []) if isinstance(workflow, dict) else 0,
+        },
+        "raw": meta,
+    }
+
+
+def kind_of(raw: dict | None, info: dict | None = None) -> str:
+    """이 그림이 어디서 나왔나 — 화면의 **형식 배지** (index.html:25683-25701 이식).
+
+    빈 문자열이면 모르는 것이다. ★판정 순서가 규칙이다: vibe 캐시 PNG 는 NAI 메타데이터가
+    없고 tEXt 로만 알아볼 수 있으므로 먼저 본다."""
+    info = info or {}
+    if info.get("vibe_data") or info.get("cache_key"):
+        return "vibe"
+    if raw:
+        if raw.get("_comfyui"):
+            return "comfyui"
+        if raw.get("peropix"):
+            return "peropix"
+        if raw.get("prompt") or raw.get("uc"):
+            return "nai"
+    return "custom" if info else ""
+
+
 def normalize(meta: dict | None) -> dict | None:
     """NAI 원본 + PeroPix 확장 → 내부 형식. `read_raw` 의 결과를 넣는다."""
     if not meta:
         return None
+    # ComfyUI 는 규격이 통째로 달라 따로 푼다
+    if meta.get("_comfyui"):
+        return _from_comfyui(meta)
     # 이미 내부 형식이면 그대로
     if "negative" in meta or "cfg" in meta or "nai_model" in meta:
         return meta

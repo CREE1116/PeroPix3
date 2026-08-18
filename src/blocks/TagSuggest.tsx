@@ -9,9 +9,15 @@ import {
   underscoresToSpaces,
   type TagEntry,
 } from "../lib/tagData";
+import { useWildcards } from "../store/wildcards";
+import { useUi } from "../store/ui";
 
 /** 자동완성이 붙을 수 있는 입력칸 — 여러 줄(블록·슬롯)과 한 줄(공통 접두) 둘 다 */
 type Field = HTMLTextAreaElement | HTMLInputElement;
+
+/** 와일드카드 이름 제안을 태그와 **같은 목록**에 실어 나르는 모양.
+ *  ★목록을 둘로 만들지 않는다. 같은 자리에 뜨는 것은 하나여야 키 처리도 하나다 (v2 도 그렇다). */
+const WC_TYPE = "wildcard";
 
 /** 태그 자동완성 — 페로픽스파이 `TagAutocompleteTextarea` 에서 이식.
  *
@@ -25,6 +31,8 @@ export function useTagSuggest(
   value: string,
   setValue: (v: string) => void,
   ref: React.RefObject<Field | null>,
+  /** ★와일드카드 **정의 편집기**용 (v2 `dataset.noTagComma`). 한 줄에 한 후보라 쉼표를 안 붙인다 */
+  opt?: { noComma?: boolean },
 ) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<TagEntry[]>([]);
@@ -44,10 +52,43 @@ export function useTagSuggest(
   const close = () => setOpen(false);
 
   const run = () => {
+    // ★꺼 두면 목록을 아예 안 띄운다 (v2 `tagAutocompleteToggle`). 그래야 Enter·Esc 가
+    //   블록 것(다음 블록 만들기·편집 끝내기)으로 되돌아간다 — `onKeyDown` 은 목록이
+    //   떠 있을 때만 가져가므로, 여기서 막는 것으로 끄는 동작이 완결된다.
+    if (!useUi.getState().tagSuggest) return close();
     const ta = ref.current;
-    if (!ta || !tagsLoaded()) return;
+    if (!ta) return;
     // ★input 의 selectionStart 는 null 일 수 있다 (여러 줄 칸에는 늘 숫자가 온다)
     const at = ta.selectionStart ?? ta.value.length;
+
+    // ★**와일드카드 이름이 태그 검색보다 먼저다** (v2 `index.html:20450`).
+    //   `(?<![A-Za-z0-9_])` 는 앞에 낱말이 붙은 `#` 을 흘려보낸다 (NAI 액션 태그 `source#tag`).
+    //   ★사전을 안 기다린다: 풀 이름은 우리 문서에서 오므로 `tags.json` 과 무관하다.
+    const wc = ta.value.substring(0, at).match(/(?<![A-Za-z0-9_])#([A-Za-z0-9_]*)$/);
+    if (wc) {
+      const q = wc[1].toLowerCase();
+      const pools = useWildcards.getState().pools;
+      const names = Object.keys(pools)
+        .filter((n) => n.startsWith(q))
+        .sort()
+        .slice(0, 20);
+      if (!names.length) return close();
+      setItems(
+        names.map((n) => ({
+          label: "#" + n,
+          value: n,
+          count: pools[n].length,
+          type: WC_TYPE,
+          category: -1,
+        })),
+      );
+      setSel(0);
+      setPos(dropdownPos(ta));
+      setOpen(true);
+      return;
+    }
+
+    if (!tagsLoaded()) return;
     // 공백 두 번이면 낱말이 끝난 것으로 본다
     if (at >= 2 && ta.value.substring(at - 2, at) === "  ") return close();
     const { word } = currentWord(ta.value, at);
@@ -71,15 +112,44 @@ export function useTagSuggest(
     timer.current = setTimeout(run, 50);
   };
 
+  /** 쉼표 접미사 규칙 — 뒤에 이미 쉼표가 있으면 안 붙인다 (정의 편집기에서는 언제나 없다) */
+  const tailAfter = (end: number): string => {
+    if (opt?.noComma) return "";
+    if (end < value.length && value[end] === ",")
+      return end + 1 < value.length && value[end + 1] !== " " ? " " : "";
+    return ", ";
+  };
+
+  /** 와일드카드 이름을 넣는다 (v2 `insertWildcardName`).
+   *
+   *  ★★**언더바를 공백으로 바꾸지 않는다** (태그와 정반대다). `#hair_color` 가
+   *    `#hair color` 가 되면 풀을 못 찾는다. `#` 도 그대로 남긴다.
+   *  ★커서 뒤에 이어진 이름 글자는 먹고 갈아 끼운다 (가운데서 고쳐 쓸 수 있게). */
+  const insertWc = (name: string) => {
+    const ta = ref.current;
+    if (!ta) return;
+    const cursor = ta.selectionStart ?? value.length;
+    const m = value.substring(0, cursor).match(/#([A-Za-z0-9_]*)$/);
+    if (!m) return;
+    const tokenStart = cursor - m[0].length;
+    let end = cursor;
+    while (end < value.length && /[A-Za-z0-9_]/.test(value[end])) end++;
+    const text = "#" + name + tailAfter(end);
+    const next = value.substring(0, tokenStart) + text + value.substring(end);
+    caret.current = tokenStart + text.length;
+    last.current = next;
+    setValue(next);
+    close();
+  };
+
   /** 고른 것을 커서 자리에 넣는다. 뒤에 `, ` 를 붙여 다음 태그로 이어지게 한다 */
   const insert = (tag: TagEntry) => {
     const ta = ref.current;
     if (!ta) return;
+    if (tag.type === WC_TYPE) return insertWc(tag.value);
     const { start, end, fullStart } = currentWord(value, ta.selectionStart ?? value.length);
     const lead = value.substring(fullStart, start);
-    let tail = ", ";
-    if (end < value.length && value[end] === ",")
-      tail = end + 1 < value.length && value[end + 1] !== " " ? " " : "";
+    const tail = tailAfter(end);
     const text = lead + underscoresToSpaces(tag.value) + tail;
     const next = value.substring(0, fullStart) + text + value.substring(end);
     caret.current = fullStart + text.length;
@@ -219,6 +289,7 @@ const TYPE_COLOR: Record<string, string> = {
   character: "var(--char-c)",
   copyright: "var(--accent)",
   meta: "var(--ink-dim)",
+  [WC_TYPE]: "var(--accent)",
 };
 
 /** 커서의 화면 위치 아래에 목록을 놓는다. 워드랩까지 맞추려면 같은 스타일의 거울이 필요하다 */

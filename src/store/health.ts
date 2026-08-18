@@ -1,0 +1,42 @@
+import { create } from "zustand";
+
+/** 백엔드가 알려 주는 앱 상태 — **한 곳에서만 읽는다** (`/api/health`).
+ *
+ *  ★예전에는 App 의 지역 상태였고 타이틀바 점에만 쓰였다. 같은 값을 보는 자리가 늘면서
+ *    (설정의 앱 버전·요청 창구, 생성 푸터의 토큰 검사) 넘겨줄 길이 없어졌다 —
+ *    `store/sub.ts` 와 같은 이유로 스토어로 뺀다.
+ *  ★**버전을 화면에 박지 않는다.** 타이틀바에 `"3.0"` 이 박혀 있어서 백엔드가 주는 값과
+ *    어긋나 있었다 (감사 C5). 정본은 `backend/server.py` 의 `APP_VERSION` 하나다.
+ *  ★토큰은 **있는지만** 안다. 값은 서버가 내보내지 않는다.
+ */
+export type Health = {
+  ok: boolean;
+  version: string;
+  hasToken: boolean;
+  /** 버그·건의 창구(디스코드). 백엔드가 정본이다 (`agent.SUPPORT_URL`) */
+  support: string;
+};
+
+type S = {
+  health: Health | null;
+  /** 사이드카가 끝내 안 뜬 상태 — 부팅 화면이 이유를 보여 준다 */
+  dead: boolean;
+  set: (h: Health | null) => void;
+  setDead: (v: boolean) => void;
+  /** 토큰을 넣거나 지운 직후 — 저장 응답이 준 값으로 바로 맞춘다 */
+  setHasToken: (v: boolean) => void;
+};
+
+export const useHealth = create<S>((set, get) => ({
+  health: null,
+  dead: false,
+  set: (h) => set({ health: h }),
+  setDead: (v) => set({ dead: v }),
+  setHasToken: (v) => {
+    const h = get().health;
+    if (h) set({ health: { ...h, hasToken: v } });
+  },
+}));
+
+/** 토큰이 있나 — 없으면 NAI 생성이 통째로 안 된다 */
+export const useHasToken = () => useHealth((s) => !!s.health?.hasToken);

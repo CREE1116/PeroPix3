@@ -12,6 +12,10 @@ import { t } from "../i18n";
 
 // 시드 규칙은 `lib/seedRounds.ts` 하나뿐이다 (거기 머리 주석)
 import { randomSeed, rounds, type SeedMode } from "../lib/seedRounds";
+// ★와일드카드 추첨은 **장 하나마다** 돈다 (`lib/wildcards.ts` 머리 주석).
+//   요청을 만들 때 한 번만 풀면 한 배치가 통째로 같은 태그로 나온다. 기능이 조용히 사라진다.
+import { resolveShot } from "../lib/wildcards";
+import { wildcardPools } from "./wildcards";
 export { randomSeed, rounds, SEED_MODES, type SeedMode } from "../lib/seedRounds";
 
 export type GenParams = {
@@ -192,7 +196,8 @@ export const useGen = create<S>((set, get) => ({
     //   랜덤이어도 아무 숫자가 아니라 이 값으로 뽑고, 끝난 뒤에 칸을 굴린다.
     const shot = get().params.seed;
     try {
-      const { prompt, uc, chars } = usePrompt.getState().compiled();
+      // ★한 장짜리 자리라 추첨도 한 번이다 (강화·인핸스가 여기로 온다)
+      const { prompt, uc, chars } = resolveShot(wildcardPools(), usePrompt.getState().compiled());
       const r = await api<{ file: string | null; b64?: string; fmt?: string; seed: number }>("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -251,11 +256,19 @@ export const useGen = create<S>((set, get) => ({
     const ws = useWs.getState();
     const tab = ws.activeTab();
     if (!tab || tab.kind === "set") return;
-    const { prompt, uc, chars } = usePrompt.getState().compiled();
+    const raw = usePrompt.getState().compiled();
+    const pools = wildcardPools();
+    // ★요청 레벨에도 한 벌 싣는다. **대표값(폴백)** 이고, 실제로 나가는 것은 아래 항목들이다
+    //   (v2 `index.html:16080` 의 "req 레벨: 대표값 1회 해석" 과 같은 자리).
+    const { prompt, uc, chars } = resolveShot(pools, raw);
     // ★★시드는 **여기서 장마다 확정**한다 — 예전에는 랜덤이면 `-1` 로 보내 서버가 뽑게
     //   했는데, 그러면 **적힌 시드가 통째로 무시된다** (사용자 지적 2026-08-16).
     //   첫 장은 적힌 값, 그 뒤로만 새로 뽑는다 (`lib/seedRounds` 머리 주석).
-    const shots = rounds(Math.max(1, count), get().params, [null], (_, seed) => ({ seed }));
+    // ★★와일드카드도 **장마다** 다시 뽑는다. 여기서 한 번만 풀면 10장이 전부 같아진다.
+    const shots = rounds(Math.max(1, count), get().params, [null], (_, seed) => {
+      const s = resolveShot(pools, raw);
+      return { seed, prompt: s.prompt, negative_prompt: s.uc, characters: s.chars };
+    });
     await useQueue.getState().enqueue(
       {
         ...get().params,
@@ -286,7 +299,9 @@ export const useGen = create<S>((set, get) => ({
     const ws = useWs.getState();
     const tab = ws.activeTab();
     if (!tab) return;
-    const { prompt, uc, chars } = usePrompt.getState().compiled();
+    const raw = usePrompt.getState().compiled();
+    const pools = wildcardPools();
+    const { prompt, uc, chars } = resolveShot(pools, raw);
     const origin = useImageInput.getState().originCell;
     const found = tab.kind === "set" && origin
       ? allScenes(tab).find((x) => x.cell.id === origin.id)
@@ -308,8 +323,11 @@ export const useGen = create<S>((set, get) => ({
     // ★보냈으면 편집에서 나온다 (사용자 결정 2026-08-13). 여기 머물면 결과를 못 본다.
     //   마스크·사각형·프롬프트 사본은 남아, 다시 들어가면 그대로 이어진다
     useImageInput.getState().endEdit();
-    // ★시드는 장마다 여기서 확정한다 (`queueSingle` 과 같은 규칙)
-    const shots = rounds(Math.max(1, count), get().params, [null], (_, seed) => ({ seed }));
+    // ★시드도 와일드카드도 장마다 여기서 확정한다 (`queueSingle` 과 같은 규칙)
+    const shots = rounds(Math.max(1, count), get().params, [null], (_, seed) => {
+      const s = resolveShot(pools, raw);
+      return { seed, prompt: s.prompt, negative_prompt: s.uc, characters: s.chars };
+    });
     await useQueue.getState().enqueue(body, shots, 1);
     if (get().params.seed_mode !== "fixed") get().set("seed", randomSeed());
   },
@@ -320,10 +338,21 @@ export const useGen = create<S>((set, get) => ({
     if (!tab || tab.kind !== "set") return;
     // ★락은 **생성에서 뺀다** (v2 슬롯의 락). 지운 것이 아니라 이번에만 건너뛴다.
     // ★공통 접두는 **카드마다 다르다** (2026-08-11) — 그래서 씬을 카드와 함께 편다.
-    const live = allScenes(tab).filter((x) => !x.cell.locked && !x.card.locked);
-    if (!live.length) return;
+    const all = allScenes(tab);
+    const live = all.filter((x) => !x.cell.locked && !x.card.locked);
+    if (!live.length) {
+      // ★씬이 있는데 전부 잠겨 있으면 **말해 준다** — 예전에는 눌러도 조용히 아무 일도
+      //   안 일어나 고장으로 보였다 (v2 `index.html:15905`).
+      //   씬이 아예 없을 때는 안 띄운다 — 그건 잠금 문제가 아니라 비어 있는 것이다.
+      if (all.length) toast(t("gen.allLocked"), "warn");
+      return;
+    }
 
-    const { prompt, uc, chars } = usePrompt.getState().compiled();
+    const raw = usePrompt.getState().compiled();
+    const pools = wildcardPools();
+    // ★요청 레벨은 **대표값(폴백)** 이다. 실제로 쓰이는 것은 항목마다 다시 뽑은 값이다
+    //   (v2 `index.html:16080`).
+    const { uc, chars } = resolveShot(pools, raw);
     /** 씬 번호(1부터) — ★카드를 가로질러 **탭 안에서** 센다. 파일 이름 앞에 붙는 번호라
      *  카드마다 1로 되돌아가면 탐색기에서 같은 번호가 여럿이 된다. */
     const order = allCells(tab);
@@ -348,8 +377,27 @@ export const useGen = create<S>((set, get) => ({
         //   `base` 면 top-level prompt 에, 캐릭터 id 면 그 사람의 `characterPrompts[]` 에 붙는다.
         //   ★고른 캐릭터가 목록에 없으면(꺼짐·삭제) base 로 떨어진다 — 조용히 사라지지 않게.
         const scene = compileBlocks(c.blocks);
-        const dest = chars.some((ch) => ch.id === tab.sceneDest) ? tab.sceneDest : "base";
+        const dest = raw.chars.some((ch) => ch.id === tab.sceneDest) ? tab.sceneDest : "base";
         const toChar = dest !== "base";
+        // ★★**이 장의 추첨**이다. 회차마다·씬마다 따로 뽑히며, 이 한 줄이 와일드카드의
+        //   존재 이유다 (`docs/v2-feature-catalog.md:477`: 한 번만 풀면 전 이미지가 굳는다).
+        //   ★푸는 것은 **이어 붙인 뒤**다. `#이름` 은 나타날 때마다 따로 뽑히므로 결과가 같고,
+        //     접두·캐릭터·씬을 따로 풀던 v2 보다 자리가 하나로 모인다.
+        const shot = resolveShot(pools, {
+          // 카드 접두 + 캐릭터 + 이 씬의 블록들 순서로 잇는다 (v2 프리셋 prefix 와 같은 자리).
+          // ★씬도 블록이라 **켜진 블록만** 들어간다 — 프롬프트 쪽과 같은 규칙이다
+          prompt: [(card.prefix || "").trim(), raw.prompt, toChar ? "" : scene]
+            .filter(Boolean)
+            .join(", "),
+          uc: raw.uc,
+          chars: toChar
+            ? raw.chars.map((ch) =>
+                ch.id === dest && scene
+                  ? { ...ch, prompt: [ch.prompt, scene].filter(Boolean).join(", ") }
+                  : ch,
+              )
+            : raw.chars,
+        });
         return {
           cell: c.name,
           cell_id: c.id,
@@ -357,20 +405,9 @@ export const useGen = create<S>((set, get) => ({
           //   ★잠긴 씬을 뺀 뒤의 순번이 아니라 **탭에서의 자리**여야 번호가 안 흔들린다
           cell_no: order.findIndex((x) => x.id === c.id) + 1,
           seed,
-          // 카드 접두 + 캐릭터 + 이 씬의 블록들 순서로 잇는다 (v2 프리셋 prefix 와 같은 자리).
-          // ★씬도 블록이라 **켜진 블록만** 들어간다 — 프롬프트 쪽과 같은 규칙이다
-          prompt: [(card.prefix || "").trim(), prompt, toChar ? "" : scene]
-            .filter(Boolean)
-            .join(", "),
-          ...(toChar
-            ? {
-                characters: chars.map((ch) =>
-                  ch.id === dest && scene
-                    ? { ...ch, prompt: [ch.prompt, scene].filter(Boolean).join(", ") }
-                    : ch,
-                ),
-              }
-            : {}),
+          prompt: shot.prompt,
+          negative_prompt: shot.uc,
+          characters: shot.chars,
         };
       }),
       1,

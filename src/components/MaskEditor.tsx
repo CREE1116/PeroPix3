@@ -48,6 +48,7 @@ export function MaskEditor() {
   const focused = useImageInput((s) => s.focused);
   const rectNatural = useImageInput((s) => s.tileRect);
   const baseSize = useImageInput((s) => s.baseSize);
+  const inpaintStrength = useImageInput((s) => s.baseInpaintStrength);
 
   const maskRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLCanvasElement>(null);
@@ -344,7 +345,9 @@ export function MaskEditor() {
   const req = plan ? plan.req : { width: params.width, height: params.height };
   const cost = anlasCost({
     width: req.width, height: req.height, steps: params.steps, opus,
-    uncachedVibes: 0, activeVibes: 0, refCount: 0, strength: 1, count: 1,
+    // ★인페인트 강도가 값을 정한다 (`y = mask ? inpaintImg2ImgStrength : …`, 9절).
+    //   1 이면 그대로, 낮추면 그만큼 싸진다 — 슬라이더를 만들었으니 값도 따라가야 한다
+    uncachedVibes: 0, activeVibes: 0, refCount: 0, strength: inpaintStrength, count: 1,
   });
   // 아무것도 안 칠해도 사각형이 있으면 안쪽 전체를 다시 그린다
   const canRun = !busy && (count > 0 || (focused && !!rectNatural));
@@ -391,9 +394,33 @@ export function MaskEditor() {
         ))}
         <label style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", fontSize: "var(--text-2xs)" }}>
           <span style={{ color: "var(--ink-faint)" }}>{t("imgIn.brushSize")}</span>
-          <input type="range" data-mask-brush min={5} max={100} value={brush}
+          <input type="range" data-mask-brush min={5} max={100} value={brush} style={{ width: 84 }}
                  onChange={(e) => setBrush(Number(e.target.value))} />
           <span style={{ width: 22, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{brush}</span>
+        </label>
+        {/* ★강도 — v2 도 마스크 편집기 안에 같은 슬라이더를 뒀다 (index.html:10521-10527).
+            칠하면서 바로 조절하는 값이라 왼쪽 패널까지 가지 않아도 되어야 한다.
+            1 이면 칠한 자리를 완전히 새로 그리고, 낮추면 원본을 그만큼 남긴다 */}
+        <label
+          title={t("imgIn.inpaintStrengthHint")}
+          style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", fontSize: "var(--text-2xs)" }}
+        >
+          <span style={{ color: "var(--ink-faint)" }}>{t("imgIn.strength")}</span>
+          <input
+            type="range"
+            data-mask-strength
+            min={0.01}
+            max={1}
+            step={0.01}
+            value={inpaintStrength}
+            style={{ width: 84 }}
+            onChange={(e) =>
+              useImageInput.getState().patchBase({ baseInpaintStrength: Number(e.target.value) })
+            }
+          />
+          <span style={{ width: 26, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+            {inpaintStrength}
+          </span>
         </label>
         <button data-mask-clear onClick={clear} style={btn} title={t("imgIn.maskClear")}>{Icon.trash}</button>
         <button data-mask-invert onClick={invert} style={btn} title={t("imgIn.maskInvert")}>{Icon.refresh}</button>
