@@ -98,10 +98,16 @@ export function anlasCost(i: CostInput): Cost {
   //     되돌리지 말 것. 근거는 「몇 장을 한 요청에 담느냐」 하나뿐이라, 언젠가 여러 장을
   //     한 요청으로 보내게 되면 **그때는 공홈처럼 한 장만 깎아야** 한다.
   //
-  // ★무료 판정에 **vibe·캐릭터 참조는 들어가지 않는다.** 공홈 `eZ()` 에 `!characterRef` 가
-  //   있지만 가격 계산부가 그 키를 안 넘겨 늘 undefined 다 — 전송 경로만 채운다.
-  //   실측(2026-08-11): Opus·832x1216·28step·참조 1개 = 5. 무료가 살아 있고 참조비만 나간다.
-  const free = i.opus && px <= FREE_PIXELS && i.steps <= FREE_STEPS;
+  // ★★**캐릭터 참조가 하나라도 있으면 무료가 아니다** (사용자 확인 2026-08-18:
+  //   *"캐릭터 참조는 유료임"*). 공홈 `eZ()` 의 `!e.characterRef` 가 그대로 살아 있다는 뜻이다.
+  //
+  //   ★앞서 여기 *"가격 계산부가 그 키를 안 넘겨 늘 undefined 다"* 라고 적어 두고
+  //     무료를 유지했던 것은 **틀렸다.** 공홈이 자기 안에서 갈리는 자리인데
+  //     (요금 **표시** 경로는 안 넘기고 **생성** 경로는 `characterRef: x.length>0 && …` 로
+  //     넘긴다), 실제 청구를 정하는 것은 생성 쪽이다. 함께 적혀 있던 "참조 1개 = 5" 실측도
+  //     공홈 화면의 **표시값**을 옮겨 적은 것이라 근거가 못 된다.
+  //   ★vibe 는 무료 판정에 **안 들어간다** — `eZ()` 가 보는 것은 `characterRef`·픽셀·steps 뿐이다.
+  const free = i.opus && px <= FREE_PIXELS && i.steps <= FREE_STEPS && Math.max(0, i.refCount) === 0;
 
   const perSample = Math.ceil(C_BASE * px + C_STEP * px * i.steps);
   // 강도 계수 — 베이스 그림이 있을 때만 걸린다. 바닥은 2 다
@@ -111,7 +117,7 @@ export function anlasCost(i: CostInput): Cost {
   const perSampleCost = Math.max(Math.ceil(perSample * y), 2);
   const base = free ? 0 : perSampleCost;
 
-  // 캐릭터 참조는 **장당** 붙는다 (무료 판정과 무관)
+  // 캐릭터 참조는 **장당** 붙는다 (개당 5). 그리고 위에서 본 대로 무료도 깬다
   const perImage = base + REF_PER_IMAGE * Math.max(0, i.refCount);
 
   // ★★**캐릭터 참조가 하나라도 있거나 인페인트면 바이브 비용은 통째로 0** 이다.
