@@ -350,7 +350,10 @@ function Cell({
         }}
         className="thumb-star"
       >
-        {starred ? Icon.star12On : Icon.star12}
+        {/* ★썸네일 위 별표는 **18px** — 씬 칸과 같은 자리라 크기도 같아야 한다
+            (사용자 지시 2026-08-18). 글자 옆에 서는 것(위 「별표만 보기」 단추·`StarCount`)은
+            12px 그대로다 — 글자 높이에 맞아야 줄이 안 흔들린다 */}
+        {starred ? Icon.star18On : Icon.star18}
       </span>
     </button>
   );

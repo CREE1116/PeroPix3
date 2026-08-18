@@ -148,10 +148,28 @@ const applyBtn: React.CSSProperties = {
   transition: "background 120ms",
 };
 
+/** 그 그림의 **설정·해상도·시드만** 지금 화면에 얹는다 (프롬프트는 안 건드린다).
+ *
+ *  ★「새 탭으로 복제」가 이것을 쓴다 — 거기서는 프롬프트를 **떠나온 탭에서 그대로** 물려받아야
+ *    한다 (블록 구조도 캐릭터 프롬프트도 메타데이터에는 안 남는다. NAI 는 합쳐진 문자열만
+ *    저장한다). 예전에는 `applyMeta(m, "all")` 을 불러 프롬프트까지 덮는 바람에
+ *    **블록이 한 덩어리로 뭉치고 캐릭터가 `#1`·`#2` 로 다시 만들어졌다**
+ *    (사용자 지적 2026-08-18).
+ *  ★해상도·시드는 **여기 있다** — 그 그림을 재현하는 자리라서다. 강화는 원본 크기 × 배율과
+ *    화면의 시드로 돌므로 이 함수를 쓰지 않는다 (`lib/metaApply` 머리 주석). */
+export function applyMetaParams(m: ImageMeta) {
+  const g = useGen.getState();
+  useGen.setState({ params: { ...g.params, ...metaParams(m) } });
+  if (m.width !== undefined) g.set("width", m.width);
+  if (m.height !== undefined) g.set("height", m.height);
+  if (m.seed !== undefined) g.set("seed", m.seed);
+  // ★시드를 되살렸으면 **랜덤을 끈다** — 안 끄면 다음 생성이 새 시드로 굴러 재현이 안 된다
+  if (m.seed !== undefined) g.set("seed_mode", "fixed");
+}
+
 /** @param what `prompt` = 프롬프트만 · `all` = 설정·시드·이미지 입력까지 (그 그림을 재현한다) */
 export function applyMeta(m: ImageMeta, what: "prompt" | "all" = "all") {
   const p = usePrompt.getState();
-  const g = useGen.getState();
 
   const block = (label: string, body?: string) =>
     body ? [makeBlock(label, [], { tags: parseSegs(body), open: true })] : [];
@@ -183,14 +201,7 @@ export function applyMeta(m: ImageMeta, what: "prompt" | "all" = "all") {
   // ★어느 필드가 어느 설정인가는 `lib/metaApply` **하나**가 정한다 — 강화도 같은 표를 쓴다
   //   (`EnhanceDialog`, v2 `buildEnhanceRequest`). 두 벌이면 "이 그림 설정대로"가 두 화면에서
   //   조용히 달라진다.
-  useGen.setState({ params: { ...useGen.getState().params, ...metaParams(m) } });
-  // ★해상도·시드는 **여기서만** 되돌린다 (그 그림을 재현하는 자리라서). 강화는 원본 크기 ×
-  //   배율과 화면의 시드로 돈다 — `lib/metaApply` 머리 주석.
-  if (m.width !== undefined) g.set("width", m.width);
-  if (m.height !== undefined) g.set("height", m.height);
-  if (m.seed !== undefined) g.set("seed", m.seed);
-  // ★시드를 되살렸으면 **랜덤을 끈다** — 안 끄면 다음 생성이 새 시드로 굴러 재현이 안 된다
-  if (m.seed !== undefined) g.set("seed_mode", "fixed");
+  applyMetaParams(m);
 
   // ★바이브는 **인코딩으로** 되살린다 (v2 index.html:18114-18150).
   //
