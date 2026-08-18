@@ -65,6 +65,24 @@ export function SceneLane() {
   const setFocus = (f: { cell: string; file: string | null }) => focus.focus(f.cell, f.file);
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  /** ★★**바깥을 누르면 편집이 끝난다** (사용자 지시 2026-08-18). 예전에는 닫는 길이
+   *  그 씬의 머리를 다시 누르는 것뿐이라, 다른 데를 아무리 눌러도 펼친 채로 남았다.
+   *
+   *  ★`pointerdown` 을 **잡기 단계**(capture)로 듣는다 — 씬 줄의 가로 스크롤도, 칩 드래그도
+   *    pointerdown 에서 시작하므로 버블을 기다리면 그것들이 먼저 삼킨다.
+   *  ★그 씬 안(`[data-scene]`)을 누른 것은 그대로 둔다 — 머리는 자기가 토글하고, 글 상자
+   *    안에서 글자를 고르려고 누른 것을 닫아 버리면 편집이 안 된다. */
+  useEffect(() => {
+    if (!expandedId) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest(`[data-scene="${CSS.escape(expandedId)}"]`)) return;
+      setExpandedId(null);
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [expandedId]);
   /** 이름을 그 자리에서 고치는 중인 씬 — ★**줄이 아니라 여기**가 들고 있다.
    *  Tab 으로 다음 씬의 이름 칸으로 건너뛰려면 누가 열려 있는지를 한 곳이 알아야 한다. */
   const [editingName, setEditingName] = useState<string | null>(null);
@@ -1308,8 +1326,20 @@ function SceneRow(
   /** 생성물을 카드 커버로 끄는 출발점 (`dir: "image"`). 덱·손패·프롬프트 배너가 받는다 */
   const startTakeDrag = useDragSource();
   const c = p.cell;
+  /** ★★글 상자의 **초안**. 화면에 뜨는 것은 언제나 이 문자열이다.
+   *
+   *  예전에는 `value={compileBlocks(c.blocks)}` 로 매 글자마다 **블록을 거쳐 돌아왔다.**
+   *  `parseSegs` 가 쉼표로 자르고 `trim`·`filter(Boolean)` 을 하므로, 치는 즉시
+   *  **띄어쓰기·쉼표·줄바꿈이 사라졌다** (사용자 지적 2026-08-18). 커서도 튀었다.
+   *  이제 보이는 것은 친 그대로고, 블록은 그 옆에서 따라 만들어진다. */
+  const [draft, setDraft] = useState<string | null>(null);
   const on = p.focus.cell === c.id;
   const expanded = p.expandedId === c.id;
+  // 접히면 초안을 놓는다 — 다시 펼쳤을 때 옛 초안이 남아 있으면 안 된다
+  //   (그 사이 카드를 얹거나 AI 가 고쳤을 수 있다)
+  useEffect(() => {
+    if (!expanded) setDraft(null);
+  }, [expanded]);
   /** ★줄은 **최신이 왼쪽**이다 (사용자 지시 2026-08-14, 싱글 히스토리 줄과 같은 규칙).
    *  방금 나온 것을 찾아 눈이 끝까지 갈 이유가 없다. 대기 칸도 같은 규칙이라
    *  **새로 넣은 큐가 맨 왼쪽**이고, 지금 만드는 중인 것은 결과 바로 옆에 선다. */
@@ -1447,18 +1477,29 @@ function SceneRow(
                 ★고치는 순간 켜진 블록이 **한 줄로 합쳐진다** (꺼진 것은 버린다). */}
             <textarea
               data-scene-text={c.id}
-              value={compileBlocks(c.blocks)}
-              onChange={(e) =>
+              value={draft ?? compileBlocks(c.blocks)}
+              onChange={(e) => {
+                setDraft(e.target.value);
                 patchCell({
                   blocks: [
                     makeBlock(c.name, [], { on: true, open: true, tags: parseSegs(e.target.value) }),
                   ],
-                })
-              }
+                });
+              }}
+              // ★편집을 끝내면 초안을 놓아 준다 — 그때부터 다시 블록이 정본이다
+              //   (카드를 얹거나 AI 가 고치면 그 값이 바로 보여야 한다)
+              onBlur={() => setDraft(null)}
               /* ★`Tab` 으로 **옆 씬의 같은 칸**으로 (v2 index.html:11821-11832).
                   기본 동작(다음 단추로 이동)을 막고 씬 사이를 오간다 — 여러 씬의 태그를
                   이어서 적어 나가는 것이 이 칸의 쓰임이다 */
               onKeyDown={(e) => {
+                // ★`Esc` 로 편집을 끝낸다 (사용자 지시 2026-08-18)
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setDraft(null);
+                  p.onExpand(null);
+                  return;
+                }
                 if (e.key !== "Tab") return;
                 e.preventDefault();
                 p.onStepField(c.id, e.shiftKey ? -1 : 1, "text");
