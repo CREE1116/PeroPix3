@@ -251,9 +251,7 @@ export const en = {
     /** Every scene is locked, so there is nothing to generate (v2 index.html:15905) */
     allLocked: "Every scene is locked, so there is nothing to generate",
     /** What the batch that just finished really cost (see `store/anlasMeter`) */
-    actualSame: "Actual {a} Anlas",
-    actualDiff: "Expected {e}, actual {a} Anlas",
-    actualHint: "The Anlas balance difference across this batch. Generating in another window or topping up can throw it off.",
+    costWrong: "The shown cost did not match. It showed {e} but {a} was charged.",
   },
 
   imgIn: {

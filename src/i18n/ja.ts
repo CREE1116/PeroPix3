@@ -250,9 +250,7 @@ export const ja: Dict = {
     overLimit: "1枚の費用が上限 {a} Anlas を超えています。解像度か steps を下げてください。",
     allLocked: "すべてのシーンがロックされているため生成できません",
     /** 直前のバッチで実際にかかった値 (`store/anlasMeter`) */
-    actualSame: "実際 {a} Anlas",
-    actualDiff: "予想 {e}、実際 {a} Anlas",
-    actualHint: "このバッチの前後の Anlas 残高の差です。別のウィンドウで同時に生成したりチャージするとずれることがあります。",
+    costWrong: "表示された料金と実際が異なりました。{e} と表示されましたが {a} が使われました。",
   },
 
   imgIn: {

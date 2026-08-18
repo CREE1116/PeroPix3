@@ -31,8 +31,6 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
   const t = useI18n((s) => s.t);
   // 구독 상태는 **스토어 하나**가 들고 있다 (업스케일 값 표시도 같은 곳을 본다)
   const sub = useSub((s) => s.sub);
-  /** 방금 끝난 배치가 **실제로 얼마를 썼나.** 잴 수 없었으면 `null` 이라 아무것도 안 뜬다 */
-  const measured = useAnlasMeter((s) => s.measured);
   const { params, set, busy, error, generateAll } = useGen();
   const { progress, phase, cancelAll } = useQueue();
   /** 잔액을 다시 물어본 횟수 — 누를 때마다 아이콘을 **한 바퀴 더** 돌린다 (v2 `refreshAnlasBtn`).
@@ -455,25 +453,6 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
           </span>
         )}
         {cost.encoding > 0 && <span>{t("gen.vibeEncode", { a: cost.encoding })}</span>}
-        {/* ★**실제로 나간 값** — 방금 끝난 배치의 잔액 차이다 (`store/anlasMeter`).
-            같으면 조용히 숫자만, 다르면 눈에 띄게 둘 다 보여 준다. 그 어긋남이 곧
-            우리가 찾던 정보라서다 (감사 D12·D13, `docs/nai-web-reference.md` 9절).
-            ★잴 수 없었던 배치는 여기 아무것도 안 뜬다 (스토어가 `null` 로 둔다). */}
-        {measured && (
-          <span
-            data-anlas-actual={measured.match ? "match" : "diff"}
-            title={t("gen.actualHint")}
-            style={{
-              fontVariantNumeric: "tabular-nums",
-              color: measured.match ? "var(--ink-faint)" : "var(--warn)",
-              fontWeight: measured.match ? 400 : "var(--w-semi)",
-            }}
-          >
-            {measured.match
-              ? t("gen.actualSame", { a: measured.actual })
-              : t("gen.actualDiff", { e: measured.est, a: measured.actual })}
-          </span>
-        )}
         <span style={{ flex: 1 }} />
         <span data-anlas-balance title={sub ? `tier ${sub.tier}` : undefined}>
           Anlas{" "}

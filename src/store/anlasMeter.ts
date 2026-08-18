@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { useSub } from "./sub";
+import { toast } from "./toast";
+import { t } from "../i18n";
 import { judge, type MeterCond } from "../lib/anlasMeter";
 
 /** 실제로 청구된 Anlas. **잔액 차이로 잰다** (사용자 지시 2026-08-18: "실제 청구 알수있는 방향으로").
@@ -8,21 +10,21 @@ import { judge, type MeterCond } from "../lib/anlasMeter";
  *  있는가**만 맡는다: 큐에 넣기 직전에 기준선을 적고(`arm`), 배치가 온전히 끝나면
  *  잔액을 다시 물어 뺀다(`settle`).
  *
- *  ★여기는 **재기만 한다.** `lib/anlas.ts` 의 계산식은 건드리지 않는다. 어긋남이 쌓여
- *    확인되면 그때 사용자가 정한다.
+ *  ★★**어긋남은 「보여 줄 값」이 아니라 결함이다** (사용자 정정 2026-08-18:
+ *    *"항상 예상 anlas가 정확해야함"*). 그래서 화면에 「예상 N, 실제 M」 을 나란히 띄우지
+ *    않는다 — 그렇게 두면 틀린 계산이 **정상 상태처럼** 보인다. 맞을 때는 아무 일도 없고,
+ *    틀렸을 때만 **경고 한 번 + 콘솔에 조건 전부**를 남겨 우리가 식을 고치게 한다.
+ *  ★여기는 **재기만 한다.** `lib/anlas.ts` 의 계산식은 자동으로 안 고친다 — 무엇이 틀렸는지
+ *    사람이 보고 고쳐야 같은 실수가 다시 안 난다.
  *  ★★**잴 수 없으면 아무 말도 하지 않는다.** 틀린 숫자를 보여 주는 것이 안 보여 주는
  *    것보다 나쁘다.
  */
-
-/** 화면이 읽는 것. 마지막으로 **잴 수 있었던** 배치 하나 */
-export type Measured = { est: number; actual: number; match: boolean; cond: MeterCond };
 
 type Armed = { before: number; est: number; cond: MeterCond };
 
 type S = {
   /** 재는 중인 배치. 끝나면 `settle()` 이 소비한다 */
   armed: Armed | null;
-  measured: Measured | null;
   arm: (est: number, cond: MeterCond) => void;
   /** 잴 수 없게 됐다 (보내지 못함·취소·일부 실패) */
   disarm: () => void;
@@ -38,12 +40,8 @@ let measuring = false;
 
 export const useAnlasMeter = create<S>((set, get) => ({
   armed: null,
-  measured: null,
 
   arm(est, cond) {
-    // ★앞 배치의 결과는 여기서 버린다. 새 배치가 도는 동안 옛 숫자를 띄워 두면
-    //   그것이 이번 것으로 읽힌다
-    set({ measured: null });
     // 잔액을 모르면(토큰 없음·통신 실패) 기준선이 없다. 재지 않는다
     const before = useSub.getState().sub?.anlas;
     if (measuring || typeof before !== "number") {
@@ -73,11 +71,14 @@ export const useAnlasMeter = create<S>((set, get) => ({
       }
       const v = judge(armed.before, after, armed.est);
       if (!v.ok) return; // ★잴 수 없었다. 화면에도 콘솔에도 남기지 않는다
-      set({ measured: { est: armed.est, actual: v.actual, match: v.match, cond: armed.cond } });
-      const detail = { est: armed.est, actual: v.actual, before: armed.before, after, ...armed.cond };
-      if (v.match) console.info("[anlas] 예상과 실제가 같습니다", detail);
-      // ★어긋남이 곧 우리가 찾던 정보다. **무엇이 걸려 있었는지**를 함께 찍는다
-      else console.warn("[anlas] 예상과 실제가 다릅니다", detail);
+      if (v.match) return; // 맞았다 = 정상. 아무 일도 일어나지 않는다
+      // ★★여기 왔다는 것은 **요금 계산이 틀렸다는 뜻**이다. 사용자는 화면의 숫자를 믿고
+      //   눌렀으므로 알려 줘야 하고(실제로 돈이 다르게 나갔다), 우리는 고쳐야 한다.
+      //   무엇이 걸려 있었는지를 함께 찍는다 — 그것이 어느 조건에서 틀리는지의 단서다.
+      console.error("[anlas] 요금 계산이 실제 청구와 다릅니다", {
+        est: armed.est, actual: v.actual, before: armed.before, after, ...armed.cond,
+      });
+      toast(t("gen.costWrong", { e: armed.est, a: v.actual }), "warn");
     } finally {
       measuring = false;
     }

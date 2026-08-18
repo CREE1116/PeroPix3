@@ -251,9 +251,8 @@ export const ko: Dict = {
     /** 씬이 있는데 전부 잠겨 있으면 조용히 아무 일도 안 하던 자리 (v2 index.html:15905) */
     allLocked: "모든 씬이 잠겨 있어 생성할 수 없습니다",
     /** ★방금 끝난 배치가 **실제로 나간 값**. 예상과 같으면 숫자만, 다르면 둘 다 (`store/anlasMeter`) */
-    actualSame: "실제 {a} Anlas",
-    actualDiff: "예상 {e}, 실제 {a} Anlas",
-    actualHint: "이 배치 전후의 Anlas 잔액 차이입니다. 다른 창에서 함께 생성하거나 충전하면 값이 어긋날 수 있습니다.",
+    /** ★요금 계산이 틀렸을 때만 뜬다. 맞을 때는 아무것도 안 띄운다 (`store/anlasMeter`) */
+    costWrong: "요금 표시가 실제와 달랐습니다. {e} 로 보였는데 {a} 가 나갔습니다.",
   },
 
   imgIn: {
