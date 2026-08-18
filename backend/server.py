@@ -38,7 +38,7 @@ from agent import App, Tools
 from chats import Chats
 import meta
 import guide as guide_mod
-import tools
+import tools as tools_mod  # ★별칭 필수 — 아래에서 `tools` 라는 이름을 Tools 인스턴스가 가져간다
 import trash
 import migrate_thumbs
 import nai
@@ -1324,6 +1324,10 @@ def _notify(what: str) -> None:
 
 
 app_cmd = App(Q.clients)
+# ★★이 이름이 위의 `import tools` 를 **가린다.** 그래서 모듈 쪽은 `tools_mod` 로 부른다.
+#   섞이면 `AttributeError` 로 **요청 때** 터진다 — 임포트 시점에는 조용하다.
+#   실측 2026-08-18: 이름 변환·EXIF·검열 드롭 썸네일·떨군 파일 읽기 넷이 **첫 커밋부터** 500 이었다.
+#   모듈 함수를 직접 부르는 테스트는 이걸 못 잡는다 (`test_tools.py`). HTTP 로 뚫는 판정이 필요하다.
 tools = Tools(cards, store, files, WS_ROOT, meta, _notify, app_cmd, GUIDE)
 
 
@@ -1831,7 +1835,7 @@ async def tools_convert(body: ToolConvert):
     if not body.items:
         raise HTTPException(400, "그림이 없습니다")
     try:
-        return tools.convert(
+        return tools_mod.convert(
             WS_ROOT,
             [i.model_dump() for i in body.items],
             body.fmt,
@@ -1855,7 +1859,7 @@ class ToolProbe(BaseModel):
 async def tools_probe(body: ToolProbe):
     """변환 목록의 썸네일·크기 — ★**서버가 줄여서 준다.** 앱에는 경로만 오므로
     화면이 그 파일을 가리킬 주소가 없다 (`tools.probe` 주석)."""
-    return tools.probe(WS_ROOT, [i.model_dump() for i in body.items])
+    return tools_mod.probe(WS_ROOT, [i.model_dump() for i in body.items])
 
 
 @app.post("/api/tools/read")
@@ -1863,7 +1867,7 @@ async def tools_read(body: ToolItem):
     """앱 창에 떨군 파일 하나를 통째로 (`tools.read_dropped` 주석).
     ★저장하지 않는다. 읽어서 돌려주고 끝이다."""
     try:
-        return tools.read_dropped(WS_ROOT, body.model_dump())
+        return tools_mod.read_dropped(WS_ROOT, body.model_dump())
     except (ValueError, OSError) as e:
         raise HTTPException(400, str(e)) from e
 
@@ -1872,7 +1876,7 @@ async def tools_read(body: ToolItem):
 async def tools_meta(body: ToolItem):
     """★**밖에서 가져온 그림**도 읽는다. 저장하지 않는다 — 읽고 버린다."""
     try:
-        return {"meta": tools.read_meta(WS_ROOT, body.model_dump())}
+        return {"meta": tools_mod.read_meta(WS_ROOT, body.model_dump())}
     except (ValueError, OSError) as e:
         raise HTTPException(400, str(e))
 
