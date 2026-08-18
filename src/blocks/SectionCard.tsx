@@ -1,6 +1,5 @@
 import { useState, type ReactNode, type PointerEvent } from "react";
 import { useI18n } from "../i18n";
-import { Icon } from "../components/Icon";
 import { dragSourceStyle } from "../cards/dragStore";
 import { FittedImg } from "../cards/FittedImg";
 import { BANNER_BG, BANNER_CUT, BANNER_IMG_W, BANNER_STEP, bannerEmptyFill } from "../cards/banner";
@@ -176,26 +175,11 @@ export function SectionCard({
             {bannerActions}
           </div>
         )}
-        {/* ★★접기 단추를 따로 두지 않는다 (사용자 지시 2026-08-16) — **머리를 누르면 접힌다.**
-            지금 상태만 화살표로 알린다 (누르는 것은 머리 전체라 `pointer-events` 를 끈다).
+        {/* ★★접기에는 **아무 표시도 두지 않는다** (사용자 지시 2026-08-16).
+            머리를 누르면 접힌다. 화살표는 단추가 아니어도 단추처럼 보여서 뺐다 —
+            접혔는지는 몸통이 있고 없고로 안다.
             ★클릭과 끌기는 `useDragSource` 가 가른다: 4px 문턱을 안 넘고 떼면 `onTap`,
               넘으면 덱으로 저장하는 역드래그다 (그쪽 주석). */}
-        {onFold && (
-          <span
-            data-fold={folded ? "folded" : "open"}
-            style={{
-              position: "absolute",
-              right: bannerActions ? 34 : 10,
-              bottom: 8,
-              zIndex: 2,
-              pointerEvents: "none",
-              color: "rgba(255,255,255,0.66)",
-              display: "grid",
-            }}
-          >
-            {folded ? Icon.chevronDown : Icon.chevronUp}
-          </span>
-        )}
       </div>
 
       {/* 내용 — 접으면 배너만 남는다 */}

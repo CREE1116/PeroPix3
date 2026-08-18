@@ -676,9 +676,6 @@ function CardGroup(p: GroupProps) {
               gap: 2,
             }}
           >
-            <span style={{ pointerEvents: "none", color: "rgba(255,255,255,0.6)", display: "grid" }}>
-              {p.folded ? Icon.chevronDown : Icon.chevronUp}
-            </span>
             <button
               data-card-lock={p.card.id}
               onClick={() => p.onPatch({ locked: !p.card.locked })}
@@ -856,15 +853,6 @@ function SceneRow(
           <NameCell name={c.name} onRename={(v) => patchCell({ name: v })} />
           <span style={{ fontSize: 11, color: "var(--ink-ghost)", fontVariantNumeric: "tabular-nums" }}>
             {takes.length}
-          </span>
-          {/* ★접기 단추를 따로 두지 않는다 (사용자 지시 2026-08-16) — **머리를 누르면** 펴진다.
-              지금 상태만 화살표로 알린다 (`pointer-events` 를 꺼서 누르는 것은 머리 전체다). */}
-          <span
-            data-scene-expand={c.id}
-            data-open={expanded ? "" : undefined}
-            style={{ ...iconBtn, pointerEvents: "none", color: "var(--ink-ghost)" }}
-          >
-            {expanded ? Icon.chevronUp : Icon.chevronDown}
           </span>
           <button
             data-scene-lock={c.id}

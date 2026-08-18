@@ -67,7 +67,6 @@ export function PromptPanel({ onThumb }: SectionProps) {
             color: "var(--ink-soft)",
           }}
         >
-          <span style={{ color: "var(--ink-faint)" }}>{preview ? "▾" : "▸"}</span>
           {t("prompt.finalPrompt")}
           <span style={{ fontWeight: 400, color: "var(--ink-faint)" }}>
             {t("prompt.chars", { n: compileBlocks(base).length + compileBlocks(baseUc).length })}
