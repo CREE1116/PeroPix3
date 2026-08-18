@@ -36,6 +36,9 @@ export type GenParams = {
   jpg_quality: number;
   /** ★켜면 알파 LSB 스테가노그래피까지 지운다 (backend/meta.strip) */
   strip_metadata: boolean;
+  /** ★켜면 파일 이름 앞의 **씬 번호를 뺀다** (v2 `exclude_slot_number`).
+   *  번호는 탐색기에서 씬 순서를 만드는 것이라, 순서가 필요 없을 때만 끈다. */
+  exclude_slot_number: boolean;
   /** 시드를 **언제 새로 뽑나** — ★셋 중 하나다 (v2 의 `랜덤/고정/슬롯마다 랜덤` 이관).
    *
    *  ★체크박스 둘로 두지 않는다 (사용자 지적 2026-08-11): 「고정」과 「씬마다 랜덤」을
@@ -122,6 +125,7 @@ const DEFAULT_PARAMS: GenParams = {
   save_format: "png",
   jpg_quality: 95,
   strip_metadata: false,
+  exclude_slot_number: false,
   seed_mode: "round",
 };
 

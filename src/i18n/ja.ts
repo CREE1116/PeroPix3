@@ -253,6 +253,11 @@ export const ja: Dict = {
   },
 
   options: {
+    excludeSlotNo: "ファイル名からシーン番号を外す",
+    catNai: "NAI 設定",
+    catGeneration: "生成",
+    catSave: "保存オプション",
+    catImage: "画像入力",
     seedFixed: "固定",
     seedRound: "ランダム",
     seedScene: "完全ランダム",

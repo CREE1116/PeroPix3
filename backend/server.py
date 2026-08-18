@@ -293,6 +293,8 @@ class GenBody(BaseModel):
     save_format: str = "png"          # png | jpg | webp
     jpg_quality: int = 95
     strip_metadata: bool = False
+    #: 켜면 파일 이름 앞의 씬 번호를 뺀다 (v2 `exclude_slot_number`)
+    exclude_slot_number: bool = False
     # ── 이미지 입력 (5단계) ──
     vibe_transfer: list[dict] = []
     precise_references: list[dict] = []
@@ -1018,7 +1020,9 @@ async def _generate_one(body: GenBody) -> dict:
     else:
         data = meta.write(png, meta.read_raw(png), fmt, body.jpg_quality, original_chunks)
 
-    path = store.next_name(d, f"{body.cell_no:03d}" if is_set and body.cell_no else "", fmt)
+    # ★씬 번호는 탐색기에서 순서를 만든다 — 뺄지는 사용자가 정한다 (v2 `exclude_slot_number`)
+    lead = "" if body.exclude_slot_number else (f"{body.cell_no:03d}" if is_set and body.cell_no else "")
+    path = store.next_name(d, lead, fmt)
     path.write_bytes(data)
     rel = store.rel(body.workspace, path)
 

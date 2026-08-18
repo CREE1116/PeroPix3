@@ -253,6 +253,11 @@ export const ko: Dict = {
   },
 
   options: {
+    excludeSlotNo: "파일 이름에서 씬 번호 빼기",
+    catNai: "NAI 설정",
+    catGeneration: "생성",
+    catSave: "저장 옵션",
+    catImage: "이미지 입력",
     seedFixed: "고정",
     seedRound: "랜덤",
     seedScene: "완전 랜덤",

@@ -253,6 +253,11 @@ export const en = {
   },
 
   options: {
+    excludeSlotNo: "Drop the scene number from filenames",
+    catNai: "NAI settings",
+    catGeneration: "Generation",
+    catSave: "Save options",
+    catImage: "Image input",
     seedFixed: "Fixed",
     seedRound: "Random",
     seedScene: "Per scene",
