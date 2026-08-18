@@ -57,8 +57,8 @@ type S = {
   enqueue: (base: Record<string, unknown>, items?: Record<string, unknown>[], count?: number) => Promise<void>;
   /** 이 탭의 대기 목록 (슬롯 순서대로). 맨 앞이 **지금 만드는 중**이다 */
   pendingOf: (tabId: string) => Pending[];
-  cancel: () => Promise<void>;
-  clear: () => Promise<void>;
+  /** ★취소는 **하나**다 — 지금 나간 장만 남기고 나머지를 전부 뺀다 (사용자 결정 2026-08-18) */
+  cancelAll: () => Promise<void>;
 };
 
 const KEY = "peropix.ws_client_id";
@@ -186,12 +186,12 @@ export const useQueue = create<S>((set, get) => ({
   },
   pendingOf: (tabId) => get().pending.filter((p) => p.tabId === tabId),
 
-  async cancel() {
-    await api("/api/cancel-current", { method: "POST" });
-  },
-  async clear() {
-    set({ pending: [] });
-    await api("/api/clear-queue", { method: "POST" });
+  /** ★★**대기 칸을 여기서 비우지 않는다** (감사 D5). 예전 `clear()` 는 부르자마자
+   *  `pending` 을 통째로 비웠는데, 서버는 이미 나간 한 장을 끝까지 받아 낸다 —
+   *  **카드는 사라지는데 그림은 계속 나오는** 상태가 됐다.
+   *  실제로 멈춘 것이 몇 장인지는 서버만 알고, `queue_cancelled` 가 그것을 실어 온다. */
+  async cancelAll() {
+    await api("/api/cancel-queue", { method: "POST" });
   },
 }));
 
@@ -336,13 +336,24 @@ function handle(m: Record<string, any>, set: Setter, get: () => S) {
       // ★취소는 **끝난 문구를 안 남긴다** — v2 도 상태를 「준비」로 되돌리기만 했다
       if ((m.progress?.queue_length ?? 0) === 0) settleBatch(true, set, get);
       break;
-    case "queue_cleared":
+    // ★취소 — **실제로 멈춘 것만** 걷어낸다 (감사 D5).
+    //   `remaining` 은 아직 올 장 수다: 돌고 있었으면 지금 NAI 로 나간 한 장, 아니면 0.
+    //   대기 칸은 서버가 만드는 순서 그대로 쌓이므로(`enqueue`), 남길 것은 **맨 앞** 것이다.
+    case "queue_cancelled": {
       takeProgress(m.progress, set);
-      // 대기분만 사라진 것이라 대기 카드는 건드리지 않는다 (`clear()` 가 이미 비웠다).
-      // 다만 배치 회계는 여기서 초기화한다 (v2 `index.html:16542-16544`)
-      batchOk = 0;
-      batchErr = 0;
+      const keep = Math.max(0, Number(m.remaining ?? 0));
+      const pend = get().pending;
+      if (pend.length > keep) set({ pending: pend.slice(0, keep) });
+      // 남은 장이 없으면 여기서 배치가 끝난 것이다 — 돌고 있으면 그 장이 온 뒤
+      // `job_cancelled` 가 마무리한다 (거기서도 같은 `settleBatch` 를 부른다)
+      if (keep === 0) settleBatch(true, set, get);
+      else {
+        // 배치 회계만 되돌린다 (v2 `index.html:16542-16544`)
+        batchOk = 0;
+        batchErr = 0;
+      }
       break;
+    }
     // 하트비트 응답 — 받은 것 자체가 생존 신호라 따로 할 일이 없다
     case "pong":
       break;

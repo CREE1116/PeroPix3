@@ -228,7 +228,7 @@ export function WorkspaceGate({ onClose }: { onClose?: () => void } = {}) {
                     if (
                       await ask({
                         title: t("gate.deleteConfirm", { name: w.name }),
-                        body: t("common.cannotUndo"),
+                        body: t("common.toTrash"),
                         ok: t("common.delete"),
                         cancel: t("common.cancel"),
                         danger: true,

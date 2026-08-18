@@ -66,7 +66,7 @@ export function Gallery() {
     if (
       !(await ask({
         title: t("gallery.removeConfirm", { n: picked.size }),
-        body: t("common.cannotUndo"),
+        body: t("common.toTrash"),
         ok: t("common.delete"),
         cancel: t("common.cancel"),
         danger: true,

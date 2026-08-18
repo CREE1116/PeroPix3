@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useI18n } from "../i18n";
-import { api, backendUrl } from "../lib/backend";
+import { api, backendUrl, type TrashEntry } from "../lib/backend";
 import { MAX_VIBES, pushVibe } from "../store/imageInput";
 import { ask } from "../store/ask";
-import { toast } from "../store/toast";
+import { toast, undoToast } from "../store/toast";
 import { Icon } from "../components/Icon";
 
 type Entry = {
@@ -93,8 +93,23 @@ export function VibeCache({ onClose }: { onClose: () => void }) {
       return;
     setBusy(it.file);
     try {
-      await api(`/api/vibe-cache/${encodeURIComponent(it.file)}`, { method: "DELETE" });
+      // ★휴지통을 거친다 (D7). 여기는 **Anlas 가 든 자리**라 되돌리기가 특히 중요하다 —
+      //   캐시 키까지 같이 되살려야 다음 생성이 같은 그림을 다시 굽지 않는다.
+      const r = await api<{ trashed: TrashEntry[]; keys: string[] }>(
+        `/api/vibe-cache/${encodeURIComponent(it.file)}`,
+        { method: "DELETE" },
+      );
       setItems((xs) => (xs ?? []).filter((x) => x.file !== it.file));
+      undoToast(t("common.trashed", { n: 1 }), t("common.undo"), async () => {
+        await api("/api/vibe-cache/restore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ entries: r.trashed, keys: r.keys }),
+        });
+        const back = await api<{ items: Entry[] }>("/api/vibe-cache");
+        setItems(back.items);
+        toast(t("common.restored"));
+      });
     } catch (e) {
       toast(String(e), "warn");
     } finally {

@@ -33,7 +33,7 @@ export const ja: Dict = {
     loading: "読み込み中…",
     emptyLine1: "ワークスペースがまだありません。",
     emptyLine2: "上から最初のワークスペースを作成してください。",
-    deleteConfirm: "「{name}」を削除しますか？\n生成した画像も一緒に消えます。",
+    deleteConfirm: "「{name}」を削除しますか？\n生成した画像も一緒にごみ箱へ移動します。",
     delete: "削除",
     opened: "タブで開いている",
     here: "現在表示中",
@@ -198,15 +198,15 @@ export const ja: Dict = {
     err429: "NAI にリクエストを制限されました。しばらくして再試行してください。",
     errOther: "生成失敗: {m}",
     allDone: "{n}枚完了",
-    /** ウィンドウが非アクティブのときタイトルに出る（タスクバー・Alt+Tab） */
-    titleDone: "生成完了 · PeroPix",
+    /** ウィンドウが非アクティブのときタイトルに出る（タスクバー・Alt+Tab）。
+     *  ★v2 と同じ形（`PeroPix ✦`, index.html:17520）。ウィンドウタイトルは文字列しか
+     *    入らない場所なので SVG が使えず、記号を使う（ユーザー指示 2026-08-18）。 */
+    titleDone: "PeroPix ✦",
     stDone: "完了",
     stFailed: "失敗",
     stPartial: "完了（一部失敗）",
-    cancel: "停止",
-    cancelHint: "現在の1枚を終えて止まります",
-    clear: "キューを空に",
-    clearHint: "待機中をすべて外します",
+    cancel: "キャンセル",
+    cancelHint: "生成中の1枚だけ終えて、残りはすべてキャンセルします",
     waiting: "待機 {n}",
   },
 
@@ -224,6 +224,8 @@ export const ja: Dict = {
     noTarget: "選んだものはすべて強化済みです",
     scaleAdjusted: "{n}枚は {s}倍が使えないため低い倍率で実行します",
     measuring: "サイズを読み込み中…",
+    /** 強化はその画像のメタデータで回る。ない画像は今の画面の値になる */
+    noMeta: "{n}枚は生成情報が残っていないため、今の画面のプロンプト・設定で実行します",
   },
 
   /** アップスケール — NAI が 4 倍に拡大する（描き直す強化とは別） */
@@ -291,7 +293,7 @@ export const ja: Dict = {
     normalizeHint: "強度の合計が1を超えると割ってから送ります。NAI公式ウェブも既定でオンです。",
     inpaintStrengthHint: "1なら塗った場所を完全に描き直します。下げるとその分だけ元が残ります。",
     cacheDelete: "削除",
-    cacheDeleteBody: "焼いたエンコードを消します。同じ画像をまた使うにはAnlasを払って焼き直しになります。",
+    cacheDeleteBody: "焼いたエンコードをごみ箱へ移動します。24時間を過ぎると完全に消え、その後は同じ画像にAnlasを払って焼き直しになります。",
     cacheNoData: "この項目にはエンコードがありません。",
     vibeFull: "バイブは{n}枚まで入れられます。",
     vibeFileAdded: "バイブファイルを追加しました。",
@@ -411,7 +413,8 @@ export const ja: Dict = {
     token: "NAI トークン",
     tokenSet: "保存済み",
     tokenEmpty: "pst-… を貼り付け",
-    tokenHint: "保存した値は再表示しません。",
+    tokenHint:
+      "novelai.net にログインし、Account Settings の Get Persistent API Token で発行します。保存した値は再表示しません。",
     engineCli: "ローカル CLI",
     engineCliSub: "{n}件 利用可",
     engineApi: "API キー",
@@ -516,7 +519,7 @@ export const ja: Dict = {
     colDate: "更新日時",
     folderMenu: "フォルダー操作",
     deleteFolderConfirm: "フォルダー {s} を削除しますか?",
-    deleteFolderBody: "中身ごと削除されます。元に戻せません。",
+    deleteFolderBody: "中身ごとごみ箱へ移動します。24時間以内なら元に戻せます。",
     moveIntoSelf: "自分の下のフォルダーへは移動できません",
     root: "出力フォルダ",
     count: "{n}枚",
@@ -541,6 +544,9 @@ export const ja: Dict = {
     found: "{n}箇所",
     targets: "検出対象",
     noClasses: "モデルを選ぶと検出対象が表示されます。",
+    manualBox: "手動",
+    needTarget: "検出対象を一つ以上選んでください。",
+    needBox: "追加されたボックスがありません。",
     confHint: "右の数字がその種類のしきい値です。下げるほど多く見つかり、誤検出も増えます。",
     floor: "低信頼度を隠す",
     floorHint: "表示だけを絞ります。実際に隠すかは上の種類別しきい値が決めます。",
@@ -654,6 +660,11 @@ export const ja: Dict = {
     cancel: "キャンセル",
     cannotUndo: "元に戻せません。",
     close: "閉じる",
+    toTrash: "ごみ箱へ移動します。24時間を過ぎると完全に消えます。",
+    trashed: "{n}件をごみ箱へ移動しました。",
+    removed: "削除しました。",
+    restored: "元に戻しました。",
+    undo: "元に戻す",
   },
 
   scenes: {
@@ -665,6 +676,7 @@ export const ja: Dict = {
     destLabel: "シーンプロンプトを",
     destBase: "ベースへ",
     destChar: "キャラクター · {name}へ",
+    destAll: "キャラクター全員へ",
     sizeHint: "コマ {s}px · Ctrl+ホイールで調整",
     cardLabel: "シーンセット · {n}",
     addCard: "シーンカード追加",
@@ -681,6 +693,8 @@ export const ja: Dict = {
     pipResize: "ドラッグでサイズ調整",
     pipMove: "ドラッグで移動",
     tabHint: "Tab で次のシーン、Shift+Tab で前のシーン",
+    dragScene: "ドラッグで並べ替え。別のカードへも移せます",
+    dragCard: "ドラッグでカードの並べ替え",
   },
   slots: {
     textPlaceholder: "タグをカンマ区切りで。1.3::強調::",
@@ -778,7 +792,7 @@ export const ja: Dict = {
     selectAll: "すべて選択",
     clear: "選択解除",
     remove: "削除",
-    removeConfirm: "{n}枚を削除します。生成物は Anlas を使った原本で、元に戻せません。",
+    removeConfirm: "{n}枚を削除しますか?",
     moveTo: "移動先",
     rootFolder: "最上位",
     noMeta: "この画像にメタデータがありません",

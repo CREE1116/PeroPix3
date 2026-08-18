@@ -77,7 +77,7 @@ export function FileManager({ onConvert }: { onConvert: () => void }) {
     if (
       !(await ask({
         title: t("files.deleteConfirm", { n: picked.size }),
-        body: t("common.cannotUndo"),
+        body: t("common.toTrash"),
         ok: t("common.delete"),
         cancel: t("common.cancel"),
         danger: true,

@@ -51,7 +51,10 @@ export function ImageInputPanel() {
   const importVibeText = (text: string, name: string) => {
     try {
       const v = parseNaiVibeFile(text, name);
-      if (!pushVibe(v)) return toast(t("imgIn.vibeFull", { n: MAX_VIBES }), "warn");
+      if (!pushVibe(v)) {
+        toast(t("imgIn.vibeFull", { n: MAX_VIBES }), "warn");
+        return;
+      }
       toast(v.encoded ? t("imgIn.vibeFileCached") : t("imgIn.vibeFileAdded"));
     } catch {
       toast(t("imgIn.vibeFileBad"), "warn");
@@ -72,7 +75,10 @@ export function ImageInputPanel() {
   /** 참조·베이스도 같은 길로 받는다. 그림만 오므로 `data` 하나면 된다 */
   const addRefPath = async (path: string) => {
     const r = await readDropped(path).catch(() => null);
-    if (!r?.data) return toast(t("imgIn.dropBad"), "warn");
+    if (!r?.data) {
+      toast(t("imgIn.dropBad"), "warn");
+      return;
+    }
     s.addRef({
       image: await processReference(r.data),
       preview: r.data,
@@ -84,7 +90,10 @@ export function ImageInputPanel() {
   };
   const addBasePath = async (path: string) => {
     const r = await readDropped(path).catch(() => null);
-    if (!r?.data) return toast(t("imgIn.dropBad"), "warn");
+    if (!r?.data) {
+      toast(t("imgIn.dropBad"), "warn");
+      return;
+    }
     s.setBase(r.data, r.name);
     await fitSizeToBase(r.data);
   };
@@ -182,12 +191,16 @@ export function ImageInputPanel() {
               <option value="character">{t("imgIn.modeChar")}</option>
               <option value="style">{t("imgIn.modeStyle")}</option>
             </select>
+            {/* ★값을 누르면 직접 입력이 된다. 슬라이더는 0~1 이지만 **1 을 넘겨 넣을 수 있다**
+                (v2 `.clickable-value`, index.html:18833-18866). 그쪽도 슬라이더만 클램프하고
+                실제 값은 그대로 두었다 */}
             <Slide
               label={t("imgIn.strength")}
               value={r.strength}
               min={0}
               max={1}
               step={0.05}
+              editable
               onChange={(x) => s.patchRef(i, { strength: x })}
             />
             <Slide
@@ -196,6 +209,7 @@ export function ImageInputPanel() {
               min={0}
               max={1}
               step={0.05}
+              editable
               onChange={(x) => s.patchRef(i, { fidelity: x })}
             />
           </Card>
@@ -259,24 +273,27 @@ export function ImageInputPanel() {
                 data-base-strength="inpaint"
               />
             ) : (
+              // ★범위는 v2 그대로다 (`baseImageStrength`, index.html:9249 · 0~1 step .05).
+              //   사용자 결정 2026-08-18: 조용히 바뀌어 있던 것을 되돌린다.
               <Slide
                 label={t("imgIn.strength")}
                 value={s.baseStrength}
-                min={0.01}
-                max={0.99}
-                step={0.01}
+                min={0}
+                max={1}
+                step={0.05}
                 onChange={(x) => s.patchBase({ baseStrength: x })}
                 data-base-strength="img2img"
               />
             )}
             {/* ★노이즈는 이어 그리기에만 붙는다 — 인페인트에는 NAI 가 안 받는다 (nai.py) */}
             {s.baseMode === "img2img" && (
+              // ★step 도 v2 그대로 .05 다 (`baseImageNoise`, index.html:9253)
               <Slide
                 label={t("imgIn.noise")}
                 value={s.baseNoise}
                 min={0}
                 max={1}
-                step={0.01}
+                step={0.05}
                 onChange={(x) => s.patchBase({ baseNoise: x })}
               />
             )}
@@ -574,6 +591,7 @@ function Slide({
   max,
   step,
   onChange,
+  editable,
   ...rest
 }: {
   label: string;
@@ -582,6 +600,8 @@ function Slide({
   max: number;
   step: number;
   onChange: (v: number) => void;
+  /** 값을 눌러 **슬라이더 범위 밖의 수**를 직접 넣을 수 있게 한다 (v2 `.clickable-value`) */
+  editable?: boolean;
 } & Record<string, unknown>) {
   return (
     <label
@@ -591,15 +611,99 @@ function Slide({
       <span style={{ width: 54, color: "var(--ink-faint)" }}>{label}</span>
       <input
         type="range"
-        value={value}
+        // ★손잡이는 범위 안에 묶는다. 값이 1 을 넘어도 슬라이더는 끝에 선다 (v2 와 같다)
+        value={Math.min(max, Math.max(min, value))}
         min={min}
         max={max}
         step={step}
         onChange={(e) => onChange(Number(e.target.value))}
         style={{ flex: 1 }}
       />
-      <span style={{ width: 30, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{value}</span>
+      {editable ? (
+        <ValueBox value={value} step={step} onCommit={onChange} />
+      ) : (
+        <span style={{ width: 30, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{value}</span>
+      )}
     </label>
+  );
+}
+
+/** 슬라이더 옆 숫자. 누르면 입력칸이 되어 **범위 밖의 값도** 넣을 수 있다.
+ *
+ *  ★v2 의 Precise Reference 가 그랬다 (index.html:18833-18866): 슬라이더는 0~1 로 묶어 두고
+ *    참조 강도만 1 을 넘겨 넣을 수 있었다. 옮기면서 빠져 있던 것을 되돌린다
+ *    (사용자 결정 2026-08-18). */
+function ValueBox({
+  value,
+  step,
+  onCommit,
+}: {
+  value: number;
+  step: number;
+  onCommit: (v: number) => void;
+}) {
+  const [edit, setEdit] = useState(false);
+  const [text, setText] = useState(String(value));
+  /** Esc 로 나갈 때는 반영하지 않는다. blur 가 그 뒤에 오므로 표식이 필요하다 */
+  const cancel = useRef(false);
+
+  if (!edit)
+    return (
+      <span
+        data-slide-value
+        // ★label 안이라 그냥 두면 클릭이 슬라이더로 넘어간다
+        onClick={(e) => {
+          e.preventDefault();
+          setText(String(value));
+          setEdit(true);
+        }}
+        style={{
+          width: 30,
+          textAlign: "right",
+          fontVariantNumeric: "tabular-nums",
+          color: "var(--accent)",
+          cursor: "pointer",
+        }}
+      >
+        {value}
+      </span>
+    );
+
+  return (
+    <input
+      data-slide-input
+      type="number"
+      autoFocus
+      step={step}
+      value={text}
+      onClick={(e) => e.preventDefault()}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => {
+        if (!cancel.current) {
+          const v = parseFloat(text);
+          onCommit(Number.isFinite(v) ? v : value);
+        }
+        cancel.current = false;
+        setEdit(false);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        if (e.key === "Escape") {
+          cancel.current = true;
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+      style={{
+        width: 44,
+        textAlign: "right",
+        fontSize: "inherit",
+        padding: "1px 3px",
+        borderRadius: "var(--r-1)",
+        border: "1px solid var(--accent)",
+        background: "var(--panel)",
+        color: "var(--ink)",
+      }}
+    />
   );
 }
 

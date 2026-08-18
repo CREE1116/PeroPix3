@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { useGen } from "../store/gen";
-import { useWs, takesOf, allScenes } from "../store/workspace";
+import { useWs, takesOf, takesOfScene, allCells, allScenes } from "../store/workspace";
 import { SceneLane } from "./SceneLane";
 import { useSceneFocus } from "../store/sceneFocus";
 import { useUi } from "../store/ui";
@@ -664,10 +664,16 @@ function ScenePreview() {
    *    오른쪽(더 오래된 것)으로 간다. 저장 순서로 세면 줄과 반대로 움직인다
    *    (싱글 쪽에서 한 번 밟은 함정이다). */
   const tab = activeTab();
-  const scene = tab?.kind === "set" ? allScenes(tab).find((x) => x.cell.id === cell) : null;
-  const shown = scene
-    ? [...takesOf(records, tab!, scene.cell)].filter((r) => !isDeleted(r.file)).reverse()
-    : [];
+  const setTab = tab?.kind === "set" ? tab : null;
+  const scene = setTab ? allScenes(setTab).find((x) => x.cell.id === cell) : null;
+  // ★씬 줄과 **같은 창구**로 고른다 — 갈 씬이 없는 결과는 첫 씬이 받으므로(감사 D6),
+  //   여기서 `takesOf` 를 쓰면 줄에는 보이는 그림을 휠로 못 넘긴다
+  const shown =
+    setTab && scene
+      ? [...takesOfScene(records, setTab, allCells(setTab), scene.cell)]
+          .filter((r) => !isDeleted(r.file))
+          .reverse()
+      : [];
   const step = (d: 1 | -1) => {
     if (shown.length < 2) return;
     const i = shown.findIndex((r) => r.file === file);

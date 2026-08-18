@@ -33,7 +33,7 @@ export const en = {
     loading: "Loading…",
     emptyLine1: "No workspaces yet.",
     emptyLine2: "Create your first one above to get started.",
-    deleteConfirm: 'Delete "{name}"?\nIts generated images will be removed too.',
+    deleteConfirm: 'Delete "{name}"?\nIts generated images go to the trash too.',
     delete: "Delete",
     opened: "Open in a tab",
     here: "Currently viewing",
@@ -198,15 +198,15 @@ export const en = {
     err429: "NAI is rate limiting. Try again shortly.",
     errOther: "Generation failed: {m}",
     allDone: "{n} images done",
-    /** Shown in the window title while the window is not focused (taskbar, Alt+Tab) */
-    titleDone: "Generation done · PeroPix",
+    /** Shown in the window title while the window is not focused (taskbar, Alt+Tab).
+     *  ★Same shape as v2 (`PeroPix ✦`, index.html:17520). A window title takes plain text
+     *    only, so no SVG can go here and a glyph is used instead (user, 2026-08-18). */
+    titleDone: "PeroPix ✦",
     stDone: "Done",
     stFailed: "Failed",
     stPartial: "Done (some failed)",
-    cancel: "Stop",
-    cancelHint: "Stop after the current image",
-    clear: "Clear queue",
-    clearHint: "Drop everything still waiting",
+    cancel: "Cancel",
+    cancelHint: "Finish the image being made and cancel everything else",
     waiting: "{n} waiting",
   },
 
@@ -224,6 +224,8 @@ export const en = {
     noTarget: "Everything selected has been enhanced already",
     scaleAdjusted: "{n} cannot use {s}x and will run at a lower scale",
     measuring: "Reading sizes…",
+    /** Enhance runs on each image's own metadata. Images without it fall back to the screen. */
+    noMeta: "{n} have no saved generation info, so they use the prompt and settings on screen",
   },
 
   /** Upscale — NAI enlarges 4x (unlike Enhance, nothing is redrawn) */
@@ -292,7 +294,7 @@ export const en = {
     normalizeHint: "If the strengths add up to more than 1, they are divided before sending. The official NAI web app keeps this on by default.",
     inpaintStrengthHint: "At 1 the painted area is drawn from scratch. Lower it to keep more of the original.",
     cacheDelete: "Delete",
-    cacheDeleteBody: "This removes the baked encoding. Using the same image again costs Anlas to bake it a second time.",
+    cacheDeleteBody: "This sends the baked encoding to the trash. It is gone for good after 24 hours, and after that the same image costs Anlas to bake again.",
     cacheNoData: "This entry has no encoding.",
     vibeFull: "You can add up to {n} vibes.",
     vibeFileAdded: "Vibe file added.",
@@ -412,7 +414,8 @@ export const en = {
     token: "NAI token",
     tokenSet: "Saved. Paste a new one to replace it",
     tokenEmpty: "Paste pst-…",
-    tokenHint: "From novelai.net after signing in. The saved value is never shown again.",
+    tokenHint:
+      "Sign in at novelai.net, then open Account Settings and use Get Persistent API Token. The saved value is never shown again.",
     engineCli: "Local CLI",
     engineCliSub: "{n} available",
     engineApi: "API key",
@@ -517,7 +520,7 @@ export const en = {
     colDate: "Modified",
     folderMenu: "Folder actions",
     deleteFolderConfirm: "Delete the folder {s}?",
-    deleteFolderBody: "Everything inside is deleted with it. This cannot be undone.",
+    deleteFolderBody: "Everything inside goes to the trash with it. You can undo within 24 hours.",
     moveIntoSelf: "A folder cannot move into itself",
     root: "Output folder",
     count: "{n} images",
@@ -542,6 +545,9 @@ export const en = {
     found: "{n} spots",
     targets: "Look for",
     noClasses: "Pick a model to see what it can find.",
+    manualBox: "Manual",
+    needTarget: "Pick at least one thing to find.",
+    needBox: "No boxes have been added.",
     confHint: "The number on the right is that class's threshold. Lower finds more, including more false ones.",
     floor: "Hide low confidence",
     floorHint: "This only filters what you see. What gets covered is set by the per class thresholds above.",
@@ -655,6 +661,11 @@ export const en = {
     cancel: "Cancel",
     cannotUndo: "This cannot be undone.",
     close: "Close",
+    toTrash: "Goes to the trash. It is gone for good after 24 hours.",
+    trashed: "Moved {n} item(s) to the trash.",
+    removed: "Deleted.",
+    restored: "Restored.",
+    undo: "Undo",
   },
 
   scenes: {
@@ -666,6 +677,7 @@ export const en = {
     destLabel: "Scene prompt goes to",
     destBase: "Base",
     destChar: "Character · {name}",
+    destAll: "All characters",
     sizeHint: "Cells {s}px · Ctrl and wheel to resize",
     cardLabel: "SCENE SET · {n}",
     addCard: "Add scene card",
@@ -682,6 +694,8 @@ export const en = {
     pipResize: "Drag to resize",
     pipMove: "Drag to move",
     tabHint: "Tab for the next scene, Shift+Tab for the previous one",
+    dragScene: "Drag to reorder. You can also drop it on another card",
+    dragCard: "Drag to reorder cards",
   },
   slots: {
     textPlaceholder: "Comma-separated tags. 1.3::emphasis::",
@@ -779,7 +793,7 @@ export const en = {
     selectAll: "Select all",
     clear: "Clear",
     remove: "Delete",
-    removeConfirm: "Delete {n} image(s)? Generated images cost Anlas and cannot be recovered.",
+    removeConfirm: "Delete {n} image(s)?",
     moveTo: "Move to",
     rootFolder: "Top level",
     noMeta: "No metadata in this image",

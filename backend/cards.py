@@ -22,6 +22,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import trash
+
 KINDS = ("styles", "characters", "posesets")
 
 _ID_OK = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -75,13 +77,20 @@ class Cards:
         tmp.replace(p)
         return card
 
-    def delete(self, kind: str, cid: str) -> None:
+    def delete(self, kind: str, cid: str) -> dict:
         # ★그림은 지우지 않는다 — 같은 tid 를 배너나 덱 커버가 함께 쓰고 있을 수 있다.
         #   공유하는 바이트를 한쪽 사정으로 지우면 다른 쪽이 조용히 깨진다.
         #   고아가 된 고정 썸네일은 수십 KB 짜리라 그냥 두는 편이 싸다.
+        # ★★카드도 **휴지통을 거친다** (사용자 결정 2026-08-18, v2-port-audit D7) —
+        #   사람이 지은 캐릭터·그림체라, 잘못 눌렀을 때 되돌릴 길이 있어야 한다.
         p = self._path(kind, cid)
-        if p.exists():
-            p.unlink()
+        if not p.exists():
+            return {"deleted": [], "trashed": []}
+        r = trash.send_at(self.root, [f"{kind}/{cid}.json"])
+        return {"deleted": [m["file"] for m in r["moved"]], "trashed": r["moved"]}
+
+    def restore(self, entries: list[dict]) -> dict:
+        return trash.restore_at(self.root, entries)
 
     # ── 썸네일 (카드 앞면 = 사용자 생성물) ─────────────────────
     # ★그림 바이트는 여기 없다. 공용 고정 썸네일 저장소(thumbs.Pins)에 하나만 있고,

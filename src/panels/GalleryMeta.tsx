@@ -6,6 +6,7 @@ import { useGallery, type ImageMeta } from "../store/gallery";
 import { CHAR_COLORS, usePrompt, type Char } from "../store/prompt";
 import { useImageInput } from "../store/imageInput";
 import { useUi } from "../store/ui";
+import { metaParams } from "../lib/metaApply";
 
 /** 그림 정보 — 우 패널. 고른 **한 장**의 메타데이터를 보여주고, 프롬프트로 되돌린다.
  *
@@ -179,20 +180,15 @@ export function applyMeta(m: ImageMeta, what: "prompt" | "all" = "all") {
   if (what === "prompt") return;
 
   // 설정 — 있는 것만 덮는다. 없는 값을 기본값으로 되돌리면 사용자가 잡아 둔 것이 날아간다.
-  if (m.steps !== undefined) g.set("steps", m.steps);
-  if (m.cfg !== undefined) g.set("cfg", m.cfg);
-  if (m.sampler) g.set("sampler", m.sampler);
-  if (m.scheduler) g.set("scheduler", m.scheduler);
+  // ★어느 필드가 어느 설정인가는 `lib/metaApply` **하나**가 정한다 — 강화도 같은 표를 쓴다
+  //   (`EnhanceDialog`, v2 `buildEnhanceRequest`). 두 벌이면 "이 그림 설정대로"가 두 화면에서
+  //   조용히 달라진다.
+  useGen.setState({ params: { ...useGen.getState().params, ...metaParams(m) } });
+  // ★해상도·시드는 **여기서만** 되돌린다 (그 그림을 재현하는 자리라서). 강화는 원본 크기 ×
+  //   배율과 화면의 시드로 돈다 — `lib/metaApply` 머리 주석.
   if (m.width !== undefined) g.set("width", m.width);
   if (m.height !== undefined) g.set("height", m.height);
   if (m.seed !== undefined) g.set("seed", m.seed);
-  // ★서버가 정규화해 준 값들 (backend/meta.py). 프롬프트에서 퀄리티 태그를, 네거티브에서
-  //   UC 프리셋을 이미 떼어 냈으므로, 그 둘을 **설정으로 되돌려야** 다시 생성했을 때 같아진다.
-  //   빠뜨리면 프롬프트만 짧아지고 태그가 영영 사라진다.
-  if (m.uc_preset) g.set("uc_preset", m.uc_preset);
-  if (m.quality_tags !== undefined) g.set("quality_tags", m.quality_tags);
-  if (m.variety_plus !== undefined) g.set("variety_plus", m.variety_plus);
-  if (m.nai_model) g.set("model", m.nai_model);
   // ★시드를 되살렸으면 **랜덤을 끈다** — 안 끄면 다음 생성이 새 시드로 굴러 재현이 안 된다
   if (m.seed !== undefined) g.set("seed_mode", "fixed");
 

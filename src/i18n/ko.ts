@@ -33,7 +33,7 @@ export const ko: Dict = {
     loading: "로딩 중…",
     emptyLine1: "아직 만든 워크스페이스가 없습니다.",
     emptyLine2: "위에서 첫 워크스페이스를 만들어 시작하세요.",
-    deleteConfirm: '"{name}" 을 삭제할까요?\n생성물도 함께 사라집니다.',
+    deleteConfirm: '"{name}" 을 삭제할까요?\n생성물도 함께 휴지통으로 갑니다.',
     delete: "삭제",
     opened: "탭으로 열려 있음",
     here: "지금 보고 있음",
@@ -198,15 +198,15 @@ export const ko: Dict = {
     err429: "NAI 가 요청을 제한했습니다. 잠시 뒤 다시 시도해 주세요.",
     errOther: "생성 실패: {m}",
     allDone: "생성 {n}장 완료",
-    /** 창을 안 보고 있을 때 창 제목에 뜬다 (작업 표시줄·Alt+Tab) */
-    titleDone: "생성 완료 · PeroPix",
+    /** 창을 안 보고 있을 때 창 제목에 뜬다 (작업 표시줄·Alt+Tab).
+     *  ★v2 와 같은 모양이다 (`PeroPix ✦`, index.html:17520). 창 제목은 문자열만 들어가는
+     *    자리라 SVG 를 못 넣는다. 그때는 차선책으로 기호를 쓴다 (사용자 지시 2026-08-18). */
+    titleDone: "PeroPix ✦",
     stDone: "완료",
     stFailed: "실패",
     stPartial: "완료 (일부 실패)",
-    cancel: "중단",
-    cancelHint: "지금 장을 마치고 멈춥니다",
-    clear: "큐 비우기",
-    clearHint: "대기 중인 것을 전부 뺍니다",
+    cancel: "취소",
+    cancelHint: "지금 만드는 한 장만 마치고 나머지는 전부 취소합니다",
     waiting: "대기 {n}",
   },
 
@@ -224,6 +224,8 @@ export const ko: Dict = {
     noTarget: "고른 것이 전부 이미 강화한 그림입니다",
     scaleAdjusted: "{n}장은 {s}배를 쓸 수 없어 낮은 배율로 나갑니다",
     measuring: "크기 읽는 중…",
+    /** 강화는 그 그림의 메타데이터로 돈다. 없는 그림은 지금 화면 값으로 떨어진다 */
+    noMeta: "{n}장은 저장된 생성 정보가 없어 지금 화면의 프롬프트·설정으로 돕니다",
   },
 
   /** 업스케일 — NAI 가 4배로 키운다 (다시 그리는 인핸스와 다르다) */
@@ -292,7 +294,7 @@ export const ko: Dict = {
     normalizeHint: "강도 합이 1을 넘으면 나눠서 보냅니다. NAI 공식 웹도 기본으로 켜 둡니다.",
     inpaintStrengthHint: "1이면 칠한 자리를 완전히 새로 그립니다. 낮추면 원본이 그만큼 남습니다.",
     cacheDelete: "지우기",
-    cacheDeleteBody: "이 인코딩을 지웁니다. 같은 그림을 다시 쓰려면 Anlas를 내고 다시 구워야 합니다.",
+    cacheDeleteBody: "이 인코딩을 휴지통으로 보냅니다. 24시간이 지나면 완전히 사라지고, 그 뒤에 같은 그림을 다시 쓰려면 Anlas를 내고 다시 구워야 합니다.",
     cacheNoData: "이 항목에는 인코딩이 없습니다.",
     vibeFull: "바이브는 {n}장까지 넣을 수 있습니다.",
     vibeFileAdded: "바이브 파일을 넣었습니다.",
@@ -413,7 +415,8 @@ export const ko: Dict = {
     token: "NAI 토큰",
     tokenSet: "저장돼 있습니다. 바꾸려면 새로 붙여 넣으세요",
     tokenEmpty: "pst-… 을 붙여 넣으세요",
-    tokenHint: "novelai.net 로그인 뒤 개발자 도구에서 얻는 값입니다. 저장한 값은 다시 보여 주지 않습니다.",
+    tokenHint:
+      "novelai.net 에 로그인한 뒤 Account Settings 의 Get Persistent API Token 으로 발급받습니다. 저장한 값은 다시 보여 주지 않습니다.",
     engineCli: "로컬 CLI",
     engineCliSub: "{n}개 사용 가능",
     engineApi: "API 키",
@@ -518,7 +521,7 @@ export const ko: Dict = {
     colDate: "수정일",
     folderMenu: "폴더 메뉴",
     deleteFolderConfirm: "{s} 폴더를 지울까요?",
-    deleteFolderBody: "안에 든 것까지 함께 지워집니다. 되돌릴 수 없습니다.",
+    deleteFolderBody: "안에 든 것까지 함께 휴지통으로 갑니다. 24시간 안에는 되돌릴 수 있습니다.",
     moveIntoSelf: "자기 하위 폴더로는 옮길 수 없습니다",
     root: "아웃풋 폴더",
     count: "{n}장",
@@ -543,6 +546,10 @@ export const ko: Dict = {
     found: "{n}곳",
     targets: "찾을 것",
     noClasses: "모델을 고르면 찾을 것이 뜹니다.",
+    /** 사람이 직접 그린 박스에 붙는 이름 (탐지가 찾은 것은 클래스 이름이 그대로 뜬다) */
+    manualBox: "직접",
+    needTarget: "찾을 것을 하나 이상 고르세요.",
+    needBox: "더한 박스가 없습니다.",
     confHint: "오른쪽 숫자가 그 종류의 문턱입니다. 낮출수록 더 많이 찾고 엉뚱한 것도 늘어납니다.",
     floor: "낮은 신뢰도 숨김",
     floorHint: "보이는 것만 거릅니다. 실제로 가릴지는 위의 종류별 문턱이 정합니다.",
@@ -656,6 +663,13 @@ export const ko: Dict = {
     cancel: "취소",
     cannotUndo: "되돌릴 수 없습니다.",
     close: "닫기",
+    // ★지우는 창구는 전부 휴지통을 거친다 (2026-08-18, v2-port-audit D7)
+    toTrash: "휴지통으로 갑니다. 24시간이 지나면 완전히 사라집니다.",
+    trashed: "{n}개를 휴지통으로 옮겼습니다.",
+    // ★휴지통이 아니라 그 자리에서 되돌리는 것 (블록 저장소처럼 파일이 없는 곳)
+    removed: "지웠습니다.",
+    restored: "되돌렸습니다.",
+    undo: "되돌리기",
   },
 
   scenes: {
@@ -667,6 +681,7 @@ export const ko: Dict = {
     destLabel: "씬 프롬프트를",
     destBase: "베이스에",
     destChar: "캐릭터 · {name}에",
+    destAll: "캐릭터 전원에",
     sizeHint: "칸 {s}px · Ctrl+휠로 조절",
     cardLabel: "씬 세트 · {n}개",
     addCard: "씬 카드 추가",
@@ -683,6 +698,8 @@ export const ko: Dict = {
     pipResize: "드래그로 크기 조절",
     pipMove: "드래그로 위치 조절",
     tabHint: "Tab 으로 다음 씬, Shift+Tab 으로 이전 씬",
+    dragScene: "드래그로 순서 변경. 다른 카드로도 옮길 수 있습니다",
+    dragCard: "드래그로 카드 순서 변경",
   },
   slots: {
     textPlaceholder: "태그를 쉼표로 적습니다. 1.3::강조::",
@@ -780,7 +797,7 @@ export const ko: Dict = {
     selectAll: "전체 선택",
     clear: "선택 해제",
     remove: "삭제",
-    removeConfirm: "{n}장을 지웁니다. 생성물은 Anlas 가 든 원본이라 되살릴 수 없습니다.",
+    removeConfirm: "{n}장을 지울까요?",
     moveTo: "옮길 곳",
     /** 옮길 곳 목록의 첫 줄. 하위 폴더에 든 것을 다시 꺼낼 때 고른다 */
     rootFolder: "최상위",

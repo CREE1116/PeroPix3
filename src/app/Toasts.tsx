@@ -32,9 +32,33 @@ export function Toasts() {
             padding: "var(--sp-2) var(--sp-4)",
             fontSize: "var(--text-2xs)",
             maxWidth: 340,
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--sp-3)",
           }}
         >
-          {x.text}
+          <span>{x.text}</span>
+          {/* ★단추가 있으면 누를 수 있어야 한다 — 바깥 상자가 `pointerEvents: none` 이라
+              여기서 되살린다 (글자 쪽은 그대로 통과시켜 뒤를 가리지 않는다). */}
+          {x.action && (
+            <button
+              data-toast-action
+              onClick={x.action.run}
+              style={{
+                pointerEvents: "auto",
+                background: "transparent",
+                border: "1px solid var(--accent)",
+                borderRadius: "var(--r-1)",
+                color: "var(--accent)",
+                padding: "2px var(--sp-2)",
+                fontSize: "var(--text-2xs)",
+                whiteSpace: "nowrap",
+                cursor: "pointer",
+              }}
+            >
+              {x.action.label}
+            </button>
+          )}
         </div>
       ))}
     </div>

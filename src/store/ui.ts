@@ -112,8 +112,6 @@ const DEFAULTS: Persisted = {
   enhanceLast: { mag: 3, adv: false, strength: 0.5, noise: 0 },
 };
 
-/** 한 번에 뽑는 최대 — 큐가 길어지면 취소하기 번거롭다 */
-export const PER_SLOT_MAX = 12;
 export const COLS_MIN = 1;
 export const COLS_MAX = 12;
 
@@ -208,8 +206,11 @@ export const useUi = create<S>((set, get) => ({
     set({ notifyVolume: Math.min(100, Math.max(1, Math.round(v))) });
     get().commitLayout();
   },
+  // ★**상한이 없다** (사용자 결정 2026-08-18, v2 도 무제한이었다 — `index.html:9452` 의
+  //   `repeatCount` 는 `min="1"` 뿐이다). 잠깐 12 로 막아 뒀던 자리인데, 큐가 길어지는 것은
+  //   이제 취소 버튼 하나가 감당한다. ★막는 것은 여전히 셋이다: 음수·0·소수
   setPerSlot: (n) => {
-    set({ perSlot: Math.min(PER_SLOT_MAX, Math.max(1, Math.round(n))) });
+    set({ perSlot: Math.max(1, Math.round(n)) });
     get().commitLayout();
   },
   setTagSuggest: (v) => {

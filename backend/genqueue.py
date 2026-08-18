@@ -73,6 +73,25 @@ class GenerationQueue:
     def cancel_current_job(self) -> None:
         self.cancel_current = True
 
+    def cancel_all(self) -> tuple[int, int, bool]:
+        """★**취소는 하나다** — 대기 중인 것을 전부 걷어낸다 (사용자 결정 2026-08-18).
+
+        NAI 는 요청이 나간 한 장을 중간에 못 끊는다. 그러니 멈출 수 있는 것은
+        「아직 안 보낸 것」뿐이고, 그것은 두 군데에 나뉘어 있다:
+
+          1. 대기 잡 (`self.queue`) — 아직 시작도 안 한 배치
+          2. **돌고 있는 잡의 남은 장** — v3 는 배치 전체를 잡 **하나**로 넣으므로
+             잡이 시작되면 1번은 비어 있다. 여기를 안 건드리면 아무것도 안 멈춘다
+
+        돌려주는 셋째 값(`running`)은 **지금 NAI 로 나간 한 장이 아직 오는 중인가**다.
+        화면은 그것으로 대기 칸을 몇 개 남길지 정한다.
+        """
+        jobs, images = self.clear_queue()
+        running = self.is_processing
+        if running:
+            self.cancel_current_job()
+        return jobs, images, running
+
     def get_status(self) -> dict:
         return {
             "queue_length": len(self.queue),

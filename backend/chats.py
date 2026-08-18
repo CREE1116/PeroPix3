@@ -22,6 +22,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import trash
+
 _ID_OK = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 KEEP = 50
 
@@ -98,8 +100,17 @@ class Chats:
         self._trim()
         return {k: d[k] for k in ("id", "title", "workspace", "updatedAt", "session")}
 
-    def delete(self, cid: str) -> None:
-        self._path(cid).unlink(missing_ok=True)
+    def delete(self, cid: str) -> dict:
+        """★대화도 **휴지통을 거친다** (사용자 결정 2026-08-18, v2-port-audit D7).
+        지운 대화는 다시 만들 수 없다 — 잘못 눌렀을 때 되돌릴 길을 둔다."""
+        p = self._path(cid)
+        if not p.exists():
+            return {"deleted": [], "trashed": []}
+        r = trash.send_at(self.root, [p.name])
+        return {"deleted": [m["file"] for m in r["moved"]], "trashed": r["moved"]}
+
+    def restore(self, entries: list[dict]) -> dict:
+        return trash.restore_at(self.root, entries)
 
     def _trim(self) -> None:
         """최근 KEEP 개만 남긴다 — 오래된 것부터 지운다."""

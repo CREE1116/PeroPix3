@@ -20,6 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 import thumbs
+import trash
 
 SPEC_NAME = "workspace.json"
 RECORDS_NAME = "records.jsonl"
@@ -35,6 +36,41 @@ def safe_name(s: str, fallback: str = "무제") -> str:
     """폴더명으로 쓸 수 있게. 경로 탈출을 막는 것이 주 목적이다."""
     s = _SAFE.sub("_", (s or "").strip()).strip(". ")
     return s[:80] or fallback
+
+
+def safe_tag(s: str, max_length: int = 100) -> str:
+    """**파일 이름 안에 넣을 이름 조각** — v2 `sanitize_filename`(backend.py:1396) 그대로다.
+
+    글자·숫자·밑줄·하이픈만 남기고(파이썬 `\\w` 는 한글을 포함한다) 공백은 밑줄로 바꾼다.
+    ★v2 의 `else "vibe"` 폴백은 **안 가져온다** — 그 함수가 원래 vibe 캐시 이름을 짓던
+      것이라 붙은 값이고, 씬 이름에 쓰면 이름 없는 씬이 전부 `vibe` 가 된다.
+      여기서는 빈 문자열을 돌려주고, 부르는 쪽이 "이름이 없다"로 다룬다.
+    ★v2 는 앞에서 `Path(name).stem` 으로 확장자를 떼는데 **그것도 안 가져온다** — 씬 이름은
+      파일 이름이 아니라서, 「1.5배 컷」 같은 이름이 `1` 한 글자로 잘린다 (실측으로 확인).
+    ★`next_name` 이 접두로 `glob` 을 돌리므로 `[`·`?` 같은 글자가 남으면 안 된다 —
+      위 규칙이 이미 다 걷어낸다."""
+    s = re.sub(r"[^\w\s-]", "", (s or "").strip(), flags=re.UNICODE)
+    return s.strip().replace(" ", "_")[:max_length]
+
+
+def file_lead(cell_no: int | None, cell: str | None, exclude_no: bool) -> str:
+    """생성물 파일 이름의 **앞 조각** — `<번호>_<씬 이름>` (v2 `backend.py:2737-2746`).
+
+        번호+이름   003_수영복_001.png
+        이름만      수영복_001.png        ← 「파일 이름에서 씬 번호 빼기」
+        번호만      003_001.png           ← 씬 이름이 비었거나 쓸 수 없는 글자뿐일 때
+        없음        001.png               ← 씬이 없는 싱글 탭
+
+    ★★「씬 번호 빼기」는 v2 와 같이 **번호만** 뺀다 (사용자 결정 2026-08-18, v2-port-audit D3).
+      예전에는 이름이 아예 안 들어가서, 번호를 빼면 그 폴더의 **모든 씬이 한 번호열을 공유**했다
+      (`next_name` 이 접두마다 세기 때문이다).
+    ★번호는 **순번을 세는 열쇠**이기도 하다 — 이름을 바꾸면 그 씬의 번호열이 1부터 다시
+      시작한다. v2 도 같다 (category 에 이름이 들어간다)."""
+    tag = safe_tag(cell or "")
+    if exclude_no:
+        return tag
+    no = f"{cell_no:03d}" if cell_no else ""
+    return "_".join(x for x in (no, tag) if x)
 
 
 class Store:
@@ -85,10 +121,19 @@ class Store:
             a.rename(b)
         return b.name
 
-    def delete(self, ws: str) -> None:
+    def delete(self, ws: str) -> dict:
+        """워크스페이스를 **휴지통으로** (사용자 결정 2026-08-18, v2-port-audit D7).
+
+        ★예전에는 `rmtree` 였다 — 이 앱에서 가장 크게 없어지는 동작인데 되돌릴 길이 없었다.
+          휴지통은 `workspaces/.trash` 다 (워크스페이스 자신의 것은 함께 담겨 간다)."""
         d = self.dir_of(ws)
-        if d.exists():
-            shutil.rmtree(d)
+        if not d.exists():
+            return {"deleted": [], "trashed": []}
+        r = trash.send_at(self.root, [d.name])
+        return {"deleted": [m["file"] for m in r["moved"]], "trashed": r["moved"]}
+
+    def restore_ws(self, entries: list[dict]) -> dict:
+        return trash.restore_at(self.root, entries)
 
     # ── 생성물 ────────────────────────────────────────────────
     def work_dir(self, ws: str, tab: str, cell: str | None = None) -> Path:

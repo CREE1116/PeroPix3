@@ -8,7 +8,7 @@ import { SEED_MODES, randomSeed, useGen } from "../store/gen";
 import { useQueue } from "../store/queue";
 import { allCells, useWs } from "../store/workspace";
 import { useImageInput } from "../store/imageInput";
-import { useUi, PER_SLOT_MAX } from "../store/ui";
+import { useUi } from "../store/ui";
 import { anlasCost, MAX_PER_IMAGE } from "../lib/anlas";
 import { useSub } from "../store/sub";
 import { useHasToken } from "../store/health";
@@ -31,7 +31,7 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
   // 구독 상태는 **스토어 하나**가 들고 있다 (업스케일 값 표시도 같은 곳을 본다)
   const sub = useSub((s) => s.sub);
   const { params, set, busy, error, generateAll, queueSingle } = useGen();
-  const { progress, phase, cancel, clear } = useQueue();
+  const { progress, phase, cancelAll } = useQueue();
   /** 잔액을 다시 물어본 횟수 — 누를 때마다 아이콘을 **한 바퀴 더** 돌린다 (v2 `refreshAnlasBtn`).
    *  ★각도를 원위치시키지 않고 누적한다. 되돌리면 애니메이션이 거꾸로 돌아 흔들려 보인다. */
   const [turns, setTurns] = useState(0);
@@ -59,9 +59,13 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
     steps: params.steps,
     opus: (sub?.tier ?? 0) >= 3,
     uncachedVibes: img.vibeOn ? img.vibes.filter((v) => !v.encoded).length : 0,
-    // ★활성 5개 초과분은 개당 +2 — 구워 둔 것도 센다 (요청당 한 번)
+    // ★**켜진** 것이 4개를 넘으면 초과분 개당 +2 — 구워 둔 것도 센다 (요청당 한 번).
+    //   v3 에는 바이브 하나씩 끄는 스위치가 없다 — 목록에 있는 것이 곧 켜진 것이다
+    //   (`payload()` 가 목록을 통째로 싣는다). 그런 스위치를 만들면 여기도 함께 고친다
     activeVibes: img.vibeOn ? img.vibes.length : 0,
     refCount: img.refOn ? img.refs.length : 0,
+    // ★인페인트면 바이브 비용이 통째로 빠진다 (공홈 호출부의 `!mask`)
+    inpaint: img.costInpaint(),
     // ★강도 계수는 모드마다 다르다 (`imageInput.costStrength` — 9절의 `y`). 인페인트에서
     //   i2i 강도로 세면 실제보다 싸게 보인다
     strength: img.costStrength(),
@@ -252,20 +256,18 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
               {stateText}
               {running && progress.queue_length > 0 && ` · ${t("queue.waiting", { n: progress.queue_length })}`}
             </span>
+            {/* ★취소는 **버튼 하나**다 (사용자 결정 2026-08-18). NAI 는 이미 나간 한 장을
+                못 끊으므로 「지금 것만 중단」과 「대기만 비우기」를 가를 실익이 없었고,
+                v3 는 배치가 잡 하나라 「큐 비우기」 혼자서는 아무것도 안 멈췄다 (감사 D5). */}
             {running && (
-              <>
-                <button data-queue-cancel onClick={() => void cancel()} title={t("queue.cancelHint")} style={qbtn}>
-                  {t("queue.cancel")}
-                </button>
-                <button
-                  data-queue-clear
-                  onClick={() => void clear()}
-                  title={t("queue.clearHint")}
-                  style={{ ...qbtn, color: "var(--err)", borderColor: "var(--err)" }}
-                >
-                  {t("queue.clear")}
-                </button>
-              </>
+              <button
+                data-queue-cancel
+                onClick={() => void cancelAll()}
+                title={t("queue.cancelHint")}
+                style={{ ...qbtn, color: "var(--err)", borderColor: "var(--err)" }}
+              >
+                {t("queue.cancel")}
+              </button>
             )}
           </div>
           {/* 진행바 — v2 `progressFill` 이관 (index.html:9442-9444, 16119-16127) */}
@@ -290,11 +292,13 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
           <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)", flexShrink: 0 }}>
             {isSet ? t("gen.perSlot") : t("gen.count")}
           </span>
+          {/* ★상한이 없다 (사용자 결정 2026-08-18 — v2 도 `min="1"` 뿐이었다).
+              `step={1}` 과 `setPerSlot` 의 반올림이 음수·0·소수를 막는다 */}
           <input
             data-per-slot
             type="number"
             min={1}
-            max={PER_SLOT_MAX}
+            step={1}
             value={perSlot}
             onChange={(e) => setPerSlot(Number(e.target.value) || 1)}
             style={{

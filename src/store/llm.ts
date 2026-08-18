@@ -1,7 +1,8 @@
 import { create } from "zustand";
-import { api } from "../lib/backend";
+import { api, type TrashEntry } from "../lib/backend";
 import { useWs } from "./workspace";
 import { t, useI18n } from "../i18n";
+import { toast, undoToast } from "./toast";
 import { useCli } from "./cli";
 import { codexWire } from "../lib/codexStream";
 import { noteCliRun } from "../lib/cliCursor";
@@ -332,10 +333,21 @@ export const useLlm = create<S>((set, get) => ({
           cliSessionGone: false, queued: [] });
   },
 
+  /** ★대화 삭제도 **휴지통을 거친다** (사용자 결정 2026-08-18, v2-port-audit D7). */
   async remove(id) {
-    await api(`/api/chats/${id}`, { method: "DELETE" });
+    const r = await api<{ trashed: TrashEntry[] }>(`/api/chats/${id}`, { method: "DELETE" });
     await get().refreshList();
     if (get().id === id) get().newChat();
+    if (r.trashed?.length)
+      undoToast(t("common.trashed", { n: 1 }), t("common.undo"), async () => {
+        await api("/api/chats/restore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ entries: r.trashed }),
+        });
+        await get().refreshList();
+        toast(t("common.restored"));
+      });
   },
 
   async send(text) {

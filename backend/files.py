@@ -9,6 +9,9 @@
   이름을 바꾸고, 지운다. 그래서 경로는 워크스페이스가 아니라 **아웃풋 루트 기준**이다.
 ★한 발짝도 루트 밖으로 못 나간다 (`under`). 밖을 가리키면 즉시 ValueError.
 ★지우는 것은 **받은 목록만.** 자동 정리·기간 만료를 만들지 말 것 (keep.delete 주석과 같은 이유).
+★★지우기는 **휴지통을 거친다** (사용자 결정 2026-08-18, v2-port-audit D7). 폴더도 마찬가지다 —
+  예전에는 폴더면 `rmtree` 라 되돌릴 길이 아예 없었다. 휴지통은 `workspaces/.trash` 다
+  (경로가 `<워크스페이스>/…` 로 시작하므로 되돌릴 자리가 경로에 그대로 적힌다).
 """
 from __future__ import annotations
 
@@ -17,6 +20,8 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+import trash
 
 IMG_EXT = {".png", ".jpg", ".jpeg", ".webp"}
 # 파생 캐시 — 사람이 만든 폴더가 아니다. 트리에 나오면 헷갈리기만 한다
@@ -152,22 +157,17 @@ def move(root: Path, files: list[str], dest: str) -> dict:
 
 
 def delete(root: Path, files: list[str]) -> dict:
-    gone, missing = [], []
-    for rel in files:
-        try:
-            p = under(root, rel)
-        except ValueError:
-            missing.append(rel)
-            continue
-        if not p.exists():
-            missing.append(rel)
-            continue
-        if p.is_dir():
-            shutil.rmtree(p)
-        else:
-            p.unlink()
-        gone.append(rel)
-    return {"deleted": gone, "missing": missing}
+    """지우기 = **휴지통으로 이동** (사용자 결정 2026-08-18).
+
+    ★폴더도 통째로 담긴다 — 되돌리면 안에 든 것까지 그대로 돌아온다.
+    ★`trashed` 를 함께 돌려준다: 화면이 그것을 들고 있다가 「되돌리기」로 `restore` 에 넘긴다."""
+    r = trash.send_at(root, files)
+    return {"deleted": [m["file"] for m in r["moved"]], "missing": r["missing"], "trashed": r["moved"]}
+
+
+def restore(root: Path, entries: list[dict]) -> dict:
+    """휴지통에서 원래 자리로 (「되돌리기」)."""
+    return trash.restore_at(root, entries)
 
 
 def _open(p: Path, select: bool) -> None:

@@ -1,17 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { useGen } from "../store/gen";
 import { usePrompt } from "../store/prompt";
 import { useQueue } from "../store/queue";
 import { LANE_MAX, LANE_MIN, useUi } from "../store/ui";
-import { useWs, takesOf, type Rec, type SceneCard, type Slot } from "../store/workspace";
+import { allCells, useWs, takesOfScene, type Rec, type SceneCard, type Slot } from "../store/workspace";
 import { imgUrl, thumbUrlOf } from "../lib/imgUrl";
 import { EnhanceDialog } from "./EnhanceDialog";
 import { Icon } from "../components/Icon";
 import { colorOf } from "../store/cards";
 import { cardBlocks, compileBlocks, makeBlock, parseSegs } from "../lib/blocks";
 import { useDragSource } from "../cards/dragStore";
-import { useReorder } from "../lib/useReorder";
+import { useLaneReorder, type LaneDrop } from "../lib/useReorder";
 import { useSceneFocus } from "../store/sceneFocus";
 import { BANNER_BG, bannerEmptyFill } from "../cards/banner";
 
@@ -41,7 +41,7 @@ export function SceneLane() {
   const t = useI18n((s) => s.t);
   const base = useGen((g) => g.base);
   const { records, current: ws, activeTab, isDeleted, isStarred, toggleStar, deleteFiles,
-    undoSelection, setTab, setCard, addCard, removeCard, addSlot } = useWs();
+    undoSelection, setTab, setCard, addCard, removeCard, addSlot, moveScene, moveCard } = useWs();
   const pending = useQueue((s) => s.pending);
   // ★구독해서 읽는다. `getState()` 로 읽으면 진행이 바뀌어도 다시 그리지 않아
   //   「생성 중」이 영영 안 뜬다 (사용자 지적 2026-08-14)
@@ -74,6 +74,20 @@ export function SceneLane() {
   const [view, setView] = useState({ x: 0, w: 0 });
   /** 머리 폭 손잡이를 잡은 자리 */
   const grip = useRef<{ x: number; w: number } | null>(null);
+
+  /** ★씬·카드를 **줄 전체에서** 끈다 (v2 `index.html:11860-12002`, `docs/v2-port-audit.md` D2).
+   *  예전에는 카드 안에서만 순서가 바뀌어, 씬을 다른 카드로 옮기거나 카드끼리 자리를 바꿀
+   *  방법이 아예 없었다. 옮긴 뒤 번호가 어떻게 되는지는 `workspace.moveScene` 주석에 있다. */
+  const tabIdNow = tab?.id;
+  const lane = useLaneReorder({
+    scrollRef,
+    onMoveScene: (cellId, cardId, index) => {
+      if (tabIdNow) moveScene(tabIdNow, cellId, cardId, index);
+    },
+    onMoveCard: (cardId, index) => {
+      if (tabIdNow) moveCard(tabIdNow, cardId, index);
+    },
+  });
 
   // 스크롤·크기가 바뀌면 보이는 구간을 다시 잰다 (rAF 로 한 번만)
   useEffect(() => {
@@ -117,7 +131,8 @@ export function SceneLane() {
     const down = (e: PointerEvent) => {
       const t = e.target as HTMLElement;
       if (e.button !== 0) return;
-      if (t.closest("[data-scene-head], input, textarea, select, [contenteditable='true']")) return;
+      // ★그립은 비켜 간다 — 순서를 바꾸려고 잡은 것이 줄 스크롤로 새면 안 된다
+      if (t.closest("[data-scene-head], [data-card-grip], input, textarea, select, [contenteditable='true']")) return;
       from = { x: e.clientX, y: e.clientY, sx: el.scrollLeft, sy: el.scrollTop };
       moved = false;
     };
@@ -231,22 +246,50 @@ export function SceneLane() {
 
   if (tab?.kind !== "set") return null;
 
-  // ★고른 캐릭터가 꺼지거나 지워졌으면 base 로 되돌린다 — 없는 곳으로 보내면 조용히 사라진다
-  const dest = chars.some((c) => c.id === tab.sceneDest) ? tab.sceneDest! : "base";
+  /** ★「캐릭터 전원」은 **켜진 캐릭터가 둘 이상일 때만** 낸다 (사용자 결정) —
+   *  한 명이면 그 사람을 고르는 것과 같아서 뜻이 없다. */
+  const canAll = chars.length > 1;
+  // ★고른 캐릭터가 꺼지거나 지워졌으면 base 로 되돌린다 — 없는 곳으로 보내면 조용히 사라진다.
+  //   ★판정이 `gen.ts generateAll` 과 **같아야** 화면에 뜬 것과 실제로 나가는 것이 안 갈린다
+  //   (회귀 `lib/sceneDest.test.ts` 가 두 파일의 규칙 줄을 대조한다).
+  const dest =
+    tab.sceneDest === "all" && canAll
+      ? "all"
+      : chars.some((c) => c.id === tab.sceneDest)
+        ? tab.sceneDest!
+        : "base";
 
   const h = Math.min(LANE_MAX, Math.max(LANE_MIN, laneSize));
   const w = h;
   const queued = pending.filter((p) => p.tabId === tab.id);
   const running = progress.total > progress.completed;
 
-  /** 그 씬의 결과 (숨긴 것 제외) */
-  const takesOfCell = (c: Slot) => takesOf(records, tab, c).filter((r) => !isDeleted(r.file));
+  /** 그 씬의 결과 (숨긴 것 제외).
+   *  ★갈 씬이 없는 결과는 **첫 씬**이 받는다 (`takesOfScene`, v2 이식 — 감사 D6) */
+  const cells = allCells(tab);
+  const takesOfCell = (c: Slot) =>
+    takesOfScene(records, tab, cells, c).filter((r) => !isDeleted(r.file));
   const maxLen = Math.max(
     1,
     ...tab.cards.flatMap((k) =>
       k.cells.map((c) => takesOfCell(c).length + queued.filter((p) => p.cellId === c.id).length),
     ),
   );
+
+  /** 카드마다 **앞선 카드들의 씬 수**.
+   *  ★줄 앞 번호는 **탭 안에서 통째로** 센다 — 그 값이 곧 파일 이름 앞의 번호이기 때문이다
+   *    (`gen.ts generateAll` 의 `cell_no` 는 `allCells(tab)` 에서의 자리다. CLAUDE.md:
+   *    "행 앞 번호(001)는 파일 이름 앞의 번호와 같다"). 카드마다 1 로 되돌아가면 씬을
+   *    다른 카드로 옮겼을 때 화면의 번호와 저장되는 번호가 갈린다. */
+  const offsets: number[] = [];
+  tab.cards.reduce((n, k) => (offsets.push(n), n + k.cells.length), 0);
+
+  /** 끌고 있는 것의 이름 — ★잔상은 브라우저가 안 그려 주므로 우리가 그린다 (`useReorder` 머리 주석) */
+  const dragLabel = !lane.drag
+    ? ""
+    : lane.drag.kind === "card"
+      ? (tab.cards.find((k) => k.id === lane.drag!.id)?.name ?? "")
+      : (cells.find((c) => c.id === lane.drag!.id)?.name ?? "");
 
   const pick = (file: string, add: boolean) => {
     const next = new Set(picked);
@@ -338,6 +381,11 @@ export function SceneLane() {
             }}
           >
             <option value="base">{t("scenes.destBase")}</option>
+            {/* ★v2 의 `promptTarget === "char"` (backend.py:2803-2833) — 씬 태그가 켜진
+                캐릭터 **전부**에 붙는다. 두 명부터만 낸다 (위 `canAll` 주석) */}
+            {canAll && (
+              <option value="all">{t("scenes.destAll")}</option>
+            )}
             {chars.map((c) => (
               <option key={c.id} value={c.id}>
                 {t("scenes.destChar", { name: c.name })}
@@ -446,10 +494,17 @@ export function SceneLane() {
               ))}
             </div>
 
-            {tab.cards.map((card) => (
+            {tab.cards.map((card, ci) => (
+              <Fragment key={card.id}>
+              {/* ★카드를 끌 때 놓일 자리 — **레이아웃을 안 밀도록** 높이 0 위에 띄운다
+                  (CLAUDE.md: 칸 사이에 끼워 넣으면 방금 잰 좌표가 어긋난다) */}
+              <DropLine on={lane.drop?.kind === "card" && lane.drop.index === ci} />
               <CardGroup
-                key={card.id}
                 card={card}
+                offset={offsets[ci]}
+                gripOf={lane.gripProps}
+                drop={lane.drop}
+                dragId={lane.drag?.id ?? null}
                 only={card.cells.length === 1}
                 w={w}
                 h={h}
@@ -500,14 +555,11 @@ export function SceneLane() {
                 }
                 folded={!!card.folded}
                 onFold={() => setCard(tab.id, card.id, { folded: !card.folded })}
-                onReorder={(from, to) => {
-                  const next = [...card.cells];
-                  const [moved] = next.splice(from, 1);
-                  next.splice(to > from ? to - 1 : to, 0, moved);
-                  setCard(tab.id, card.id, { cells: next });
-                }}
               />
+              </Fragment>
             ))}
+            {/* 맨 끝에 놓을 때 */}
+            <DropLine on={lane.drop?.kind === "card" && lane.drop.index === tab.cards.length} />
 
             <div style={{ borderTop: "1px dashed var(--line)", minWidth: "100%" }}>
               <button
@@ -581,7 +633,55 @@ export function SceneLane() {
         </div>
       )}
 
+      {/* 커서를 따라오는 잔상 — 무엇을 끌고 있는지 (v2 는 슬롯을 통째로 띄웠는데, 씬 줄은
+          한 줄이 화면 폭만큼 길어서 이름표가 낫다) */}
+      {lane.ghost && dragLabel && (
+        <div
+          data-lane-ghost
+          style={{
+            position: "fixed",
+            left: lane.ghost.x + 12,
+            top: lane.ghost.y + 8,
+            zIndex: 90,
+            pointerEvents: "none",
+            padding: "2px var(--sp-3)",
+            borderRadius: "var(--r-2)",
+            border: "1px solid var(--accent)",
+            background: "var(--panel)",
+            color: "var(--ink)",
+            fontSize: "var(--text-2xs)",
+            boxShadow: "var(--shadow-3)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {dragLabel}
+        </div>
+      )}
+
       {enhance && <EnhanceDialog files={enhance} onClose={() => setEnhance(null)} />}
+    </div>
+  );
+}
+
+/** 끼울 자리 표시 — ★**높이 0 위에 띄운다.** 칸 사이에 실제로 끼워 넣으면 레이아웃이 밀려
+ *  방금 잰 좌표가 어긋난다 (CLAUDE.md 의 칩 드래그 규칙과 같은 이유). */
+function DropLine({ on }: { on: boolean }) {
+  return (
+    <div style={{ position: "relative", height: 0, minWidth: "100%", zIndex: 5 }}>
+      {on && (
+        <div
+          data-drop-line
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            top: -1,
+            height: 2,
+            borderRadius: 1,
+            background: "var(--accent)",
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -788,6 +888,14 @@ function Empty({ onAdd }: { onAdd: () => void }) {
 
 type GroupProps = {
   card: SceneCard;
+  /** 앞선 카드들의 씬 수 — 줄 앞 번호가 탭 전체에서 이어지게 (`offsets` 주석) */
+  offset: number;
+  /** 씬·카드 그립에 펴 넣을 것 (`useLaneReorder`) */
+  gripOf: ReturnType<typeof useLaneReorder>["gripProps"];
+  /** 지금 놓일 자리 — 그 틈에 막대를 그린다 */
+  drop: LaneDrop | null;
+  /** 끌고 있는 것의 id (씬이든 카드든) — 그 줄을 흐리게 */
+  dragId: string | null;
   only: boolean;
   w: number;
   h: number;
@@ -826,8 +934,6 @@ type GroupProps = {
   /** 카드째 접혔나 — ★머리를 누르면 바뀐다 (전용 단추를 두지 않는다) */
   folded: boolean;
   onFold: () => void;
-  /** 카드 안에서 씬 순서 바꾸기 */
-  onReorder: (from: number, to: number) => void;
 };
 
 /** 씬 세트 머리의 높이 — ★절반으로 줄였다 (사용자 지적 2026-08-16: 56 은 너무 두꺼웠다) */
@@ -844,8 +950,13 @@ function CardGroup(p: GroupProps) {
   const t = useI18n((s) => s.t);
   const grad = p.card.color ?? colorOf(p.card.name);
   /** ★블록과 **같은 포인터 드래그**로 순서를 바꾼다 — HTML5 드래그를 쓰면 안의 칩을
-   *  끄는 순간 씬이 딸려 끌리고, WebView2 가 그걸 파일 드롭으로 가로챈다 */
-  const { register, handleProps } = useReorder(p.card.cells.length, p.onReorder);
+   *  끄는 순간 씬이 딸려 끌리고, WebView2 가 그걸 파일 드롭으로 가로챈다.
+   *  ★판은 **줄 전체**다 (`useLaneReorder`) — 카드를 넘어 씬을 옮길 수 있어야 하고,
+   *    같은 하나로 카드 자체의 자리도 바꾼다 */
+  const cardGrip = p.gripOf("card", p.card.id);
+  /** 이 카드 안에서 씬이 놓일 자리 (없으면 null) */
+  const sceneAt =
+    p.drop?.kind === "scene" && p.drop.cardId === p.card.id ? p.drop.index : null;
   return (
     <div
       data-scene-card={p.card.id}
@@ -925,6 +1036,16 @@ function CardGroup(p: GroupProps) {
               textShadow: "0 1px 5px rgba(0,0,0,0.55)",
             }}
           >
+            {/* ★카드 순서 그립 — 머리 누르기(접기)·머리 끌기(덱에 저장)와 뜻이 달라 **전용 손잡이**를
+                둔다. 셋을 한 자리에 얹으면 무엇이 될지 알 수 없다 */}
+            <span
+              data-card-grip={p.card.id}
+              {...cardGrip}
+              title={t("scenes.dragCard")}
+              style={{ ...cardGrip.style, display: "grid", alignSelf: "center", color: "rgba(255,255,255,0.78)" }}
+            >
+              {Icon.grip}
+            </span>
             <b style={{ fontSize: "0.8rem", fontWeight: "var(--w-bold)" }}>{p.card.name}</b>
             <span style={{ fontSize: 10, letterSpacing: "0.08em", opacity: 0.85 }}>
               {t("scenes.cardLabel", { n: p.card.cells.length })}
@@ -1002,9 +1123,11 @@ function CardGroup(p: GroupProps) {
       </div>
 
       {p.card.cells.map((c, i) => (
-        <SceneRow key={c.id} {...p} cell={c} index={i} grip={handleProps(i)} rowRef={register(i)} />
+        <Fragment key={c.id}>
+          <DropLine on={sceneAt === i} />
+          <SceneRow {...p} cell={c} index={i} grip={p.gripOf("scene", c.id)} />
+        </Fragment>
       ))}
-
       <div style={{ borderTop: "1px dashed var(--line)", minWidth: "100%" }}>
         <button
           data-add-scene={p.card.id}
@@ -1026,6 +1149,9 @@ function CardGroup(p: GroupProps) {
       </div>
       </>
       )}
+      {/* 이 카드의 **끝**에 놓을 때. ★접혀 있으면 줄이 없어 **언제나 끝**이라, 접힌 카드에도
+          이 표시만은 뜬다 (`useLaneReorder` 의 `index: -1`) */}
+      <DropLine on={sceneAt !== null && (sceneAt < 0 || sceneAt >= p.card.cells.length)} />
     </div>
   );
 }
@@ -1035,8 +1161,7 @@ function SceneRow(
   p: GroupProps & {
     cell: Slot;
     index: number;
-    grip: React.HTMLAttributes<HTMLSpanElement>;
-    rowRef: (el: HTMLElement | null) => void;
+    grip: ReturnType<ReturnType<typeof useLaneReorder>["gripProps"]>;
   },
 ) {
   const t = useI18n((s) => s.t);
@@ -1069,7 +1194,6 @@ function SceneRow(
 
   return (
     <div
-      ref={p.rowRef}
       data-scene={c.id}
       onClick={() => p.onFocus({ cell: c.id, file: p.focus.cell === c.id ? p.focus.file : null })}
       style={{
@@ -1080,7 +1204,8 @@ function SceneRow(
            **펼쳤을 때만** 자리를 차지한다 — 접혀 있을 때는 한 줄 요약이다. */
         ...(expanded ? { minHeight: p.h + 12 } : { height: p.h + 12 }),
         borderBottom: "1px solid var(--line-soft)",
-        opacity: c.locked || p.card.locked ? 0.62 : 1,
+        // ★끌고 있는 줄은 흐리게 — 자리는 지킨 채다 (칩 드래그와 같은 규칙, CLAUDE.md)
+        opacity: p.dragId === c.id ? 0.4 : c.locked || p.card.locked ? 0.62 : 1,
       }}
     >
       <div
@@ -1111,13 +1236,16 @@ function SceneRow(
           <span
             {...p.grip}
             onClick={(e) => e.stopPropagation()}
-            title={t("block.dragToReorder")}
-            style={{ color: "var(--ink-faint)", display: "grid", cursor: "grab", ...(p.grip.style ?? {}) }}
+            title={t("scenes.dragScene")}
+            style={{ color: "var(--ink-faint)", display: "grid", ...p.grip.style }}
           >
             {Icon.grip}
           </span>
+          {/* ★번호는 **탭 안에서 통째로** 센다 — 파일 이름 앞에 붙는 번호와 같은 값이라야
+              한다 (`offsets` 주석 · `gen.ts` 의 `cell_no`). 카드마다 1 로 되돌아가면
+              씬을 다른 카드로 옮겼을 때 화면과 저장 이름이 갈린다 */}
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-ghost)" }}>
-            {String(p.index + 1).padStart(3, "0")}
+            {String(p.offset + p.index + 1).padStart(3, "0")}
           </span>
           <NameCell
             name={c.name}

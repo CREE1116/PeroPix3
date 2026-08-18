@@ -97,6 +97,8 @@ type S = {
   syncVibeCache: () => Promise<void>;
   /** 비용 계산에 쓰는 강도 계수 (`docs/nai-web-reference.md` 9절) */
   costStrength: () => number;
+  /** 지금 **마스크를 실어 보내는가** — 공홈은 인페인트면 바이브 비용을 통째로 뺀다 (9절) */
+  costInpaint: () => boolean;
 
   setRefOn: (v: boolean) => void;
   addRef: (r: PreciseRef) => void;
@@ -236,6 +238,14 @@ export const useImageInput = create<S>((set, get) => ({
     const s = get();
     if (s.baseMode === "inpaint") return s.editing && s.baseImage ? s.baseInpaintStrength : 1;
     return s.baseImage ? s.baseStrength : 1;
+  },
+
+  costInpaint() {
+    // ★`costStrength` 의 인페인트 갈래와 **같은 조건**이다 — 마스크가 실리는 때가 곧
+    //   인페인트다 (`payload()`: 나간 상태에서는 베이스도 마스크도 안 싣는다).
+    //   갈라 적으면 강도는 인페인트로 세면서 바이브는 아닌 것으로 세는 상태가 생긴다
+    const s = get();
+    return s.baseMode === "inpaint" && s.editing && !!s.baseImage;
   },
 
   setRefOn: (v) => set(v ? { refOn: true, vibeOn: false } : { refOn: false }),

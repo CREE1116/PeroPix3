@@ -172,13 +172,16 @@ export function CensorSide() {
           )}
           {c.method === "mosaic" && (
             <>
+              {/* ★범위는 v2 그대로다 (`mosaicStrength` 4~48 · `mosaicOpacity` 10~100,
+                  index.html:9801·9808). 불투명도 아래끝이 10 인 것은 0 이면 가린 것이
+                  통째로 안 보여 검열이 아니게 되기 때문이다 */}
               <Line label={t("censor.grain")}>
-                <input type="range" min={2} max={60} value={c.mosaic}
+                <input type="range" min={4} max={48} value={c.mosaic}
                   onChange={(e) => c.tune({ mosaic: Number(e.target.value) }, "draw")} style={{ flex: 1 }} />
                 <span style={num}>{c.mosaic}</span>
               </Line>
               <Line label={t("censor.opacity")}>
-                <input type="range" min={0} max={100} value={c.mosaicOpacity}
+                <input type="range" min={10} max={100} value={c.mosaicOpacity}
                   onChange={(e) => c.tune({ mosaicOpacity: Number(e.target.value) }, "draw")} style={{ flex: 1 }} />
                 <span style={num}>{c.mosaicOpacity}</span>
               </Line>

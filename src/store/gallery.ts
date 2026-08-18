@@ -1,5 +1,7 @@
 import { create } from "zustand";
-import { api } from "../lib/backend";
+import { api, type TrashEntry } from "../lib/backend";
+import { t } from "../i18n";
+import { toast, undoToast } from "./toast";
 
 /** 갤러리 — 워크스페이스에 쌓인 그림을 훑어 본다.
  *
@@ -249,16 +251,34 @@ export const useGallery = create<S>((set, get) => ({
   pickAll: () => set({ picked: new Set(get().items.map((i) => i.file)) }),
   clearPick: () => set({ picked: new Set() }),
 
+  /** ★보관함의 삭제도 **휴지통을 거친다** (사용자 결정 2026-08-18, v2-port-audit D7).
+   *  ★별표·「이 그림은 어디서 왔나」까지 함께 되돌린다 — 되살렸는데 별표가 빠져 있으면
+   *    반쪽짜리 되돌리기다 (`backend/keep.py` `restore`). */
   async remove(ws) {
     const files = [...get().picked];
     if (!files.length) return 0;
-    const r = await api<{ deleted: string[] }>(`/api/keep/delete`, {
+    const r = await api<{
+      deleted: string[];
+      trashed: TrashEntry[];
+      starred: string[];
+      sources: Record<string, string>;
+    }>(`/api/keep/delete`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ files }),
     });
     set({ picked: new Set() });
     await get().load(ws);
+    if (r.trashed?.length)
+      undoToast(t("common.trashed", { n: r.trashed.length }), t("common.undo"), async () => {
+        await api(`/api/keep/restore`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ entries: r.trashed, starred: r.starred, sources: r.sources }),
+        });
+        await get().load(ws);
+        toast(t("common.restored"));
+      });
     return r.deleted.length;
   },
 

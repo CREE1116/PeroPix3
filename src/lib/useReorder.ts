@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export type GhostPos = {
   /** 화면 좌표 (고스트의 좌상단) */
@@ -101,4 +101,209 @@ export function useReorder(_count: number, onMove: (from: number, to: number) =>
   );
 
   return { register, handleProps, dragIdx, overIdx, ghost };
+}
+
+// ── 씬 줄 — 카드를 **가로질러** 옮긴다 ────────────────────────────────
+
+/** 끌고 있는 것이 놓일 자리. `index` 는 **틈 번호**다 (0..n, 위 `useReorder` 규약과 같다) */
+export type LaneDrop =
+  | { kind: "scene"; cardId: string; index: number }
+  | { kind: "card"; index: number };
+
+/** 가장자리 자동 스크롤 — v2 `DRAG_SCROLL_ZONE`·`DRAG_SCROLL_SPEED`·`DRAG_MOVE_THRESHOLD` 그대로 */
+const ZONE = 48;
+const SPEED = 12;
+const THRESHOLD = 4;
+/** 경계에서 0, 가장자리 바깥에서 1 — 제곱이라 경계 근처에서 아주 완만하게 붙는다 (v2 `dragScrollRamp`) */
+const ramp = (d: number) => {
+  const t = Math.max(0, Math.min(1, 1 - d / ZONE));
+  return t * t;
+};
+
+/** 씬 줄 전체를 한 판으로 보는 순서 바꾸기 — v2 슬롯 드래그 이식 (`index.html:11860-12002`).
+ *
+ *  ★위의 `useReorder` 는 **한 목록 안**에서만 옮긴다. 3.0 의 씬은 카드에 나뉘어 담겨 있어서
+ *    (v2 는 슬롯이 한 줄이라 이 층이 없었다) 카드를 넘어 옮기려면 줄 전체가 한 판이어야 한다.
+ *    같은 하나로 **카드 자체의 순서**도 바꾼다 — 잡는 그립만 다르다.
+ *  ★자리는 **DOM 을 훑어서** 잡는다 (`[data-scene-card]`·`[data-scene]`). 등록부를 두면
+ *    카드 사이를 오갈 때 낡은 칸이 남는다 — 칩 드래그가 `[data-chip]` 을 훑는 것과 같은 이유이고,
+ *    **DOM 순서가 곧 씬 순서**라 더 얻을 것도 없다.
+ *  ★**끼울 자리 표시는 레이아웃을 밀지 않는 것**이 부르는 쪽 몫이다 (CLAUDE.md: 칸 사이에
+ *    끼워 넣으면 방금 잰 좌표가 어긋난다). 여기서는 자리만 알려 준다.
+ *  ★v2 는 슬롯이 **가로**로 놓여 가로로 굴렸다. 3.0 은 씬도 카드도 **세로**로 쌓이므로
+ *    세로로 굴린다. 굴린 뒤에는 칸이 밀렸으므로 자리를 **다시 잡는다** (v2 도 그랬다).
+ *  ★`pointerdown` 의 `preventDefault` 는 **전용 그립에서만** 한다 — 그립은 누를 일이 없는
+ *    손잡이라 잃을 클릭이 없다 (CLAUDE.md 「잊기 쉬운 것」). */
+export function useLaneReorder({
+  scrollRef,
+  onMoveScene,
+  onMoveCard,
+}: {
+  /** 세로로 굴릴 스크롤 상자 (씬 줄) */
+  scrollRef: React.RefObject<HTMLElement | null>;
+  onMoveScene: (cellId: string, toCardId: string, toIndex: number) => void;
+  onMoveCard: (cardId: string, toIndex: number) => void;
+}) {
+  const [drag, setDrag] = useState<{ kind: "scene" | "card"; id: string } | null>(null);
+  const [drop, setDrop] = useState<LaneDrop | null>(null);
+  /** 커서를 따라가는 잔상의 자리 (화면 좌표) — 브라우저가 안 그려 주므로 부르는 쪽이 그린다 */
+  const [ghost, setGhost] = useState<{ x: number; y: number } | null>(null);
+  const dragRef = useRef<{ kind: "scene" | "card"; id: string } | null>(null);
+  const dropRef = useRef<LaneDrop | null>(null);
+  const from = useRef<{ x: number; y: number } | null>(null);
+  const moved = useRef(false);
+  const at = useRef({ x: 0, y: 0 });
+  const raf = useRef(0);
+
+  /** 지금 커서 높이가 어느 틈인가 */
+  const hit = useCallback(
+    (kind: "scene" | "card", y: number): LaneDrop | null => {
+      const root = scrollRef.current;
+      if (!root) return null;
+      const cards = [...root.querySelectorAll<HTMLElement>("[data-scene-card]")];
+      if (!cards.length) return null;
+
+      if (kind === "card") {
+        let i = cards.length;
+        for (let k = 0; k < cards.length; k++) {
+          const r = cards[k].getBoundingClientRect();
+          if (y < r.top + r.height / 2) {
+            i = k;
+            break;
+          }
+        }
+        return { kind: "card", index: i };
+      }
+
+      // 어느 카드 위인가 — 마지막 카드보다 아래면 그 카드다
+      let card = cards[cards.length - 1];
+      for (const c of cards) {
+        if (y < c.getBoundingClientRect().bottom) {
+          card = c;
+          break;
+        }
+      }
+      const id = card.dataset.sceneCard ?? "";
+      const rows = [...card.querySelectorAll<HTMLElement>("[data-scene]")];
+      // ★접힌 카드에는 줄이 안 그려져 자리를 고를 수 없다 — **그 카드의 끝**에 붙인다
+      //   (접힌 블록에 칩을 떨궜을 때와 같은 규칙, CLAUDE.md)
+      if (!rows.length) return { kind: "scene", cardId: id, index: -1 };
+      let i = rows.length;
+      for (let k = 0; k < rows.length; k++) {
+        const r = rows[k].getBoundingClientRect();
+        if (y < r.top + r.height / 2) {
+          i = k;
+          break;
+        }
+      }
+      return { kind: "scene", cardId: id, index: i };
+    },
+    [scrollRef],
+  );
+
+  const track = useCallback(
+    (y: number) => {
+      const d = dragRef.current;
+      if (!d) return;
+      const next = hit(d.kind, y);
+      dropRef.current = next;
+      setDrop(next);
+    },
+    [hit],
+  );
+
+  const loop = useCallback(
+    function step() {
+      raf.current = 0;
+      const root = scrollRef.current;
+      if (!root || !dragRef.current) return;
+      const r = root.getBoundingClientRect();
+      const max = root.scrollHeight - root.clientHeight;
+      const top = at.current.y - r.top;
+      const bottom = r.bottom - at.current.y;
+      let d = 0;
+      if (top < ZONE && root.scrollTop > 0) d = -SPEED * ramp(top);
+      else if (bottom < ZONE && root.scrollTop < max) d = SPEED * ramp(bottom);
+      if (d) {
+        root.scrollTop += d;
+        // 굴리면 칸이 밀리므로 놓일 자리도 다시 잡아야 따라온다 (v2 `startDragAutoScroll`)
+        track(at.current.y);
+      }
+      raf.current = requestAnimationFrame(step);
+    },
+    [scrollRef, track],
+  );
+
+  const finish = useCallback(() => {
+    if (raf.current) {
+      cancelAnimationFrame(raf.current);
+      raf.current = 0;
+    }
+    const d = dragRef.current;
+    const target = dropRef.current;
+    const did = moved.current;
+    dragRef.current = null;
+    dropRef.current = null;
+    from.current = null;
+    moved.current = false;
+    setDrag(null);
+    setDrop(null);
+    setGhost(null);
+    // ★잡기만 하고 놓으면 순서가 그대로여야 한다 (v2 `dragMoved`)
+    if (!did || !d || !target) return;
+    if (d.kind === "card" && target.kind === "card") onMoveCard(d.id, target.index);
+    if (d.kind === "scene" && target.kind === "scene") onMoveScene(d.id, target.cardId, target.index);
+  }, [onMoveCard, onMoveScene]);
+
+  useEffect(
+    () => () => {
+      if (raf.current) cancelAnimationFrame(raf.current);
+    },
+    [],
+  );
+
+  /** 그립에 펴 넣는다 — 씬이면 씬 id, 카드면 카드 id */
+  const gripProps = useCallback(
+    (kind: "scene" | "card", id: string) => ({
+      onPointerDown: (e: React.PointerEvent) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        // ★줄을 잡아 끄는 가로 스크롤(`SceneLane` 의 pan)로 새어 나가지 않게 막는다
+        e.stopPropagation();
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        dragRef.current = { kind, id };
+        dropRef.current = null;
+        from.current = { x: e.clientX, y: e.clientY };
+        at.current = { x: e.clientX, y: e.clientY };
+        moved.current = false;
+        setDrag({ kind, id });
+      },
+      onPointerMove: (e: React.PointerEvent) => {
+        if (!dragRef.current) return;
+        at.current = { x: e.clientX, y: e.clientY };
+        if (!moved.current) {
+          const d = Math.abs(e.clientX - (from.current?.x ?? 0)) + Math.abs(e.clientY - (from.current?.y ?? 0));
+          // ★실제로 끌기 전에는 자리도 스크롤도 안 건드린다 (v2 `DRAG_MOVE_THRESHOLD`)
+          if (d < THRESHOLD) return;
+          moved.current = true;
+          if (!raf.current) raf.current = requestAnimationFrame(loop);
+        }
+        setGhost({ x: e.clientX, y: e.clientY });
+        track(e.clientY);
+      },
+      onPointerUp: (e: React.PointerEvent) => {
+        try {
+          (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+        } catch {
+          /* 이미 놓쳤으면 그냥 간다 */
+        }
+        finish();
+      },
+      onPointerCancel: finish,
+      style: { cursor: "grab", touchAction: "none" as const },
+    }),
+    [finish, loop, track],
+  );
+
+  return { drag, drop, ghost, gripProps };
 }

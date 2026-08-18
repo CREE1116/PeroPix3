@@ -190,7 +190,7 @@ function PanelCard({
           if (
             await ask({
               title: t("cards.deleteConfirm", { name: card.name }),
-              body: t("common.cannotUndo"),
+              body: t("common.toTrash"),
               ok: t("common.delete"),
               cancel: t("cards.cancel"),
             })

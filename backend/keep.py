@@ -23,6 +23,8 @@ from pathlib import Path
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 
+import trash
+
 IMG_EXT = {".png", ".jpg", ".jpeg", ".webp"}
 
 # 파생 썸네일 캐시. ★점으로 시작하는 것은 목록에서 통째로 뺀다 (`_visible`) —
@@ -173,7 +175,17 @@ def images(root: Path, folder: str = "", page: int = 1, limit: int = 0) -> dict:
     d = safe_folder(root, folder)
     if not d.exists():
         return {"images": [], "total": 0, "page": 1, "pages": 1}
-    files = sorted(_imgs(root, d, not folder), key=lambda x: x.name, reverse=True)
+    # ★★정렬 기준은 **파일 시각(mtime) 내림차순** — v2 와 같다 (`backend.py:3903`,
+    #   사용자 결정 2026-08-18 · v2-port-audit D9). 파일명 순이면 탐색기로 직접 넣은 그림이
+    #   엉뚱한 자리에 끼어든다 (보관 파일명은 우리가 시각을 앞에 붙이지만, 밖에서 온 것은 아니다).
+    # ★같은 시각이면 **상대경로**로 한 번 더 가른다 — 쪽을 나눠 받는 화면에서 순서가 흔들리면
+    #   다음 쪽에 같은 그림이 또 온다 (아래 주석과 같은 이유). 파일 이름만으로는 모자란다:
+    #   폴더가 다르면 같은 이름이 둘 있을 수 있고, 그러면 순서를 파일시스템이 정하게 된다.
+    files = sorted(
+        _imgs(root, d, not folder),
+        key=lambda x: (x.stat().st_mtime, x.relative_to(root).as_posix()),
+        reverse=True,
+    )
     total = len(files)
     page, pages, chunk = _slice(files, page, limit)
     return {
@@ -267,17 +279,43 @@ def kept_of(root: Path, keys: list[str]) -> dict[str, str]:
 
 
 def delete(root: Path, files: list[str]) -> dict:
-    gone = []
-    for rel in files:
-        p = safe_folder(root, rel)
-        if p.is_file():
-            p.unlink()
-            gone.append(rel)
+    """지우기 = **휴지통으로 이동** (사용자 결정 2026-08-18, v2-port-audit D7).
+
+    ★곁장부(별표·출처)도 함께 걷어내되, **되돌릴 수 있게 돌려준다** — 되살린 그림에
+      별표가 안 돌아오면 반쪽짜리 되돌리기가 된다."""
+    # ★**그림만** 담는다 — 폴더를 지우는 창구는 `drop_folder`(빈 것만) 하나다.
+    #   예전 계약(파일이 아니면 조용히 건너뛴다)을 그대로 지킨다.
+    r = trash.send_at(root, [f for f in files if (root / f).is_file()])
+    gone = [m["file"] for m in r["moved"]]
+    st = _state(root)
+    starred = [f for f in gone if f in st["starred"]]
+    sources = {k: v for k, v in st["sources"].items() if v in set(gone)}
     if gone:
-        st = _state(root)
         _remap(st, {f: "" for f in gone})
         _put_state(root, st)
-    return {"deleted": gone}
+    return {"deleted": gone, "trashed": r["moved"], "starred": starred, "sources": sources}
+
+
+def restore(root: Path, entries: list[dict], starred: list[str] | None = None,
+            sources: dict[str, str] | None = None) -> dict:
+    """휴지통에서 원래 자리로. ★별표·출처도 같이 되살린다 (`delete` 가 돌려준 그대로)."""
+    r = trash.restore_at(root, entries)
+    # ★되살리다 이름이 바뀔 수 있다 (그 사이 같은 이름이 생겼을 때) — 새 경로로 따라 보낸다
+    now = {p["file"]: p["to"] for p in r["pairs"]}
+    st = _state(root)
+    touched = False
+    for f in starred or []:
+        f2 = now.get(f)
+        if f2 and f2 not in st["starred"]:
+            st["starred"].append(f2)
+            touched = True
+    for k, v in (sources or {}).items():
+        if now.get(v):
+            st["sources"][k] = now[v]
+            touched = True
+    if touched:
+        _put_state(root, st)
+    return r
 
 
 def move(root: Path, files: list[str], dest: str) -> dict:

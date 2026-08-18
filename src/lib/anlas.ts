@@ -9,7 +9,7 @@ import { alignTo64 } from "./align.ts";
 /** 공홈 `getPrice` 상수 */
 const C_BASE = 2.951823174884865e-6;
 const C_STEP = 5.753298233447344e-7;
-/** Opus 무료 판정 상한 (`eg`) */
+/** Opus 무료 판정 상한 (공홈 `eZ`) */
 const FREE_PIXELS = 1048576;
 const FREE_STEPS = 28;
 /** 한 장이 이 값을 넘으면 공홈은 생성 버튼을 막는다 (`g.dZ`) */
@@ -18,8 +18,15 @@ export const MAX_PER_IMAGE = 140;
 const REF_PER_IMAGE = 5;
 /** vibe 인코딩은 개당 2 **고정** — 해상도와 무관하고 요청당 한 번이다 */
 const VIBE_ENCODE = 2;
-/** 활성 vibe 가 5개를 넘으면 초과분 개당 +2 (요청당 한 번) */
-const VIBE_FREE_SLOTS = 5;
+/** ★켜진 vibe 가 **4개를 넘으면** 초과분 개당 +2 (요청당 한 번).
+ *
+ *  공홈 번들(2026-08-18 내려받음)의 정의가 이것이다:
+ *  `tW = 2; function tK(e){ return Math.max(0, e - 4) * tW }` — `e` 는 **켜진(enabled) 수**다.
+ *  그래서 4개까지 0, 5개면 2, 7개면 6 이다.
+ *  ★한때 이 값이 5 였다 (감사 D13). 문턱이 하나 어긋나 5개째가 공짜로 보였다.
+ *  ★기준이 「구워지지 않은 수」가 아니라 **「켜진 수」**인 것도 함께 고친 자리다 (v2 가 그랬다) —
+ *    구워 둔 것도 슬롯은 차지하므로 초과분에 들어간다. */
+const VIBE_FREE_SLOTS = 4;
 
 export type CostInput = {
   width: number;
@@ -29,9 +36,11 @@ export type CostInput = {
   opus: boolean;
   /** ★**아직 안 구운** 바이브 수. 구워 둔 것은 다시 돈이 들지 않는다 */
   uncachedVibes: number;
-  /** 지금 켜져 있는 바이브 수 — 5개 초과분에 요금이 붙는다 */
+  /** 지금 **켜져 있는** 바이브 수 — 4개 초과분에 요금이 붙는다 (구워 둔 것도 센다) */
   activeVibes?: number;
   refCount: number;
+  /** 지금 인페인트(mask 를 실어 보내는 요청)인가 — ★켜져 있으면 바이브 비용이 통째로 0 이다 */
+  inpaint?: boolean;
   /** i2i 강도. 인페인트면 `inpaintImg2ImgStrength`, 베이스 그림이 없으면 1 */
   strength: number;
   /** 이번에 만들 장 수 */
@@ -76,6 +85,19 @@ export function anlasCost(i: CostInput): Cost {
   // ★실제로 나가는 해상도로 센다 — 화면 값이 64 배수가 아니면 청구가 어긋난다
   const px = alignTo64(i.width) * alignTo64(i.height);
 
+  // ★★**우리 구조에서는 「무료」가 곧 「전부 공짜」다** (감사 D12, 2026-08-18 공홈 번들 대조).
+  //
+  //   공홈은 요청 **하나**(`n_samples` 장)에서 **한 장만** 무료다:
+  //     `eZ(e) && tier>=3 && active(sub) && !n && (v -= 1)`   ← `v = e.n_samples`
+  //   그런데 우리는 NAI 에 **`n_samples: 1` 로 한 장씩** 보낸다 (`backend/nai.py:315`).
+  //   요청마다 그 한 장이 깎이므로 배치의 **모든 장**이 무료가 되는 것이 맞다.
+  //
+  //   ★v2 는 여기서 틀렸다 — `total = per_sample * max(0, count-1)` 로 `n_samples-1` 을
+  //     **배치 장 수**에 그대로 적용해 한 장 빼고 전부 과금했다 (`backend.py:4719-4726`).
+  //     v2 도 한 장씩 보냈으므로(`backend.py:1613`) 표시가 과다 계상이었다.
+  //     되돌리지 말 것. 근거는 「몇 장을 한 요청에 담느냐」 하나뿐이라, 언젠가 여러 장을
+  //     한 요청으로 보내게 되면 **그때는 공홈처럼 한 장만 깎아야** 한다.
+  //
   // ★무료 판정에 **vibe·캐릭터 참조는 들어가지 않는다.** 공홈 `eZ()` 에 `!characterRef` 가
   //   있지만 가격 계산부가 그 키를 안 넘겨 늘 undefined 다 — 전송 경로만 채운다.
   //   실측(2026-08-11): Opus·832x1216·28step·참조 1개 = 5. 무료가 살아 있고 참조비만 나간다.
@@ -84,14 +106,23 @@ export function anlasCost(i: CostInput): Cost {
   const perSample = Math.ceil(C_BASE * px + C_STEP * px * i.steps);
   // 강도 계수 — 베이스 그림이 있을 때만 걸린다. 바닥은 2 다
   const y = i.strength < 1 ? i.strength : 1;
-  const base = free ? 0 : Math.max(Math.ceil(perSample * y), 2);
+  // ★공홈의 `I` — **언제나 계산한다.** 무료는 값을 0 으로 만드는 것이 아니라 장 수(`v`)에서
+  //   1을 빼는 것이라(`I > g.dZ ? -3 : I*v`), 무료 구간에서도 상한 판정이 살아 있어야 한다
+  const perSampleCost = Math.max(Math.ceil(perSample * y), 2);
+  const base = free ? 0 : perSampleCost;
 
   // 캐릭터 참조는 **장당** 붙는다 (무료 판정과 무관)
   const perImage = base + REF_PER_IMAGE * Math.max(0, i.refCount);
 
+  // ★★**캐릭터 참조가 하나라도 있거나 인페인트면 바이브 비용은 통째로 0** 이다.
+  //   공홈 호출부가 그 셋을 한 조건으로 묶어 두었다:
+  //     `vibes.length>0 && encodedVibes && !hasCharRefs && !mask && (인코딩 합 + tK(켜진 수))`
+  //   지금 v3 에서는 화면이 vibe 와 참조를 배타로 두어 참조 쪽은 저절로 0 이 되지만,
+  //   **인페인트 + vibe 는 함께 나갈 수 있다** — 그 조합이 값을 부풀리던 자리다 (감사 D13).
+  const vibeFree = i.refCount > 0 || !!i.inpaint;
   // vibe 인코딩·초과 슬롯은 **요청당 한 번**이지 장당이 아니다
   const over = Math.max(0, (i.activeVibes ?? 0) - VIBE_FREE_SLOTS);
-  const encoding = Math.max(0, i.uncachedVibes) * VIBE_ENCODE + over * VIBE_ENCODE;
+  const encoding = vibeFree ? 0 : Math.max(0, i.uncachedVibes) * VIBE_ENCODE + over * VIBE_ENCODE;
 
   return {
     perImage,
@@ -100,6 +131,7 @@ export function anlasCost(i: CostInput): Cost {
     encoding,
     // ★상한 판정은 **기본 생성비**로 한다 — 번들의 `I > g.dZ ? -3 : I*v` 에서 `I` 가
     //   `max(ceil(per_sample*y), 2)` 이고, 캐릭터 참조비는 거기 안 들어간다.
-    overLimit: base > MAX_PER_IMAGE,
+    //   ★무료라고 건너뛰지 않는다 — 공홈도 `I` 를 언제나 재서 견준다 (감사 D12).
+    overLimit: perSampleCost > MAX_PER_IMAGE,
   };
 }

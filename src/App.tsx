@@ -329,10 +329,10 @@ function Placeholder({ mode }: { mode: string }) {
   );
 }
 
-/** 큐 진행률 — 돌고 있을 때만 뜬다. 취소·비우기가 여기 붙는다. */
+/** 큐 진행률 — 돌고 있을 때만 뜬다. 취소가 여기 붙는다. */
 function QueueStatus() {
   const t = useI18n((s) => s.t);
-  const { progress, cancel, clear } = useQueue();
+  const { progress, cancelAll } = useQueue();
   const running = progress.total > progress.completed;
   if (!running) return null;
   return (
@@ -353,14 +353,10 @@ function QueueStatus() {
       {progress.queue_length > 0 && (
         <span title={t("queue.waiting", { n: progress.queue_length })}>+{progress.queue_length}</span>
       )}
-      <button onClick={() => void cancel()} style={navBtn} title={t("queue.cancelHint")}>
+      {/* ★취소는 **버튼 하나**다 (사용자 결정 2026-08-18) — 생성 푸터와 같은 창구다 */}
+      <button onClick={() => void cancelAll()} style={navBtn} title={t("queue.cancelHint")}>
         {t("queue.cancel")}
       </button>
-      {progress.queue_length > 0 && (
-        <button onClick={() => void clear()} style={navBtn} title={t("queue.clearHint")}>
-          {t("queue.clear")}
-        </button>
-      )}
     </span>
   );
 }

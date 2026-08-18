@@ -7,25 +7,58 @@ import { create } from "zustand";
  *    되짚어야 하는 것(생성 실패 등)은 자기 자리에 남는다 (`useGen.error` → 생성 푸터).
  *    여기 오는 것은 "됐다"에 가까운 것들이다.
  */
-export type Toast = { id: number; text: string; kind: "ok" | "warn" };
+export type Toast = {
+  id: number;
+  text: string;
+  kind: "ok" | "warn";
+  /** 한 번 누를 수 있는 단추 — 「되돌리기」가 여기 붙는다 (아래 ★) */
+  action?: { label: string; run: () => void };
+};
 
 type S = {
   items: Toast[];
-  show: (text: string, kind?: Toast["kind"]) => void;
+  /** 띄운 토스트의 id 를 돌려준다 — 단추를 누른 쪽이 그 줄을 바로 치울 수 있게 */
+  show: (text: string, kind?: Toast["kind"], action?: Toast["action"]) => number;
   drop: (id: number) => void;
 };
 
 let seq = 1;
+/** ★단추가 붙은 토스트는 오래 둔다 — 누를 틈이 있어야 한다 (2.6초로는 못 누른다) */
+const MS = 2600;
+const MS_ACTION = 9000;
 
 export const useToast = create<S>((set, get) => ({
   items: [],
-  show(text, kind = "ok") {
+  show(text, kind = "ok", action) {
     const id = seq++;
-    set({ items: [...get().items, { id, text, kind }] });
-    setTimeout(() => get().drop(id), 2600);
+    set({ items: [...get().items, { id, text, kind, action }] });
+    setTimeout(() => get().drop(id), action ? MS_ACTION : MS);
+    return id;
   },
   drop: (id) => set({ items: get().items.filter((x) => x.id !== id) }),
 }));
 
 /** 컴포넌트 밖(스토어·이벤트)에서 부르는 단축 */
-export const toast = (text: string, kind?: Toast["kind"]) => useToast.getState().show(text, kind);
+export const toast = (text: string, kind?: Toast["kind"], action?: Toast["action"]) =>
+  useToast.getState().show(text, kind, action);
+
+/** ★**지운 직후의 되돌리기 창구** (사용자 결정 2026-08-18, v2-port-audit D7).
+ *
+ *  지우는 화면마다 되돌리기 UI 를 따로 만들면 어디서는 되고 어디서는 안 되는 상태가 생긴다
+ *  (캔버스만 `Ctrl+Z` 가 있고 나머지는 없던 것이 그랬다). 창구를 하나로 둔다 —
+ *  지운 쪽은 "무엇을 되돌릴지"만 넘기면 된다.
+ *
+ *  ★누르면 토스트가 바로 사라진다. 두 번 눌러 두 번 되살리는 일이 없어야 한다. */
+export function undoToast(text: string, label: string, run: () => void | Promise<void>) {
+  let used = false;
+  let id = 0;
+  id = useToast.getState().show(text, "ok", {
+    label,
+    run: () => {
+      if (used) return;
+      used = true;
+      useToast.getState().drop(id);
+      void run();
+    },
+  });
+}

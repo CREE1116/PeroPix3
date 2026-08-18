@@ -28,6 +28,8 @@ import httpx
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 
+import trash
+
 ENCODE_ENDPOINT = "https://image.novelai.net/ai/encode-vibe"
 KEY_MAP_NAME = "key_map.json"
 THUMB_MAX = 512
@@ -191,32 +193,62 @@ class VibeCache:
             "size": size,
         }
 
-    def delete(self, name: str) -> bool:
-        """캐시 한 장을 지운다 (v2 backend.py:4321-4345).
+    def _keys(self) -> dict[str, str]:
+        """`key_map.json` 을 그대로 읽는다 (캐시 키 → 파일 이름)."""
+        km = self.dir / KEY_MAP_NAME
+        try:
+            return json.loads(km.read_text(encoding="utf-8")) if km.exists() else {}
+        except Exception:
+            return {}
 
+    def _put_keys(self, keys: dict[str, str]) -> None:
+        """`key_map.json` 에 (캐시 키 → 파일 이름)을 써 넣는다. 값이 빈 문자열이면 뺀다."""
+        km = self.dir / KEY_MAP_NAME
+        try:
+            m = json.loads(km.read_text(encoding="utf-8")) if km.exists() else {}
+            for k, v in keys.items():
+                if v:
+                    m[k] = v
+                else:
+                    m.pop(k, None)
+            km.write_text(json.dumps(m, indent=2), encoding="utf-8")
+            self._key_map = m
+            self._key_map_mtime = km.stat().st_mtime
+        except Exception:
+            pass
+
+    def delete(self, name: str) -> dict | None:
+        """캐시 한 장을 **휴지통으로 옮긴다** (사용자 결정 2026-08-18, v2-port-audit D7).
+
+        ★★여기는 **Anlas 가 든 자리**라 되돌릴 수 있어야 한다는 요구가 가장 세다 —
+          지운 캐시를 다시 얻으려면 같은 그림 값을 다시 지불한다.
         ★`key_map.json` 을 **먼저** 정리한다. 안 지우면 다음 생성이 없는 파일을 가리키는
-          키를 찾다가 캐시 미스로 떨어져 같은 그림을 다시 굽는다 (유료)."""
+          키를 찾다가 캐시 미스로 떨어져 같은 그림을 다시 굽는다 (유료).
+        ★그래서 걷어낸 키를 **돌려준다** — 되돌리기가 파일만 되살리고 키를 안 되살리면
+          그림은 돌아왔는데 캐시는 여전히 미스다 (되돌린 뜻이 없어진다)."""
         f = self.path_of(name)
         if f is None:
-            return False
-        km = self.dir / KEY_MAP_NAME
-        gone: list[str] = []
-        if km.exists():
-            try:
-                m = json.loads(km.read_text(encoding="utf-8"))
-                gone = [k for k, v in m.items() if v == f.name]
-                for k in gone:
-                    del m[k]
-                km.write_text(json.dumps(m, indent=2), encoding="utf-8")
-                self._key_map = m
-                self._key_map_mtime = km.stat().st_mtime
-            except Exception:
-                pass
-        f.unlink()
+            return None
+        keys = [k for k, v in self._keys().items() if v == f.name]
+        if keys:
+            self._put_keys({k: "" for k in keys})
+        r = trash.send_at(self.dir, [f.name])
+        if not r["moved"]:
+            return None
         # ★메모리 층도 함께 비운다 — 안 비우면 지운 뒤에도 그 인코딩이 살아 있다
-        for k in gone:
+        for k in keys:
             self._data.pop(k, None)
-        return True
+        return {"ok": True, "name": f.name, "trashed": r["moved"], "keys": keys}
+
+    def restore(self, entries: list[dict], keys: list[str] | None = None) -> dict:
+        """휴지통에서 되살린다 (「되돌리기」). ★캐시 키도 같이 되살린다 — 이름이 바뀌었으면
+        새 이름으로 이어 준다."""
+        r = trash.restore_at(self.dir, entries)
+        to = {p["file"]: p["to"] for p in r["pairs"]}
+        if keys and to:
+            new = next(iter(to.values()))
+            self._put_keys({k: new for k in keys})
+        return r
 
     def entries(self) -> list[dict]:
         """캐시 뷰어용 목록 — vibe 데이터 자체는 빼고 메타만."""

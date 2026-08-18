@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { api } from "../lib/backend";
 import { newId, type Block, type BlockColor, type Tag } from "../lib/blocks";
+import { t } from "../i18n";
+import { toast, undoToast } from "./toast";
 
 /** 블록 저장소 — 블록 하나를 이름·분류와 함께 보관했다가 다시 꺼낸다.
  *
@@ -80,9 +82,20 @@ export const useBlockLib = create<S>((set, get) => ({
     return r.item;
   },
 
+  /** ★지운 것은 **되돌릴 수 있어야 한다** (사용자 결정 2026-08-18, v2-port-audit D7).
+   *
+   *  ★다른 창구처럼 휴지통(`backend/trash.py`)을 쓰지 않는다 — 저장소가 **파일 하나 안의
+   *    목록**이라 옮길 파일이 없다 (`backend/blocklib.py` 머리 주석). 대신 지운 항목을
+   *    그대로 들고 있다가 `save` 로 **id 째 되돌린다** — 같은 id 로 저장하면 제자리로 간다. */
   async remove(id) {
+    const gone = get().items.find((x) => x.id === id);
     await api(`/api/blocks/${id}`, { method: "DELETE" });
     set({ items: get().items.filter((x) => x.id !== id) });
+    if (gone)
+      undoToast(t("common.removed"), t("common.undo"), async () => {
+        await get().save(gone);
+        toast(t("common.restored"));
+      });
   },
 }));
 

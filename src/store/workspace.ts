@@ -1,10 +1,11 @@
 import { create } from "zustand";
-import { api } from "../lib/backend";
+import { api, type TrashEntry } from "../lib/backend";
 import { usePrompt, defaultBase, defaultUc, type Char, type Thumb } from "./prompt";
 import { t } from "../i18n";
+import { toast, undoToast } from "./toast";
 import { makeBlock, parseSegs, type Block } from "../lib/blocks";
 import { convertSingleTab, wrapSetTabInCard } from "../lib/sceneCards";
-export { takesOf, type Rec } from "../lib/takes";
+export { takesOf, takesOfScene, type Rec } from "../lib/takes";
 import type { Rec } from "../lib/takes";
 
 /** 워크스페이스 = 작업 상태 + 생성 이미지 저장소의 단위 (schema.md).
@@ -108,8 +109,10 @@ export type CanvasTab =
       idOnly?: boolean;
       /** 어느 캐릭터의 포즈세트인가. 옛 세트 탭에는 없다 (`migrate` 가 채운다) */
       charId?: string;
-      /** ★씬 프롬프트가 **payload 의 어디로 들어가나** — `"base"`(top-level prompt) 또는
-       *  캐릭터 id(`characterPrompts[]`). 없으면 base 다.
+      /** ★씬 프롬프트가 **payload 의 어디로 들어가나** — `"base"`(top-level prompt) ·
+       *  캐릭터 id(`characterPrompts[]`) · `"all"`(**켜진 캐릭터 전원**). 없으면 base 다.
+       *  ★`"all"` 은 v2 의 `promptTarget === "char"` 다 (`backend.py:2803-2833`).
+       *    켜진 캐릭터가 둘 이상일 때만 뜻이 있어, 화면도 그때만 선택지를 낸다.
        *  ★**탭에 하나뿐이다** (사용자 결정 2026-08-11): 카드마다 두지 않는다. 캐릭터가 둘인
        *    것은 "한 이미지에 두 사람"이지 "카드마다 다른 사람"이 아니다. */
       sceneDest?: string;
@@ -229,6 +232,12 @@ type S = {
   removeCard: (tabId: string, cardId: string) => void;
   /** 카드의 필드를 갈아 끼운다 (이름·공통 접두·씬 목록) */
   setCard: (tabId: string, cardId: string, patch: Partial<SceneCard>) => void;
+  /** 씬을 **어느 카드의 어느 자리로든** 옮긴다 — 같은 카드 안이든, 다른 카드로든
+   *  (v2 `index.html:11860-12002` 의 슬롯 드래그. 그쪽은 슬롯이 한 줄이라 카드 층이 없었다).
+   *  `toIndex` 는 **틈 번호**다 (0..n, `useReorder` 규약과 같다). 음수면 그 카드의 끝. */
+  moveScene: (tabId: string, cellId: string, toCardId: string, toIndex: number) => void;
+  /** 카드 자체의 순서. `toIndex` 도 **틈 번호**다 */
+  moveCard: (tabId: string, cardId: string, toIndex: number) => void;
 
   // ── 캐릭터 (멀티 전용) ──
   activeCharOf: () => WsChar | undefined;
@@ -576,10 +585,33 @@ export const useWs = create<S>((set, get) => ({
     await get().save();
   },
 
+  /** ★워크스페이스 삭제도 **휴지통을 거친다** (사용자 결정 2026-08-18, v2-port-audit D7).
+   *  이 앱에서 가장 크게 없어지는 동작인데 예전에는 `rmtree` 라 되돌릴 길이 아예 없었다. */
   async remove(name) {
-    await api(`/api/workspaces/${encodeURIComponent(name)}`, { method: "DELETE" });
+    // ★열려 있던 탭 줄을 **지우기 전에** 적어 둔다 — 되돌릴 때 폴더만 살아나고 탭이
+    //   안 돌아오면 "되돌렸다"고 말해 놓고 화면은 그대로인 상태가 된다
+    const hadTabs = get().openWs;
+    const r = await api<{ trashed: TrashEntry[] }>(
+      `/api/workspaces/${encodeURIComponent(name)}`,
+      { method: "DELETE" },
+    );
     const { items } = await api<{ items: WsInfo[] }>("/api/workspaces");
     set({ list: items });
+    if (r.trashed?.length)
+      undoToast(t("common.trashed", { n: 1 }), t("common.undo"), async () => {
+        await api("/api/workspaces/restore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ entries: r.trashed }),
+        });
+        const back = await api<{ items: WsInfo[] }>("/api/workspaces");
+        set({ list: back.items });
+        if (hadTabs.includes(name)) {
+          saveTabs(hadTabs);
+          set({ openWs: hadTabs });
+        }
+        toast(t("common.restored"));
+      });
     // ★지운 것은 탭에서도 뺀다 — 남겨 두면 눌러도 없는 워크스페이스를 부른다
     const tabs = get().openWs.filter((n) => n !== name);
     if (tabs.length !== get().openWs.length) {
@@ -965,6 +997,68 @@ export const useWs = create<S>((set, get) => ({
     get().setTab(tabId, {
       cards: tab.cards.map((k) => (k.id === cardId ? { ...k, ...patch } : k)),
     });
+  },
+
+  /** 씬을 옮긴다 — 카드 안에서도, **카드를 넘어서도** (v2 `index.html:11860-12002`).
+   *
+   *  ★★**씬 번호(`cell_no`)는 탭 안에서 통째로 센다** (`allCells` — 카드 순서대로 편 자리이고,
+   *    `gen.ts generateAll` 이 `order.findIndex(...) + 1` 로 뽑는다). 그래서 옮기면:
+   *     - 그 씬의 번호는 **새 자리의 번호**가 되고, 사이에 낀 씬들의 번호도 함께 밀린다
+   *     - 카드를 통째로 옮기면 그 카드의 씬 **전부**가 밀린다
+   *     - 번호는 **파일 이름 앞**에 붙는 값이라, 이미 만든 그림의 이름은 그대로고
+   *       **다음에 만드는 것부터** 새 번호로 저장된다 (이름을 소급해 고치지 않는다)
+   *  ★**결과는 안 따라 흔들린다** — 화면이 결과를 묶는 키는 `cell_id` 뿐이고(`takesOf`),
+   *    옮겨도 그 값은 안 바뀐다. 그림은 그 씬을 그대로 따라간다.
+   *  ★옮긴 씬에는 **받는 카드의 공통 접두**가 걸린다 (접두는 카드의 것이다).
+   *  ★마지막 씬을 빼내면 그 카드는 **빈 카드**로 남는다. 지우지 않는다 — 이름·접두가 든
+   *    사용자 데이터라, 옮기는 조작이 카드를 말없이 없애면 안 된다. */
+  moveScene(tabId, cellId, toCardId, toIndex) {
+    const spec = get().spec;
+    const tab = spec?.tabs.find((x) => x.id === tabId);
+    if (!spec || tab?.kind !== "set") return;
+    const from = tab.cards.find((k) => k.cells.some((c) => c.id === cellId));
+    const to = tab.cards.find((k) => k.id === toCardId);
+    if (!from || !to) return;
+    const at = from.cells.findIndex((c) => c.id === cellId);
+    const cell = from.cells[at];
+
+    if (from.id === to.id) {
+      const rest = from.cells.filter((_, i) => i !== at);
+      // 틈 번호는 **빼기 전** 목록 기준이라, 뒤쪽으로 옮길 때 한 칸 당긴다 (`useReorder` 와 같다)
+      const put = toIndex < 0 ? rest.length : Math.min(rest.length, toIndex > at ? toIndex - 1 : toIndex);
+      if (put === at) return; // 제자리
+      get().setTab(tabId, {
+        cards: tab.cards.map((k) =>
+          k.id === from.id
+            ? { ...k, cells: [...rest.slice(0, put), cell, ...rest.slice(put)] }
+            : k,
+        ),
+      });
+      return;
+    }
+
+    const put = toIndex < 0 ? to.cells.length : Math.max(0, Math.min(to.cells.length, toIndex));
+    get().setTab(tabId, {
+      cards: tab.cards.map((k) => {
+        if (k.id === from.id) return { ...k, cells: k.cells.filter((c) => c.id !== cellId) };
+        if (k.id === to.id)
+          return { ...k, cells: [...k.cells.slice(0, put), cell, ...k.cells.slice(put)] };
+        return k;
+      }),
+    });
+  },
+
+  /** 카드 순서 — 그 카드의 씬 전부가 함께 움직인다 (번호는 위 `moveScene` 주석과 같다) */
+  moveCard(tabId, cardId, toIndex) {
+    const spec = get().spec;
+    const tab = spec?.tabs.find((x) => x.id === tabId);
+    if (!spec || tab?.kind !== "set") return;
+    const at = tab.cards.findIndex((k) => k.id === cardId);
+    if (at < 0) return;
+    const rest = tab.cards.filter((_, i) => i !== at);
+    const put = toIndex < 0 ? rest.length : Math.min(rest.length, toIndex > at ? toIndex - 1 : toIndex);
+    if (put === at) return;
+    get().setTab(tabId, { cards: [...rest.slice(0, put), tab.cards[at], ...rest.slice(put)] });
   },
 
   renameTab(id, name) {

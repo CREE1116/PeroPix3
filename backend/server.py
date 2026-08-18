@@ -48,7 +48,7 @@ from blocklib import BlockLib
 from wildcards import Wildcards
 import thumbs
 from thumbs import Pins
-from workspace import Store, safe_name
+from workspace import Store, file_lead, safe_name
 
 # MCP 설정에 적어 줄 **지금 이 서버의 포트** (--port 로 바뀐다)
 # ★리로드 모드에서는 워커가 `main()` 을 안 거치고 모듈만 다시 읽는다 — 포트를 환경에서 받는다
@@ -104,7 +104,11 @@ def _tidy_ws_root() -> None:
     old_trash = WS_ROOT / ".trash"
     if old_trash.is_dir():
         for ws_dir in list(old_trash.iterdir()):
-            if not ws_dir.is_dir():
+            # ★★묶음 폴더(`20260818_101500`)는 **지금 쓰는 휴지통**이다 — 파일 관리와
+            #   워크스페이스 삭제가 여기에 담는다 (2026-08-18). 옛 자리는 한 칸 아래가
+            #   워크스페이스 이름이었으므로, 묶음 이름이면 건너뛴다. 안 건너뛰면
+            #   `workspaces/20260818_101500/` 이라는 없는 워크스페이스가 생긴다.
+            if not ws_dir.is_dir() or trash.STAMP.match(ws_dir.name):
                 continue
             dst = WS_ROOT / ws_dir.name / ".trash"
             try:
@@ -154,8 +158,13 @@ for _line in migrate_thumbs.run(cards, store, pins):
     print(f"[썸네일 이전] {_line}")
 
 # ★휴지통은 **켤 때** 비운다 (종료 때가 아니라 — 강제 종료에서는 안 돈다, trash.py 머리 주석)
+# ★★뿌리가 넷이다 (2026-08-18, D7): 워크스페이스(+`workspaces/` 자체) · 보관함 ·
+#   바이브 캐시 · 카드 · 대화. 한 곳만 비우면 나머지 휴지통이 영영 쌓인다.
 for _batch in trash.sweep(WS_ROOT):
     print(f"[휴지통 비움] {_batch}")
+for _root in (DATA_DIR / "cards", DATA_DIR / "chats", DATA_DIR / "vibe-cache"):
+    for _batch in trash.sweep_at(_root):
+        print(f"[휴지통 비움] {_root.name}/{_batch}")
 
 app = FastAPI(title="PeroPix Backend", version=APP_VERSION)
 
@@ -239,6 +248,20 @@ _migrate_llm()
 # ── 모델 ──────────────────────────────────────────────────────────
 class TokenBody(BaseModel):
     token: str
+
+
+class RestoreBody(BaseModel):
+    """「되돌리기」 — 지울 때 받은 `trashed` 를 그대로 되돌려준다 (trash.py 머리 주석).
+
+    ★모든 되살리기 창구가 **같은 모양**을 쓴다. 창구마다 다른 몸통을 만들면 화면 쪽에서
+      "이 화면은 뭘 보내야 하지"가 되살아난다."""
+
+    entries: list[dict] = []
+    #: 갤러리 전용 — 지울 때 함께 걷어낸 별표·출처를 되살린다 (`keep.restore`)
+    starred: list[str] = []
+    sources: dict[str, str] = {}
+    #: 바이브 캐시 전용 — 걷어낸 캐시 키 (`vibe.restore`)
+    keys: list[str] = []
 
 
 class GenBody(BaseModel):
@@ -710,11 +733,17 @@ async def put_chat(cid: str, body: ChatBody):
 
 @app.delete("/api/chats/{cid}")
 async def delete_chat(cid: str):
+    """★휴지통을 거친다 — `trashed` 를 화면이 들고 있다가 「되돌리기」로 넘긴다 (D7)."""
     try:
-        chats.delete(cid)
+        r = chats.delete(cid)
     except ValueError as e:
         raise HTTPException(400, str(e))
-    return {"ok": True}
+    return {"ok": True, **r}
+
+
+@app.post("/api/chats/restore")
+async def restore_chat(body: RestoreBody):
+    return chats.restore(body.entries)
 
 
 @app.post("/api/llm/chat")
@@ -773,8 +802,15 @@ async def rename_workspace(ws: str, body: dict):
 
 @app.delete("/api/workspaces/{ws}")
 async def delete_workspace(ws: str):
-    store.delete(ws)
-    return {"ok": True}
+    """★워크스페이스도 휴지통을 거친다 (D7). 예전에는 `rmtree` 라 되돌릴 길이 없었다."""
+    return {"ok": True, **store.delete(ws)}
+
+
+@app.post("/api/workspaces/restore")
+async def restore_workspace(body: RestoreBody):
+    """★`/api/workspaces/{ws}/restore` 와 다르다 — 저쪽은 그 워크스페이스 **안의 그림**,
+    이쪽은 **워크스페이스 자체**를 되살린다."""
+    return store.restore_ws(body.entries)
 
 
 class CopyBody(BaseModel):
@@ -879,10 +915,15 @@ async def delete_card(kind: str, cid: str):
     if kind not in KINDS:
         raise HTTPException(400, f"알 수 없는 카드 종류: {kind}")
     try:
-        cards.delete(kind, cid)
+        r = cards.delete(kind, cid)
     except ValueError as e:
         raise HTTPException(400, str(e))
-    return {"ok": True}
+    return {"ok": True, **r}
+
+
+@app.post("/api/cards/restore")
+async def restore_card(body: RestoreBody):
+    return cards.restore(body.entries)
 
 
 @app.post("/api/cards/thumb/{kind}/{cid}")
@@ -1097,8 +1138,10 @@ async def _generate_one(body: GenBody) -> dict:
                 "tab_id": body.tab_id, "cell_id": body.cell_id,
                 "workspace": body.workspace}
 
-    # ★씬 번호는 탐색기에서 순서를 만든다 — 뺄지는 사용자가 정한다 (v2 `exclude_slot_number`)
-    lead = "" if body.exclude_slot_number else (f"{body.cell_no:03d}" if is_set and body.cell_no else "")
+    # ★씬 번호는 탐색기에서 순서를 만들고, **씬 이름**은 그 파일이 무엇인지 알려 준다
+    #   (v2 `번호_이름_0000001.png`). 「씬 번호 빼기」는 v2 와 같이 **번호만** 뺀다 —
+    #   규칙과 근거는 `workspace.file_lead` 주석 (사용자 결정 2026-08-18, v2-port-audit D3).
+    lead = file_lead(body.cell_no, body.cell, body.exclude_slot_number) if is_set else ""
     path = store.next_name(d, lead, fmt)
     path.write_bytes(data)
     rel = store.rel(body.workspace, path)
@@ -1303,28 +1346,36 @@ async def generate_queue(body: QueueBody):
     return {"ok": True, "job_id": job_id, "count": n}
 
 
-@app.post("/api/cancel-current")
-async def cancel_current():
-    if Q.is_processing:
-        Q.cancel_current_job()
-        return {"ok": True}
-    return {"ok": False, "message": "돌고 있는 작업이 없습니다."}
+@app.post("/api/cancel-queue")
+async def cancel_queue():
+    """★**취소 창구는 이것 하나다** (사용자 결정 2026-08-18).
 
-
-@app.post("/api/clear-queue")
-async def clear_queue():
-    """대기 큐만 비운다 — 현재 작업은 계속 돈다."""
-    jobs, images = Q.clear_queue()
+    지금 NAI 로 나간 한 장은 그대로 두고(원자적 API 라 못 끊는다) **나머지를 전부** 뺀다.
+    예전에는 창구가 둘이었는데(`cancel-current`·`clear-queue`) 어느 쪽도 혼자서는
+    배치를 못 멈췄다 — v3 는 배치 전체가 잡 하나라, 잡이 시작되면 대기 큐가 비어 있어
+    「큐 비우기」가 지울 것이 없었다 (감사 D5).
+    """
+    jobs, images, running = Q.cancel_all()
     Q.total_images = max(Q.completed_images, Q.total_images - images)
-    await Q.broadcast({"type": "queue_cleared", "cleared_jobs": jobs,
-                       "cleared_images": images, "progress": Q.progress()})
-    return {"ok": True, "cleared_jobs": jobs, "cleared_images": images}
+    await Q.broadcast({"type": "queue_cancelled", "cleared_jobs": jobs,
+                       "cleared_images": images,
+                       # ★아직 올 것이 몇 장인가 — 화면은 이 수만큼만 대기 칸을 남긴다.
+                       #   돌고 있으면 in-flight 한 장, 아니면 하나도 없다
+                       "remaining": 1 if running else 0,
+                       "progress": Q.progress()})
+    return {"ok": True, "cleared_jobs": jobs, "cleared_images": images, "running": running}
 
 
 @app.get("/api/vibe-cache")
 async def vibe_cache_list():
     """구워 둔 vibe 목록 (뷰어용). ★vibe 데이터 자체는 안 내보낸다 — 크고 화면에 쓸 일이 없다."""
     return {"items": vibes.entries()}
+
+
+@app.post("/api/vibe-cache/restore")
+async def vibe_cache_restore(body: RestoreBody):
+    """지운 캐시를 되살린다 — ★캐시 키까지 되돌려야 다음 생성이 다시 굽지 않는다 (유료)."""
+    return vibes.restore(body.entries, body.keys)
 
 
 @app.post("/api/vibe-cache/check")
@@ -1384,10 +1435,13 @@ async def vibe_cache_detail(name: str):
 
 @app.delete("/api/vibe-cache/{name}")
 async def vibe_cache_delete(name: str):
-    """캐시 한 장을 지운다 (v2 backend.py:4321-)."""
-    if not vibes.delete(name):
+    """캐시 한 장을 **휴지통으로** (v2 backend.py:4321-, D7).
+
+    ★여기는 Anlas 가 든 자리라 되돌리기가 가장 중요하다 — 캐시 키까지 함께 돌려준다."""
+    r = vibes.delete(name)
+    if not r:
         raise HTTPException(404, "없는 캐시 항목")
-    return {"ok": True}
+    return r
 
 
 @app.get("/api/vibe-cache/{name}")
@@ -1470,6 +1524,9 @@ async def gallery_meta(ws: str, file: str):
 
 KEEP_DIR = APP_DIR / "gallery"
 KEEP_DIR.mkdir(parents=True, exist_ok=True)
+# ★보관함의 휴지통도 **켤 때** 비운다 (위 부팅 절과 같은 규칙, D7)
+for _batch in trash.sweep_at(KEEP_DIR):
+    print(f"[휴지통 비움] gallery/{_batch}")
 
 
 class KeepSave(BaseModel):
@@ -1614,7 +1671,13 @@ async def keep_rename(body: KeepRename):
 
 @app.post("/api/keep/delete")
 async def keep_delete(body: KeepFiles):
+    """★보관함의 삭제도 휴지통을 거친다 (D7) — 별표·출처까지 되돌릴 수 있게 함께 돌려준다."""
     return keep.delete(KEEP_DIR, body.files)
+
+
+@app.post("/api/keep/restore")
+async def keep_restore(body: RestoreBody):
+    return keep.restore(KEEP_DIR, body.entries, body.starred, body.sources)
 
 
 @app.post("/api/keep/move")
@@ -1978,8 +2041,17 @@ async def files_move(body: FilesMove):
 
 @app.post("/api/files/delete")
 async def files_delete(body: FilesMove):
+    """★파일도 **폴더도** 휴지통을 거친다 (D7). 예전에는 폴더면 `rmtree` 였다."""
     try:
         return files.delete(WS_ROOT, body.files)
+    except (ValueError, OSError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/files/restore")
+async def files_restore(body: RestoreBody):
+    try:
+        return files.restore(WS_ROOT, body.entries)
     except (ValueError, OSError) as e:
         raise HTTPException(400, str(e))
 

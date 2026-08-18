@@ -1,5 +1,7 @@
 import { create } from "zustand";
-import { api } from "../lib/backend";
+import { api, type TrashEntry } from "../lib/backend";
+import { t } from "../i18n";
+import { toast, undoToast } from "./toast";
 
 /** 파일 관리 — **아웃풋 폴더를 그대로** 보여준다 (v2 `파일 관리` 탭).
  *
@@ -177,13 +179,28 @@ export const useFiles = create<S>((set, get) => ({
     await get().reload();
   },
 
+  /** ★지우기는 **휴지통을 거친다** (사용자 결정 2026-08-18, v2-port-audit D7).
+   *  폴더도 통째로 담기고, 되돌리면 안에 든 것까지 그대로 돌아온다.
+   *  ★되돌리기 창구는 **토스트의 단추**다 — 파일 관리에는 `Ctrl+Z` 를 받을 자리가 없다
+   *    (캔버스와 달리 키를 먹는 화면이 아니다). */
   async remove(files) {
-    await api("/api/files/delete", {
+    const r = await api<{ deleted: string[]; trashed: TrashEntry[] }>("/api/files/delete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ files }),
     });
     await get().reload();
+    if (r.trashed?.length)
+      undoToast(t("common.trashed", { n: r.trashed.length }), t("common.undo"), async () => {
+        await api("/api/files/restore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ entries: r.trashed }),
+        });
+        await get().loadTree();
+        await get().reload();
+        toast(t("common.restored"));
+      });
   },
 
   async reveal(path) {

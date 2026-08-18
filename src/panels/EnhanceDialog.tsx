@@ -18,6 +18,9 @@ import { anlasCost, MAX_PER_IMAGE } from "../lib/anlas";
 import { useSub } from "../store/sub";
 import { useSceneFocus } from "../store/sceneFocus";
 import { allScenes } from "../store/workspace";
+import { api } from "../lib/backend";
+import type { ImageMeta } from "../store/gallery";
+import { hasMeta, metaParams } from "../lib/metaApply";
 
 /** ★Magnitude → 강도·노이즈. v2 `magnitudePresets` 원문 그대로 (index.html:23953).
  *  숫자를 바꾸면 결과가 달라진다 — "적당히 비슷한 값"으로 손대지 말 것. */
@@ -36,6 +39,17 @@ const MAGNITUDE: Record<number, { strength: number; noise: number }> = {
  *  ★**원본을 미리 확대해 보내지 않는다** (`docs/nai-web-reference.md` 6절). 서버가 저장된
  *    원본을 그대로 보내고 width/height 만 키운다 — 예전 주석의 "캔버스로 먼저 키운다"는 폐기됐다.
  *  ★배율도 1.5 고정이 아니다. 원본 크기가 정한다 (`lib/enhance.ts`).
+ *  ★★**그 그림의 메타데이터로 돈다** (사용자 결정, `docs/v2-port-audit.md` D1).
+ *    프롬프트·네거티브·캐릭터·모델·샘플러·스텝·cfg 를 **강화할 그림에서** 읽어 싣는다
+ *    (v2 `buildEnhanceRequest`, `index.html:24455-24486`). 지금 화면의 프롬프트로 돌면
+ *    갤러리의 옛 그림을 강화할 때 전혀 다른 그림이 나온다.
+ *    - **배치는 장마다** 그 장의 메타데이터를 읽는다 (크기와 같은 이유로 한 벌로 못 묶는다).
+ *    - 메타데이터가 없는 그림(밖에서 가져온 것)은 v2 와 같이 **지금 화면 값**으로 떨어지고,
+ *      그 사실을 창에 한 줄로 알린다 (v2 는 말없이 떨어졌다).
+ *    - ★**화면 상태는 안 건드린다.** 갤러리의 「설정 불러오기」와 다른 점이 이것뿐이다 —
+ *      강화는 그 요청에만 쓰는 값이라 사용자가 적어 둔 프롬프트를 덮으면 안 된다.
+ *    - ★**시드는 메타데이터에서 안 가져온다** (v2 `index.html:24476`). 원본 시드 그대로면
+ *      같은 그림이 나와 강화의 뜻이 없다.
  *  ★결과는 **새 그림**이다. 어느 그림에서 나왔는지만 `enhance_of` 에 남기고, 화면은
  *    묶지 않는다 (사용자 결정 2026-08-13: v2 의 버전 스택 `1/n` 은 작업할 때 불편하다).
  */
@@ -72,6 +86,9 @@ export function EnhanceDialog({
   const [noise, setNoise] = useState(last.noise);
   /** 대상마다 원본 크기 — 배치는 크기가 섞여 있어 **장마다** 재야 한다 */
   const [sizes, setSizes] = useState<Record<string, [number, number]> | null>(null);
+  /** 대상마다 **그 그림의 메타데이터** — 강화가 읽는 값의 정본 (머리 주석 ★★).
+   *  ★배치는 장마다 다르므로 한 벌로 못 묶는다. 못 읽으면 그 자리만 `null` 이다. */
+  const [metas, setMetas] = useState<Record<string, ImageMeta | null> | null>(null);
   const [busy, setBusy] = useState(false);
 
   // 원본 크기를 읽어 목표 해상도를 낸다 (배치면 전부)
@@ -104,6 +121,34 @@ export function EnhanceDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base, ws, targets]);
 
+  /** 장마다 메타데이터를 읽는다 — ★크기 읽기와 **따로** 돈다. 한쪽이 실패해도 다른 쪽은
+   *  살아 있어야 하고, 메타데이터가 없는 그림도 강화 자체는 돌아가야 한다. */
+  useEffect(() => {
+    let dead = false;
+    setMetas(null);
+    void Promise.all(
+      targets.map(async (f) => {
+        try {
+          const r = await api<{ meta: ImageMeta | null }>(
+            `/api/gallery/${encodeURIComponent(ws)}/meta?file=${encodeURIComponent(f)}`,
+          );
+          return [f, r.meta] as const;
+        } catch {
+          // 못 읽는 것은 정상 경우다 (밖에서 가져온 그림) — 화면 값으로 떨어진다
+          return [f, null] as const;
+        }
+      }),
+    ).then((pairs) => {
+      if (!dead) setMetas(Object.fromEntries(pairs));
+    });
+    return () => {
+      dead = true;
+    };
+  }, [ws, targets]);
+
+  /** 메타데이터가 없어 **지금 화면 값**으로 도는 장 수 — 창에 한 줄로 알린다 */
+  const noMeta = metas ? targets.filter((f) => !hasMeta(metas[f])).length : 0;
+
   const preset = MAGNITUDE[mag] ?? MAGNITUDE[3];
   const useStrength = adv ? strength : preset.strength;
   const useNoise = adv ? noise : preset.noise;
@@ -117,6 +162,11 @@ export function EnhanceDialog({
   const scaleOf = (f: string) => {
     const d = sizes?.[f];
     return d ? clampEnhanceScale(d[0], d[1], scale) : scale;
+  };
+  /** 이 장에 실제로 나갈 steps — 메타데이터에 있으면 그 값, 없으면 화면 값 (`metaJob` 과 같은 규칙) */
+  const stepsOf = (f: string) => {
+    const m = metas?.[f];
+    return (hasMeta(m) ? metaParams(m!).steps : undefined) ?? params.steps;
   };
   /** 배율이 내려간 장 수 — ★**누르기 전에** 알린다 (v2 는 큐에 넣고 나서 토스트로 알렸다) */
   const adjusted = sizes ? targets.filter((f) => scaleOf(f) !== scale).length : 0;
@@ -142,7 +192,9 @@ export function EnhanceDialog({
     const d = sizes?.[f];
     const [w, h] = d ? enhanceTargetSize(d[0], d[1], scaleOf(f)) : [params.width, params.height];
     return anlasCost({
-      width: w, height: h, steps: params.steps, opus,
+      // ★steps 도 **그 그림의 것**이다 — 요청에 그 값이 나가므로(`metaJob`) 화면 값으로 세면
+      //   표시 비용과 실제 청구가 어긋난다 (v2 는 사이드바 steps 로 세어 어긋나 있었다)
+      width: w, height: h, steps: stepsOf(f), opus,
       uncachedVibes: 0, activeVibes: 0, refCount: 0,
       strength: useStrength, count: 1,
     });
@@ -178,6 +230,9 @@ export function EnhanceDialog({
       // ★그림은 **서버가 읽는다** — 화면이 4.6MB base64 를 실어 보내지 않는다 (`enhance_from`).
       //   ★뿌리를 가리킨다: 강화본을 또 강화해도 스택이 평평해야 버전 넘기기가 안 꼬인다.
       //   ★배율은 **장마다** 다를 수 있다 (`scaleOf` — 못 쓰는 배율은 내려간다).
+      //   ★★그리고 **그 그림의 메타데이터**를 얹는다 (머리 주석). 큐는 항목의 값만 base 위에
+      //     덮으므로(`server._process_job`), 메타데이터가 안 준 자리는 저절로 아래 base 의
+      //     화면 값이 된다 — v2 의 `normalized?.x || 사이드바` 와 같은 결과다.
       const jobs = targets.map((f) => ({
         enhance_from: f,
         enhance_scale: scaleOf(f),
@@ -185,6 +240,7 @@ export function EnhanceDialog({
         base_strength: useStrength,
         base_noise: useNoise,
         ...cellOf(f),
+        ...metaJob(metas?.[f] ?? null),
       }));
       // ★창을 **먼저** 닫는다 (사용자 지적 2026-08-14: 다 될 때까지 안 꺼졌다).
       //   큐는 보내기 전에 대기 칸을 미리 잡아 두므로, 닫자마자 그 자리가 보인다.
@@ -286,6 +342,17 @@ export function EnhanceDialog({
           </span>
         )}
 
+        {/* ★메타데이터가 없는 그림은 **지금 화면 값**으로 돈다. v2 는 말없이 그렇게 했는데,
+            여기서는 왜 다른 결과가 나오는지 알 수 있게 한 줄로 알린다 */}
+        {noMeta > 0 && (
+          <span
+            data-enhance-nometa={noMeta}
+            style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}
+          >
+            {t("enhance.noMeta", { n: noMeta })}
+          </span>
+        )}
+
         {!adv && (
           <Row label={t("enhance.magnitude")}>
             {[1, 2, 3, 4, 5].map((m) => (
@@ -304,11 +371,13 @@ export function EnhanceDialog({
         {adv && (
           <>
             <Row label={t("imgIn.strength")}>
+              {/* ★범위는 v2 그대로다 (`enhanceStrengthSlider`, index.html:10469 · 0~1 step .01).
+                  사용자 결정 2026-08-18 로 되돌렸다 */}
               <input
                 type="range"
                 data-enhance-strength
-                min={0.01}
-                max={0.99}
+                min={0}
+                max={1}
                 step={0.01}
                 value={strength}
                 onChange={(e) => setStrength(Number(e.target.value))}
@@ -359,7 +428,9 @@ export function EnhanceDialog({
         <button
           data-enhance-run
           onClick={() => void run()}
-          disabled={busy || !sizes || !targets.length || cost.overLimit}
+          /* ★메타데이터를 다 읽기 전에는 못 누른다 — 그 전에 보내면 **전부 화면 값**으로
+             나가서, 고치려던 그 결함(D1)이 그대로 재현된다 */
+          disabled={busy || !sizes || !metas || !targets.length || cost.overLimit}
           style={{
             background: cost.overLimit || !targets.length ? "var(--panel)" : "var(--accent)",
             color: cost.overLimit || !targets.length ? "var(--ink-faint)" : "var(--accent-on)",
@@ -382,6 +453,24 @@ export function EnhanceDialog({
       </div>
     </div>
   );
+}
+
+/** 그 그림의 메타데이터를 **이 요청의 값**으로 (v2 `buildEnhanceRequest`, `index.html:24455-24486`).
+ *
+ *  ★없는 값은 **안 싣는다** — 그 자리는 큐가 base(지금 화면)로 채운다. v2 의
+ *    `normalized?.x || 사이드바` 를 항목/기본값 두 층으로 옮긴 것이다.
+ *  ★생성 설정의 표는 `lib/metaApply` 하나다 (갤러리의 「설정 불러오기」와 같은 표).
+ *  ★캐릭터는 **메타데이터가 있으면 그것으로 갈아 끼운다** — 없던 그림이면 빈 목록이 되어
+ *    화면의 캐릭터가 안 섞인다 (v2 도 `normalized?.character_prompts || []` 로 비웠다).
+ *    좌표는 안 싣는다: v2 도 `{prompt, uc}` 만 보낸다 (`index.html:24472`).
+ *  ★시드·해상도는 여기 없다 (머리 주석). */
+function metaJob(m: ImageMeta | null): Record<string, unknown> {
+  if (!hasMeta(m)) return {};
+  const o: Record<string, unknown> = { ...metaParams(m!) };
+  if (m!.prompt) o.prompt = m!.prompt;
+  if (m!.negative) o.negative_prompt = m!.negative;
+  o.characters = (m!.characters ?? []).map((c) => ({ prompt: c.prompt, uc: c.negative }));
+  return o;
 }
 
 const Row = ({ label, children }: { label: string; children: React.ReactNode }) => (

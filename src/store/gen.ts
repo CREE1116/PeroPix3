@@ -45,7 +45,9 @@ export type GenParams = {
    *  그래서 씬 칸·갤러리에는 안 뜨고 캔버스의 미리보기 자리에만 뜬다. */
   auto_save: boolean;
   /** ★켜면 파일 이름 앞의 **씬 번호를 뺀다** (v2 `exclude_slot_number`).
-   *  번호는 탐색기에서 씬 순서를 만드는 것이라, 순서가 필요 없을 때만 끈다. */
+   *  번호는 탐색기에서 씬 순서를 만드는 것이라, 순서가 필요 없을 때만 끈다.
+   *  ★★**빼는 것은 번호뿐이고 씬 이름은 남는다** (v2 와 같다 — 사용자 결정 2026-08-18,
+   *    v2-port-audit D3). 규칙은 `backend/workspace.py` 의 `file_lead` 가 정본이다. */
   exclude_slot_number: boolean;
   /** 시드를 **언제 새로 뽑나** — ★셋 중 하나다 (v2 의 `랜덤/고정/슬롯마다 랜덤` 이관).
    *
@@ -306,6 +308,10 @@ export const useGen = create<S>((set, get) => ({
     const found = tab.kind === "set" && origin
       ? allScenes(tab).find((x) => x.cell.id === origin.id)
       : null;
+    // ★씬 번호(1부터) — 탭에서의 자리다 (`generateAll` 과 같은 규칙)
+    const cellNo = tab.kind === "set" && found
+      ? allCells(tab).findIndex((x) => x.id === found.cell.id) + 1
+      : null;
     // ★페이로드를 **먼저** 굳힌다. `payload()` 와 `compiled()` 는 편집 중일 때만 인페인트
     //   내용을 내므로, 편집에서 나가기 전에 다 읽어 둬야 한다
     const body = {
@@ -318,7 +324,9 @@ export const useGen = create<S>((set, get) => ({
       char: ws.activeCharOf()?.name ?? null,
       tab: tab.name,
       tab_id: tab.id,
-      ...(found ? { cell: found.cell.name, cell_id: found.cell.id } : {}),
+      // ★씬 번호도 함께 보낸다 — 파일 이름 앞이 `<번호>_<씬 이름>` 이라(`workspace.file_lead`),
+      //   번호가 빠지면 인페인트 결과만 `수영복_001.png` 로 나와 같은 폴더 안에서 어긋난다
+      ...(found ? { cell: found.cell.name, cell_id: found.cell.id, cell_no: cellNo } : {}),
     };
     // ★보냈으면 편집에서 나온다 (사용자 결정 2026-08-13). 여기 머물면 결과를 못 본다.
     //   마스크·사각형·프롬프트 사본은 남아, 다시 들어가면 그대로 이어진다
@@ -377,7 +385,17 @@ export const useGen = create<S>((set, get) => ({
         //   `base` 면 top-level prompt 에, 캐릭터 id 면 그 사람의 `characterPrompts[]` 에 붙는다.
         //   ★고른 캐릭터가 목록에 없으면(꺼짐·삭제) base 로 떨어진다 — 조용히 사라지지 않게.
         const scene = compileBlocks(c.blocks);
-        const dest = raw.chars.some((ch) => ch.id === tab.sceneDest) ? tab.sceneDest : "base";
+        // ★목적지는 **셋**이다 — base · 캐릭터 한 명 · **캐릭터 전원**(`"all"`).
+        //   「전원」은 v2 의 `promptTarget === "char"` 이다 (`backend.py:2803-2833`): 그쪽은
+        //   씬 태그를 **켜진 캐릭터 전부**의 프롬프트에 이어 붙였다.
+        //   ★켜진 캐릭터가 **둘 이상일 때만** 뜻이 있다 (한 명이면 그 사람을 고르는 것과 같다) —
+        //     화면도 그때만 선택지를 낸다(`SceneLane`). 조건이 깨지면 base 로 떨어진다.
+        const dest =
+          tab.sceneDest === "all" && raw.chars.length > 1
+            ? "all"
+            : raw.chars.some((ch) => ch.id === tab.sceneDest)
+              ? tab.sceneDest
+              : "base";
         const toChar = dest !== "base";
         // ★★**이 장의 추첨**이다. 회차마다·씬마다 따로 뽑히며, 이 한 줄이 와일드카드의
         //   존재 이유다 (`docs/v2-feature-catalog.md:477`: 한 번만 풀면 전 이미지가 굳는다).
@@ -392,7 +410,7 @@ export const useGen = create<S>((set, get) => ({
           uc: raw.uc,
           chars: toChar
             ? raw.chars.map((ch) =>
-                ch.id === dest && scene
+                (dest === "all" || ch.id === dest) && scene
                   ? { ...ch, prompt: [ch.prompt, scene].filter(Boolean).join(", ") }
                   : ch,
               )

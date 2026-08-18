@@ -50,3 +50,42 @@ export function takesOf(
     return r.cell_id ? r.cell_id === cell.id : r.cell === cell.name;
   });
 }
+
+/** ★이미 경고한 파일 — 렌더마다 부르는 자리라 한 번씩만 남긴다 */
+const warned = new Set<string>();
+
+/** 씬 하나의 결과 — **갈 자리를 못 찾은 것은 첫 씬이 받는다** (v2 `index.html:12111-12121`).
+ *
+ *  v2 는 그림이 도착했을 때 슬롯 번호가 범위를 벗어나면 `slots[0]` 에 넣고
+ *  `console.warn` 을 남겼다. 3.0 은 도착 시점이 아니라 **레코드에서 화면을 만들므로**
+ *  같은 일을 여기서 한다. 그러지 않으면 생성 중에 그 씬을 지웠을 때 파일도 레코드도
+ *  남아 있는데 **화면 어디에도 안 뜬다** (감사 D6).
+ *
+ *  ★고아 판정은 `takesOf` 를 그대로 써서 낸다 — 「이 탭의 결과 전부」에서
+ *    「어느 씬이든 가져간 것」을 뺀 나머지다. 묶는 규칙을 여기 두 번 적지 않는다.
+ *  ★씬이 하나도 없으면 받을 자리가 없다 — v2 도 그때는 그냥 버렸다(`return`).
+ *
+ *  @param cells 그 탭의 **모든 씬** (카드 순서대로). 첫 번째가 받는 자리다. */
+export function takesOfScene(
+  records: Rec[],
+  tab: { id: string; name: string; idOnly?: boolean },
+  cells: { id: string; name: string; fromSingle?: boolean }[],
+  cell: { id: string; name: string; fromSingle?: boolean },
+): Rec[] {
+  const mine = takesOf(records, tab, cell);
+  if (!cells.length || cells[0].id !== cell.id) return mine;
+
+  const claimed = new Set<string>();
+  for (const c of cells) for (const r of takesOf(records, tab, c)) claimed.add(r.file);
+  const orphans = takesOf(records, tab, undefined).filter((r) => !claimed.has(r.file));
+  for (const r of orphans) {
+    if (warned.has(r.file)) continue;
+    warned.add(r.file);
+    console.warn(
+      `[takes] 갈 씬이 없는 결과 → 첫 씬(${cell.name})에 붙입니다: ${r.file}` +
+        ` (tab=${tab.name}, cell_id=${r.cell_id ?? "없음"})`,
+    );
+  }
+  // ★만든 차례를 지킨다 — 고아를 뒤에 몰아 붙이면 줄에서 시간 순서가 어긋난다
+  return orphans.length ? [...mine, ...orphans].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0)) : mine;
+}

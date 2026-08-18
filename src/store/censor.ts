@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { t } from "../i18n";
 import { api, backendUrl } from "../lib/backend";
 import { fileMgrImg } from "../lib/imgUrl";
 import type { Dropped } from "../lib/dropImages";
@@ -421,7 +422,7 @@ export const useCensor = create<S>((set, get) => ({
   async scanAll() {
     const s = get();
     if (s.busy || !s.images.length || !s.model) return;
-    if (!s.targets.length) return set({ error: "찾을 것을 하나 이상 고르세요" });
+    if (!s.targets.length) return set({ error: t("censor.needTarget") });
     set({ busy: true, error: null, progress: { done: 0, total: s.images.length, what: "scan" } });
     const boxes = { ...s.boxes };
     const sizes = { ...s.sizes };
@@ -485,7 +486,7 @@ export const useCensor = create<S>((set, get) => ({
     const im = s.cur();
     if (!im || s.busy) return;
     const boxes = liveBoxes(s.boxes[im.id] ?? []);
-    if (!boxes.length) return set({ error: "더한 박스가 없습니다" });
+    if (!boxes.length) return set({ error: t("censor.needBox") });
     set({ busy: true, error: null });
     try {
       const r = await post<{ file: string; name: string }>("/api/censor/apply", {
@@ -514,7 +515,9 @@ export const useCensor = create<S>((set, get) => ({
     const im = s.cur();
     if (!im) return;
     const cur = s.boxes[im.id] ?? [];
-    s.putBoxes([...cur, { label: "직접", confidence: 1, box, manual: true, method: s.method }]);
+    // ★`label` 은 **저장되는 값**이라 번역문을 넣지 않는다. 화면 글자는 `manual` 을 보고 고른다
+    //   (`CensorStage`) — 여기 한국어를 박아 두면 세 언어 어디서나 그 글자가 뜬다.
+    s.putBoxes([...cur, { label: "manual", confidence: 1, box, manual: true, method: s.method }]);
     set({ sel: cur.length });
   },
 

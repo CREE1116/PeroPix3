@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useI18n } from "../../i18n";
 import { useCensor, passes, type Box } from "../../store/censor";
 import {
   HANDLES,
@@ -268,6 +269,7 @@ function BoxShape({
   scale: number;
   covered: boolean;
 }) {
+  const t = useI18n((s) => s.t);
   const [x1, y1, x2, y2] = b.box;
   const ct = center(b.box);
   const rot = b.rotation ? `rotate(${(b.rotation * 180) / Math.PI} ${ct.x} ${ct.y})` : undefined;
@@ -296,7 +298,7 @@ function BoxShape({
           fontSize={12 / scale}
           style={{ pointerEvents: "none", userSelect: "none" }}
         >
-          {b.manual ? b.label : `${b.label} ${b.confidence}`}
+          {b.manual ? t("censor.manualBox") : `${b.label} ${b.confidence}`}
         </text>
       )}
       {editable && (sel || hot) && !del && (

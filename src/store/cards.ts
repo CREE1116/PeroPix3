@@ -1,7 +1,9 @@
 import { create } from "zustand";
-import { api } from "../lib/backend";
+import { api, type TrashEntry } from "../lib/backend";
 import type { Block } from "../lib/blocks";
 import { slotBlocks } from "./workspace";
+import { t } from "../i18n";
+import { toast, undoToast } from "./toast";
 
 /** 카드 = 재사용하는 프롬프트 묶음. **워크스페이스 밖의 공용 저장소**다 (schema.md 1절).
  *  워크스페이스가 가르는 것은 작업 상태와 생성 이미지뿐이라, 어느 워크스페이스에서
@@ -105,11 +107,23 @@ export const useCards = create<S>((set, get) => ({
     return saved;
   },
 
+  /** ★카드 삭제도 **휴지통을 거친다** (사용자 결정 2026-08-18, v2-port-audit D7) —
+   *  사람이 지은 캐릭터·그림체라 잘못 눌렀을 때 되돌릴 길이 있어야 한다. */
   async remove(kind, id) {
-    await api(`/api/cards/${kind}/${id}`, { method: "DELETE" });
+    const r = await api<{ trashed: TrashEntry[] }>(`/api/cards/${kind}/${id}`, { method: "DELETE" });
     set({ [kind]: (get()[kind] as AnyCard[]).filter((x) => x.id !== id) } as unknown as Pick<
       S,
       CardKind
     >);
+    if (r.trashed?.length)
+      undoToast(t("common.trashed", { n: 1 }), t("common.undo"), async () => {
+        await api("/api/cards/restore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ entries: r.trashed }),
+        });
+        await get().load();
+        toast(t("common.restored"));
+      });
   },
 }));
