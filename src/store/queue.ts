@@ -312,11 +312,14 @@ function handle(m: Record<string, any>, set: Setter, get: () => S) {
       for (const c of m.cli ?? []) takeCli(c);
       break;
     }
-    // ★자동 저장을 껐을 때 — **기록을 안 남기고** 미리보기만 갈아 끼운다 (`useGen.preview`)
+    // ★자동 저장을 껐을 때 — **디스크에 기록을 안 남기고** 메모리에만 담는다.
+    //   ★그래도 **자리는 같다**: 씬 줄의 그 씬 칸에 「미저장」 칸으로 들어간다
+    //     (v2 `index.html:12146` — 미저장도 저장된 것과 같은 슬롯 카드다).
     case "image_preview": {
-      void import("./gen").then(({ useGen }) =>
-        useGen.setState({ preview: `data:image/${m.fmt ?? "png"};base64,${m.b64}`, current: null }),
-      );
+      void import("./previews").then(({ usePreviews }) => usePreviews.getState().add(m));
+      // ★대기 칸도 **똑같이** 지운다. 안 지우면 그림이 나왔는데 「생성 중」 칸이 배치가
+      //   끝날 때까지 남는다 (`settleBatch` 가 마지막에야 비운다)
+      consumePending(m, set, get);
       takeProgress(m.progress, set);
       batchOk++;
       break;
@@ -494,6 +497,16 @@ function applyStatus(status: Record<string, any> | undefined, set: Setter, get: 
   }
 }
 
+/** 이 장에 해당하는 대기 하나를 지운다 (같은 슬롯의 맨 앞 것).
+ *  ★저장된 그림과 미저장 그림이 **같이 쓴다** — 어느 쪽이든 대기 칸은 하나 줄어야 한다. */
+function consumePending(m: Record<string, any>, set: Setter, get: () => S) {
+  const pend = get().pending;
+  const at = pend.findIndex(
+    (p) => p.tabId === (m.tab_id ?? null) && p.cellId === (m.cell_id ?? null),
+  );
+  if (at >= 0) set({ pending: pend.filter((_, i) => i !== at) });
+}
+
 /** 한 장을 화면(워크스페이스 records)에 반영한다. ★같은 seq 는 두 번 반영하지 않는다. */
 function render(m: Record<string, any>, set: Setter, get: () => S) {
   const seq = Number(m.seq ?? 0);
@@ -514,12 +527,7 @@ function render(m: Record<string, any>, set: Setter, get: () => S) {
     seed: m.seed,
   });
 
-  // 이 장에 해당하는 대기 하나를 지운다 (같은 슬롯의 맨 앞 것)
-  const pend = get().pending;
-  const at = pend.findIndex(
-    (p) => p.tabId === (m.tab_id ?? null) && p.cellId === (m.cell_id ?? null),
-  );
-  if (at >= 0) set({ pending: pend.filter((_, i) => i !== at) });
+  consumePending(m, set, get);
 
   if (seq) {
     const seen = new Set(get().seen);

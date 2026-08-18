@@ -24,7 +24,7 @@ export const ko: Dict = {
   },
 
   gate: {
-    closeTab: "탭 닫기",
+    closeTab: "워크스페이스 닫기",
     openAnother: "워크스페이스 하나 더 열기",
     newWorkspace: "새 워크스페이스",
     recentWorkspaces: "최근 워크스페이스",
@@ -95,7 +95,7 @@ export const ko: Dict = {
     hint: {
       styles: "스타일 섹션에 놓으면 그림체가 교체됩니다",
       characters: "캐릭터 위에 놓으면 교체 · 스택",
-      posesets: "탭 줄 근처에 놓으면 세트 탭이 추가됩니다",
+      posesets: "세트 줄 근처에 놓으면 씬 세트가 추가됩니다",
     },
     escClose: "Esc 닫기",
     empty: "아직 저장한 카드가 없습니다.",
@@ -117,7 +117,7 @@ export const ko: Dict = {
     zoneStack: "스택. 번갈아 생성합니다",
     zoneSwap: "교체",
     zoneJoin: "다른 캐릭터로 추가",
-    zoneSet: "세트 탭으로 추가",
+    zoneSet: "씬 세트로 추가",
     stackHint: "클릭하면 대기열이 펼쳐집니다",
     nextUp: "다음",
     saved: "덱에 저장: {name}",
@@ -127,7 +127,7 @@ export const ko: Dict = {
     add: "+ 블록",
     newBlock: "새 블록",
     addExtra: "+ 추가",
-    extraHint: "이 탭에서만 붙습니다. 씬 세트 카드로 저장할 때 빠지고, 색과 이름은 못 바꿉니다.",
+    extraHint: "이 세트에서만 붙습니다. 씬 세트 카드로 저장할 때 빠지고, 색과 이름은 못 바꿉니다.",
     dragToReorder: "드래그로 순서 변경",
     color: "색",
     renameHint: "더블클릭 = 이름 변경",
@@ -324,7 +324,7 @@ export const ko: Dict = {
 
   options: {
     autoSave: "자동 저장",
-    autoSaveHint: "끄면 파일로 안 남고 미리보기만 뜹니다. 씬 칸·갤러리에도 안 뜹니다.",
+    autoSaveHint: "끄면 파일로 안 남고 씬 칸에 「미저장」으로 뜹니다. 마음에 들면 그 자리에서 파일로 저장합니다.",
     excludeSlotNo: "파일 이름에서 씬 번호 빼기",
     catNai: "NAI 설정",
     catGeneration: "생성",
@@ -378,13 +378,19 @@ export const ko: Dict = {
     saveLocation: "생성물이 저장되는 위치",
   },
 
+  /** ★화면에서는 이 층을 「탭」이라 부른다 (사용자 결정 2026-08-18).
+   *  코드 식별자(`chars`·`charId`)는 그대로다. `workspace.json` 의 열쇠라 바꾸면
+   *  사용자의 기존 워크스페이스가 안 열린다 (`store/workspace.ts` 의 `Spec.chars` 주석).
+   *  ★NAI 캐릭터 프롬프트(`cards.charN`·`prompt.charBox`)와 덱의 캐릭터 카드
+   *  (`cards.short.characters`)는 그대로 「캐릭터」다. 셋을 섞지 말 것. */
   chars: {
-    first: "캐릭터 1",
-    newName: "새 캐릭터",
-    add: "캐릭터 추가",
+    first: "탭 1",
+    newName: "새 탭",
+    cloneName: "복제",
+    add: "탭 추가",
     rename: "더블클릭하면 이름을 바꿉니다",
-    remove: "캐릭터 삭제 (씬 세트도 함께 사라집니다 · 그림 파일은 남습니다)",
-    lastOne: "마지막 캐릭터는 지울 수 없습니다.",
+    remove: "탭 삭제 (씬 세트도 함께 사라집니다 · 그림 파일은 남습니다)",
+    lastOne: "마지막 탭은 지울 수 없습니다.",
   },
 
   settings: {
@@ -603,6 +609,9 @@ export const ko: Dict = {
   act: {
     settings: "설정 불러오기",
     settingsHint: "이 그림의 프롬프트·해상도·샘플러까지 전부 지금 설정으로",
+    clone: "새 탭으로 복제",
+    cloneHint: "이 그림과 그 설정만 담은 씬 하나짜리 새 탭을 만듭니다. 원본은 그대로 남습니다",
+    cloned: "새 탭으로 복제했습니다",
     showPrompt: "프롬프트 보기",
     i2i: "이 그림으로 (i2i)",
     inpaint: "인페인트",
@@ -620,7 +629,7 @@ export const ko: Dict = {
   ai: {
     title: "AI",
     engineHint: "지금 이 엔진으로 돕니다. 누르면 설정으로 갑니다",
-    contextHint: "AI 가 지금 알고 있는 것 (워크스페이스 · 모드 · 활성 탭)",
+    contextHint: "AI 가 지금 알고 있는 것 (워크스페이스 · 모드 · 활성 세트)",
     empty: "무엇을 시킬지 적어 보세요.\n\n· 이런 캐릭터를 디자인해서 카드로 만들어 줘\n· 지금 그림체가 너무 수채화풍인데 더 플랫하게 바꿔 줘\n· 이 캐릭터 성격에 맞춘 감정 씬 10종을 만들어 줘\n· 생성물을 캐릭터별 폴더로 정리해 줘",
     placeholder: "시킬 일을 적으세요 (Enter 전송 · Shift+Enter 줄바꿈)",
     send: "보내기",
@@ -692,6 +701,11 @@ export const ko: Dict = {
     tabHint: "Tab 으로 다음 씬, Shift+Tab 으로 이전 씬",
     dragScene: "드래그로 순서 변경. 다른 카드로도 옮길 수 있습니다",
     dragCard: "드래그로 카드 순서 변경",
+    unsaved: "미저장",
+    unsavedHint: "파일로 남지 않은 그림입니다. 새로고침하면 사라집니다.",
+    saveToFile: "파일로 저장",
+    dropPreview: "미리보기 지우기",
+    savedToast: "저장했습니다: {name}",
   },
   slots: {
     textPlaceholder: "태그를 쉼표로 적습니다. 1.3::강조::",
@@ -737,10 +751,12 @@ export const ko: Dict = {
     curatedOpen: "생성 화면 끄고 슬롯만 보기",
   },
 
+  /** ★아래 줄은 「세트」다. 위 줄이 「탭」이 되면서 둘 다 "탭"이라 부르면 구별이 안 된다
+   *  (2026-08-18). 이 그룹의 문구에 「탭」을 되살리지 말 것. */
   tabs: {
-    closeTab: "탭 닫기",
+    closeTab: "세트 닫기",
     newSet: "새 세트",
-    newSetTab: "새 씬 세트 탭",
+    newSetTab: "새 씬 세트",
     dragToSave: "더블클릭 = 이름 변경 · 핸드로 끌면 씬 세트 카드로 저장",
     posePrefix: "씬 {n}",
   },

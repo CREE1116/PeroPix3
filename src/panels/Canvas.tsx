@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { useGen } from "../store/gen";
 import { useWs, takesOfScene, allCells, allScenes } from "../store/workspace";
-import { SceneLane } from "./SceneLane";
+import { SceneLane, takeSrc } from "./SceneLane";
 import { useSceneFocus } from "../store/sceneFocus";
 import { useUi } from "../store/ui";
 import { CanvasTabs } from "./CanvasTabs";
@@ -17,7 +17,10 @@ import { MaskEditor } from "../components/MaskEditor";
 import { useImageInput } from "../store/imageInput";
 import { EnhanceDialog } from "./EnhanceDialog";
 import { useGallery, type ImageMeta } from "../store/gallery";
+import { usePreviews, withPreviews } from "../store/previews";
 import { api } from "../lib/backend";
+import { applyMeta } from "./GalleryMeta";
+import { hasMeta } from "../lib/metaApply";
 
 /** 캔버스 — 씬 세트 줄 + 씬 무대 (마스크를 칠하는 동안에는 그 자리가 편집기다).
  *
@@ -117,26 +120,133 @@ function SceneStage() {
 function SceneActions() {
   const tr = useI18n((s) => s.t);
   const { base } = useGen();
-  const { current: ws, records, deleteFiles } = useWs();
+  const { current: ws, records, addRecord, deleteFiles } = useWs();
   const file = useSceneFocus((s) => s.file);
+  const previews = usePreviews((s) => s.items);
   const [enhance, setEnhance] = useState<string[] | null>(null);
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
+  const [saving, setSaving] = useState(false);
   useEffect(() => setDims(null), [file]);
   if (!file) return null;
+
+  /** ★미저장 그림이면 **다른 줄**이 붙는다. 평소 줄에 든 것(i2i·인페인트·강화·업스케일·
+   *  보관·설정 불러오기)은 전부 **서버에 있는 파일**을 다루는 것이라, 파일이 없는 그림에
+   *  띄우면 눌러야 실패하는 버튼이 된다 (CLAUDE.md: 없는 것은 넘기지 않는다).
+   *  v2 도 미저장 카드에서는 「파일 삭제」를 감추고 「파일로 저장」만 냈다
+   *  (`index.html:12169-12170`). */
+  const un = previews.find((x) => x.file === file);
+  if (un) {
+    const drop = () => {
+      usePreviews.getState().drop(file);
+      useSceneFocus.getState().focus(useSceneFocus.getState().cell, null);
+    };
+    return (
+      <div
+        data-unsaved-actions
+        style={{
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--sp-3)",
+          margin: "var(--sp-3) var(--sp-4) 0",
+          padding: "var(--sp-2) var(--sp-3)",
+          border: "1px solid var(--warn)",
+          borderRadius: "var(--r-2)",
+          fontSize: "var(--text-2xs)",
+          color: "var(--warn)",
+        }}
+      >
+        <span>{tr("scenes.unsavedHint")}</span>
+        <span style={{ flex: 1 }} />
+        <button
+          data-save-preview
+          disabled={saving}
+          onClick={async () => {
+            setSaving(true);
+            try {
+              const rec = await usePreviews.getState().save(file);
+              // ★저장한 그 장을 **그대로 보고 있게** 한다 — 미리보기가 빠지면서 화면이
+              //   비면 방금 무엇을 저장했는지 알 수 없다
+              addRecord(rec);
+              useSceneFocus.getState().focus(useSceneFocus.getState().cell, rec.file);
+              toast(tr("scenes.savedToast", { name: rec.file.split("/").pop() ?? rec.file }));
+            } catch (e) {
+              toast(String(e), "warn");
+            } finally {
+              setSaving(false);
+            }
+          }}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 3,
+            border: "1px solid currentColor",
+            borderRadius: "var(--r-1)",
+            padding: "1px var(--sp-3)",
+          }}
+        >
+          {Icon.save}
+          {tr("scenes.saveToFile")}
+        </button>
+        <button
+          data-drop-preview
+          onClick={drop}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 3,
+            border: "1px solid currentColor",
+            borderRadius: "var(--r-1)",
+            padding: "1px var(--sp-3)",
+          }}
+        >
+          {Icon.trash}
+          {tr("scenes.dropPreview")}
+        </button>
+      </div>
+    );
+  }
+
   const rec = records.find((r) => r.file === file);
+  const loadMeta = async () =>
+    (
+      await api<{ meta: ImageMeta | null }>(
+        `/api/gallery/${encodeURIComponent(ws)}/meta?file=${encodeURIComponent(file)}`,
+      )
+    ).meta;
+
+  /** 「새 탭으로 복제」 — 이 그림과 **그 그림의 설정**만 담은 씬 하나짜리 새 탭을 만든다.
+   *
+   *  ★메타데이터를 **먼저** 읽는다. 탭을 만들고 나서 실패하면 되돌릴 자리가 없다.
+   *  ★메타데이터가 없는 그림이면 설정을 안 얹는다 — 그때는 스토어가 **지금 화면 값**을
+   *    새 탭에 물려준다 (`cloneToNewTab`). 밖에서 떨군 그림처럼 프롬프트가 없는 것에
+   *    빈 프롬프트를 주면 새 탭에서 바로 생성이 안 된다.
+   *  ★설정을 얹는 표는 **이미 있는 것 하나**를 쓴다(`applyMeta`) — 두 벌이면
+   *    「이 그림 설정대로」가 화면마다 조용히 달라진다 (`lib/metaApply` 머리 주석). */
+  const cloneToNewTab = async () => {
+    try {
+      const m = await loadMeta().catch(() => null);
+      const landed = await useWs.getState().cloneToNewTab(file, {
+        excludeNo: useGen.getState().params.exclude_slot_number,
+        apply: hasMeta(m) ? () => applyMeta(m!, "all") : undefined,
+      });
+      if (!landed) return;
+      // ★새 탭의 씬 줄은 탭이 바뀔 때 고른 것을 놓는다 — 그 뒤에 세워야 남는다
+      useSceneFocus.getState().focus(landed.cell, landed.file);
+      toast(tr("act.cloned"));
+    } catch (e) {
+      toast(String(e), "warn");
+    }
+  };
+
   return (
     <div style={{ flexShrink: 0, padding: "var(--sp-3) var(--sp-4) 0" }}>
       <ImageActions
         url={imgUrl(base, ws, file)}
         name={file.split("/").pop() ?? file}
         seed={rec?.seed ?? 0}
-        loadMeta={async () =>
-          (
-            await api<{ meta: ImageMeta | null }>(
-              `/api/gallery/${encodeURIComponent(ws)}/meta?file=${encodeURIComponent(file)}`,
-            )
-          ).meta
-        }
+        loadMeta={loadMeta}
+        onClone={cloneToNewTab}
         dims={dims}
         revealPath={`${ws}/${file}`}
         onEnhance={() => setEnhance([file])}
@@ -184,9 +294,12 @@ function ScenePreview() {
   const tr = useI18n((s) => s.t);
   const { base } = useGen();
   const ws = useWs((s) => s.current);
-  const { records, activeTab, isDeleted } = useWs();
+  const { records, activeTab, isDeleted, isStarred } = useWs();
   const cell = useSceneFocus((s) => s.cell);
   const file = useSceneFocus((s) => s.file);
+  const previews = usePreviews((s) => s.items);
+  /** ★씬 줄과 **같은 거르기**를 건다 — 줄에서 안 보이는 장이 휠로 넘어오면 둘이 어긋난다 */
+  const starOnly = useUi((u) => u.laneStarOnly);
 
   /** ★휠로 앞뒤 장 (사용자 지시 2026-08-14, 싱글 큰 그림과 같은 조작).
    *
@@ -198,12 +311,18 @@ function ScenePreview() {
   const scene = setTab ? allScenes(setTab).find((x) => x.cell.id === cell) : null;
   // ★씬 줄과 **같은 창구**로 고른다 — 갈 씬이 없는 결과는 첫 씬이 받으므로(감사 D6),
   //   여기서 `takesOf` 를 쓰면 줄에는 보이는 그림을 휠로 못 넘긴다
+  //   ★미저장 그림도 **같은 목록**에 든다 (`withPreviews`) — 줄과 큰 그림이 한 목록을 본다
+  const merged = withPreviews(records, ws, previews);
   const shown =
     setTab && scene
-      ? [...takesOfScene(records, setTab, allCells(setTab), scene.cell)]
+      ? [...takesOfScene(merged, setTab, allCells(setTab), scene.cell)]
           .filter((r) => !isDeleted(r.file))
+          .filter((r) => !starOnly || isStarred(r.file))
           .reverse()
       : [];
+  /** 지금 띄울 장 — ★**거르기 전 목록**에서 찾는다. 「별표만 보기」를 켜면 보고 있던 장이
+   *  줄에서는 빠지는데, 그때 큰 그림까지 못 찾으면 미저장 그림이 깨진 주소로 바뀐다. */
+  const cur = merged.find((r) => r.file === file);
   const step = (d: 1 | -1) => {
     if (shown.length < 2) return;
     const i = shown.findIndex((r) => r.file === file);
@@ -235,7 +354,8 @@ function ScenePreview() {
         <img
           data-scene-img={file}
           data-scene-pos={`${shown.findIndex((r) => r.file === file) + 1}/${shown.length}`}
-          src={imgUrl(base, ws, file)}
+          /* ★미저장이면 data URL 이다 — 파일이 없으므로 서버 주소를 만들면 안 된다 */
+          src={cur ? takeSrc(cur, base, ws, false) : imgUrl(base, ws, file)}
           alt=""
           draggable={false}
           style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "var(--r-1)" }}

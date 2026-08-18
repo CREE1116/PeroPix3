@@ -19,7 +19,12 @@ import { Icon } from "../components/Icon";
  *  ★서브 탭마다 스타일·캐릭터를 따로 든다 — v2 의 "캐릭터 리스트 프리셋"이 이것으로 대체된다.
  *  ★탭 이름이 곧 저장 폴더명이다 (schema.md).
  *  ★싱글/멀티 층은 없다 — 구분 자체가 폐기됐다 (사용자 결정 2026-08-11). 탭은 **언제나
- *    씬 탭**이고, 옛 싱글 탭은 열 때 옮겨진다 (`migrate` → `convertSingleTab`). */
+ *    씬 탭**이고, 옛 싱글 탭은 열 때 옮겨진다 (`migrate` → `convertSingleTab`).
+ *
+ *  ★★**화면 이름**(사용자 결정 2026-08-18): 위층 = 「탭」, 아래층 = 「세트」.
+ *    코드 식별자는 그대로 `chars`·`charId` 다 (`store/workspace.ts` 의 `Spec.chars` 주석).
+ *    아래 그림의 「캐릭터」도 이제 화면에서는 「탭」이다. 아래층 문구(`tabs.*`)에
+ *    「탭」을 되살리지 말 것. 두 줄이 같은 이름이 되면 구별이 안 된다. */
 export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) {
   const { spec, setActiveTab, closeTab, renameTab, addSetTab,
     switchChar, addChar, renameChar, removeChar } = useWs();

@@ -4,7 +4,7 @@ import { useGen } from "../store/gen";
 import { usePrompt } from "../store/prompt";
 import { useQueue } from "../store/queue";
 import { LANE_MAX, LANE_MIN, useUi } from "../store/ui";
-import { allCells, useWs, takesOfScene, type Rec, type SceneCard, type Slot } from "../store/workspace";
+import { allCells, useWs, takesOf, takesOfScene, type Rec, type SceneCard, type Slot } from "../store/workspace";
 import { imgUrl, thumbUrlOf } from "../lib/imgUrl";
 import { EnhanceDialog } from "./EnhanceDialog";
 import { Icon } from "../components/Icon";
@@ -14,6 +14,7 @@ import { useDragSource } from "../cards/dragStore";
 import { DragGhost } from "../cards/DragGhost";
 import { useLaneReorder, type LaneDrop } from "../lib/useReorder";
 import { useSceneFocus } from "../store/sceneFocus";
+import { usePreviews, withPreviews } from "../store/previews";
 import { BANNER_BG, bannerEmptyFill } from "../cards/banner";
 
 /** 씬 칸 — **그릇**이고, 그 위에 **씬 세트 카드**를 얹는다 (사용자 결정 2026-08-11).
@@ -49,6 +50,11 @@ export function SceneLane() {
   const progress = useQueue((s) => s.progress);
   const laneSize = useUi((u) => u.laneSize);
   const headw = useUi((u) => u.laneHeadW);
+  /** ★「별표만 보기」 — 옛 싱글 캔버스에 있던 보기 전환이 여기로 왔다 (사용자 지시 2026-08-18).
+   *  탭 전체를 거르는 것이라 씬마다 두지 않고 줄 머리에 하나만 둔다. */
+  const starOnly = useUi((u) => u.laneStarOnly);
+  /** 미저장 그림 — ★저장된 것과 **같은 목록**에 얹는다 (`store/previews.ts`) */
+  const previews = usePreviews((s) => s.items);
   const startDrag = useDragSource();
   // ★씬 프롬프트 목적지 — 켜져 있는 캐릭터만 고를 수 있다 (꺼진 캐릭터는 payload 에 없다)
   const chars = usePrompt((s) => s.chars).filter((c) => c.on);
@@ -266,10 +272,21 @@ export function SceneLane() {
   const running = progress.total > progress.completed;
 
   /** 그 씬의 결과 (숨긴 것 제외).
-   *  ★갈 씬이 없는 결과는 **첫 씬**이 받는다 (`takesOfScene`, v2 이식 — 감사 D6) */
+   *  ★갈 씬이 없는 결과는 **첫 씬**이 받는다 (`takesOfScene`, v2 이식 — 감사 D6)
+   *  ★미저장 그림도 **같은 목록**에서 같은 규칙으로 갈린다 (`withPreviews`) — 저장 여부는
+   *    칸의 생김새만 가르고, 어느 씬 것인지는 여전히 `takesOf` 가 판정한다.
+   *  ★「별표만 보기」는 여기서 한 번만 건다. 별표는 파일 경로로 저장되므로 **미저장 그림은
+   *    별표를 달 수 없고**, 그래서 거르면 함께 빠진다 (별표는 거르는 장치다). */
   const cells = allCells(tab);
+  const all = withPreviews(records, ws, previews);
   const takesOfCell = (c: Slot) =>
-    takesOfScene(records, tab, cells, c).filter((r) => !isDeleted(r.file));
+    takesOfScene(all, tab, cells, c)
+      .filter((r) => !isDeleted(r.file))
+      .filter((r) => !starOnly || isStarred(r.file));
+  /** 버튼 안에 적는 별표 수 — ★**이 탭 전체**다 (거르는 범위와 같아야 한다) */
+  const starCount = takesOf(all, tab, undefined).filter(
+    (r) => !isDeleted(r.file) && isStarred(r.file),
+  ).length;
   const maxLen = Math.max(
     1,
     ...tab.cards.flatMap((k) =>
@@ -292,6 +309,9 @@ export function SceneLane() {
   const dragCell = lane.drag?.kind === "scene" ? cells.find((c) => c.id === lane.drag!.id) : null;
   /** 레코드는 만든 차례대로 쌓이므로 **마지막이 최신**이다 (줄은 그것을 뒤집어 왼쪽에 둔다) */
   const dragTake = dragCell ? takesOfCell(dragCell).at(-1) : undefined;
+
+  /** PIP 가 띄울 장 (커서 아래) */
+  const hoverRec = hover ? all.find((r) => r.file === hover) : null;
 
   const pick = (file: string, add: boolean) => {
     const next = new Set(picked);
@@ -405,6 +425,30 @@ export function SceneLane() {
         >
           {t("scenes.sizeHint", { s: laneSize })}
         </span>
+        {/* ★「별표만 보기」 — **탭 전체를 거르는 보기 전환**이다 (옛 싱글 캔버스에서 옮겨 왔다).
+            별표를 켜는 자리는 그대로 썸네일 우상단이고, 여기는 **거르는 창구**다.
+            별표 수를 버튼 안 괄호에 적는 것도 그때와 같다 (줄에는 글자를 두지 않는다). */}
+        <button
+          data-star-filter
+          onClick={() => useUi.getState().setLaneStarOnly(!starOnly)}
+          title={t(starOnly ? "canvas.starAll" : "canvas.starOnly")}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 3,
+            height: 22,
+            padding: "0 var(--sp-2)",
+            borderRadius: "var(--r-1)",
+            border: `1px solid ${starOnly ? "var(--warn)" : "transparent"}`,
+            color: starOnly ? "var(--warn)" : "var(--ink-faint)",
+            fontSize: "var(--text-2xs)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {starOnly ? Icon.star12On : Icon.star12}
+          {/* ★거르는 중에는 개수를 안 적는다 — 「전체 보기 (3)」 은 3장이 전부라는 말로 읽힌다 */}
+          {starOnly ? t("canvas.starAll") : `${t("canvas.starOnly")} (${starCount})`}
+        </button>
         {/* ★PIP — 칸은 작게 두고 **커서를 올린 장만** 크게 본다 (v2 `pipBarBtn`).
             칸 크기를 키우면 한 줄에 몇 장 안 들어가므로, 훑기와 자세히 보기를 가른다 */}
         <button
@@ -586,7 +630,7 @@ export function SceneLane() {
         )}
       </div>
       {/* PIP — 줄 위에 떠 있는 작은 창. 켜 두면 커서를 올린 장이 여기 크게 뜬다 */}
-      {lanePip && <LanePip boxRef={boxRef} url={hover ? imgUrl(base, ws, hover) : null} />}
+      {lanePip && <LanePip boxRef={boxRef} url={hoverRec ? takeSrc(hoverRec, base, ws, false) : null} />}
       </div>
 
       {/* 고른 것이 있을 때만 뜨는 줄 (멀티 무대의 선택 막대와 같은 자리) */}
@@ -718,7 +762,7 @@ export function SceneLane() {
               >
                 {dragTake && (
                   <img
-                    src={thumbUrlOf(base, ws, dragTake.file)}
+                    src={takeSrc(dragTake, base, ws, true)}
                     alt=""
                     draggable={false}
                     style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
@@ -745,6 +789,14 @@ export function SceneLane() {
       {enhance && <EnhanceDialog files={enhance} onClose={() => setEnhance(null)} />}
     </div>
   );
+}
+
+/** 한 장의 주소 — ★**미저장이면 파일이 없으므로 data URL 이다** (`store/previews.ts`).
+ *  서버 주소를 만들면 조용히 깨진 그림이 된다 (파일 이름이 표식이라 404 조차 아니다).
+ *  ★규칙을 한 곳에 둔다 — 줄의 칸 · PIP · 끄는 잔상이 같은 판정을 써야 한다. */
+export function takeSrc(r: Rec, base: string, ws: string, thumb: boolean): string {
+  if (r.preview) return `data:image/${r.preview.fmt};base64,${r.preview.b64}`;
+  return thumb ? thumbUrlOf(base, ws, r.file) : imgUrl(base, ws, r.file);
 }
 
 /** 끼울 자리 표시 — ★**높이 0 위에 띄운다.** 칸 사이에 실제로 끼워 넣으면 레이아웃이 밀려
@@ -1481,13 +1533,21 @@ function SceneRow(
         {takes.slice(Math.max(0, from - waits.length), Math.max(0, to - waits.length)).map((r) => {
           const sel = p.picked.has(r.file);
           const cur = p.focus.cell === c.id && p.focus.file === r.file;
+          /** ★미저장 — 파일이 없는 그림이다 (자동 저장 끔). 칸 자리는 저장된 것과 **같고**,
+           *  다른 것은 셋뿐이다: 그림을 data URL 로 그린다 · 「미저장」 표가 붙는다 ·
+           *  별표를 못 켠다 (별표는 파일 경로로 저장되므로 없는 파일을 담으면 안 된다). */
+          const un = r.preview ?? null;
           return (
             <button
               key={r.file}
               data-take={r.file}
+              data-take-unsaved={un ? "" : undefined}
               onClick={(e) => {
                 e.stopPropagation();
-                if (e.ctrlKey || e.metaKey || e.shiftKey) p.onPick(r.file, true);
+                // ★미저장은 **여러 장 고르기에서 뺀다.** 고른 것에 걸리는 일(휴지통·강화)이
+                //   전부 파일 경로를 서버로 보내는 것이라, 섞이면 조용히 실패한다.
+                //   버리는 것도 저장하는 것도 큰 그림 아래 줄에서 한다 (`SceneActions`)
+                if (!un && (e.ctrlKey || e.metaKey || e.shiftKey)) p.onPick(r.file, true);
                 else p.onFocus({ cell: c.id, file: r.file });
               }}
               style={{
@@ -1504,32 +1564,55 @@ function SceneRow(
               }}
             >
               <img
-                src={thumbUrlOf(p.base, p.ws, r.file)}
+                src={takeSrc(r, p.base, p.ws, true)}
                 alt=""
                 draggable={false}
                 loading="lazy"
                 decoding="async"
                 style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", opacity: sel ? 0.6 : 1 }}
               />
-              <span
-                data-take-star={r.file}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  p.onStar(r.file);
-                }}
-                style={{
-                  position: "absolute",
-                  right: 1,
-                  top: 0,
-                  display: "grid",
-                  color: p.isStarred(r.file) ? "var(--warn)" : "rgba(255,255,255,0.8)",
-                  opacity: p.isStarred(r.file) ? 1 : 0,
-                  filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.7))",
-                }}
-                className="thumb-star"
-              >
-                {p.isStarred(r.file) ? Icon.star12On : Icon.star12}
-              </span>
+              {un ? (
+                /* ★「미저장」이 칸에서 바로 보여야 한다 (v2 는 파일명 자리에 `미저장` 을 넣었다 —
+                    `index.html:12156`). 우리 칸에는 파일명 줄이 없으므로 아래에 작은 표로 얹는다. */
+                <span
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    padding: "1px 3px",
+                    background: "rgba(0,0,0,0.55)",
+                    color: "var(--warn)",
+                    fontSize: 10,
+                    lineHeight: 1.4,
+                    textAlign: "center",
+                    letterSpacing: "0.02em",
+                  }}
+                >
+                  {t("scenes.unsaved")}
+                </span>
+              ) : (
+                <span
+                  data-take-star={r.file}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    p.onStar(r.file);
+                  }}
+                  style={{
+                    position: "absolute",
+                    right: 1,
+                    top: 0,
+                    display: "grid",
+                    color: p.isStarred(r.file) ? "var(--warn)" : "rgba(255,255,255,0.8)",
+                    opacity: p.isStarred(r.file) ? 1 : 0,
+                    filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.7))",
+                  }}
+                  className="thumb-star"
+                >
+                  {/* ★썸네일 위라 12px 은 작았다 → 18px (사용자 지시 2026-08-18) */}
+                  {p.isStarred(r.file) ? Icon.star18On : Icon.star18}
+                </span>
+              )}
             </button>
           );
         })}

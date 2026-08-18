@@ -31,6 +31,7 @@ export function ImageActions({
   onEnhance,
   upscale,
   onKeep,
+  onClone,
   onLeave,
   extra,
 }: {
@@ -52,6 +53,9 @@ export function ImageActions({
    *  ★배율을 안 받는다: 공홈이 언제나 4 로 보낸다 (`nai.py UPSCALE_SCALE`) */
   upscale?: { ws: string; file: string };
   onKeep?: () => void | Promise<void>;
+  /** 「새 탭으로 복제」 — **워크스페이스 파일에만** 뜻이 있다 (보관함에서는 안 넘어온다).
+   *  ★미저장 그림에도 안 뜬다: 그때는 부르는 쪽이 이 줄 대신 다른 줄을 그린다 (`SceneActions`) */
+  onClone?: () => void | Promise<void>;
   /** 생성 모드로 갈 때 이 화면을 닫는다 (라이트박스·갤러리 큰 보기) */
   onLeave?: () => void;
   /** 이 줄에 함께 두고 싶은 것 (싱글의 「별표만 보기」) */
@@ -146,6 +150,18 @@ export function ImageActions({
     }
   };
 
+  /** 「새 탭으로 복제」 — 실제로 무엇을 옮기는지는 부르는 쪽이 안다 (`SceneActions`).
+   *  여기서는 **한 번에 하나만** 돌게 잠그는 일만 한다 (다른 단추들과 같은 `busy`). */
+  const runClone = async () => {
+    if (!onClone || busy) return;
+    setBusy(true);
+    try {
+      await onClone();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   /** 이 그림의 프롬프트를 **읽기용**으로 연다 (설정을 건드리지 않는다) */
   const showPrompt = async () => {
     if (!loadMeta || busy) return;
@@ -188,6 +204,21 @@ export function ImageActions({
               {t("act.settings")}
             </button>
           </>
+        )}
+        {/* ★「설정을 가져다 쓰는 것」 무리에 둔다 — 이 단추가 옮기는 것도 그림 한 장과
+            **그 그림의 설정**이다 (페로픽스파이도 `.result-meta` 에서 「설정 불러오기」
+            바로 옆에 「다른 워크스페이스로 복제」를 뒀다). 아래 줄은 이 그림을 **재료로**
+            쓰는 무리라 성격이 다르다. */}
+        {onClone && (
+          <button
+            data-act-clone
+            onClick={() => void runClone()}
+            disabled={busy}
+            title={t("act.cloneHint")}
+            style={btn}
+          >
+            {t("act.clone")}
+          </button>
         )}
 
         <span style={{ width: 1, alignSelf: "stretch", background: "var(--line)" }} />

@@ -126,6 +126,14 @@ function load(): Persisted {
 type S = Persisted & {
   mode: ModeId;
   setMode: (m: ModeId) => void;
+  /** 씬 줄을 **별표만** 보여 주나 (v2·옛 싱글 캔버스의 「별표만 보기」).
+   *
+   *  ★**저장하지 않는다** — 거르는 상태로 앱을 켜면 그림이 사라진 것처럼 보인다.
+   *    옛 구현도 화면 상태였다 (`Canvas.tsx` 의 `starOnly`, 커밋 1ae9fda 이전).
+   *  ★스토어에 두는 이유는 **씬 줄과 큰 그림이 다른 컴포넌트**라서다 (`sceneFocus` 와 같은
+   *    사정). 줄만 거르면 휠로 넘길 때 걸러진 장이 큰 그림에 떠서 둘이 어긋난다. */
+  laneStarOnly: boolean;
+  setLaneStarOnly: (v: boolean) => void;
   setLaneSize: (n: number) => void;
   setLaneHeadW: (n: number) => void;
   setLaneHeight: (n: number) => void;
@@ -179,6 +187,8 @@ export const useUi = create<S>((set, get) => ({
   ...load(),
   mode: "generate",
   setMode: (m) => set({ mode: m }),
+  laneStarOnly: false,
+  setLaneStarOnly: (v) => set({ laneStarOnly: v }),
   setLaneSize: (n) => set({ laneSize: Math.min(LANE_MAX, Math.max(LANE_MIN, Math.round(n))) }),
   setLaneHeadW: (n) => set({ laneHeadW: Math.min(HEAD_MAX, Math.max(HEAD_MIN, Math.round(n))) }),
   setLaneHeight: (n) => set({ laneHeight: Math.max(84, Math.round(n)) }),

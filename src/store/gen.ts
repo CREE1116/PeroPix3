@@ -147,9 +147,6 @@ type S = {
   cell: string | null;
   setCell: (c: string | null) => void;
   current: string | null;
-  /** ★자동 저장을 껐을 때의 **미리보기** (data URL). 파일도 기록도 없는 그림이라
-   *  여기 말고는 있을 자리가 없다 (v2 `auto_save` 이식 2026-08-16). */
-  preview: string | null;
   select: (file: string | null) => void;
   busy: boolean;
   error: string;
@@ -168,7 +165,6 @@ export const useGen = create<S>((set, get) => ({
   cell: null,
   setCell: (c) => set({ cell: c }),
   current: null,
-  preview: null,
   select: (file) => set({ current: file }),
   busy: false,
   error: "",
@@ -197,7 +193,7 @@ export const useGen = create<S>((set, get) => ({
     try {
       // ★한 장짜리 자리라 추첨도 한 번이다 (강화·인핸스가 여기로 온다)
       const { prompt, uc, chars } = resolveShot(wildcardPools(), usePrompt.getState().compiled());
-      const r = await api<{ file: string | null; b64?: string; fmt?: string; seed: number }>("/api/generate", {
+      const r = await api<Record<string, any> & { file: string | null; seed: number }>("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -223,9 +219,12 @@ export const useGen = create<S>((set, get) => ({
           cell_id: slotId,
         }),
       });
-      // ★자동 저장을 껐으면 파일이 없다 — 미리보기로만 띄운다 (기록도 안 남긴다)
+      // ★자동 저장을 껐으면 파일이 없다 — 디스크에 기록하지 않고 **메모리에만** 담는다.
+      //   자리는 저장된 것과 같다 (씬 줄의 「미저장」 칸, `store/previews.ts`)
       if (!r.file) {
-        set({ preview: `data:image/${r.fmt ?? "png"};base64,${r.b64}`, current: null });
+        const { usePreviews } = await import("./previews");
+        usePreviews.getState().add({ ...r, workspace: ws.current });
+        set({ current: null });
         if (get().params.seed_mode !== "fixed") get().set("seed", randomSeed());
         return;
       }

@@ -118,7 +118,9 @@ export type CanvasTab =
       sceneDest?: string;
     };
 
-/** ★멀티의 **캐릭터** — 프롬프트(생김새·그림체)를 든다 (사용자 결정 2026-08-04).
+/** ★워크스페이스의 묶음 층 — 프롬프트(생김새·그림체)를 든다 (사용자 결정 2026-08-04).
+ *  ★★화면 이름은 「탭」이다 (사용자 결정 2026-08-18). 식별자만 `chars` 로 남는다
+ *    (`Spec.chars` 주석에 까닭을 적어 뒀다).
  *
  *  포즈세트 탭은 **슬롯만** 갖는다. 같은 인물로 여러 포즈세트를 돌리는 것이 멀티의 쓰임이라,
  *  프롬프트가 포즈세트마다 따로면 인물을 고칠 때마다 세트 수만큼 고쳐야 한다
@@ -154,7 +156,16 @@ export type Spec = {
   params: Record<string, unknown>;
   tabs: CanvasTab[];
   activeTab: string;
-  /** 멀티의 캐릭터들. 옛 워크스페이스에는 없다 (`migrate` 가 만든다) */
+  /** 이 워크스페이스의 묶음 층. 옛 워크스페이스에는 없다 (`migrate` 가 만든다).
+   *
+   *  ★★**화면에서는 이것을 「탭」이라 부른다** (사용자 결정 2026-08-18). 위쪽 탭 줄의 `+` 가
+   *    만드는 것이 이 층이라, 예전 이름(「캐릭터」)으로는 한 화면에서 「캐릭터」가 두 가지를
+   *    가리켰다 (아래 NAI 캐릭터 프롬프트와). 문구는 `i18n` 의 `chars.*` 에 있다.
+   *  ★코드 식별자(`chars`·`charId`·`activeChar`)는 **바꾸지 않는다.** `workspace.json` 에
+   *    그대로 저장되는 열쇠라, 바꾸면 사용자의 기존 워크스페이스가 안 열린다.
+   *  ★이 층과 헷갈리면 안 되는 「캐릭터」가 둘 더 있다. 그 둘은 그대로 「캐릭터」다:
+   *    NAI 캐릭터 프롬프트(`store/prompt.ts` 의 `chars`, 화면은 `cards.charN` 등) ·
+   *    덱의 캐릭터 카드(`cards.short.characters`). */
   chars?: WsChar[];
   activeChar?: string;
   selection: { deleted: string[]; starred: string[] };
@@ -192,10 +203,15 @@ type S = {
   toggleStar: (file: string) => void;
   toggleDeleted: (file: string) => void;
   isStarred: (file: string) => boolean;
-  /** 고른 그림을 **다른 워크스페이스로 복사**한다 (원본은 그대로 — 보던 화면이 안 흐트러진다) */
-  /** 고른 그림을 **같은 워크스페이스의 다른 싱글 탭**으로 복사한다 (원본은 그대로).
-   *  ★페로픽스파이의 '워크스페이스 간 복제' 가 여기서는 탭 사이 복제다 (사용자 정정 2026-08-05) */
-  copyTo: (files: string[], tab: { name: string; id: string }) => Promise<number>;
+  /** 「새 탭으로 복제」 — 그림 한 장을 **씬 하나짜리 새 탭**으로 옮긴다 (원본은 그대로).
+   *  돌려주는 것은 그림이 앉은 자리(새 파일 · 그 씬의 id). 만들 수 없으면 null.
+   *
+   *  @param o.excludeNo 「파일 이름에서 씬 번호 빼기」 — 보통 생성과 **같은 규칙**으로 짓는다
+   *  @param o.apply 새 탭으로 옮겨 **간 뒤에** 부른다 (그 그림의 설정을 편집기에 얹는 자리) */
+  cloneToNewTab: (
+    file: string,
+    o: { excludeNo: boolean; apply?: () => void },
+  ) => Promise<{ file: string; cell: string } | null>;
   /** ★지우기 = **휴지통으로 이동**. 파일이 실제로 자리에서 없어지고, `Ctrl+Z` 로 되돌아온다.
    *  비우는 것은 앱을 켤 때 (24시간 지난 것) — `backend/trash.py` 머리 주석. */
   deleteFiles: (files: string[]) => Promise<void>;
@@ -722,17 +738,53 @@ export const useWs = create<S>((set, get) => ({
 
   isStarred: (file) => !!get().spec?.selection.starred.includes(file),
 
-  async copyTo(files, tab) {
-    const { current } = get();
-    if (!current || !files.length || !tab?.name) return 0;
-    const r = await api<{ copied: string[] }>(`/api/workspaces/${encodeURIComponent(current)}/copy`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ files, tab: tab.name, tab_id: tab.id }),
-    });
-    // 복사한 만큼 레코드가 늘었으니 다시 읽는다 (받는 탭에서 바로 보이게)
-    if (r.copied.length) await get().open(current);
-    return r.copied.length;
+  /** 「새 탭으로 복제」 — 그림 한 장과 **그 그림의 설정**만 담은 새 탭을 만들고 그리로 옮긴다.
+   *
+   *  ★**위층(`spec.chars`, 화면 이름 「탭」)에 만든다.** 아래층(세트)에 더하면 안 된다 —
+   *    세트 탭의 프롬프트 주인은 그 위층이라(`promptOf`), 같은 위층 아래에 세트만 늘리면
+   *    「그 그림의 설정」이 **지금 보고 있던 세트의 프롬프트를 그대로 덮는다.**
+   *    새 위층은 씬 하나짜리 세트를 달고 태어난다(`switchChar`) — 그것이 「1슬롯짜리」다.
+   *  ★**순서가 안전장치다**: 옮겨 간 **뒤에** 설정을 얹는다. 거꾸로 하면 `stash` 가 그 설정을
+   *    떠나는 탭에 써 넣어 원래 프롬프트가 조용히 사라진다 (`closeTab` 과 같은 종류의 함정). */
+  async cloneToNewTab(file, o) {
+    const { current, spec } = get();
+    if (!current || !spec) return null;
+    // ★메타데이터가 없는 그림이면 **지금 화면 값**이 새 탭에 남는다 — 빈 프롬프트로 시작하면
+    //   바로 생성이 안 돼 한 번 더 손이 간다 (`addSetTab` 이 하던 배려와 같다)
+    const seed = usePrompt.getState().snapshot();
+    get().addChar(t("chars.cloneName"));
+    const sp = get().spec;
+    const tab = sp?.tabs.find((x) => x.id === sp.activeTab);
+    const cell = tab?.kind === "set" ? tab.cards[0]?.cells[0] : undefined;
+    if (!sp || !tab || tab.kind !== "set" || !cell) return null;
+    usePrompt.getState().load(seed);
+    o.apply?.();
+    // ★`load` 는 저장을 예약하지 않는다 (`prompt.ts` 의 `onEdit` 는 편집에만 붙는다) —
+    //   여기서 한 번 흘려보내야 새 탭의 프롬프트가 파일에 남는다
+    await get().save();
+    const r = await api<{ file: string; record: Rec }>(
+      `/api/workspaces/${encodeURIComponent(current)}/copy`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          file,
+          tab: tab.name,
+          tab_id: tab.id,
+          // ★씬 값을 **넷 다** 싣는다 — 하나라도 비면 그 그림이 어느 씬 것인지 화면이 못 찾는다
+          //   (받는 탭은 `idOnly` 라 이름 폴백도 없다, `lib/takes.ts`)
+          cell: cell.name,
+          cell_id: cell.id,
+          cell_no: 1,
+          char: (sp.chars ?? []).find((c) => c.id === sp.activeChar)?.name ?? null,
+          exclude_slot_number: o.excludeNo,
+        }),
+      },
+    );
+    // ★목록을 다시 읽지 않는다 — 서버가 돌려준 레코드 한 줄만 얹으면 화면이 따라온다
+    //   (업스케일·「파일로 저장」과 같은 방식)
+    get().addRecord(r.record);
+    return { file: r.file, cell: cell.id };
   },
 
   async deleteFiles(files) {

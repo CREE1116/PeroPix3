@@ -24,7 +24,7 @@ export const en = {
   },
 
   gate: {
-    closeTab: "Close tab",
+    closeTab: "Close workspace",
     openAnother: "Open another workspace",
     newWorkspace: "New workspace",
     recentWorkspaces: "Recent workspaces",
@@ -95,7 +95,7 @@ export const en = {
     hint: {
       styles: "Drop on the style section to swap the look",
       characters: "Drop on a character to swap or stack",
-      posesets: "Drop near the tab row to add a set tab",
+      posesets: "Drop near the set row to add a scene set",
     },
     escClose: "Esc to close",
     empty: "No cards saved yet.",
@@ -117,7 +117,7 @@ export const en = {
     zoneStack: "STACK (take turns)",
     zoneSwap: "SWAP",
     zoneJoin: "Add as another character",
-    zoneSet: "Add as a set tab",
+    zoneSet: "Add as a scene set",
     stackHint: "Click to expand the queue",
     nextUp: "next",
     saved: "Saved to deck: {name}",
@@ -127,7 +127,7 @@ export const en = {
     add: "+ Block",
     newBlock: "New block",
     addExtra: "+ Extra",
-    extraHint: "Applies to this tab only. It is left out when saved as a scene-set card, and its color and name are fixed.",
+    extraHint: "Applies to this set only. It is left out when saved as a scene-set card, and its color and name are fixed.",
     dragToReorder: "Drag to reorder",
     color: "Color",
     renameHint: "Double-click to rename",
@@ -322,7 +322,7 @@ export const en = {
 
   options: {
     autoSave: "Auto save",
-    autoSaveHint: "Off: nothing is written to disk, preview only. It will not appear in scenes or the gallery.",
+    autoSaveHint: "Off: nothing is written to disk. Results show up in the scene lane marked \"Unsaved\", and you can save the ones you like from there.",
     excludeSlotNo: "Drop the scene number from filenames",
     catNai: "NAI settings",
     catGeneration: "Generation",
@@ -376,13 +376,17 @@ export const en = {
     saveLocation: "Where generated images are saved",
   },
 
+  /** ★On screen this layer is called a "tab" (user decision 2026-08-18).
+   *  The code identifiers (`chars`, `charId`) stay: they are keys in `workspace.json`.
+   *  ★NAI character prompts (`cards.charN`) and deck character cards stay "character". */
   chars: {
-    first: "Character 1",
-    newName: "New character",
-    add: "Add character",
+    first: "Tab 1",
+    newName: "New tab",
+    cloneName: "Copy",
+    add: "Add tab",
     rename: "Double-click to rename",
-    remove: "Delete character (its scene sets go too; image files stay)",
-    lastOne: "The last character cannot be deleted.",
+    remove: "Delete tab (its scene sets go too; image files stay)",
+    lastOne: "The last tab cannot be deleted.",
   },
 
   settings: {
@@ -600,6 +604,9 @@ export const en = {
   act: {
     settings: "Load settings",
     settingsHint: "Prompt, size, sampler and everything else from this image",
+    clone: "Duplicate into a new tab",
+    cloneHint: "Makes a new one-scene tab holding just this image and its settings. The original stays where it is",
+    cloned: "Duplicated into a new tab",
     showPrompt: "View prompt",
     i2i: "Use as image (i2i)",
     inpaint: "Inpaint",
@@ -617,7 +624,7 @@ export const en = {
   ai: {
     title: "AI",
     engineHint: "Running on this engine - click for settings",
-    contextHint: "What the assistant knows right now (workspace, mode, active tab)",
+    contextHint: "What the assistant knows right now (workspace, mode, active set)",
     empty: "Tell it what to do.\n\n· Design a character like this and save it as a card\n· The current style is too watercolor, make it flatter\n· Make 10 emotion poses that fit this character\n· Sort the outputs into per-character folders",
     placeholder: "What should it do? (Enter to send, Shift+Enter for a new line)",
     send: "Send",
@@ -687,6 +694,11 @@ export const en = {
     tabHint: "Tab for the next scene, Shift+Tab for the previous one",
     dragScene: "Drag to reorder. You can also drop it on another card",
     dragCard: "Drag to reorder cards",
+    unsaved: "Unsaved",
+    unsavedHint: "This image is not on disk yet. It disappears when you reload.",
+    saveToFile: "Save to file",
+    dropPreview: "Discard preview",
+    savedToast: "Saved: {name}",
   },
   slots: {
     textPlaceholder: "Comma-separated tags. 1.3::emphasis::",
@@ -732,10 +744,12 @@ export const en = {
     curatedOpen: "Hide the stage, show slots only",
   },
 
+  /** ★This lower row is the "set" row. The row above is now called "tab", so keep the
+   *  word "tab" out of this group (2026-08-18). */
   tabs: {
-    closeTab: "Close tab",
+    closeTab: "Close set",
     newSet: "New set",
-    newSetTab: "New scene set tab",
+    newSetTab: "New scene set",
     dragToSave: "Double-click to rename · Drag to the hand to save as a scene set card",
     posePrefix: "Scene {n}",
   },

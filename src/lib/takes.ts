@@ -17,6 +17,14 @@ export type Rec = {
    *  출처 기록일 뿐이므로, 이 값으로 결과를 묶는 코드를 새로 만들지 말 것. */
   enhance_of?: string | null;
   resolved?: unknown;
+  /** ★**미저장** — 「자동 저장」을 껐을 때 나온 그림 (v2 `isPreviewOnly`).
+   *
+   *  파일이 없으므로 `file` 은 진짜 경로가 아니라 **표식**이고(`store/previews.ts` 의
+   *  `PREVIEW_PREFIX`), 이 레코드는 **메모리에만** 산다 — `records.jsonl` 에 절대 안 들어간다.
+   *  v2 도 같았다: 미저장 카드는 저장된 카드와 **같은 자리**에 들어가고 파일명 자리에
+   *  「미저장」이 뜰 뿐이다 (`index.html:12146-12170`).
+   *  ★묶는 규칙은 그대로 `takesOf` 가 판정한다 — 미저장이라고 다른 창구를 만들지 말 것. */
+  preview?: { b64: string; fmt: string } | null;
 };
 
 /** 결과를 탭·슬롯에 묶는 **유일한 창구**.

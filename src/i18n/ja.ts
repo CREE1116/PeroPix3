@@ -24,7 +24,7 @@ export const ja: Dict = {
   },
 
   gate: {
-    closeTab: "タブを閉じる",
+    closeTab: "ワークスペースを閉じる",
     openAnother: "ワークスペースをもう一つ開く",
     newWorkspace: "新しいワークスペース",
     recentWorkspaces: "最近のワークスペース",
@@ -95,7 +95,7 @@ export const ja: Dict = {
     hint: {
       styles: "スタイルセクションに置くと絵柄が入れ替わります",
       characters: "キャラクターの上に置くと交換・スタック",
-      posesets: "タブ列の近くに置くとセットタブが追加されます",
+      posesets: "セット列の近くに置くとシーンセットが追加されます",
     },
     escClose: "Esc で閉じる",
     empty: "保存されたカードはまだありません。",
@@ -117,7 +117,7 @@ export const ja: Dict = {
     zoneStack: "スタック（順番に生成）",
     zoneSwap: "交換",
     zoneJoin: "別のキャラクターとして追加",
-    zoneSet: "セットタブとして追加",
+    zoneSet: "シーンセットとして追加",
     stackHint: "クリックで待ち行列を展開",
     nextUp: "次",
     saved: "デッキに保存: {name}",
@@ -127,7 +127,7 @@ export const ja: Dict = {
     add: "+ ブロック",
     newBlock: "新しいブロック",
     addExtra: "+ 追加",
-    extraHint: "このタブだけに付きます。シーンセットカードには含まれず、色と名前も変えられません。",
+    extraHint: "このセットだけに付きます。シーンセットカードには含まれず、色と名前も変えられません。",
     dragToReorder: "ドラッグで並べ替え",
     color: "色",
     renameHint: "ダブルクリックで名前変更",
@@ -321,7 +321,7 @@ export const ja: Dict = {
 
   options: {
     autoSave: "自動保存",
-    autoSaveHint: "オフにするとファイルに残らずプレビューのみです。シーン欄・ギャラリーにも出ません。",
+    autoSaveHint: "オフにするとファイルに残らず、シーン欄に「未保存」として出ます。気に入ったものはその場でファイルに保存できます。",
     excludeSlotNo: "ファイル名からシーン番号を外す",
     catNai: "NAI 設定",
     catGeneration: "生成",
@@ -375,13 +375,17 @@ export const ja: Dict = {
     saveLocation: "生成画像の保存先",
   },
 
+  /** ★画面ではこの層を「タブ」と呼ぶ (ユーザー決定 2026-08-18)。
+   *  コード上の識別子 (`chars`・`charId`) はそのまま。`workspace.json` のキーだからだ。
+   *  ★NAI のキャラクタープロンプト (`cards.charN`) とデッキのキャラカードは「キャラ」のまま。 */
   chars: {
-    first: "キャラ 1",
-    newName: "新しいキャラ",
-    add: "キャラを追加",
+    first: "タブ 1",
+    newName: "新しいタブ",
+    cloneName: "複製",
+    add: "タブを追加",
     rename: "ダブルクリックで名前変更",
-    remove: "キャラを削除（シーンセットも消えます）",
-    lastOne: "最後のキャラは削除できません。",
+    remove: "タブを削除（シーンセットも消えます）",
+    lastOne: "最後のタブは削除できません。",
   },
 
   settings: {
@@ -599,6 +603,9 @@ export const ja: Dict = {
   act: {
     settings: "設定を読み込む",
     settingsHint: "プロンプト・解像度・サンプラーまで全部この画像から",
+    clone: "新しいタブに複製",
+    cloneHint: "この画像とその設定だけを入れたシーン1つのタブを作ります。元の画像はそのまま残ります",
+    cloned: "新しいタブに複製しました",
     showPrompt: "プロンプトを見る",
     i2i: "この画像から (i2i)",
     inpaint: "インペイント",
@@ -616,7 +623,7 @@ export const ja: Dict = {
   ai: {
     title: "AI",
     engineHint: "今このエンジンで動きます。押すと設定に移ります",
-    contextHint: "AI が今わかっていること（ワークスペース・モード・アクティブタブ）",
+    contextHint: "AI が今わかっていること（ワークスペース・モード・アクティブセット）",
     empty: "やってほしいことを書いてください。\n\n· こんなキャラクターを設計してカードにして\n· 今の画風が水彩すぎるのでもっとフラットに\n· このキャラの性格に合う感情シーンを10種つくって\n· 生成物をキャラ別フォルダに整理して",
     placeholder: "やってほしいこと（Enter で送信・Shift+Enter で改行）",
     send: "送信",
@@ -686,6 +693,11 @@ export const ja: Dict = {
     tabHint: "Tab で次のシーン、Shift+Tab で前のシーン",
     dragScene: "ドラッグで並べ替え。別のカードへも移せます",
     dragCard: "ドラッグでカードの並べ替え",
+    unsaved: "未保存",
+    unsavedHint: "ファイルに残っていない画像です。再読み込みすると消えます。",
+    saveToFile: "ファイルに保存",
+    dropPreview: "プレビューを消す",
+    savedToast: "保存しました: {name}",
   },
   slots: {
     textPlaceholder: "タグをカンマ区切りで。1.3::強調::",
@@ -731,10 +743,11 @@ export const ja: Dict = {
     curatedOpen: "生成画面を閉じてスロットだけ見る",
   },
 
+  /** ★下段は「セット」。上段が「タブ」になったので、このグループの文言に「タブ」を戻さないこと (2026-08-18)。 */
   tabs: {
-    closeTab: "タブを閉じる",
+    closeTab: "セットを閉じる",
     newSet: "新しいセット",
-    newSetTab: "新しいシーンセットタブ",
+    newSetTab: "新しいシーンセット",
     dragToSave: "ダブルクリックで名前変更 · 手札へドラッグでシーンセットカードとして保存",
     posePrefix: "シーン {n}",
   },

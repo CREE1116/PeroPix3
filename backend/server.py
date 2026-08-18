@@ -48,7 +48,7 @@ from blocklib import BlockLib
 from wildcards import Wildcards
 import thumbs
 from thumbs import Pins
-from workspace import Store, file_lead, safe_name
+from workspace import Store, safe_name
 
 # MCP 설정에 적어 줄 **지금 이 서버의 포트** (--port 로 바뀐다)
 # ★리로드 모드에서는 워커가 `main()` 을 안 거치고 모듈만 다시 읽는다 — 포트를 환경에서 받는다
@@ -814,18 +814,29 @@ async def restore_workspace(body: RestoreBody):
 
 
 class CopyBody(BaseModel):
-    files: list[str]
+    """「새 탭으로 복제」 — 그림 **한 장**이 앉을 자리를 화면이 정해서 보낸다.
+    ★씬 값(`cell`·`cell_id`·`cell_no`)을 비우지 말 것 — 없으면 싱글 자리로 떨어지는데
+      싱글 탭은 없어졌다."""
+
+    file: str
     tab: str
     tab_id: str | None = None
+    cell: str | None = None
+    cell_id: str | None = None
+    cell_no: int | None = None
+    char: str | None = None
+    exclude_slot_number: bool = False
 
 
 @app.post("/api/workspaces/{ws}/copy")
 async def copy_to_tab(ws: str, body: CopyBody):
-    """고른 그림을 **같은 워크스페이스의 다른 싱글 탭**으로 복사한다 (원본은 그대로)."""
+    """그림 한 장을 **같은 워크스페이스의 다른 탭**으로 복사한다 (원본은 그대로)."""
     try:
-        return store.copy_to_tab(ws, body.files, body.tab, body.tab_id)
+        return store.copy_to_tab(ws, body.file, body.tab, body.tab_id, body.cell,
+                                 body.cell_id, body.cell_no, body.char,
+                                 body.exclude_slot_number)
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(404, str(e))
 
 
 class TrashBody(BaseModel):
@@ -1108,10 +1119,7 @@ async def _generate_one(body: GenBody) -> dict:
         finally:
             tile_src.close()
 
-    # ★싱글/멀티를 갈라 저장한다 (`workspace.out_dir` 주석). 멀티는 슬롯 폴더 대신
-    #   **파일 앞 슬롯 번호**를 쓰고, 이름은 시각이 아니라 **순번**이다.
-    is_set = body.cell is not None
-    d = store.out_dir(body.workspace, body.tab, is_set, body.char)
+    # 저장 자리·이름은 `store.store_output` 하나가 정한다 (그 메서드 주석)
     fmt = body.save_format.lower()
     if fmt not in ("png", "jpg", "webp"):
         fmt = "png"
@@ -1132,19 +1140,23 @@ async def _generate_one(body: GenBody) -> dict:
     # ★자동 저장을 끄면 **파일도 기록도 안 남긴다** — 미리보기로만 돌려준다 (v2 `auto_save`).
     #   골라서 저장하고 싶을 때 쓰는 것이라, 여기서 남기면 그 뜻이 사라진다.
     if not body.auto_save:
+        # ★이름을 짓는 데 필요한 것을 **함께** 돌려준다 (`char`·`cell_no`·`exclude_slot_number`).
+        #   나중에 「파일로 저장」을 누를 때 화면이 그때 상태로 다시 만들면, 그 사이 씬 이름을
+        #   고쳤을 때 번호열이 갈린다 (`file_lead` 는 이름마다 따로 센다).
         return {"ok": True, "file": None, "b64": base64.b64encode(data).decode(),
                 "fmt": fmt, "seed": seed, "bytes": len(data),
                 "tab": body.tab, "cell": body.cell,
                 "tab_id": body.tab_id, "cell_id": body.cell_id,
+                "cell_no": body.cell_no, "char": body.char,
+                "exclude_slot_number": body.exclude_slot_number,
+                "enhance_of": body.enhance_of,
                 "workspace": body.workspace}
 
     # ★씬 번호는 탐색기에서 순서를 만들고, **씬 이름**은 그 파일이 무엇인지 알려 준다
     #   (v2 `번호_이름_0000001.png`). 「씬 번호 빼기」는 v2 와 같이 **번호만** 뺀다 —
     #   규칙과 근거는 `workspace.file_lead` 주석 (사용자 결정 2026-08-18, v2-port-audit D3).
-    lead = file_lead(body.cell_no, body.cell, body.exclude_slot_number) if is_set else ""
-    path = store.next_name(d, lead, fmt)
-    path.write_bytes(data)
-    rel = store.rel(body.workspace, path)
+    rel = store.store_output(body.workspace, body.tab, body.cell, body.cell_no, body.char,
+                             body.exclude_slot_number, fmt, data)
 
     # ★records 는 append-only. resolved 에 그 시점의 완전한 요청을 남겨
     #   나중에 spec 이 바뀌어도 재현·비교가 가능하게 한다.
@@ -1237,6 +1249,67 @@ async def generate(body: GenBody):
         return await _generate_one(body)
     except RuntimeError as e:
         raise HTTPException(502, str(e))
+
+
+class SavePreviewBody(BaseModel):
+    """미저장 그림(자동 저장 끔)을 **파일로 남긴다** — v2 `/api/save-preview` 이식.
+
+    ★바이트는 화면이 들고 있다가 되돌려 준다 (v2 도 같다). 서버가 붙들고 있으면 안 누른
+      미리보기의 몇 MB 가 계속 쌓인다 — 그리고 그것은 재시작으로 조용히 사라진다."""
+
+    workspace: str
+    #: 이미 **최종 포맷으로 인코딩된** 바이트다 (`_generate_one` 이 변환까지 마치고 넘겼다)
+    b64: str
+    fmt: str = "png"
+    tab: str = ""
+    tab_id: str | None = None
+    cell: str | None = None
+    cell_id: str | None = None
+    cell_no: int | None = None
+    char: str | None = None
+    exclude_slot_number: bool = False
+    enhance_of: str | None = None
+    seed: int = 0
+
+
+@app.post("/api/save-preview")
+async def save_preview(body: SavePreviewBody):
+    """미저장 그림 한 장을 자리에 앉힌다.
+
+    ★★**이름은 보통 생성과 같은 규칙**이다 (`store.store_output` 하나를 쓴다). 따로 지으면
+      같은 폴더 안에서 번호열이 어긋난다.
+    ★**다시 인코딩하지 않는다.** 넘어온 바이트는 생성 때 `save_format`·품질까지 적용해
+      만든 것이라(`_generate_one`), 여기서 또 만지면 화질이 한 번 더 깎인다.
+      (v2 는 원본을 들고 있다가 저장 때 변환했다 — 우리는 그 단계가 이미 끝나 있다.)
+    ★`resolved`(그때 나간 페이로드)는 **안 싣는다.** 화면까지 왕복시키기에는 크고
+      (바이브·베이스 그림의 base64 가 들어 있다), 재현에 필요한 것은 PNG 안의 NAI
+      메타데이터가 이미 들고 있다."""
+    try:
+        data = base64.b64decode(body.b64)
+    except Exception:
+        raise HTTPException(400, "미리보기 데이터를 읽지 못했습니다")
+    if not data:
+        raise HTTPException(400, "미리보기 데이터가 비어 있습니다")
+
+    fmt = body.fmt.lower()
+    if fmt not in ("png", "jpg", "webp"):
+        fmt = "png"
+
+    rel = store.store_output(body.workspace, body.tab, body.cell, body.cell_no, body.char,
+                             body.exclude_slot_number, fmt, data)
+    rec = {
+        "ts": datetime.now().isoformat(timespec="seconds"),
+        "file": rel,
+        "tab": body.tab,
+        "cell": body.cell,
+        "tab_id": body.tab_id,
+        "cell_id": body.cell_id,
+        "enhance_of": body.enhance_of,
+        "seed": body.seed,
+    }
+    store.append_record(body.workspace, rec)
+    # ★레코드를 통째로 돌려준다 — 화면이 목록을 다시 읽지 않고 한 줄만 얹으면 된다 (업스케일과 같다)
+    return {"ok": True, "file": rel, "record": rec}
 
 
 # ── 큐 + WebSocket ────────────────────────────────────────────────

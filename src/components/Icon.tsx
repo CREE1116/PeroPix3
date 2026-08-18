@@ -61,9 +61,13 @@ export const Icon = {
   check: s(<path d="M4.5 12.5 9 17l10.5-10" />, 11),
   star: s(<path d={STAR_D} />),
   starOn: f(<path d={STAR_D} />),
-  /** 작게 얹는 자리용 (썸네일 배지·탭 닫기) */
+  /** 작게 얹는 자리용 (글자 옆 배지·버튼 안) */
   star12: s(<path d={STAR_D} />, 12),
   star12On: f(<path d={STAR_D} />, 12),
+  /** ★**썸네일 위에 얹는 자리** — 12px 은 그림 위에서 너무 작아 눈에 안 들어온다
+   *  (사용자 지시 2026-08-18). 크기가 다른 자리는 크기별 항목을 따로 둔다 (CLAUDE.md). */
+  star18: s(<path d={STAR_D} />, 18),
+  star18On: f(<path d={STAR_D} />, 18),
   close12: s(<path d="M6 6l12 12M18 6L6 18" />, 12),
   /** 블록 저장소 — 갈피(북마크). 저장소 열기 단추와 「저장소에 넣기」가 같은 모양을 쓴다 */
   bookmark: s(<path d="M6 4h12v16l-6-4.5L6 20z" />, 13),

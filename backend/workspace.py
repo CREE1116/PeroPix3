@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -182,6 +181,33 @@ class Store:
     def rel(self, ws: str, path: Path) -> str:
         return path.relative_to(self.dir_of(ws)).as_posix()
 
+    def store_output(
+        self,
+        ws: str,
+        tab: str,
+        cell: str | None,
+        cell_no: int | None,
+        char: str | None,
+        exclude_no: bool,
+        fmt: str,
+        data: bytes,
+    ) -> str:
+        """생성물을 **자리에 앉히고** 상대경로를 돌려준다 — ★이름 규칙의 **유일한 창구**다.
+
+        싱글/멀티를 갈라 저장한다 (`out_dir` 주석). 멀티는 슬롯 폴더 대신 **파일 앞 슬롯
+        번호**를 쓰고, 이름은 시각이 아니라 **순번**이다 (`file_lead`).
+
+        부르는 곳이 셋이다 — 평소 생성(`_generate_one`) · 미저장 그림의 「파일로 저장」
+        (`/api/save-preview`) · 「새 탭으로 복제」(`copy_to_tab`). 두 벌이 되면 번호열이
+        갈린다: `next_name` 은 **접두마다 따로** 세므로, 한쪽만 `file_lead` 를 다르게 지으면
+        같은 폴더 안에서 번호가 겹치거나 건너뛴다."""
+        is_set = cell is not None
+        d = self.out_dir(ws, tab, is_set, char)
+        lead = file_lead(cell_no, cell, exclude_no) if is_set else ""
+        path = self.next_name(d, lead, fmt)
+        path.write_bytes(data)
+        return self.rel(ws, path)
+
     def append_record(self, ws: str, rec: dict) -> None:
         d = self.dir_of(ws)
         d.mkdir(parents=True, exist_ok=True)
@@ -219,26 +245,51 @@ class Store:
             return None
         return p
 
-    # ── 다른 싱글 탭으로 복제 ─────────────────────────────────
-    def copy_to_tab(self, ws: str, files: list[str], tab: str, tab_id: str | None = None) -> dict:
-        """고른 그림을 **같은 워크스페이스의 다른 싱글 탭**으로 복사한다 (원본은 그대로).
+    # ── 새 탭으로 복제 ────────────────────────────────────────
+    def copy_to_tab(
+        self,
+        ws: str,
+        file: str,
+        tab: str,
+        tab_id: str | None,
+        cell: str | None,
+        cell_id: str | None,
+        cell_no: int | None,
+        char: str | None,
+        exclude_no: bool,
+    ) -> dict:
+        """그림 한 장을 **같은 워크스페이스의 다른 탭**으로 복사한다 (원본은 그대로).
 
-        ★페로픽스파이의 `copyToWorkspace` 가 여기서는 **탭 사이 복제**다 — 그쪽의
-          '워크스페이스' 는 우리의 싱글 탭에 해당한다 (사용자 정정 2026-08-05).
-        ★옮기지 않고 복사한다. 원본이 그대로라 보던 화면·선택이 흐트러지지 않는다.
-        ★레코드에 `tab_id` 를 함께 쓴다 — 받는 탭이 `idOnly` 여도 화면에 뜬다."""
-        recs = {r.get("file"): r for r in self.records(ws, limit=100000)}
-        d = self.out_dir(ws, tab, False)
-        made, missing = [], []
-        for rel in files:
-            src = self.file_path(ws, rel)
-            if not src:
-                missing.append(rel)
-                continue
-            dst = self.next_name(d, "", src.suffix.lstrip(".") or "png")
-            shutil.copy2(src, dst)
-            new_rel = self.rel(ws, dst)
-            rec = {k: v for k, v in recs.get(rel, {}).items() if k not in ("file", "tab", "tab_id", "cell", "cell_id")}
-            self.append_record(ws, {**rec, "file": new_rel, "tab": tab, "tab_id": tab_id, "cell": None, "cell_id": None})
-            made.append(new_rel)
-        return {"copied": made, "missing": missing}
+        「새 탭으로 복제」가 부르는 자리다 (사용자 결정 2026-08-18). 옛 「다른 탭으로 복제」는
+        `out_dir(..., False)` 로 **싱글 폴더**에 넣었는데 싱글 탭이 없어져 갈 곳이 사라졌다 —
+        그 경로를 지우고 이것으로 합쳤다.
+
+        ★옮기지 않고 **복사**한다. 원본이 그대로라 보던 화면·선택이 흐트러지지 않는다.
+        ★이름·자리는 `store_output` 하나가 정한다 — 보통 생성과 같은 규칙이라야 받는 씬의
+          번호열이 어긋나지 않는다.
+        ★레코드에 `tab_id`·`cell_id` 를 함께 쓴다 — 받는 탭이 `idOnly` 라 그것이 없으면
+          복사해 놓고 화면 어디에도 안 뜬다 (`lib/takes.ts`)."""
+        src = self.file_path(ws, file)
+        if not src:
+            raise ValueError("복제할 그림을 찾지 못했습니다")
+        old = next(
+            (r for r in reversed(self.records(ws, limit=100000)) if r.get("file") == file),
+            {},
+        )
+        fmt = src.suffix.lstrip(".").lower() or "png"
+        rel = self.store_output(ws, tab, cell, cell_no, char, exclude_no, fmt, src.read_bytes())
+        # ★`resolved`(그때 나간 페이로드)와 `enhance_of` 는 안 싣는다. resolved 는 바이브·베이스
+        #   그림의 base64 가 들어 있어 크고, enhance_of 는 **다른 탭의 파일**을 가리키는
+        #   출처 기록이라 옮겨 오면 뜻이 어긋난다 (`/api/save-preview` 와 같은 판단).
+        rec = {
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "file": rel,
+            "tab": tab,
+            "cell": cell,
+            "tab_id": tab_id,
+            "cell_id": cell_id,
+            "enhance_of": None,
+            "seed": int(old.get("seed") or 0),
+        }
+        self.append_record(ws, rec)
+        return {"ok": True, "file": rel, "record": rec}
