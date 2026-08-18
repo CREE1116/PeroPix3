@@ -59,10 +59,16 @@ export const MODELS: [string, string][] = [
 ];
 
 /** v2 의 Size 드롭다운 그대로. ✦ 는 NAI 가 기본 요금으로 처리하는 해상도 */
+/** 크기 프리셋 — ★**v2 목록 그대로**다 (`index.html` 의 `sizePreset`, 대조 2026-08-16).
+ *  세 번째 값(`★`)은 **NAI 공홈에 있는 것**이라는 표시다 (공홈 v4 프리셋 표).
+ *  ★Small·Large·Wallpaper 가 통째로 빠져 있었다 — 옮기다 만 자리였다. */
 export const SIZE_PRESETS: { group: string; items: [number, number, boolean][] }[] = [
   { group: "landscape", items: [[1536, 640, false], [1344, 768, false], [1216, 832, true], [1152, 896, false]] },
   { group: "square", items: [[1024, 1024, true]] },
   { group: "portrait", items: [[896, 1152, false], [832, 1216, true], [768, 1344, false], [640, 1536, false]] },
+  { group: "small", items: [[768, 512, true], [640, 640, true], [512, 768, true]] },
+  { group: "large", items: [[1536, 1024, true], [1472, 1472, true], [1024, 1536, true]] },
+  { group: "wallpaper", items: [[1920, 1088, true], [1088, 1920, true]] },
 ];
 
 /** ★NAI 가 받는 범위. 넘기면 400 이 온다 (v2 enforceNaiLimits, index.html:14476) */

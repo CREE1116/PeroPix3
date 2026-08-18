@@ -40,6 +40,7 @@ export const en = {
   },
 
   panel: {
+    deck: "Card deck",
     slots: "Slots",
     prompt: "Prompt",
     options: "Generation",
@@ -84,6 +85,7 @@ export const en = {
   },
 
   cards: {
+    dropToSave: "Drop here to save",
     hand: {
       styles: "Style cards",
       characters: "Character cards",

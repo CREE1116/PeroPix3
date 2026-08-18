@@ -6,12 +6,9 @@ import { SceneLane } from "./SceneLane";
 import { useSceneFocus } from "../store/sceneFocus";
 import { useUi } from "../store/ui";
 import { CanvasTabs } from "./CanvasTabs";
-import { Hand } from "../cards/Hand";
-import { useDropZone, useDragSource, dragSourceStyle, type DragImage } from "../cards/dragStore";
+import { useDropZone, useDragSource, dragSourceStyle } from "../cards/dragStore";
 import { cardIcon, zoneIcon } from "../cards/CardArt";
-import type { CardKind } from "../store/cards";
 import type { PoseCard } from "../store/cards";
-import type { SaveAsk } from "../cards/SaveDialog";
 import { imgUrl, thumbUrlOf } from "../lib/imgUrl";
 import { Icon } from "../components/Icon";
 import { toast } from "../store/toast";
@@ -24,16 +21,8 @@ import { useQueue } from "../store/queue";
 import { api } from "../lib/backend";
 
 /** 캔버스 — 탭 줄 + 본문(싱글 / 세트 그리드 / 셀 라이트박스) + 생성 바.
- *  우하단에 카드 핸드가 얹히고, 상단은 포즈세트 카드의 드롭 존이다. */
-export function Canvas({
-  onOpenDeck,
-  onAskSave,
-  onImageToDeck,
-}: {
-  onOpenDeck: (k: CardKind) => void;
-  onAskSave: (ask: SaveAsk) => void;
-  onImageToDeck: (kind: CardKind, img: DragImage) => void;
-}) {
+ *  ★우하단 카드 핸드는 걷었다 (2026-08-16) — 덱이 오른쪽 기둥에 상시로 있다. */
+export function Canvas() {
   const { current, select, base } = useGen();
   const { records, current: ws, spec, activeTab, isStarred, isDeleted, toggleStar, toggleDeleted,
     undoSelection, deleteFiles } = useWs();
@@ -500,7 +489,6 @@ export function Canvas({
           ★여기 있던 「별표만 내보내기」는 **폐기**했다 (사용자 지시 2026-08-05) — 별표의 쓸모는
           거르기 하나이고, 파일을 옮기는 일은 보조 도구 › 파일 관리가 한다. */}
 
-      <Hand onOpen={onOpenDeck} onAsk={onAskSave} onImageDrop={onImageToDeck} />
     </div>
   );
 }

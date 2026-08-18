@@ -12,13 +12,17 @@ const SCHEDULERS = ["karras", "native", "exponential", "polyexponential"];
 const UC_PRESETS = ["Heavy", "Light", "Human Focus", "Furry Focus", "None"];
 
 /** 우측 패널 — 생성 파라미터. */
+/** 생성 옵션 — ★**왼쪽 프롬프트 아래**에 산다 (사용자 지시 2026-08-16).
+ *  오른쪽 기둥은 카드덱이 쓴다. 여기 있는 것들은 프롬프트와 함께 보면서 만지는 값이다.
+ *  ★묶음마다 접힌다 — 한 기둥에 프롬프트까지 들어오므로 다 펴 두면 훑을 수가 없다.
+ *    접기 단추는 따로 두지 않는다. **묶음 이름을 누르면** 접힌다. */
 export function OptionsPanel() {
   const p = useGen((s) => s.params);
   const set = useGen((s) => s.set);
   const t = useI18n((s) => s.t);
 
   return (
-    <div style={{ padding: "var(--sp-4)", display: "flex", flexDirection: "column", gap: "var(--sp-5)" }}>
+    <div style={{ padding: "var(--sp-4)", display: "flex", flexDirection: "column", gap: "var(--sp-3)" }}>
       <Group label={t("options.model")}>
         {/* ★옛 워크스페이스가 없어진 모델(V4.0)을 들고 있으면 목록에 없어 빈칸으로 보인다 —
             기본값으로 되돌린다. 조용히 다른 표로 생성되는 것보다 낫다 */}
@@ -150,6 +154,9 @@ export function OptionsPanel() {
   );
 }
 
+/** 접힘 상태 — 화면 것이라 스토어에 안 넣는다. 새로고침하면 기본값으로 돌아간다 */
+const foldState: Record<string, boolean> = {};
+
 function Group({
   label,
   flashKey,
@@ -161,15 +168,31 @@ function Group({
   children: React.ReactNode;
 }) {
   const on = useFlash(flashKey ?? "");
+  // ★묶음 이름을 누르면 접힌다 — 접기 단추를 따로 두지 않는다 (사용자 지시 2026-08-16)
+  const [folded, setFolded] = useState(!!foldState[label]);
+  const toggle = () => {
+    foldState[label] = !folded;
+    setFolded(!folded);
+  };
   return (
     <div
       data-flash={flashKey && on ? "" : undefined}
+      data-opt-group={label}
       style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)", ...flashStyle(!!flashKey && on) }}
     >
-      <span style={{ fontSize: "var(--text-xs)", fontWeight: "var(--w-semi)", color: "var(--ink-soft)" }}>
+      <span
+        onClick={toggle}
+        style={{
+          cursor: "pointer",
+          padding: "2px 0",
+          fontSize: "var(--text-xs)",
+          fontWeight: "var(--w-semi)",
+          color: folded ? "var(--ink-dim)" : "var(--ink-soft)",
+        }}
+      >
         {label}
       </span>
-      {children}
+      {!folded && children}
     </div>
   );
 }

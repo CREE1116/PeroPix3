@@ -4,6 +4,7 @@ import { compileBlocks } from "../lib/blocks";
 import { usePrompt } from "../store/prompt";
 import { StyleSection, CharSection, JoinZone, type SectionProps } from "./PromptSections";
 import { BlockLibButton } from "../blocks/BlockDrawer";
+import { OptionsPanel } from "./OptionsPanel";
 
 /** 좌측 패널 — 카드형 섹션 안에 블록 시퀀스.
  *  스타일 섹션(= NAI 의 공통 prompt/uc) 하나 + 캐릭터 섹션 여럿(= characterPrompts[]). */
@@ -48,6 +49,11 @@ export function PromptPanel({ onThumb }: SectionProps) {
             {t("cards.addChar")}
           </button>
         </Container>
+
+        {/* ★생성 옵션이 **프롬프트 바로 아래**에 산다 (사용자 지시 2026-08-16).
+            오른쪽 기둥은 카드덱이 쓴다. 묶음마다 이름을 누르면 접힌다. */}
+        <div style={{ height: 1, background: "var(--line)", margin: "0 0 var(--sp-4)" }} />
+        <OptionsPanel />
       </div>
 
       {/* 최종 프롬프트 미리보기 */}

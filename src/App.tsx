@@ -19,7 +19,6 @@ import { Settings, type TabId as SettingsTab } from "./app/Settings";
 import { Toasts } from "./app/Toasts";
 import { AskDialog } from "./app/AskDialog";
 import { AiChat } from "./panels/AiChat";
-import { OptionsPanel } from "./panels/OptionsPanel";
 import { Canvas } from "./panels/Canvas";
 import { CanvasTabs } from "./panels/CanvasTabs";
 import { Gallery } from "./panels/Gallery";
@@ -27,7 +26,7 @@ import { Censor } from "./panels/Censor";
 import { Tools } from "./panels/Tools";
 import { GalleryFolders } from "./panels/GalleryFolders";
 import { GalleryMeta } from "./panels/GalleryMeta";
-import { Deck } from "./cards/Deck";
+import { DeckPanel } from "./cards/DeckPanel";
 import { DragLayer } from "./cards/DragLayer";
 import { SaveDialog, type SaveAsk } from "./cards/SaveDialog";
 import { useSub } from "./store/sub";
@@ -61,7 +60,6 @@ export function App() {
   const wsCurrent = useWs((s) => s.current);
   const wsLoading = useWs((s) => s.loading);
   const loadCards = useCards((s) => s.load);
-  const [deck, setDeck] = useState<CardKind | null>(null);
   const [ask, setAsk] = useState<SaveAsk | null>(null);
   const [thumbAsk, setThumbAsk] = useState<ThumbTarget | null>(null);
   // ★어느 탭으로 열지까지 담는다 — 연 자리가 곧 볼 탭이다 (AI 채팅 → LLM)
@@ -179,7 +177,7 @@ export function App() {
               ? tr("focus.promptLabel")
               : tr("panel.prompt")
         }
-        rightLabel={mode === "gallery" ? tr("gallery.meta") : tr("panel.options")}
+        rightLabel={mode === "gallery" ? tr("gallery.meta") : tr("panel.deck")}
         /* ★프롬프트·생성 옵션은 **생성 모드에만** (사용자 지적 2026-08-05).
            이미 만든 것을 다루는 화면에 뜨면 "여기서 고치면 뭐가 되나"가 흐려진다.
            갤러리는 기둥을 쓴다(폴더·그림 정보). 검열·보조 도구는 **레일도 안 남긴다** —
@@ -209,14 +207,19 @@ export function App() {
         /* 최종 프롬프트 바로 아래, 패널 맨 밑에 **고정**. 접어도 버튼은 레일에 남는다 */
         leftFooter={mode === "generate" ? <GenerateFooter /> : undefined}
         leftFooterCompact={mode === "generate" ? <GenerateFooter compact /> : undefined}
-        right={mode === "gallery" ? <GalleryMeta /> : <OptionsPanel />}
+        right={
+          mode === "gallery" ? (
+            <GalleryMeta />
+          ) : (
+            <DeckPanel
+              onAsk={setAsk}
+              onImageDrop={(kind, img) => setThumbAsk({ type: "cover", kind, img })}
+            />
+          )
+        }
         center={
           mode === "generate" ? (
-            <Canvas
-              onOpenDeck={setDeck}
-              onAskSave={setAsk}
-              onImageToDeck={(kind, img) => setThumbAsk({ type: "cover", kind, img })}
-            />
+            <Canvas />
           ) : mode === "gallery" ? (
             <Gallery />
           ) : mode === "censor" ? (
@@ -229,7 +232,6 @@ export function App() {
         }
       />
       {gate && <WorkspaceGate onClose={() => setGate(false)} />}
-      <Deck kind={deck} onClose={() => setDeck(null)} />
       <SaveDialog
         ask={ask}
         onCancel={() => setAsk(null)}

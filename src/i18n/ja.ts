@@ -40,6 +40,7 @@ export const ja: Dict = {
   },
 
   panel: {
+    deck: "カードデッキ",
     slots: "スロット",
     prompt: "プロンプト",
     options: "生成設定",
@@ -84,6 +85,7 @@ export const ja: Dict = {
   },
 
   cards: {
+    dropToSave: "ここに置くと保存されます",
     hand: {
       styles: "スタイルカード",
       characters: "キャラクターカード",

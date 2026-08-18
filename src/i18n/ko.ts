@@ -40,6 +40,7 @@ export const ko: Dict = {
   },
 
   panel: {
+    deck: "카드덱",
     slots: "씬 세트",
     prompt: "프롬프트",
     options: "생성 옵션",
@@ -84,6 +85,7 @@ export const ko: Dict = {
   },
 
   cards: {
+    dropToSave: "여기 놓으면 저장됩니다",
     hand: {
       styles: "스타일 카드",
       characters: "캐릭터 카드",
