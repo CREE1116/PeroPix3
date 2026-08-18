@@ -196,8 +196,12 @@ export const useUi = create<S>((set, get) => ({
     setTimeout(() => set({ flashes: get().flashes.filter((k) => k !== key) }), 2200);
   },
   commitLayout: () => {
-    const { leftWidth, rightWidth, leftCollapsed, rightCollapsed, cols, laneSize, laneHeadW, laneHeight, font, aiWidth, aiCollapsed } =
-      get();
+    // ★★레이아웃만이 아니라 **저장해야 하는 것 전부**를 적는다. 예전에는 목록에서
+    //   `notifyDone`·`perSlot`·`curated` 가 빠져 있어, 켜 놓아도 껐다 켜면 기본값으로
+    //   돌아갔다 (감사 2026-08-16). 필드를 늘리면 **여기에도 더할 것.**
+    const { leftWidth, rightWidth, leftCollapsed, rightCollapsed, cols, laneSize, laneHeadW,
+      laneHeight, font, aiWidth, aiCollapsed,
+      notifyDone, notifySound, notifyVolume, perSlot, curated } = get();
     try {
       localStorage.setItem(
         KEY,
@@ -213,6 +217,11 @@ export const useUi = create<S>((set, get) => ({
           font,
           aiWidth,
           aiCollapsed,
+          notifyDone,
+          notifySound,
+          notifyVolume,
+          perSlot,
+          curated,
         }),
       );
     } catch {}

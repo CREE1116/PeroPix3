@@ -162,6 +162,10 @@ export const ko: Dict = {
   },
 
   queue: {
+    err402: "Anlas 가 모자랍니다. 해상도나 장 수를 줄여 보세요.",
+    err401: "NAI 토큰이 유효하지 않습니다. 설정에서 다시 넣어 주세요.",
+    err429: "NAI 가 요청을 제한했습니다. 잠시 뒤 다시 시도해 주세요.",
+    errOther: "생성 실패: {m}",
     allDone: "생성 {n}장 완료",
     cancel: "중단",
     cancelHint: "지금 장을 마치고 멈춥니다",

@@ -135,6 +135,15 @@ export const useQueue = create<S>((set, get) => ({
   },
 }));
 
+/** 큐가 낸 실패를 **사람 말로** (v2 `formatGenerationError`, `index.html:16245`).
+ *  ★그대로 던지면 `HTTP 402` 같은 것만 뜬다 — 무엇을 해야 하는지가 안 보인다. */
+function queueErrorText(raw: string): string {
+  if (/402/.test(raw)) return t("queue.err402");
+  if (/401/.test(raw)) return t("queue.err401");
+  if (/429/.test(raw)) return t("queue.err429");
+  return t("queue.errOther", { m: raw.slice(0, 120) });
+}
+
 type Setter = (p: Partial<S> | ((s: S) => Partial<S>)) => void;
 
 /** AI 가 시킬 수 있는 **행동 표** — 여기 없는 이름은 안 한다. */
@@ -236,6 +245,14 @@ function handle(m: Record<string, any>, set: Setter, get: () => S) {
       for (const c of m.cli ?? []) takeCli(c);
       break;
     }
+    // ★자동 저장을 껐을 때 — **기록을 안 남기고** 미리보기만 갈아 끼운다 (`useGen.preview`)
+    case "image_preview": {
+      void import("./gen").then(({ useGen }) =>
+        useGen.setState({ preview: `data:image/${m.fmt ?? "png"};base64,${m.b64}`, current: null }),
+      );
+      if (m.progress) set({ progress: m.progress });
+      break;
+    }
     case "image":
       render(m, set, get);
       if (m.progress) set({ progress: m.progress });
@@ -267,7 +284,10 @@ function handle(m: Record<string, any>, set: Setter, get: () => S) {
       break;
     case "image_error":
     case "job_error":
-      set({ error: String(m.error ?? "생성 실패") });
+      // ★★큐 실패를 **토스트로 알린다** — 예전에는 `error` 에 담기만 하고 그것을 읽는
+      //   화면이 하나도 없어서, 20장이 전부 실패해도 아무 일도 안 일어났다 (감사 2026-08-16).
+      set({ error: String(m.error ?? "") });
+      toast(queueErrorText(String(m.error ?? "")), "warn");
       if (m.progress) set({ progress: m.progress });
       break;
   }

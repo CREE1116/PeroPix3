@@ -162,6 +162,10 @@ export const en = {
   },
 
   queue: {
+    err402: "Not enough Anlas. Try a smaller size or fewer images.",
+    err401: "The NAI token is not valid. Set it again in settings.",
+    err429: "NAI is rate limiting. Try again shortly.",
+    errOther: "Generation failed: {m}",
     allDone: "{n} images done",
     cancel: "Stop",
     cancelHint: "Stop after the current image",

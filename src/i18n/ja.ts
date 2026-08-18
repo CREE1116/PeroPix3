@@ -162,6 +162,10 @@ export const ja: Dict = {
   },
 
   queue: {
+    err402: "Anlas が足りません。解像度か枚数を減らしてください。",
+    err401: "NAI トークンが無効です。設定で入れ直してください。",
+    err429: "NAI にリクエストを制限されました。しばらくして再試行してください。",
+    errOther: "生成失敗: {m}",
     allDone: "{n}枚完了",
     cancel: "停止",
     cancelHint: "現在の1枚を終えて止まります",

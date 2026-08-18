@@ -1181,10 +1181,22 @@ async def _process_job(job: dict) -> None:
                 r = await _generate_one(one)
             except Exception as e:
                 print(f"[queue] 생성 실패 (job {job_id}, cell={one.cell}): {e}")
+                # ★★실패도 **한 장으로 센다** (v2 `backend.py:3178` 의 "에러도 완료로 카운트").
+                #   안 세면 `completed < total` 이 영원히 유지돼 큐 줄과 「생성 중」이
+                #   안 사라진다 (감사 2026-08-16).
+                Q.completed_images += 1
                 await Q.broadcast({"type": "image_error", "job_id": job_id, "error": str(e),
                                    "cell": one.cell, "progress": Q.progress()})
                 continue
             Q.completed_images += 1
+            # ★★자동 저장을 껐으면 **파일이 없다**. 그때는 기록으로 남기는 `image` 가 아니라
+            #   미리보기로 보낸다 — 안 가리면 화면이 `file: null` 로 레코드를 만들어
+            #   씬 칸에 깨진 칸이 생긴다 (감사 2026-08-16). 되돌려 볼 버퍼에도 안 쌓는다
+            #   (몇 MB 짜리 base64 라 500장 버퍼를 금세 채운다).
+            if not r.get("file"):
+                await Q.broadcast({"type": "image_preview", "job_id": job_id, **r,
+                                   "progress": Q.progress()})
+                continue
             msg = {"type": "image", "job_id": job_id, **r}
             # ★seq 를 먼저 부여하고(사본 저장), 그 뒤에 progress 를 덧붙인다.
             #   순서를 바꾸면 복원분에 그때그때의 진행률이 섞여 들어간다.
