@@ -72,6 +72,15 @@ export const Icon = {
       <circle cx="9" cy="15" r="1.3" fill="currentColor" />
     </>,
   ),
+  /** 켜짐 — 블록의 `◉`. ★이 모양을 **잠금에도 같이 쓴다** (사용자 지시 2026-08-16) */
+  dotOn: s(
+    <>
+      <circle cx="12" cy="12" r="7" />
+      <circle cx="12" cy="12" r="3.4" fill="currentColor" stroke="none" />
+    </>,
+  ),
+  /** 꺼짐 — 블록의 `○` */
+  dotOff: s(<circle cx="12" cy="12" r="7" />),
   spark: s(
     <>
       <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" />

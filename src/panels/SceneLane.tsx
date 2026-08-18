@@ -609,8 +609,10 @@ function CardGroup(p: GroupProps) {
           // ★높이를 절반으로 (사용자 지적 2026-08-16: 56 은 너무 두꺼웠다)
           height: HEAD_H,
           background: BANNER_BG,
-          borderRadius: "11px 11px 0 0",
-          borderBottom: "1px solid var(--line)",
+          // ★접히면 머리가 카드의 **마지막 조각**이다 — 아래 모서리도 둥글어야 하고
+          //   아래 테두리는 없어야 한다 (안 그러면 좌우 하단이 각지고 선이 남는다)
+          borderRadius: p.folded ? "11px" : "11px 11px 0 0",
+          borderBottom: p.folded ? undefined : "1px solid var(--line)",
         }}
       >
         <div
@@ -621,7 +623,7 @@ function CardGroup(p: GroupProps) {
             width: HEAD_W,
             height: HEAD_H,
             overflow: "hidden",
-            borderRadius: "11px 0 0 0",
+            borderRadius: p.folded ? "11px 0 0 11px" : "11px 0 0 0",
           }}
         >
           {/* ★★그림은 **끝까지 이어진다** (사용자 지적 2026-08-16).
@@ -682,7 +684,10 @@ function CardGroup(p: GroupProps) {
               title={t("scenes.lockCard")}
               style={{ ...bannerBtn, color: p.card.locked ? "var(--warn)" : "rgba(255,255,255,0.72)" }}
             >
-              {p.card.locked ? Icon.lock : Icon.unlock}
+              {/* ★블록의 켜기/끄기와 **같은 모양**이다 (사용자 지시 2026-08-16) —
+                  "이번 생성에서 뺀다"는 뜻이 같으므로 생김새도 같아야 한다.
+                  ★잠김 = **꺼짐**이다 (자물쇠와 반대로 읽히지 않게) */}
+              {p.card.locked ? Icon.dotOff : Icon.dotOn}
             </button>
             <button
               data-card-remove={p.card.id}
@@ -863,7 +868,8 @@ function SceneRow(
             title={t("slots.lock")}
             style={{ ...iconBtn, color: c.locked ? "var(--warn)" : "var(--ink-faint)" }}
           >
-            {c.locked ? Icon.lock : Icon.unlock}
+            {/* 블록의 켜기/끄기와 같은 모양 (카드 잠금 주석 참조) */}
+            {c.locked ? Icon.dotOff : Icon.dotOn}
           </button>
           {!p.only && (
             <button

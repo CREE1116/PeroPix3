@@ -270,9 +270,9 @@ export function BlockRow({
             onChange({ ...block, on: !block.on });
           }}
           title={block.on ? t("block.toggleOff") : t("block.toggleOn")}
-          style={{ color: "var(--ink-faint)", fontSize: "var(--text-2xs)", padding: "0 2px" }}
+          style={{ color: "var(--ink-faint)", padding: "0 2px", display: "grid" }}
         >
-          {block.on ? "◉" : "○"}
+          {block.on ? Icon.dotOn : Icon.dotOff}
         </button>
         <button
           onClick={(e) => {
