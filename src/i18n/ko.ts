@@ -373,6 +373,8 @@ export const ko: Dict = {
     generateAll: "전체 생성 ({n}셀)",
     generateCell: "이 셀만 생성",
     starKey: "선별 표시 (S)",
+    /** ★생성물을 끌면 카드 그림(커버)이 된다. 우클릭 숨김은 씬 줄에 없어 뺐다 */
+    takeDragHint: "seed {seed} · 덱이나 배너로 끌면 카드 그림이 됩니다",
     takeHint: "seed {seed} · 우클릭 = 숨김",
     countTakes: "{n}장",
     saveLocation: "생성물이 저장되는 위치",

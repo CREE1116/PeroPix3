@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
+import { useDragSource, dragSourceStyle } from "../cards/dragStore";
 import { useGen } from "../store/gen";
 import { useWs, takesOfScene, allCells, allScenes } from "../store/workspace";
 import { SceneLane, takeSrc } from "./SceneLane";
@@ -301,6 +302,8 @@ function SceneActions() {
 /** 고른 한 장 — 씬 칸에서 고른 결과를 크게. 아무것도 안 골랐으면 안내만 */
 function ScenePreview() {
   const tr = useI18n((s) => s.t);
+  /** 큰 그림을 카드 커버로 끄는 출발점 (`dir: "image"`) */
+  const startDrag = useDragSource();
   const { base } = useGen();
   const ws = useWs((s) => s.current);
   const { records, activeTab, isDeleted, isStarred } = useWs();
@@ -367,7 +370,28 @@ function ScenePreview() {
           src={cur ? takeSrc(cur, base, ws, false) : imgUrl(base, ws, file)}
           alt=""
           draggable={false}
-          style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "var(--r-1)" }}
+          /* ★★큰 그림도 **끌면 카드 커버**가 된다 (덱·손패·프롬프트 배너가 받는다).
+               싱글 캔버스를 걷을 때 이 출발점이 씬 칸의 것과 함께 사라져 있었다
+               (사용자 지적 2026-08-18). 고스트는 `DragLayer` 가 작게 그리므로 화면을 안 가린다.
+             ★미저장은 못 끈다 — 파일이 없어 커버로 쓸 수 없다 (받는 쪽이 경로를 쓴다). */
+          onPointerDown={
+            cur?.preview
+              ? undefined
+              : (e) =>
+                  startDrag(e, {
+                    dir: "image",
+                    kind: "image",
+                    img: { ws, file, url: cur ? takeSrc(cur, base, ws, true) : imgUrl(base, ws, file) },
+                  })
+          }
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "contain",
+            borderRadius: "var(--r-1)",
+            cursor: cur?.preview ? undefined : "grab",
+            ...(cur?.preview ? null : dragSourceStyle),
+          }}
         />
       ) : (
         <div

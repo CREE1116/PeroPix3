@@ -138,8 +138,12 @@ export function SceneLane() {
     const down = (e: PointerEvent) => {
       const t = e.target as HTMLElement;
       if (e.button !== 0) return;
-      // ★그립은 비켜 간다 — 순서를 바꾸려고 잡은 것이 줄 스크롤로 새면 안 된다
-      if (t.closest("[data-scene-head], [data-card-grip], input, textarea, select, [contenteditable='true']")) return;
+      // ★그립은 비켜 간다 — 순서를 바꾸려고 잡은 것이 줄 스크롤로 새면 안 된다.
+      // ★★**생성물 칸(`[data-take]`)도 비켜 간다** — 카드 커버로 끌어내는 출발점이라
+      //   여기서 잡으면 그림을 끄는 동안 줄이 함께 밀린다 (사용자 지적 2026-08-18).
+      //   ★이 리스너는 **네이티브**라 React 핸들러의 `stopPropagation` 으로는 못 막는다
+      //     (네이티브 전파가 React 의 합성 이벤트보다 먼저 지나간다). 여기서 걸러야 한다.
+      if (t.closest("[data-scene-head], [data-card-grip], [data-take], input, textarea, select, [contenteditable='true']")) return;
       from = { x: e.clientX, y: e.clientY, sx: el.scrollLeft, sy: el.scrollTop };
       moved = false;
     };
@@ -1301,6 +1305,8 @@ function SceneRow(
   },
 ) {
   const t = useI18n((s) => s.t);
+  /** 생성물을 카드 커버로 끄는 출발점 (`dir: "image"`). 덱·손패·프롬프트 배너가 받는다 */
+  const startTakeDrag = useDragSource();
   const c = p.cell;
   const on = p.focus.cell === c.id;
   const expanded = p.expandedId === c.id;
@@ -1542,13 +1548,29 @@ function SceneRow(
               key={r.file}
               data-take={r.file}
               data-take-unsaved={un ? "" : undefined}
-              onClick={(e) => {
+              title={un ? undefined : t("canvas.takeDragHint", { seed: r.seed })}
+              // ★★**생성물을 끌면 카드 그림(커버)이 된다** — 덱·손패·프롬프트 배너가 받는다
+              //   (`dir: "image"` 드롭존들). 싱글 캔버스를 걷을 때 이 출발점이 함께 사라져
+              //   드래그가 통째로 죽어 있었다 (사용자 지적 2026-08-18).
+              // ★클릭(선택)은 `onClick` 이 아니라 **`onTap`** 으로 받는다 — pointerdown 의
+              //   `preventDefault` 가 브라우저의 호환 click 을 삼킨다 (CLAUDE.md 「잊기 쉬운 것」).
+              // ★미저장은 **못 끈다.** 파일이 없어서 커버로 쓸 수 없다 (받는 쪽이 경로를 쓴다).
+              onPointerDown={(e) => {
+                const tap = () => {
+                  // ★미저장은 **여러 장 고르기에서 뺀다.** 고른 것에 걸리는 일(휴지통·강화)이
+                  //   전부 파일 경로를 서버로 보내는 것이라, 섞이면 조용히 실패한다.
+                  //   버리는 것도 저장하는 것도 큰 그림 아래 줄에서 한다 (`SceneActions`)
+                  if (!un && (e.ctrlKey || e.metaKey || e.shiftKey)) p.onPick(r.file, true);
+                  else p.onFocus({ cell: c.id, file: r.file });
+                };
+                if (un) return tap();
                 e.stopPropagation();
-                // ★미저장은 **여러 장 고르기에서 뺀다.** 고른 것에 걸리는 일(휴지통·강화)이
-                //   전부 파일 경로를 서버로 보내는 것이라, 섞이면 조용히 실패한다.
-                //   버리는 것도 저장하는 것도 큰 그림 아래 줄에서 한다 (`SceneActions`)
-                if (!un && (e.ctrlKey || e.metaKey || e.shiftKey)) p.onPick(r.file, true);
-                else p.onFocus({ cell: c.id, file: r.file });
+                startTakeDrag(
+                  e,
+                  { dir: "image", kind: "image", img: { ws: p.ws, file: r.file, url: takeSrc(r, p.base, p.ws, true) } },
+                  undefined,
+                  tap,
+                );
               }}
               style={{
                 position: "relative",

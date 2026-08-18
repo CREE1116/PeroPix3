@@ -371,6 +371,7 @@ export const en = {
     generateAll: "Generate all ({n} cells)",
     generateCell: "Generate this cell",
     starKey: "Mark as picked (S)",
+    takeDragHint: "seed {seed} · drag onto the deck or a banner to use as card art",
     takeHint: "seed {seed} · right click = hide",
     countTakes: "{n} images",
     saveLocation: "Where generated images are saved",

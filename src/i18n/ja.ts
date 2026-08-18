@@ -370,6 +370,7 @@ export const ja: Dict = {
     generateAll: "一括生成（{n} セル）",
     generateCell: "このセルだけ生成",
     starKey: "選別マーク (S)",
+    takeDragHint: "seed {seed} · デッキやバナーへドラッグでカードの絵になります",
     takeHint: "seed {seed} · 右クリックで非表示",
     countTakes: "{n} 枚",
     saveLocation: "生成画像の保存先",
