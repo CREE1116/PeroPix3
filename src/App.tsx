@@ -37,17 +37,23 @@ import { WildcardModal } from "./panels/WildcardModal";
 import { useWildcards } from "./store/wildcards";
 import { ThumbDialog } from "./cards/ThumbDialog";
 import { saveCardWithThumb } from "./cards/saveCard";
-import { pinImage, setCover } from "./cards/thumbUpload";
+import { pinImage, setCardThumb } from "./cards/thumbUpload";
 import { usePrompt, defaultView } from "./store/prompt";
-import { useCards, type CardKind } from "./store/cards";
+import { useCards, type AnyCard, type CardKind } from "./store/cards";
 import type { DragImage } from "./cards/dragStore";
 
-/** 위치 잡는 창이 겨눌 수 있는 두 목적지 — 섹션 배너 또는 **덱 커버**.
- *  ★덱 안의 개별 카드는 여기서 못 바꾼다 (사용자 정정): 카드는 꺼내서(섹션에 적용)
- *    고친 뒤 역드래그로 덮어쓰는 것이 유일한 수정 경로다. */
+/** 위치 잡는 창이 겨눌 수 있는 목적지 — 섹션 배너 또는 **덱 카드 한 장**.
+ *
+ *  ★~~덱 안의 개별 카드는 여기서 못 바꾼다~~ (2026-08-19 사용자 결정으로 뒤집힘).
+ *    예전에는 덱이 접힌 손패라 카드 한 장을 겨눌 자리가 없어서, 꺼내 고친 뒤 역드래그로
+ *    덮어쓰는 것이 유일한 길이었다. 지금은 **덱이 오른쪽에 펼쳐져 있어** 카드가 그대로
+ *    노출되므로 거기 바로 떨군다 (사용자 원문: *"이제 다 펼쳐져 있어서 바로 드롭해도 될듯.
+ *    대신 해당 카드가 받을 수 있게 노출된 상태일 때만"*).
+ *  ★종류당 하나였던 **덱 커버**(`useCards.covers`)는 그리던 손패가 사라져 보이는 곳이
+ *    없다 — 그 목적지는 걷었다. */
 type ThumbTarget =
   | { type: "section"; section: string; img: DragImage }
-  | { type: "cover"; kind: CardKind; img: DragImage };
+  | { type: "card"; kind: CardKind; card: AnyCard; img: DragImage };
 
 export function App() {
   // ★백엔드 상태는 **스토어 하나**가 든다 — 보는 자리가 넷이다 (타이틀바 점 · 설정의 앱
@@ -224,7 +230,7 @@ export function App() {
           ) : (
             <DeckPanel
               onAsk={setAsk}
-              onImageDrop={(kind, img) => setThumbAsk({ type: "cover", kind, img })}
+              onImageDrop={(kind, card, img) => setThumbAsk({ type: "card", kind, card, img })}
             />
           )
         }
@@ -258,7 +264,7 @@ export function App() {
       {/* ★key 로 목적지·그림마다 창을 새로 만든다 — 안에서 잡아 둔 위치가
           부모 재렌더에 초기화되지 않게 하는 유일한 안전한 방법이다 */}
       <ThumbDialog
-        key={thumbAsk ? `${thumbAsk.type}:${"section" in thumbAsk ? thumbAsk.section : thumbAsk.kind}:${thumbAsk.img.file}` : "none"}
+        key={thumbAsk ? `${thumbAsk.type}:${"section" in thumbAsk ? thumbAsk.section : thumbAsk.card.id}:${thumbAsk.img.file}` : "none"}
         ask={
           thumbAsk
             ? thumbAsk.type === "section"
@@ -269,8 +275,10 @@ export function App() {
                 }
               : {
                   url: thumbAsk.img.url,
-                  // 덱 커버는 핸드 카드(58×80)와 같은 비율 — 배너 미리보기는 필요 없다
-                  boxes: [{ key: "cover", label: tGlobal("thumb.onCover"), w: 58, h: 80, view: defaultView() }],
+                  // ★카드는 **배너로도 앞면으로도** 뜬다 (같은 tid, 보는 방식만 다르다) —
+                  //   섹션과 같은 창을 쓴다. 덱 칸은 3:4 라 앞면 상자를 그 비율로 잡는다
+                  banner: defaultView(),
+                  boxes: [{ key: "face", label: tGlobal("thumb.inCard"), w: 110, h: 146, view: defaultView() }],
                 }
             : null
         }
@@ -291,7 +299,15 @@ export function App() {
                 face: r.boxes.face ?? defaultView(),
               });
             } else {
-              await setCover(t.kind, tid, r.boxes.cover ?? defaultView());
+              // ★떨군 **그 카드**의 그림이 된다. 목록의 그 한 장만 갈아 끼운다
+              const view = { banner: r.banner ?? defaultView(), face: r.boxes.face ?? defaultView() };
+              const next = await setCardThumb(t.kind, t.card.id, tid, view);
+              if (next) {
+                const cur = useCards.getState()[t.kind];
+                useCards.setState({
+                  [t.kind]: cur.map((c) => (c.id === next.id ? { ...c, ...next } : c)),
+                } as never);
+              }
             }
           })();
         }}

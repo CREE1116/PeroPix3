@@ -120,6 +120,13 @@ export function useDropZone(opts: {
   kind: ZoneKind;
   dir?: DragDir;
   prio?: number;
+  /** ★**여기 보이는 만큼만** 받는다 (스크롤 되는 목록 안의 존). 준 요소와 겹치는
+   *  부분만 유효 영역이 되고, 하나도 안 겹치면 그 존은 없는 것처럼 다뤄진다.
+   *
+   *  ★없으면 스크롤로 밀려 화면 밖에 있는 칸도 **자기 자리에서는 계속 받는다** —
+   *    판정이 순수 사각형 겹침이라 잘려 안 보이는 부분까지 유효해지기 때문이다
+   *    (사용자 지시 2026-08-19: "해당 카드가 받을 수 있게 노출된 상태일 때만"). */
+  clip?: React.RefObject<HTMLElement | null>;
   onDrop: (d: Dragging) => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -129,6 +136,8 @@ export function useDropZone(opts: {
   cb.current = opts.onDrop;
 
   const { id, kind, dir = "apply", prio = 0 } = opts;
+  const clip = useRef(opts.clip);
+  clip.current = opts.clip;
   useEffect(
     () =>
       useDrag.getState().addZone({
@@ -136,7 +145,19 @@ export function useDropZone(opts: {
         kind,
         dir,
         prio,
-        rect: () => ref.current?.getBoundingClientRect() ?? null,
+        rect: () => {
+          const r = ref.current?.getBoundingClientRect();
+          if (!r) return null;
+          const c = clip.current?.current?.getBoundingClientRect();
+          if (!c) return r;
+          // 보이는 만큼으로 자른다. 하나도 안 겹치면 없는 존이다
+          const left = Math.max(r.left, c.left);
+          const right = Math.min(r.right, c.right);
+          const top = Math.max(r.top, c.top);
+          const bottom = Math.min(r.bottom, c.bottom);
+          if (right <= left || bottom <= top) return null;
+          return new DOMRect(left, top, right - left, bottom - top);
+        },
         onDrop: (d) => cb.current(d),
       }),
     [id, kind, dir, prio],

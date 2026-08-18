@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { useCards, type AnyCard, type CardKind } from "../store/cards";
 import { useDrag, useDragSource, useDropZone, dragSourceStyle, type DragImage, type SectionThumb } from "./dragStore";
@@ -35,12 +35,16 @@ export function DeckPanel({
     thumb: SectionThumb | null;
   }) => void;
   /** 생성물을 덱에 놓으면 어느 카드의 그림으로 쓸지 고른다 */
-  onImageDrop: (kind: CardKind, img: DragImage) => void;
+  /** 생성물을 카드에 놓으면 **그 카드의 그림**이 된다 */
+  onImageDrop: (kind: CardKind, card: AnyCard, img: DragImage) => void;
 }) {
+  // ★스크롤로 밀려 안 보이는 카드는 그림을 못 받는다 — 각 카드 존을 이 칸으로 자른다
+  //   (사용자 지시 2026-08-19: "해당 카드가 받을 수 있게 노출된 상태일 때만")
+  const view = useRef<HTMLDivElement | null>(null);
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflowY: "auto" }}>
+    <div ref={view} style={{ display: "flex", flexDirection: "column", height: "100%", overflowY: "auto" }}>
       {KINDS.map((k) => (
-        <Section key={k} kind={k} onAsk={onAsk} onImageDrop={onImageDrop} />
+        <Section key={k} kind={k} onAsk={onAsk} onImageDrop={onImageDrop} view={view} />
       ))}
     </div>
   );
@@ -50,15 +54,18 @@ function Section({
   kind,
   onAsk,
   onImageDrop,
+  view,
 }: {
   kind: CardKind;
+  view: React.RefObject<HTMLDivElement | null>;
   onAsk: (a: {
     kind: CardKind;
     card: AnyCard;
     existing: AnyCard;
     thumb: SectionThumb | null;
   }) => void;
-  onImageDrop: (kind: CardKind, img: DragImage) => void;
+  /** 생성물을 카드에 놓으면 **그 카드의 그림**이 된다 */
+  onImageDrop: (kind: CardKind, card: AnyCard, img: DragImage) => void;
 }) {
   const t = useI18n((s) => s.t);
   const cards = useCards((s) => s[kind]);
@@ -81,24 +88,16 @@ function Section({
       else void saveCardWithThumb(kind, { ...card, id: undefined }, d.thumb ?? null);
     },
   });
-  // 생성물을 놓으면 그 그림을 어느 카드의 표지로 쓸지 고른다
-  const img = useDropZone({
-    id: "deckpanel-img-" + kind,
-    kind: "image",
-    dir: "image",
-    prio: 4,
-    onDrop: (d) => d.img && onImageDrop(kind, d.img),
-  });
-
-  const over = save.over || img.over;
-  const active = save.active || img.active;
+  // ★★**종류별 「덱 커버」 그림 존을 걷었다** (사용자 결정 2026-08-19).
+  //   그것을 그리던 손패(`cards/Hand.tsx`)가 화면에서 빠진 뒤로 `useCards.covers` 를
+  //   아무 데도 안 보여 줘서, 덱에 그림을 떨구면 성공하고도 **눈에는 아무 일도 없었다.**
+  //   이제 그림은 **카드 한 장 한 장**이 받는다 (`PanelCard`).
+  const over = save.over;
+  const active = save.active;
 
   return (
     <div
-      ref={(el) => {
-        save.ref.current = el;
-        img.ref.current = el;
-      }}
+      ref={save.ref}
       data-deck-section={kind}
       data-over={over ? "1" : "0"}
       style={{
@@ -153,7 +152,14 @@ function Section({
             </div>
           ) : (
             cards.map((c) => (
-              <PanelCard key={c.id} kind={kind} card={c} onDelete={() => remove(kind, c.id)} />
+              <PanelCard
+              key={c.id}
+              kind={kind}
+              card={c}
+              view={view}
+              onDelete={() => remove(kind, c.id)}
+              onImageDrop={onImageDrop}
+            />
             ))
           )}
         </div>
@@ -166,21 +172,38 @@ function Section({
 function PanelCard({
   kind,
   card,
+  view,
   onDelete,
+  onImageDrop,
 }: {
   kind: CardKind;
   card: AnyCard;
+  view: React.RefObject<HTMLDivElement | null>;
   onDelete: () => void;
+  onImageDrop: (kind: CardKind, card: AnyCard, img: DragImage) => void;
 }) {
   const t = useI18n((s) => s.t);
   const startDrag = useDragSource();
   const me = useDrag((s) => s.drag?.card?.id === card.id);
   const [hover, setHover] = useState(false);
   const fv = normThumb(card.thumb);
+  /** ★생성물을 이 카드에 떨구면 **이 카드의 그림**이 된다 (사용자 결정 2026-08-19).
+   *  ★`clip` 으로 **덱 칸에 보이는 만큼만** 받는다 — 스크롤로 밀려 안 보이는 카드가
+   *    자기 자리에서 계속 받으면, 덱 밖에 떨군 것이 엉뚱한 카드에 걸린다. */
+  const drop = useDropZone({
+    id: "deckcard-" + card.id,
+    kind: "image",
+    dir: "image",
+    prio: 20,
+    clip: view,
+    onDrop: (d) => d.img && onImageDrop(kind, card, d.img),
+  });
 
   return (
     <div
+      ref={drop.ref}
       data-deck-card={card.id}
+      data-over={drop.over ? "1" : "0"}
       onPointerDown={(e) => startDrag(e, { dir: "apply", kind, card })}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
@@ -204,7 +227,9 @@ function PanelCard({
         aspectRatio: "3 / 4",
         borderRadius: "var(--r-3)",
         overflow: "hidden",
-        border: "1px solid var(--line)",
+        border: `1px solid ${drop.over ? "var(--accent)" : "var(--line)"}`,
+        outline: drop.active ? `2px dashed ${drop.over ? "var(--accent)" : "var(--line-strong)"}` : undefined,
+        outlineOffset: -2,
         cursor: "grab",
         opacity: me ? 0.35 : 1,
         transform: hover ? "translateY(-2px)" : undefined,
