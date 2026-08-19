@@ -234,27 +234,6 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
     return (
       <div style={{ padding: "var(--sp-2)", borderTop: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: 4 }}>
         {genBtn}
-      {/* ★★취소는 **생성 버튼 바로 아래**다 (사용자 지시 2026-08-19) — 접었을 때(`C`)와
-          같은 자리여야 헷갈리지 않는다. 예전에는 큐 줄 안에 있어서 접고 펴면 자리가 달라졌다.
-          ★받은 뒤에는 「취소 중」으로 바뀌고 안 눌린다 — 눌렀다는 것이 보여야 한다. */}
-      {running && (
-        <button
-          data-queue-cancel
-          onClick={() => void cancelQueue()}
-          disabled={cancelled}
-          data-tip={t("queue.cancelHint")}
-          style={{
-            ...qbtn,
-            width: "100%",
-            padding: "var(--sp-2)",
-            textAlign: "center",
-            color: cancelled ? "var(--ink-ghost)" : "var(--err)",
-            borderColor: cancelled ? "var(--line)" : "var(--err)",
-          }}
-        >
-          {cancelled ? t("queue.cancelling") : t("queue.cancel")}
-        </button>
-      )}
         {/* ★★`CQ` 는 **늘 있다** (사용자 지시 2026-08-19, v2 `collapsedClearQBtn`) —
             돌 때만 나타나면 멈추려는 순간에 자리를 찾게 된다. 돌지 않을 때는 눌러도
             할 일이 없으므로 흐리게 둔다. */}
@@ -482,6 +461,27 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
       </div>
 
       {genBtn}
+      {/* ★★취소는 **생성 버튼 바로 아래**다 (사용자 지시 2026-08-19) — 접었을 때(`C`)와
+          같은 자리여야 헷갈리지 않는다. 예전에는 큐 줄 안에 있어서 접고 펴면 자리가 달라졌다.
+          ★받은 뒤에는 「취소 중」으로 바뀌고 안 눌린다 — 눌렀다는 것이 보여야 한다. */}
+      {running && (
+        <button
+          data-queue-cancel
+          onClick={() => void cancelQueue()}
+          disabled={cancelled}
+          data-tip={t("queue.cancelHint")}
+          style={{
+            ...qbtn,
+            width: "100%",
+            padding: "var(--sp-2)",
+            textAlign: "center",
+            color: cancelled ? "var(--ink-ghost)" : "var(--err)",
+            borderColor: cancelled ? "var(--line)" : "var(--err)",
+          }}
+        >
+          {cancelled ? t("queue.cancelling") : t("queue.cancel")}
+        </button>
+      )}
 
       {/* ★막았으면 **왜 막혔는지**를 같은 자리에서 말한다. v2 는 눌렀을 때 토스트였는데,
           버튼이 잠긴 채 이유가 없으면 무엇을 고쳐야 하는지 알 수 없다 */}

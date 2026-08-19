@@ -11,6 +11,7 @@ import { EnhanceDialog } from "./EnhanceDialog";
 import { Icon } from "../components/Icon";
 import { colorOf } from "../store/cards";
 import { cardBlocks, compileBlocks, makeBlock, parseSegs } from "../lib/blocks";
+import { useTagSuggest } from "../blocks/TagSuggest";
 import { useDragSource, useDropZone } from "../cards/dragStore";
 import { DragGhost } from "../cards/DragGhost";
 import { useLaneReorder, type LaneDrop } from "../lib/useReorder";
@@ -1234,6 +1235,13 @@ function SceneRow(
    *  이제 보이는 것은 친 그대로고, 블록은 그 옆에서 따라 만들어진다. */
   const [draft, setDraft] = useState<string | null>(null);
   const ta = useRef<HTMLTextAreaElement>(null);
+  /** 글이 바뀌는 **유일한 창구** — 초안과 블록을 함께 고친다 (자동완성도 이리로 온다) */
+  const setText = (v: string) => {
+    setDraft(v);
+    patchCell({ blocks: [makeBlock(c.name, [], { on: true, open: true, tags: parseSegs(v) })] });
+  };
+  /** 태그 자동완성 — **블록 편집기와 같은 훅**이다 (`blocks/TagSuggest`) */
+  const ac = useTagSuggest(draft ?? compileBlocks(c.blocks), setText, ta);
   /** 펼치면서 커서를 놓을 글자 자리. `null` 이면 맨 뒤 */
   const caretAt = useRef<number | null>(null);
   const on = p.focus.cell === c.id;
@@ -1410,14 +1418,10 @@ function SceneRow(
               ref={ta}
               data-scene-text={c.id}
               value={draft ?? compileBlocks(c.blocks)}
-              onChange={(e) => {
-                setDraft(e.target.value);
-                patchCell({
-                  blocks: [
-                    makeBlock(c.name, [], { on: true, open: true, tags: parseSegs(e.target.value) }),
-                  ],
-                });
-              }}
+              /* ★★자동완성은 **블록 편집기와 같은 것**이다 (사용자 지시 2026-08-19:
+                  조작을 통일하라). `useTagSuggest` 가 값을 고쳐 주면 그 값으로 블록을 만든다 —
+                  두 편집기가 다른 규칙으로 돌면 같은 일을 두 가지로 배우게 된다. */
+              onChange={ac.onChange}
               // ★편집을 끝내면 초안을 놓아 준다 — 그때부터 다시 블록이 정본이다
               //   (카드를 얹거나 AI 가 고치면 그 값이 바로 보여야 한다)
               onBlur={() => setDraft(null)}
@@ -1425,6 +1429,8 @@ function SceneRow(
                   기본 동작(다음 단추로 이동)을 막고 씬 사이를 오간다 — 여러 씬의 태그를
                   이어서 적어 나가는 것이 이 칸의 쓰임이다 */
               onKeyDown={(e) => {
+                // ★자동완성이 떠 있으면 Enter·Esc·방향키는 **그쪽 것**이다 (블록과 같다)
+                if (ac.onKeyDown(e)) return;
                 // ★`Esc` 로 편집을 끝낸다 (사용자 지시 2026-08-18)
                 if (e.key === "Escape") {
                   e.preventDefault();
@@ -1432,6 +1438,17 @@ function SceneRow(
                   p.onExpand(null);
                   return;
                 }
+                /* ★★`Enter` = 저장하고 끝, `Shift+Enter` = 저장하고 **다음 씬** —
+                    블록 편집기의 「Enter = 끝 · Shift+Enter = 다음 블록」과 같은 규칙이다
+                    (사용자 지시 2026-08-19). 예전에는 여기서 Enter 가 줄바꿈이었다. */
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  setDraft(null);
+                  if (e.shiftKey) p.onStepField(c.id, 1, "text");
+                  else p.onExpand(null);
+                  return;
+                }
+                /* ★`Tab` 으로 **옆 씬의 같은 칸**으로 (v2 index.html:11821-11832) */
                 if (e.key !== "Tab") return;
                 e.preventDefault();
                 p.onStepField(c.id, e.shiftKey ? -1 : 1, "text");
@@ -1451,6 +1468,8 @@ function SceneRow(
                 color: "var(--ink)",
               }}
             />
+            {/* 목록은 **편집 중에만** — 상자가 사라져도 떠 있으면 화면에 남는다 (블록과 같다) */}
+            {ac.node}
           </div>
         ) : (
           <span
