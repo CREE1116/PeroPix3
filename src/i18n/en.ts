@@ -187,6 +187,7 @@ export const en = {
   },
 
   queue: {
+    cancelSent: "Cancelled — the image being made will still finish",
     err402: "Not enough Anlas. Try a smaller size or fewer images.",
     err401: "The NAI token is not valid. Set it again in settings.",
     err429: "NAI is rate limiting. Try again shortly.",

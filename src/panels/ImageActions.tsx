@@ -207,8 +207,16 @@ export function ImageActions({
       >
         {loadMeta && (
           <>
-            <button data-act-prompt onClick={() => void showPrompt()} disabled={busy} style={btn}>
-              {t("act.showPrompt")}
+            {/* ★글자로 남는 것은 **「i2i」 하나**다 (사용자 지시 2026-08-19) — 그건 이름 자체가
+                짧은 낱말이라 아이콘으로 옮기면 오히려 흐려진다 */}
+            <button
+              data-act-prompt
+              onClick={() => void showPrompt()}
+              disabled={busy}
+              data-tip={t("act.showPrompt")}
+              style={iconBtn}
+            >
+              {Icon.text}
             </button>
             {!hideSettings && (
               <button

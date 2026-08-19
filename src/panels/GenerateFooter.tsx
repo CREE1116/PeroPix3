@@ -9,6 +9,7 @@ import { useQueue } from "../store/queue";
 import { allScenes, useWs } from "../store/workspace";
 import { useImageInput } from "../store/imageInput";
 import { useUi } from "../store/ui";
+import { toast } from "../store/toast";
 import { anlasCost, MAX_PER_IMAGE } from "../lib/anlas";
 import { useSub } from "../store/sub";
 import { useAnlasMeter } from "../store/anlasMeter";
@@ -84,6 +85,14 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
     count,
   });
   const running = progress.total > progress.completed;
+  /** ★★취소를 누르면 **받았다고 말한다** (사용자 지적 2026-08-19: 눌러도 아무 일이 없어
+   *  보였다). NAI 는 이미 나간 한 장을 못 끊으므로 **지금 것은 끝까지 나오고** 나머지가
+   *  빠진다 — 그 사실을 그 자리에서 알린다. 안 알리면 「안 눌렸다」로 읽혀 또 누르게 된다. */
+  const cancelQueue = async () => {
+    if (!running) return;
+    toast(t("queue.cancelSent"));
+    await cancelAll();
+  };
   /** ★한 장이 140 Anlas 를 넘으면 **생성을 막는다** — 공홈과 같은 판정이다
    *  (v2 `index.html:15878-15882`. 합계가 아니라 개별 장 비용 기준이라, 여러 장을 걸어
    *  둔 정상 상황에서 헛되이 걸리지 않는다). 값만 세어 두고 아무도 안 읽던 자리다 (감사 B3). */
@@ -192,8 +201,9 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
         width: "100%",
       }}
     >
-      {!busy && Icon.spark}
-      {!compact && (busy ? t("canvas.generating") : t("canvas.generate"))}
+      {/* ★★아이콘을 안 붙인다 (사용자 지시 2026-08-19) — 이름이 이미 적혀 있고, 접었을 때는
+          **v2 처럼 `Q`** 다 (그쪽 `collapsedQueueBtn`). 글자 하나가 아이콘보다 또렷하다. */}
+      {compact ? "Q" : busy ? t("canvas.generating") : t("canvas.generate")}
       {/* ★몇 장을 만들지·얼마가 드는지를 **누르기 전에** 보여 준다.
           ★Opus 무료 구간이면 숫자 대신 **FREE** 다 (v2 `anlasFreeTag`, index.html:9438).
             `anlas.ts` 가 세 두고도 아무도 안 읽던 값이다 (감사 C3). */}
@@ -208,8 +218,26 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
   // 접힌 레일 — 버튼만 남긴다. 여기서도 누를 수 있어야 접어 둔 채 계속 만든다
   if (compact) {
     return (
-      <div style={{ padding: "var(--sp-2)", borderTop: "1px solid var(--line)" }}>
+      <div style={{ padding: "var(--sp-2)", borderTop: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: 4 }}>
         {genBtn}
+        {/* ★★`CQ` 는 **늘 있다** (사용자 지시 2026-08-19, v2 `collapsedClearQBtn`) —
+            돌 때만 나타나면 멈추려는 순간에 자리를 찾게 된다. 돌지 않을 때는 눌러도
+            할 일이 없으므로 흐리게 둔다. */}
+        <button
+          data-queue-cancel="compact"
+          onClick={() => void cancelQueue()}
+          disabled={!running}
+          data-tip={`${t("queue.cancel")} — ${t("queue.cancelHint")}`}
+          style={{
+            ...qbtn,
+            width: "100%",
+            textAlign: "center",
+            color: running ? "var(--err)" : "var(--ink-ghost)",
+            borderColor: running ? "var(--err)" : "var(--line)",
+          }}
+        >
+          CQ
+        </button>
         {running && (
           <div
             data-queue-mini
@@ -290,7 +318,7 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
             {running && (
               <button
                 data-queue-cancel
-                onClick={() => void cancelAll()}
+                onClick={() => void cancelQueue()}
                 data-tip={t("queue.cancelHint")}
                 style={{ ...qbtn, color: "var(--err)", borderColor: "var(--err)" }}
               >
