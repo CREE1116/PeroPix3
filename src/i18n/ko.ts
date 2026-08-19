@@ -82,7 +82,7 @@ export const ko: Dict = {
 
   cards: {
     removeStyle: "스타일 카드 빼기",
-    addStyle: "스타일 카드 추가",
+    addStyle: "+ 스타일 카드",
     folderDelete: "폴더 지우기",
     folderDeleteConfirm: "폴더 「{name}」 을 지웁니다 (카드 {n}장)",
     folderDeleteBody: "카드는 지워지지 않고 폴더 밖으로 나옵니다.",

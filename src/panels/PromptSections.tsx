@@ -68,6 +68,10 @@ export function StyleSection({ onThumb }: SectionProps) {
     },
   });
   const img = useThumbDrop("base", (di) => onThumb("base", di));
+  /** ★★훅은 **JSX 안에서 부르지 않는다** (사용자 지적 2026-08-19: 스타일 카드를 빼면 화면이
+   *  통째로 멈췄다). 아래에 「카드를 뺐으면 단추만」 갈래가 생기면서, JSX 안에 있던 이 훅이
+   *  그때는 안 돌아 **훅 개수가 렌더마다 달라졌다** — React 가 그 자리에서 죽는다. */
+  const thumbView = useThumbView(style.thumb);
 
   /** ★스타일 카드를 끌기 시작하면 **접힌 것을 편다** (사용자 지적 2026-08-19: 둘 다 접혀
    *  있으면 아예 못 넣었다). 캐릭터 섹션과 같은 규칙 — 놓을 자리가 보여야 놓는다. */
@@ -115,7 +119,7 @@ export function StyleSection({ onThumb }: SectionProps) {
         </BannerBtn>
       }
       gradient={style.color}
-      thumb={useThumbView(style.thumb)}
+      thumb={thumbView}
       zone="thumb-base"
       folded={!!folded["base"]}
       onFold={() => toggleFold("base")}
@@ -179,6 +183,8 @@ export function CharSection({ ch, index, onThumb }: { ch: Char; index: number } 
   });
 
   const img = useThumbDrop(ch.id, (di) => onThumb(ch.id, di));
+  /** ★훅은 JSX 안에서 부르지 않는다 (`StyleSection` 의 같은 주석 — 갈래가 생기면 그 자리에서 죽는다) */
+  const thumbView = useThumbView(ch.thumb);
 
   /** ★★캐릭터 카드를 끌기 시작하면 **접힌 것을 편다** (사용자 지시 2026-08-19).
    *  접으면 배너만 남고, 놓는 자리(위=스택·아래=교체)가 그 안에서 반씩 나뉘어 손톱만 해진다 —
@@ -196,7 +202,7 @@ export function CharSection({ ch, index, onThumb }: { ch: Char; index: number } 
         innerRef={(el) => (img.ref.current = el)}
         name={name}
         gradient={ch.color}
-        thumb={useThumbView(ch.thumb)}
+        thumb={thumbView}
         zone={`thumb-${ch.id}`}
         folded={!!folded[ch.id]}
         onFold={() => toggleFold(ch.id)}
