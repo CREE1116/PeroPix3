@@ -5,6 +5,7 @@ import { usePrompt } from "../store/prompt";
 import { useQueue } from "../store/queue";
 import { LANE_MAX, LANE_MIN, useUi } from "../store/ui";
 import { allCells, useWs, takesOf, takesOfScene, type Rec, type SceneCard, type Slot } from "../store/workspace";
+import { newestFirst } from "../lib/takes";
 import { imgUrl, thumbUrlOf } from "../lib/imgUrl";
 import { EnhanceDialog } from "./EnhanceDialog";
 import { Icon } from "../components/Icon";
@@ -1369,8 +1370,11 @@ function SceneRow(
   }, [expanded]);
   /** ★줄은 **최신이 왼쪽**이다 (사용자 지시 2026-08-14, 싱글 히스토리 줄과 같은 규칙).
    *  방금 나온 것을 찾아 눈이 끝까지 갈 이유가 없다. 대기 칸도 같은 규칙이라
-   *  **새로 넣은 큐가 맨 왼쪽**이고, 지금 만드는 중인 것은 결과 바로 옆에 선다. */
-  const takes = [...p.takes(c)].reverse();
+   *  **새로 넣은 큐가 맨 왼쪽**이고, 지금 만드는 중인 것은 결과 바로 옆에 선다.
+   *  ★★결과의 자리는 **`ts` 가 정한다** (`newestFirst`) — 도착한 차례를 뒤집어 쓰면
+   *    경로에 따라 순서가 갈린다 (사용자 지적 2026-08-19). 대기 칸은 우리가 넣은 차례가
+   *    곧 만들 차례라 그대로 뒤집는다. */
+  const takes = [...p.takes(c)].sort(newestFirst);
   const waits = [...p.queuedOf(c.id)].reverse();
   /** 보이는 구간의 칸 번호. 앞뒤로 2칸씩 더 그려 스크롤이 끊겨 보이지 않게 한다 */
   const STEP = p.w + GAP;
