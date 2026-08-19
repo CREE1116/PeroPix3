@@ -367,15 +367,9 @@ export function SceneLane() {
       setEditingName(next.id);
       return;
     }
+    // ★커서는 **그 줄이 스스로** 넣는다 (펼쳐진 뒤에 도는 효과) — 여기서 한 번 더
+    //   찾아 넣으면 같은 일을 두 곳에서 하게 되고, 전체 선택이 되살아난다.
     setExpandedId(next.id);
-    // 편집기는 펼쳐야 생긴다 — 그려진 **다음 차례**에 커서를 넣는다
-    setTimeout(() => {
-      const el = document.querySelector<HTMLTextAreaElement>(
-        `[data-scene-text="${CSS.escape(next.id)}"]`,
-      );
-      el?.focus();
-      el?.select();
-    }, 0);
   };
 
   return (
@@ -1311,6 +1305,25 @@ function CardGroup(p: GroupProps) {
   );
 }
 
+/** 누른 지점이 그 요소의 글에서 **몇 번째 글자**인지. 못 구하면 `null`.
+ *
+ *  ★한 줄 요약을 눌러 글 상자를 열 때, 누른 자리를 그대로 잇기 위한 것이다.
+ *    브라우저마다 이름이 달라 둘 다 본다 (`caretRangeFromPoint` 는 Chromium 계열).
+ *    글자 마디가 아닌 곳(여백·다른 마디)을 눌렀으면 `null` 을 돌려 맨 뒤로 보낸다. */
+function textOffsetAt(el: HTMLElement, x: number, y: number): number | null {
+  const node = el.firstChild;
+  if (!node || node.nodeType !== Node.TEXT_NODE) return null;
+  const d = document as Document & {
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+  };
+  const r = d.caretRangeFromPoint?.(x, y);
+  if (r && r.startContainer === node) return r.startOffset;
+  const pos = d.caretPositionFromPoint?.(x, y);
+  if (pos && pos.offsetNode === node) return pos.offset;
+  return null;
+}
+
 /** 씬 한 줄 — 머리에 **그 씬의 프롬프트**(블록 편집기), 오른쪽에 그 씬의 장들 */
 function SceneRow(
   p: GroupProps & {
@@ -1330,12 +1343,29 @@ function SceneRow(
    *  **띄어쓰기·쉼표·줄바꿈이 사라졌다** (사용자 지적 2026-08-18). 커서도 튀었다.
    *  이제 보이는 것은 친 그대로고, 블록은 그 옆에서 따라 만들어진다. */
   const [draft, setDraft] = useState<string | null>(null);
+  const ta = useRef<HTMLTextAreaElement>(null);
+  /** 펼치면서 커서를 놓을 글자 자리. `null` 이면 맨 뒤 */
+  const caretAt = useRef<number | null>(null);
   const on = p.focus.cell === c.id;
   const expanded = p.expandedId === c.id;
   // 접히면 초안을 놓는다 — 다시 펼쳤을 때 옛 초안이 남아 있으면 안 된다
   //   (그 사이 카드를 얹거나 AI 가 고쳤을 수 있다)
   useEffect(() => {
     if (!expanded) setDraft(null);
+  }, [expanded]);
+  /** ★★한 번 눌러 **바로 친다** (사용자 지시 2026-08-19).
+   *
+   *  글 상자는 펼쳐야 생기므로, 펴는 것과 커서를 넣는 것을 따로 두면 두 번 눌러야 했다.
+   *  펼쳐진 **다음 그림**에서 커서를 넣는다.
+   *  ★아무것도 고르지 않는다 — 열자마자 다 잡혀 있으면 한 글자에 통째로 지워진다
+   *    (프롬프트 블록과 같은 규칙, `BlockRow`). */
+  useEffect(() => {
+    const el = ta.current;
+    if (!expanded || !el) return;
+    el.focus();
+    const at = caretAt.current ?? el.value.length;
+    caretAt.current = null;
+    el.setSelectionRange(at, at);
   }, [expanded]);
   /** ★줄은 **최신이 왼쪽**이다 (사용자 지시 2026-08-14, 싱글 히스토리 줄과 같은 규칙).
    *  방금 나온 것을 찾아 눈이 끝까지 갈 이유가 없다. 대기 칸도 같은 규칙이라
@@ -1473,6 +1503,7 @@ function SceneRow(
                 칩을 놓을 자리가 안 나온다. 저장은 그대로 블록이라 컴파일·카드 저장은 그대로.
                 ★고치는 순간 켜진 블록이 **한 줄로 합쳐진다** (꺼진 것은 버린다). */}
             <textarea
+              ref={ta}
               data-scene-text={c.id}
               value={draft ?? compileBlocks(c.blocks)}
               onChange={(e) => {
@@ -1523,6 +1554,13 @@ function SceneRow(
             data-scene-summary={c.id}
             onClick={(e) => {
               e.stopPropagation();
+              // ★누른 글자 자리에 커서를 놓는다 — 요약과 글 상자의 글이 **같을 때만**.
+              //   요약은 무게(`1.2::…::`)를 빼고 그리므로, 무게가 섞여 있으면 자리가
+              //   어긋난다. 그럴 땐 맨 뒤다 (`caretAt` 이 null).
+              caretAt.current =
+                summary === compileBlocks(c.blocks)
+                  ? textOffsetAt(e.currentTarget, e.clientX, e.clientY)
+                  : null;
               p.onExpand(c.id);
             }}
             title={t("scenes.unfold")}
