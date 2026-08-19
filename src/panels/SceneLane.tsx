@@ -1597,7 +1597,16 @@ function SceneRow(
                 width: p.w,
                 height: p.h,
                 borderRadius: "var(--r-1)",
+                /* ★★고른 장이 **한눈에** 보여야 한다 (사용자 지적 2026-08-19: 2px 테두리로는
+                   어느 것을 보고 있는지 안 보였다). 테두리를 굵히고, 바깥에 어두운 링을
+                   둘러 밝은 그림에서도 테두리가 묻히지 않게 한다. 자리는 안 밀린다
+                   (`box-shadow` 는 레이아웃을 안 건드린다). */
                 border: `2px solid ${sel ? "var(--warn)" : cur ? "var(--accent)" : "transparent"}`,
+                boxShadow: cur
+                  ? "0 0 0 2px var(--accent), 0 0 0 4px rgba(0,0,0,0.55)"
+                  : sel
+                    ? "0 0 0 2px var(--warn), 0 0 0 4px rgba(0,0,0,0.55)"
+                    : undefined,
                 overflow: "hidden",
                 background: "var(--surface2)",
                 padding: 0,

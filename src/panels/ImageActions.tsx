@@ -215,10 +215,10 @@ export function ImageActions({
                 data-act-settings
                 onClick={() => void useSettings()}
                 disabled={busy}
-                data-tip={t("act.settingsHint")}
-                style={btn}
+                data-tip={`${t("act.settings")} — ${t("act.settingsHint")}`}
+                style={iconBtn}
               >
-                {t("act.settings")}
+                {Icon.sliders}
               </button>
             )}
           </>
@@ -247,8 +247,14 @@ export function ImageActions({
         <button data-act-i2i onClick={() => void toBase("img2img")} disabled={busy} style={btn}>
           {t("act.i2i")}
         </button>
-        <button data-act-inpaint onClick={() => void toBase("inpaint")} disabled={busy} style={btn}>
-          {t("act.inpaint")}
+        <button
+          data-act-inpaint
+          onClick={() => void toBase("inpaint")}
+          disabled={busy}
+          data-tip={t("act.inpaint")}
+          style={iconBtn}
+        >
+          {Icon.brush}
         </button>
         {onEnhance && (
           <button data-act-enhance onClick={onEnhance} data-tip={t("enhance.button")} style={iconBtn}>
@@ -261,11 +267,12 @@ export function ImageActions({
             onClick={() => void runUpscale()}
             // ★1024x1024 를 넘으면 **공홈도 막는다.** 눌러야 실패하는 버튼을 두지 않는다
             disabled={busy || cost < 0}
-            data-tip={cost < 0 ? t("upscale.tooLarge") : t("upscale.hint", { a: cost })}
-            style={{ ...btn, opacity: cost < 0 ? 0.45 : 1 }}
+            data-tip={cost < 0 ? t("upscale.tooLarge") : `${t("upscale.button")} — ${t("upscale.hint", { a: cost })}`}
+            style={{ ...btn, display: "inline-flex", alignItems: "center", opacity: cost < 0 ? 0.45 : 1 }}
           >
-            {t("upscale.button")}
-            {/* 값을 버튼에 얹는다 — 누르면 얼마가 나가는지가 안전장치다 (v2 의 분해 표기와 같은 뜻) */}
+            {/* ★이름은 아이콘이 말하고(툴팁도 있다), **값은 글자로 남긴다** —
+                누르면 얼마가 나가는지가 안전장치다 (v2 의 분해 표기와 같은 뜻) */}
+            <span style={{ display: "grid", placeItems: "center" }}>{Icon.scaling}</span>
             <span style={{ marginLeft: 5, color: "var(--ink-faint)" }}>
               {cost < 0 ? "—" : `${cost} Anlas`}
             </span>

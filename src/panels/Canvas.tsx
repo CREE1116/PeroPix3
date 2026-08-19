@@ -277,11 +277,17 @@ function SceneActions() {
                 {Icon.trash}
               </button>
             )}
-            {/* 저장 안 한 동안만 — 파일이 아니라 **화면의 미리보기**를 버린다 */}
+            {/* 저장 안 한 동안만 — 파일이 아니라 **화면의 미리보기**를 버린다.
+                ★지우개다 — 파일을 지우는 휴지통과 **다른 일**이라 모양도 달라야 한다
+                  (v2 도 「미리보기 지우기」에 지우개를 썼다) */}
             {un && (
-              <button data-drop-preview onClick={dropPreview} style={rowBtn}>
-                {Icon.trash}
-                {tr("scenes.dropPreview")}
+              <button
+                data-drop-preview
+                onClick={dropPreview}
+                data-tip={tr("scenes.dropPreview")}
+                style={{ ...rowBtn, minWidth: 28, justifyContent: "center" }}
+              >
+                {Icon.eraser}
               </button>
             )}
           </>

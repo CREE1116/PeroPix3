@@ -1720,7 +1720,8 @@ async def keep_drop_folder(body: KeepName):
 async def keep_reveal(body: KeepPath):
     """탐색기에서 연다 — ★파일이면 고른 채로 (files.reveal 을 보관함 뿌리로 쓴다)."""
     try:
-        files.reveal(KEEP_DIR, body.path)
+        # ★스레드에서 — 블로킹 호출이라 그대로 부르면 이벤트 루프가 멈춘다 (`files_reveal` 주석)
+        await asyncio.to_thread(files.reveal, KEEP_DIR, body.path)
         return {"ok": True}
     except (ValueError, OSError) as e:
         raise HTTPException(400, str(e))
@@ -2160,9 +2161,13 @@ async def files_restore(body: RestoreBody):
 
 @app.post("/api/files/reveal")
 async def files_reveal(body: FilesName):
-    """탐색기에서 연다 — ★파일이면 고른 채로."""
+    """탐색기에서 연다 — ★파일이면 고른 채로.
+
+    ★★**스레드에서 돈다** (사용자 지적 2026-08-19: 누르면 앱 전체가 느려졌다).
+      탐색기를 띄우는 것은 블로킹 호출이라, `async` 안에서 그대로 부르면 그동안
+      **이벤트 루프가 통째로 멈춘다** — 생성 스트림도 진행률도 같이 멈춘다."""
     try:
-        files.reveal(WS_ROOT, body.path)
+        await asyncio.to_thread(files.reveal, WS_ROOT, body.path)
         return {"ok": True}
     except (ValueError, OSError) as e:
         raise HTTPException(400, str(e))
