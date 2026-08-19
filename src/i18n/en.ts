@@ -81,6 +81,8 @@ export const en = {
   },
 
   cards: {
+    removeStyle: "Remove style card",
+    addStyle: "Add style card",
     folderDelete: "Delete folder",
     folderDeleteConfirm: "Delete folder \"{name}\" ({n} cards)",
     folderDeleteBody: "The cards are not deleted — they move out of the folder.",

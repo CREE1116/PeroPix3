@@ -48,7 +48,8 @@ function useThumbDrop(section: string, onAsk: (img: DragImage) => void) {
 
 /* ── 스타일 섹션 = Base ───────────────────────────────────────── */
 export function StyleSection({ onThumb }: SectionProps) {
-  const { base, baseUc, style, update, setStyle, folded, toggleFold } = usePrompt();
+  const t = useI18n((s) => s.t);
+  const { base, baseUc, style, styleOn, setStyleOn, update, setStyle, folded, toggleFold } = usePrompt();
   const startDrag = useDragSource();
 
   const { ref, over, active } = useDropZone({
@@ -75,6 +76,27 @@ export function StyleSection({ onThumb }: SectionProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
+  // ★뺀 상태 — 캐릭터가 없을 때와 **같은 모양의 추가 단추**다 (`PromptPanel` 의 「캐릭터 추가」)
+  if (!styleOn)
+    return (
+      <button
+        data-add-style
+        onClick={() => setStyleOn(true)}
+        style={{
+          width: "100%",
+          marginBottom: "var(--sp-5)",
+          padding: "var(--sp-3)",
+          border: "1px dashed var(--line)",
+          borderRadius: "var(--r-3)",
+          fontSize: "var(--text-2xs)",
+          color: "var(--ink-faint)",
+          background: "transparent",
+        }}
+      >
+        {t("cards.addStyle")}
+      </button>
+    );
+
   return (
     <SectionCard
       innerRef={(el) => {
@@ -84,6 +106,14 @@ export function StyleSection({ onThumb }: SectionProps) {
       name={style.name}
       /* ★스타일 카드에는 이름 바꾸기가 아예 없었다 (사용자 지적 2026-08-19) */
       onRename={(v) => setStyle({ ...style, name: v })}
+      /* ★★스타일 카드도 **뺄 수 있다** (사용자 지시 2026-08-19) — 캐릭터 카드와 같은 자리에
+         같은 단추다. 빼면 베이스 프롬프트·UC 가 안 나가고, 그 자리에 「추가」가 선다.
+         ★적어 둔 블록은 **안 지운다** — 되돌리면 그대로 있어야 한다 (`setStyleOn` 주석). */
+      bannerActions={
+        <BannerBtn title={t("cards.removeStyle")} onClick={() => setStyleOn(false)}>
+          {Icon.close12}
+        </BannerBtn>
+      }
       gradient={style.color}
       thumb={useThumbView(style.thumb)}
       zone="thumb-base"

@@ -81,6 +81,8 @@ export const ja: Dict = {
   },
 
   cards: {
+    removeStyle: "スタイルカードを外す",
+    addStyle: "スタイルカードを追加",
     folderDelete: "フォルダを削除",
     folderDeleteConfirm: "フォルダ「{name}」を削除します (カード {n} 枚)",
     folderDeleteBody: "カードは削除されず、フォルダの外に出ます。",

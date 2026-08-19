@@ -72,6 +72,12 @@ type S = {
   base: Block[];
   baseUc: Block[];
   style: { ref: string | null; name: string; color: [string, string]; thumb: Thumb | null };
+  /** ★스타일 카드를 **쓰고 있는가** (사용자 지시 2026-08-19).
+   *
+   *  끄면 카드가 화면에서 빠지고 **베이스 프롬프트·UC 도 안 나간다** (`compiled`) —
+   *  화면에 없는 것이 조용히 실려 나가면 안 된다. 캐릭터를 지우는 것과 같은 뜻이다.
+   *  ★값이 없으면(옛 워크스페이스) **켜진 것**이다. */
+  styleOn: boolean;
   chars: Char[];
   /** 지금 보고 있는 섹션의 Prompt/UC 탭 — 섹션마다 따로 기억한다 */
   tabs: Record<string, "p" | "u">;
@@ -103,9 +109,11 @@ type S = {
     base?: Block[];
     baseUc?: Block[];
     style?: { ref: string | null; name: string; color: [string, string]; thumb?: Thumb | null };
+    styleOn?: boolean;
     chars?: Char[];
   }) => void;
-  snapshot: () => Pick<S, "base" | "baseUc" | "style" | "chars">;
+  setStyleOn: (v: boolean) => void;
+  snapshot: () => Pick<S, "base" | "baseUc" | "style" | "styleOn" | "chars">;
   compiled: () => {
     prompt: string;
     uc: string;
@@ -146,6 +154,7 @@ export const usePrompt = create<S>((set, get) => ({
   base: defaultBase(),
   baseUc: defaultUc(),
   style: { ref: null, name: t("prompt.defaultStyleName"), color: DEFAULT_STYLE_COLOR, thumb: null },
+  styleOn: true,
   chars: [],
   tabs: {},
   folded: {},
@@ -306,6 +315,8 @@ export const usePrompt = create<S>((set, get) => ({
       style: p.style
         ? { ...p.style, thumb: normThumb(p.style.thumb) }
         : { ref: null, name: t("prompt.defaultStyleName"), color: DEFAULT_STYLE_COLOR, thumb: null },
+      // ★값이 없으면 켜진 것이다 — 옛 워크스페이스가 스타일 카드를 잃으면 안 된다
+      styleOn: p.styleOn !== false,
       chars: (p.chars ?? []).map((c) => ({ ...c, thumb: normThumb(c.thumb) })),
       tabs: {},
       folded: {},
@@ -315,12 +326,21 @@ export const usePrompt = create<S>((set, get) => ({
     base: get().base,
     baseUc: get().baseUc,
     style: get().style,
+    styleOn: get().styleOn,
     chars: get().chars,
   }),
 
+  /** 스타일 카드를 빼거나 되돌린다 (사용자 지시 2026-08-19).
+   *  ★블록은 **지우지 않는다** — 되돌리면 적어 둔 것이 그대로 있어야 한다. 나가는 것만 막는다. */
+  setStyleOn(v) {
+    set({ styleOn: v });
+    onEdit();
+  },
+
   compiled: () => ({
-    prompt: compileBlocks(get().base),
-    uc: compileBlocks(get().baseUc),
+    // ★스타일 카드를 뺐으면 **베이스도 UC 도 안 나간다** — 화면에 없는 것이 실려 나가면 안 된다
+    prompt: get().styleOn ? compileBlocks(get().base) : "",
+    uc: get().styleOn ? compileBlocks(get().baseUc) : "",
     chars: get()
       .chars.filter((c) => c.on)
       .map((c) => ({ id: c.id, prompt: compileBlocks(c.prompt), uc: compileBlocks(c.uc) })),

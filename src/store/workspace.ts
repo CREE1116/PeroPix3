@@ -36,6 +36,8 @@ export type TabPrompt = {
   base: Block[];
   baseUc: Block[];
   style?: { ref: string | null; name: string; color: [string, string]; thumb?: Thumb | null };
+  /** 스타일 카드를 쓰고 있는가 (없으면 켜진 것 — `store/prompt` 의 `styleOn`) */
+  styleOn?: boolean;
   chars?: Char[];
 };
 
