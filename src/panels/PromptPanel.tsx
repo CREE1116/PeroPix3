@@ -28,6 +28,10 @@ export function PromptPanel({ onThumb }: SectionProps) {
             와일드카드(랜덤 풀) · 블록 저장소. 카테고리마다 흩뿌리지 않는다 */}
         <Category
           id="p-base"
+          /* ★★설정을 불러오면 **카드도 통째로 갈린다** — 그 자리도 펴고 강조한다
+             (사용자 지적 2026-08-19: 카드가 바뀌는데 강조가 없었다).
+             `applyMeta`·설정 불러오기가 `reveal("left", "prompt")` 를 부른다. */
+          flashKey="prompt"
           label={t("prompt.baseBox")}
           right={
             <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
@@ -39,7 +43,7 @@ export function PromptPanel({ onThumb }: SectionProps) {
           <StyleSection onThumb={onThumb} />
         </Category>
 
-        <Category id="p-char" label={t("prompt.charBox")}>
+        <Category id="p-char" label={t("prompt.charBox")} flashKey="prompt">
           {chars.map((ch, i) => (
             <CharSection key={ch.id} ch={ch} index={i} onThumb={onThumb} />
           ))}

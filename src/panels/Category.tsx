@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { flashStyle, useFlash } from "../store/ui";
 import { Icon } from "../components/Icon";
 
@@ -45,11 +45,16 @@ export function Category({
 }) {
   const [folded, setFolded] = useState(foldState[id] ?? !!defaultFolded);
   const flash = useFlash(flashKey ?? "");
+  const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (flash && folded) {
+    if (!flash) return;
+    if (folded) {
       foldState[id] = false;
       setFolded(false);
     }
+    // ★★강조만으로는 못 본다 — **그 자리로 데려간다** (사용자 지적 2026-08-19: 카드가
+    //   바뀌는데 아무 신호가 없었다). `nearest` 라 이미 보이면 화면이 안 흔들린다.
+    box.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flash]);
   const toggle = () => {
@@ -58,6 +63,7 @@ export function Category({
   };
   return (
     <div
+      ref={box}
       data-category={id}
       data-folded={folded ? "" : undefined}
       style={{ marginBottom: "var(--sp-5)", ...flashStyle(!!flashKey && flash) }}
