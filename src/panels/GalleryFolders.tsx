@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { useWs } from "../store/workspace";
-import { ALL, useGallery } from "../store/gallery";
+import { ALL, KEEP_DND, useGallery } from "../store/gallery";
 import { ask } from "../store/ask";
 import { toast } from "../store/toast";
 import { Icon } from "../components/Icon";
@@ -17,7 +17,16 @@ export function GalleryFolders() {
   const ws = useWs((s) => s.current);
   // ★목록을 불러오는 것은 **중앙(Gallery)** 이다 — 이 패널은 접으면 언마운트되므로
   //   (Shell 이 접힌 쪽을 렌더하지 않는다) 여기서 불러오면 접었을 때 갤러리가 빈다.
-  const { folders, folder, items, setFolder, newFolder, dropFolder, reveal } = useGallery();
+  const { folders, folder, items, setFolder, newFolder, dropFolder, reveal, moveTo } = useGallery();
+  /** 그림을 끌어다 놓으면 그 폴더로 옮긴다 (사용자 지시 2026-08-19) */
+  const moveFiles = async (files: string[], dest: string) => {
+    try {
+      const n = await moveTo(ws, dest === ALL ? "" : dest, files);
+      if (n) toast(t("gallery.moved", { n }));
+    } catch (e) {
+      toast(String(e), "warn");
+    }
+  };
   /** 새 폴더 — **그 자리 입력칸**이다. 브라우저 `prompt` 은 창 밖 OS 대화상자라 쓰지 않는다 */
   const [adding, setAdding] = useState<string | null>(null);
   /** ★적고 있는 글자를 **ref 로도** 든다. Esc 로 물린 직후 `blur` 가 오면 그 순간의
@@ -72,6 +81,7 @@ export function GalleryFolders() {
             on={folder === f.path}
             onClick={() => void setFolder(ws, f.path)}
             onDelete={() => void removeFolder(f.path, f.count)}
+            onDropFiles={(files) => void moveFiles(files, f.path)}
           />
         ))}
 
@@ -168,6 +178,7 @@ function Row({
   on,
   onClick,
   onDelete,
+  onDropFiles,
 }: {
   label: string;
   count: number;
@@ -175,8 +186,13 @@ function Row({
   onClick: () => void;
   /** 없으면 지우는 단추가 안 뜬다 (전체 줄) */
   onDelete?: () => void;
+  /** ★그림을 끌어다 놓으면 **이 폴더로 옮긴다** (사용자 지시 2026-08-19).
+   *  없으면 받지 않는다 (「전체」는 폴더가 아니라 보기라 받을 자리가 없다 — 뿌리로 옮기는
+   *  것은 「전체」가 아니라 뿌리 폴더 줄이 받아야 뜻이 분명하다). */
+  onDropFiles?: (files: string[]) => void;
 }) {
   const t = useI18n((s) => s.t);
+  const [over, setOver] = useState(false);
   // 폴더는 `work/유나/포즈1` 처럼 계층이라, 마지막 조각을 굵게 두고 앞은 흐리게 둔다
   const parts = label.split("/");
   const leaf = parts.pop()!;
@@ -185,7 +201,28 @@ function Row({
       // ★지우는 단추는 **커서를 올렸을 때만** 보인다 (globals.css `*:hover > .thumb-star` 와 같은 요령).
       //   늘 보이면 폴더 목록이 단추 줄로 읽힌다.
       className="keep-folder-row"
-      style={{ display: "flex", alignItems: "center" }}
+      data-keep-folder-row={label}
+      onDragOver={onDropFiles && ((e) => {
+        // ★그림을 든 끌기만 받는다 — 폴더 순서 바꾸기 같은 다른 끌기와 섞이지 않게
+        if (!e.dataTransfer.types.includes(KEEP_DND)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        setOver(true);
+      })}
+      onDragLeave={() => setOver(false)}
+      onDrop={onDropFiles && ((e) => {
+        e.preventDefault();
+        setOver(false);
+        const raw = e.dataTransfer.getData(KEEP_DND);
+        if (raw) onDropFiles(JSON.parse(raw) as string[]);
+      })}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        borderRadius: "var(--r-2)",
+        outline: over ? "1px solid var(--accent)" : undefined,
+        background: over ? "var(--accent-bg)" : undefined,
+      }}
     >
     <button
       onClick={onClick}

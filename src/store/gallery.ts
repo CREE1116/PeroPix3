@@ -48,6 +48,10 @@ export type ImageMeta = {
 };
 
 /** 폴더 전체를 뜻하는 값. `null` 은 "아직 안 정함"과 구분이 안 돼 쓰지 않는다. */
+/** ★보관함 그림을 끄는 표식. **격자와 폴더 목록이 같은 것을 본다** — 이름이 갈리면
+ *  놓아도 아무 일이 안 일어난다 (`GalleryFolders` · `Gallery`). */
+export const KEEP_DND = "application/x-keep-files";
+
 export const ALL = "";
 
 type S = {
@@ -81,7 +85,8 @@ type S = {
   isStarred: (file: string) => boolean;
   toggleStar: (file: string) => Promise<void>;
   remove: (ws: string) => Promise<number>;
-  moveTo: (ws: string, dest: string) => Promise<number>;
+  /** @param only 끌어다 놓은 파일들 (없으면 고른 것 전부) */
+  moveTo: (ws: string, dest: string, only?: string[]) => Promise<number>;
   /** ★작업 폴더의 그림을 **보관함으로 복사**한다 (원본은 그대로). 생성 옵션은 PNG 가 안고 간다.
    *  ★이미 보관돼 있으면 **무른다** — 두 번 눌러 사본이 둘 생기지 않는다 (`removed`). */
   keep: (ws: string, file: string, folder?: string) => Promise<{ file: string; removed: boolean }>;
@@ -282,8 +287,9 @@ export const useGallery = create<S>((set, get) => ({
     return r.deleted.length;
   },
 
-  async moveTo(ws, dest) {
-    const files = [...get().picked];
+  async moveTo(ws, dest, only) {
+    // ★끌어다 놓은 것이 있으면 **그것**이다 (고른 것 무시) — 끌기와 선택은 다른 뜻이다
+    const files = only?.length ? only : [...get().picked];
     if (!files.length) return 0;
     const r = await api<{ moved: string[] }>(`/api/keep/move`, {
       method: "POST",

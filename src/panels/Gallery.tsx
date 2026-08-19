@@ -4,7 +4,7 @@ import { toast } from "../store/toast";
 import { useEffect, useRef, useState } from "react";
 import { useGen } from "../store/gen";
 import { useWs } from "../store/workspace";
-import { useGallery } from "../store/gallery";
+import { KEEP_DND, useGallery } from "../store/gallery";
 import { keepThumb, keepUrl } from "../lib/imgUrl";
 import { api } from "../lib/backend";
 import { ImageActions } from "./ImageActions";
@@ -128,6 +128,8 @@ export function Gallery() {
               picked={picked.has(it.file)}
               onStar={() => void toggleStar(it.file)}
               onOpen={(withMod) => (withMod ? togglePick(it.file) : void setFocus(ws, it.file))}
+              /* 고른 것이 있으면 **고른 것 전부**, 아니면 이 한 장 */
+              onDragFiles={() => (picked.has(it.file) ? [...picked] : [it.file])}
             />
           ))}
           {hasMore && (
@@ -300,6 +302,7 @@ function Cell({
   picked,
   onStar,
   onOpen,
+  onDragFiles,
 }: {
   src: string;
   name: string;
@@ -307,12 +310,22 @@ function Cell({
   picked: boolean;
   onStar: () => void;
   onOpen: (withMod: boolean) => void;
+  /** 끌기 시작 — 폴더 목록이 받는다 (`GalleryFolders`) */
+  onDragFiles: () => string[];
 }) {
   return (
     <button
       data-gallery-cell={name}
       onClick={(e) => onOpen(e.ctrlKey || e.metaKey)}
       data-tip={name}
+      /* ★★그림을 **폴더로 끌어다 옮긴다** (사용자 지시 2026-08-19) — 예전에는 골라서
+         드롭다운으로 옮기는 길뿐이었다. 고른 것이 있으면 **고른 것 전부**가 함께 간다. */
+      draggable
+      onDragStart={(e) => {
+        const files = onDragFiles();
+        e.dataTransfer.setData(KEEP_DND, JSON.stringify(files));
+        e.dataTransfer.effectAllowed = "move";
+      }}
       style={{
         position: "relative",
         aspectRatio: "832 / 1216",
