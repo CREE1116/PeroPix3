@@ -664,7 +664,6 @@ export const en = {
     prefixPlaceholder: "prepended to every scene in this card",
     emptyHint: "Empty · drop a scene card here to get scenes",
     unsaved: "Unsaved",
-    unsavedHint: "This image is not on disk yet. It disappears when you reload.",
     saveToFile: "Save to file",
     dropPreview: "Discard preview",
     savedToast: "Saved: {name}",

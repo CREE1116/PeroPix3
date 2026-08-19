@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Icon } from "../components/Icon";
 import { useI18n } from "../i18n";
 import { fitSizeToBase } from "../store/gen";
 import { useImageInput } from "../store/imageInput";
@@ -25,6 +26,7 @@ export function ImageActions({
   name,
   seed,
   loadMeta,
+  ensureFile,
   hideSettings,
   dims,
   revealPath,
@@ -43,12 +45,17 @@ export function ImageActions({
   /** 실제 해상도 — 페로픽스파이 `res-tag`. 그림을 띄우는 쪽이 `onLoad` 로 재서 준다 */
   dims?: { w: number; h: number } | null;
   /** 뿌리 기준 경로 — 있으면 「폴더 열기」가 뜬다 (페로픽스파이 📂 Folder) */
-  revealPath?: string;
+  /** 탐색기에서 열 경로. ★함수로 주면 **누를 때** 정한다 — 미저장 그림은 그때 저장하고
+   *  새 경로를 돌려주면 된다 (`Canvas` 의 `ensureSaved`) */
+  revealPath?: string | (() => Promise<string | null>);
   /** ★뿌리가 자리마다 다르다 — 워크스페이스 파일은 아웃풋 루트, 보관함은 `<APP>/gallery`.
    *  버튼은 하나로 두고 **창구만** 갈아 끼운다 (몸통 모양은 둘이 같다). */
   revealApi?: string;
   /** 이 그림의 생성 설정. 없으면 「설정 불러오기」가 안 뜬다 */
   loadMeta?: () => Promise<ImageMeta | null>;
+  /** 파일이 있어야 하는 일 **앞에** 부른다 — 미저장 그림이면 저장하고 새 경로를 돌려준다.
+   *  ★없으면 지금 경로를 그대로 쓴다 (갤러리·저장된 그림). 이 갈래를 부르는 쪽이 안다. */
+  ensureFile?: () => Promise<string | null>;
   /** ★갤러리에서는 「설정 불러오기」를 안 띄운다 (사용자 지시 2026-08-19) — 거기서 되돌리는
    *  창구는 **「새 탭으로 복제」 하나**다. 보고 있던 탭이 조용히 갈리는 길을 남기지 않는다. */
   hideSettings?: boolean;
@@ -139,10 +146,13 @@ export function ImageActions({
     if (!upscale || busy || cost < 0) return;
     setBusy(true);
     try {
+      // ★미저장이면 **먼저 파일로 남긴다** — 업스케일은 서버가 그 파일을 연다
+      const target = ensureFile ? await ensureFile() : upscale.file;
+      if (!target) return;
       const r = await api<{ file: string; record: Rec }>("/api/upscale", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workspace: upscale.ws, file: upscale.file }),
+        body: JSON.stringify({ workspace: upscale.ws, file: target }),
       });
       // ★목록을 **다시 읽지 않는다** — 서버가 돌려준 레코드 한 줄만 얹으면 화면이 따라온다
       useWs.getState().addRecord(r.record);
@@ -260,11 +270,15 @@ export function ImageActions({
           <button
             data-act-reveal
             onClick={() =>
-              void api(revealApi, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ path: revealPath }),
-              }).catch((e) => toast(String(e), "warn"))
+              void (async () => {
+                const path = typeof revealPath === "function" ? await revealPath() : revealPath;
+                if (!path) return;
+                await api(revealApi, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ path }),
+                }).catch((e) => toast(String(e), "warn"));
+              })()
             }
             style={btn}
           >
@@ -388,7 +402,30 @@ function PromptView({ meta, onClose }: { meta: ImageMeta; onClose: () => void })
         </div>
         {rows.map((r, i) => (
           <div key={i}>
-            <div style={{ fontSize: "var(--text-2xs)", color: r.accent ?? "var(--ink-dim)" }}>{r.label}</div>
+            {/* ★줄마다 복사 단추 (사용자 지시 2026-08-19) — 위의 것은 **전부**를 복사하는데,
+                캐릭터 하나만 다른 데 옮겨 쓰는 일이 더 잦다 */}
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
+              <div style={{ flex: 1, fontSize: "var(--text-2xs)", color: r.accent ?? "var(--ink-dim)" }}>
+                {r.label}
+              </div>
+              <button
+                data-prompt-copy-one={i}
+                disabled={!r.text}
+                onClick={() =>
+                  void navigator.clipboard?.writeText(r.text).then(() => toast(t("act.copied")))
+                }
+                style={{
+                  display: "grid",
+                  placeItems: "center",
+                  padding: 2,
+                  borderRadius: "var(--r-1)",
+                  color: r.text ? "var(--ink-faint)" : "var(--ink-ghost)",
+                }}
+                data-tip={t("act.copy")}
+              >
+                {Icon.copy}
+              </button>
+            </div>
             <pre
               style={{
                 margin: "2px 0 0",

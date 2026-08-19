@@ -15,7 +15,8 @@ import { Icon } from "../components/Icon";
  *   - 본문(칩 영역) 클릭 = **블록 전체가 텍스트로** 바뀐다
  *   - **칩 드래그       = 태그 자리 옮기기** (다른 블록으로도)
  *   - 칩 휠             = 가중치 / **휠 클릭 = 가중치 초기화** / 우클릭 = 삭제
- *   - 편집 중 Enter     = 이 블록을 끝내고 **다음 블록을 만들어 이어서 입력**
+ *   - 편집 중 Enter        = 고친 것을 저장하고 편집을 끝낸다
+ *   - 편집 중 Shift+Enter  = 저장하고 **다음 블록을 만들어 이어서 입력**
  *   - 편집 중 Esc       = 편집만 끝낸다
  *
  *  ★가중치는 태그에만 있다. 블록 가중치는 걷어냈다 (2026-08-01). */
@@ -308,11 +309,14 @@ export function BlockRow({
               onKeyDown={(e) => {
                 // ★자동완성이 떠 있으면 Enter·Esc·방향키는 **그쪽 것**이다
                 if (ac.onKeyDown(e)) return;
-                if (e.key === "Enter" && !e.shiftKey) {
+                // ★★`Enter` = **저장하고 끝낸다**, `Shift+Enter` = 저장하고 **다음 블록**
+                //   (사용자 지시 2026-08-19). 예전에는 맨 Enter 가 새 블록을 만들어서,
+                //   한 블록만 고치려던 사람이 빈 블록을 계속 만들게 됐다.
+                if (e.key === "Enter") {
                   e.preventDefault();
                   // ★고친 내용과 "새 블록"을 **한 번에** 넘긴다 — 따로 부르면 뒤 호출이
                   //   앞 호출의 결과를 못 보고 덮어쓴다 (둘 다 같은 목록을 들고 있다)
-                  if (onEnter) {
+                  if (e.shiftKey && onEnter) {
                     skipBlur.current = true;
                     setEditing(false);
                     onEnter({ ...block, tags: parseSegs(text) });

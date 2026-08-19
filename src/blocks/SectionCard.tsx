@@ -218,9 +218,17 @@ export function SectionCard({
               <button
                 data-card-rename-btn
                 onPointerDown={(e) => e.stopPropagation()}
+                /* ★입력칸이 **안 흐려지게** 막는다 — blur 가 먼저 오면 저장하고 닫힌 뒤에
+                   이 단추가 다시 열어 버린다. `mousedown` 의 기본 동작만 막으면 click 은 온다
+                   (pointerdown 에서 막으면 호환 click 이 통째로 사라진다 — CLAUDE.md) */
+                onMouseDown={(e) => e.preventDefault()}
+                /* ★고치는 중에 다시 누르면 **저장하고 끝낸다** (사용자 지시 2026-08-19) —
+                   여는 단추로만 두면 눌러도 아무 일이 없어 고장 난 것처럼 보인다 */
                 onClick={(e) => {
                   e.stopPropagation();
-                  setEditing(name);
+                  if (editing === null) return setEditing(name);
+                  if (editing.trim()) onRename(editing.trim());
+                  setEditing(null);
                 }}
                 style={{
                   display: "grid",

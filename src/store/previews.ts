@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { api } from "../lib/backend";
-import type { Rec } from "../lib/takes";
+import { localTs, type Rec } from "../lib/takes";
 
 /** **미저장 그림** — 「자동 저장」을 껐을 때 나온 결과 (v2 `auto_save` 이식 2026-08-18).
  *
@@ -56,7 +56,8 @@ export const usePreviews = create<S>((set, get) => ({
 
   add(m) {
     const take: PreviewTake = {
-      ts: new Date().toISOString(),
+      // ★저장된 그림과 **같은 자**로 찍는다 — 줄에서 나란히 서야 한다 (`lib/takes.localTs`)
+      ts: (m.ts as string) || localTs(),
       file: `${PREVIEW_PREFIX}${seq++}`,
       tab: String(m.tab ?? ""),
       cell: (m.cell as string) ?? null,

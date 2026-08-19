@@ -69,6 +69,13 @@ export function StyleSection({ onThumb }: SectionProps) {
   });
   const img = useThumbDrop("base", (di) => onThumb("base", di));
 
+  /** ★스타일 카드를 끌기 시작하면 **접힌 것을 편다** (사용자 지적 2026-08-19: 둘 다 접혀
+   *  있으면 아예 못 넣었다). 캐릭터 섹션과 같은 규칙 — 놓을 자리가 보여야 놓는다. */
+  useEffect(() => {
+    if (active && folded["base"]) toggleFold("base");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
+
   return (
     <SectionCard
       innerRef={(el) => {

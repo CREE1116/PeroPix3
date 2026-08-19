@@ -1162,6 +1162,8 @@ async def _generate_one(body: GenBody) -> dict:
         #   나중에 「파일로 저장」을 누를 때 화면이 그때 상태로 다시 만들면, 그 사이 씬 이름을
         #   고쳤을 때 번호열이 갈린다 (`file_lead` 는 이름마다 따로 센다).
         return {"ok": True, "file": None, "b64": base64.b64encode(data).decode(),
+                # ★미저장도 **서버 시각**으로 준다 — 저장된 것과 같은 자로 줄에 서야 한다
+                "ts": datetime.now().isoformat(timespec="seconds"),
                 "fmt": fmt, "seed": seed, "bytes": len(data),
                 "tab": body.tab, "cell": body.cell,
                 "tab_id": body.tab_id, "cell_id": body.cell_id,
@@ -1176,12 +1178,16 @@ async def _generate_one(body: GenBody) -> dict:
     rel = store.store_output(body.workspace, body.tab, body.cell, body.cell_no, body.char,
                              body.exclude_slot_number, fmt, data)
 
+    # ★★시각은 **여기서 한 번** 찍고 화면에도 그대로 보낸다 (사용자 지적 2026-08-19).
+    #   화면이 자기 시계로 찍던 때는 `toISOString()`(UTC) 과 여기 지역시각이 섞여서,
+    #   방금 만든 그림이 **문자열 비교로 더 옛것**이 되어 줄 오른쪽으로 밀렸다.
+    ts = datetime.now().isoformat(timespec="seconds")
     # ★records 는 append-only. resolved 에 그 시점의 완전한 요청을 남겨
     #   나중에 spec 이 바뀌어도 재현·비교가 가능하게 한다.
     store.append_record(
         body.workspace,
         {
-            "ts": datetime.now().isoformat(timespec="seconds"),
+            "ts": ts,
             "file": rel,
             "tab": body.tab,
             "cell": body.cell,
@@ -1193,7 +1199,7 @@ async def _generate_one(body: GenBody) -> dict:
             "env": body.env,
         },
     )
-    return {"ok": True, "file": rel, "seed": seed, "bytes": len(data),
+    return {"ok": True, "file": rel, "seed": seed, "bytes": len(data), "ts": ts,
             "tab": body.tab, "cell": body.cell,
             "tab_id": body.tab_id, "cell_id": body.cell_id,
             "enhance_of": body.enhance_of,

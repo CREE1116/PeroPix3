@@ -673,7 +673,6 @@ export const ko: Dict = {
     prefixPlaceholder: "이 카드의 모든 씬 앞에 붙습니다",
     emptyHint: "비어 있습니다 · 씬 카드를 얹으면 그 카드의 씬이 생깁니다",
     unsaved: "미저장",
-    unsavedHint: "파일로 남지 않은 그림입니다. 새로고침하면 사라집니다.",
     saveToFile: "파일로 저장",
     dropPreview: "미리보기 지우기",
     savedToast: "저장했습니다: {name}",

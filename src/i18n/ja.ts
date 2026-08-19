@@ -663,7 +663,6 @@ export const ja: Dict = {
     prefixPlaceholder: "このカードの全シーンの前に付きます",
     emptyHint: "空です · シーンカードを置くとシーンができます",
     unsaved: "未保存",
-    unsavedHint: "ファイルに残っていない画像です。再読み込みすると消えます。",
     saveToFile: "ファイルに保存",
     dropPreview: "プレビューを消す",
     savedToast: "保存しました: {name}",

@@ -27,6 +27,21 @@ export type Rec = {
   preview?: { b64: string; fmt: string } | null;
 };
 
+/** 레코드의 시각 문자열 — **서버와 같은 자**여야 한다 (`backend/server.py` 의
+ *  `datetime.now().isoformat(timespec="seconds")`).
+ *
+ *  ★★`toISOString()` 을 쓰지 말 것 (사용자 지적 2026-08-19). 그쪽은 **UTC + `Z`** 라
+ *    지역시각(+09:00)으로 적힌 서버 기록과 문자열 비교가 어긋난다 — 방금 만든 그림이
+ *    아홉 시간 옛것으로 줄 뒤에 섰다. 서버가 `ts` 를 보내 주면 그것을 쓰고, 이건 폴백이다. */
+export const localTs = () => {
+  const d = new Date();
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}` +
+    `T${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`
+  );
+};
+
 /** 줄에 놓는 차례 — **최신이 왼쪽**이다 (사용자 지시 2026-08-14).
  *
  *  ★★자리는 **`ts` 가 정한다.** 예전에는 `records` 에 담긴 차례를 뒤집어 썼는데, 그 차례는

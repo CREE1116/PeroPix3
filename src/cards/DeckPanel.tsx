@@ -310,9 +310,15 @@ function PanelCard({
           data-card-rename={card.id}
           data-tip={t("cards.rename")}
           onPointerDown={(e) => e.stopPropagation()}
+          /* ★입력칸이 안 흐려지게 (SectionCard 의 같은 주석) */
+          onMouseDown={(e) => e.preventDefault()}
           onClick={(e) => {
             e.stopPropagation();
-            setRenaming(card.name);
+            // 고치는 중이면 **저장하고 끝낸다** (사용자 지시 2026-08-19)
+            if (renaming === null) return setRenaming(card.name);
+            const v = renaming.trim();
+            if (v && v !== card.name) void useCards.getState().save(kind, { ...card, name: v });
+            setRenaming(null);
           }}
           style={{
             position: "absolute",

@@ -3,6 +3,7 @@ import { compileBlocks } from "../lib/blocks";
 import { api, backendUrl } from "../lib/backend";
 import { usePrompt } from "./prompt";
 import { allCells, allScenes, useWs } from "./workspace";
+import { localTs } from "../lib/takes";
 import { useQueue } from "./queue";
 import { useImageInput } from "./imageInput";
 import { useUi } from "./ui";
@@ -227,7 +228,9 @@ export const useGen = create<S>((set, get) => ({
         return;
       }
       ws.addRecord({
-        ts: new Date().toISOString(),
+        // ★서버가 찍은 시각을 쓴다 (`lib/takes.localTs` 주석 — UTC 와 지역시각이 섞이면
+        //   줄 차례가 어긋난다)
+        ts: (r as { ts?: string }).ts || localTs(),
         file: r.file,
         enhance_of: (extra?.enhance_of as string) ?? null,
         tab: tab.name,

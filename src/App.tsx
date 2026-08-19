@@ -207,12 +207,14 @@ export function App() {
         leftDrawer={mode === "generate" ? <BlockDrawer /> : undefined}
         /* 캐릭터 줄만 세 기둥 위에. 씬 세트 줄은 캔버스 위로 내려갔다 */
         /* ★워크스페이스 탭이 **위**, 캐릭터가 아래다. 검열·보조도구는 워크스페이스를
-           안 쓰는 도구라 탭 줄을 감춘다 (사용자 지시 2026-08-08) */
+           안 쓰는 도구라 탭 줄을 감춘다 (사용자 지시 2026-08-08).
+           ★★**갤러리도 감춘다** (사용자 지시 2026-08-19) — 보관함은 워크스페이스와 무관한
+             공용 자리라, 탭이 떠 있으면 그 워크스페이스의 것을 보는 줄 안다. */
         tabs={
-          mode === "generate" || mode === "gallery" ? (
+          mode === "generate" ? (
             <>
               <WorkspaceTabs onAdd={() => setGate(true)} />
-              {mode === "generate" && <CanvasTabs part="top" />}
+              <CanvasTabs part="top" />
             </>
           ) : undefined
         }

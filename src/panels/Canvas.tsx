@@ -130,91 +130,62 @@ function SceneActions() {
   useEffect(() => setDims(null), [file]);
   if (!file) return null;
 
-  /** ★미저장 그림이면 **다른 줄**이 붙는다. 평소 줄에 든 것(i2i·인페인트·강화·업스케일·
-   *  보관·설정 불러오기)은 전부 **서버에 있는 파일**을 다루는 것이라, 파일이 없는 그림에
-   *  띄우면 눌러야 실패하는 버튼이 된다 (CLAUDE.md: 없는 것은 넘기지 않는다).
-   *  v2 도 미저장 카드에서는 「파일 삭제」를 감추고 「파일로 저장」만 냈다
-   *  (`index.html:12169-12170`). */
+  /** ★★미저장 그림에도 **같은 줄**이 붙는다 (사용자 지시 2026-08-19).
+   *
+   *  예전에는 「파일로 저장 · 미리보기 지우기」 둘만 냈다. 미저장은 **아직 파일이 아닐 뿐**
+   *  같은 그림이라, 할 수 있는 일도 같아야 한다. 갈리는 것은 둘뿐이다:
+   *    · 「삭제」 자리에 **「저장」** 이 선다 (저장하면 그 줄이 그대로 「삭제」가 된다)
+   *    · 저장 안 한 동안만 **「미리보기 지우기」**가 하나 더 선다
+   *  ★서버의 파일을 다루는 것(강화·업스케일·보관·탐색기·새 탭으로 복제)은 **먼저 저장하고**
+   *    이어서 한다 (`ensureSaved`). 눌러야 실패하는 단추를 두지 않는다는 규칙 그대로다.
+   *  ★읽기만 하는 것(프롬프트 보기·설정)은 **저장하지 않는다** — 바이트를 그대로 보내
+   *    메타데이터만 읽는다 (`/api/tools/meta-upload`). 훑어보다 저장돼 버리면
+   *    「자동 저장 끄기」의 뜻이 사라진다. */
   const un = previews.find((x) => x.file === file);
-  if (un) {
-    const drop = () => {
-      usePreviews.getState().drop(file);
-      useSceneFocus.getState().focus(useSceneFocus.getState().cell, null);
-    };
-    return (
-      <div
-        data-unsaved-actions
-        style={{
-          flexShrink: 0,
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--sp-3)",
-          margin: "var(--sp-3) var(--sp-4) 0",
-          padding: "var(--sp-2) var(--sp-3)",
-          border: "1px solid var(--warn)",
-          borderRadius: "var(--r-2)",
-          fontSize: "var(--text-2xs)",
-          color: "var(--warn)",
-        }}
-      >
-        <span>{tr("scenes.unsavedHint")}</span>
-        <span style={{ flex: 1 }} />
-        <button
-          data-save-preview
-          disabled={saving}
-          onClick={async () => {
-            setSaving(true);
-            try {
-              const rec = await usePreviews.getState().save(file);
-              // ★저장한 그 장을 **그대로 보고 있게** 한다 — 미리보기가 빠지면서 화면이
-              //   비면 방금 무엇을 저장했는지 알 수 없다
-              addRecord(rec);
-              useSceneFocus.getState().focus(useSceneFocus.getState().cell, rec.file);
-              toast(tr("scenes.savedToast", { name: rec.file.split("/").pop() ?? rec.file }));
-            } catch (e) {
-              toast(String(e), "warn");
-            } finally {
-              setSaving(false);
-            }
-          }}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 3,
-            border: "1px solid currentColor",
-            borderRadius: "var(--r-1)",
-            padding: "1px var(--sp-3)",
-          }}
-        >
-          {Icon.save}
-          {tr("scenes.saveToFile")}
-        </button>
-        <button
-          data-drop-preview
-          onClick={drop}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 3,
-            border: "1px solid currentColor",
-            borderRadius: "var(--r-1)",
-            padding: "1px var(--sp-3)",
-          }}
-        >
-          {Icon.trash}
-          {tr("scenes.dropPreview")}
-        </button>
-      </div>
-    );
-  }
+  const dropPreview = () => {
+    usePreviews.getState().drop(file);
+    useSceneFocus.getState().focus(useSceneFocus.getState().cell, null);
+  };
+  const savePreview = async () => {
+    const rec = await usePreviews.getState().save(file);
+    // ★저장한 그 장을 **그대로 보고 있게** 한다 — 미리보기가 빠지면서 화면이 비면
+    //   방금 무엇을 저장했는지 알 수 없다
+    addRecord(rec);
+    useSceneFocus.getState().focus(useSceneFocus.getState().cell, rec.file);
+    return rec.file;
+  };
+  /** 파일이 있어야 하는 일 앞에 부른다. 미저장이면 저장하고 **새 경로**를 돌려준다 */
+  const ensureSaved = async (): Promise<string | null> => {
+    if (!un) return file;
+    setSaving(true);
+    try {
+      const f = await savePreview();
+      toast(tr("scenes.savedToast", { name: f.split("/").pop() ?? f }));
+      return f;
+    } catch (e) {
+      toast(String(e), "warn");
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const rec = records.find((r) => r.file === file);
-  const loadMeta = async () =>
-    (
+  /** ★미저장이면 **바이트를 보내** 읽는다 — 저장하지 않는다 (위 주석) */
+  const loadMeta = async () => {
+    if (un) {
+      const bin = Uint8Array.from(atob(un.preview.b64), (c) => c.charCodeAt(0));
+      const fd = new FormData();
+      fd.append("file", new Blob([bin], { type: `image/${un.preview.fmt}` }), "preview.png");
+      const r = await api<{ meta: ImageMeta | null }>("/api/tools/meta-upload", { method: "POST", body: fd });
+      return r.meta;
+    }
+    return (
       await api<{ meta: ImageMeta | null }>(
         `/api/gallery/${encodeURIComponent(ws)}/meta?file=${encodeURIComponent(file)}`,
       )
     ).meta;
+  };
 
   /** 「새 탭으로 복제」 — **그 그림을 그대로 다시 뽑을 수 있는** 탭을 만든다.
    *
@@ -235,7 +206,10 @@ function SceneActions() {
   const cloneToNewTab = async () => {
     try {
       const m = await loadMeta().catch(() => null);
-      const landed = await useWs.getState().cloneToNewTab(file, {
+      // ★구조는 **레코드**에서 온다 — 미저장이면 먼저 파일로 남겨야 그 자리가 생긴다
+      const target = await ensureSaved();
+      if (!target) return;
+      const landed = await useWs.getState().cloneToNewTab(target, {
         excludeNo: useGen.getState().params.exclude_slot_number,
         apply: hasMeta(m)
           ? () => {
@@ -257,52 +231,84 @@ function SceneActions() {
   return (
     <div style={{ flexShrink: 0, padding: "var(--sp-3) var(--sp-4) 0" }}>
       <ImageActions
-        url={imgUrl(base, ws, file)}
-        name={file.split("/").pop() ?? file}
-        seed={rec?.seed ?? 0}
+        url={un ? `data:image/${un.preview.fmt};base64,${un.preview.b64}` : imgUrl(base, ws, file)}
+        name={un ? tr("scenes.unsaved") : file.split("/").pop() ?? file}
+        seed={(un ?? rec)?.seed ?? 0}
         loadMeta={loadMeta}
         onClone={cloneToNewTab}
         dims={dims}
-        revealPath={`${ws}/${file}`}
-        onEnhance={() => setEnhance([file])}
+        /* ★미저장이면 누를 때 저장하고 그 경로로 연다 (`revealPath` 는 함수도 받는다) */
+        revealPath={un ? async () => { const f = await ensureSaved(); return f && `${ws}/${f}`; } : `${ws}/${file}`}
+        ensureFile={un ? ensureSaved : undefined}
+        onEnhance={async () => {
+          const f = await ensureSaved();
+          if (f) setEnhance([f]);
+        }}
         upscale={{ ws, file }}
         onKeep={async () => {
+          const f = await ensureSaved();
+          if (!f) return;
           try {
-            const r = await useGallery.getState().keep(ws, file);
+            const r = await useGallery.getState().keep(ws, f);
             toast(tr(r.removed ? "gallery.unkept" : "gallery.kept"));
           } catch (e) {
             toast(String(e), "warn");
           }
         }}
         extra={
-          <button
-            data-scene-delete
-            onClick={() => {
-              void deleteFiles([file]);
-              useSceneFocus.getState().focus(useSceneFocus.getState().cell, null);
-            }}
-            data-tip={tr("canvas.hideHint")}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 3,
-              border: "1px solid var(--line)",
-              borderRadius: "var(--r-2)",
-              background: "var(--panel)",
-              padding: "3px var(--sp-3)",
-              fontSize: "var(--text-2xs)",
-              color: "var(--danger, var(--err))",
-            }}
-          >
-            {Icon.trash}
-            {tr("common.delete")}
-          </button>
+          <>
+            {/* ★미저장이면 「삭제」 자리에 **「저장」** — 저장하면 이 줄이 그대로 「삭제」가 된다 */}
+            {un ? (
+              <button
+                data-save-preview
+                disabled={saving}
+                onClick={() => void ensureSaved()}
+                style={{ ...rowBtn, color: "var(--warn)" }}
+              >
+                {Icon.save}
+                {tr("scenes.saveToFile")}
+              </button>
+            ) : (
+              <button
+                data-scene-delete
+                onClick={() => {
+                  void deleteFiles([file]);
+                  useSceneFocus.getState().focus(useSceneFocus.getState().cell, null);
+                }}
+                data-tip={tr("canvas.hideHint")}
+                style={{ ...rowBtn, color: "var(--danger, var(--err))" }}
+              >
+                {Icon.trash}
+                {tr("common.delete")}
+              </button>
+            )}
+            {/* 저장 안 한 동안만 — 파일이 아니라 **화면의 미리보기**를 버린다 */}
+            {un && (
+              <button data-drop-preview onClick={dropPreview} style={rowBtn}>
+                {Icon.trash}
+                {tr("scenes.dropPreview")}
+              </button>
+            )}
+          </>
         }
       />
       {enhance && <EnhanceDialog files={enhance} onClose={() => setEnhance(null)} />}
     </div>
   );
 }
+
+/** 아래 줄의 단추 모양 — `ImageActions` 의 것과 같은 자에 맞춘다 */
+const rowBtn: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 3,
+  border: "1px solid var(--line)",
+  borderRadius: "var(--r-2)",
+  background: "var(--panel)",
+  padding: "3px var(--sp-3)",
+  fontSize: "var(--text-2xs)",
+  color: "var(--ink-soft)",
+};
 
 /** 고른 한 장 — 씬 칸에서 고른 결과를 크게. 아무것도 안 골랐으면 안내만 */
 function ScenePreview() {

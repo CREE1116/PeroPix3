@@ -8,6 +8,7 @@ import { useCards } from "./cards";
 import { useFiles } from "./files";
 import { useSub } from "./sub";
 import { useAnlasMeter } from "./anlasMeter";
+import { localTs } from "../lib/takes";
 import type { Block } from "../lib/blocks";
 import { allCells, useWs } from "./workspace";
 import { useUi } from "./ui";
@@ -517,7 +518,9 @@ function render(m: Record<string, any>, set: Setter, get: () => S) {
   if (m.workspace && m.workspace !== ws.current) return;
 
   ws.addRecord({
-    ts: new Date().toISOString(),
+    // ★시각은 **서버가 찍은 것**이다 (`_generate_one` 의 `ts`). 화면이 자기 시계로 찍으면
+    //   UTC 와 지역시각이 섞여 줄 차례가 어긋난다 (`lib/takes.localTs` 주석)
+    ts: (m.ts as string) || localTs(),
     file: m.file,
     tab: m.tab,
     cell: m.cell ?? null,
