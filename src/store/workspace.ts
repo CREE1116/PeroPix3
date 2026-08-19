@@ -747,20 +747,61 @@ export const useWs = create<S>((set, get) => ({
    *  ★**순서가 안전장치다**: 옮겨 간 **뒤에** 설정을 얹는다. 거꾸로 하면 `stash` 가 그 설정을
    *    떠나는 탭에 써 넣어 원래 프롬프트가 조용히 사라진다 (`closeTab` 과 같은 종류의 함정). */
   async cloneToNewTab(file, o) {
-    const { current, spec } = get();
+    const { current, spec, records } = get();
     if (!current || !spec) return null;
-    // ★메타데이터가 없는 그림이면 **지금 화면 값**이 새 탭에 남는다 — 빈 프롬프트로 시작하면
-    //   바로 생성이 안 돼 한 번 더 손이 간다 (`addSetTab` 이 하던 배려와 같다)
-    const seed = usePrompt.getState().snapshot();
+
+    // ★★**그 그림을 뽑을 때의 구조를 그대로 옮긴다** (사용자 지시 2026-08-19:
+    //   *"스타일/캐릭터/슬롯 구조 그대로 재현"*). 구조는 **메타데이터에 안 남는다** —
+    //   NAI 는 합쳐진 문자열만 저장한다. 살아 있는 곳은 **그 그림이 나온 탭과 씬**뿐이다.
+    //   ★지금 보고 있는 탭이 아니라 **레코드가 가리키는 탭**에서 가져온다 (`tab_id`·`cell_id`).
+    //     다른 탭을 보다가 복제해도 그 그림의 것이 와야 한다.
+    const rec = records.find((r) => r.file === file);
+    // 편집기 내용을 spec 에 먼저 담는다 — 원본 탭이 지금 보고 있는 탭이면 이게 최신이다
+    const cur = stash(spec, spec.activeTab);
+    const srcTab =
+      cur.tabs.find((x) => x.kind === "set" && x.id === rec?.tab_id) ??
+      cur.tabs.find((x) => x.id === cur.activeTab);
+    // 스타일·베이스·네거티브·**캐릭터 카드**가 통째로 여기 있다 (`promptOf` — 멀티는 캐릭터 소유)
+    const srcPrompt = structuredClone(promptOf(cur, srcTab));
+    // 그 그림이 나온 **씬과 그 씬이 든 카드**. 못 찾으면 그 탭의 첫 씬
+    const srcScene =
+      srcTab?.kind === "set"
+        ? (allScenes(srcTab).find((x) => x.cell.id === rec?.cell_id) ?? allScenes(srcTab)[0])
+        : undefined;
+
+    set({ spec: cur });
     get().addChar(t("chars.cloneName"));
     const sp = get().spec;
     const tab = sp?.tabs.find((x) => x.id === sp.activeTab);
     const cell = tab?.kind === "set" ? tab.cards[0]?.cells[0] : undefined;
     if (!sp || !tab || tab.kind !== "set" || !cell) return null;
-    usePrompt.getState().load(seed);
-    // ★그 뒤에 메타데이터를 얹는다 — **탭을 옮긴 뒤**라 원래 탭이 안 덮인다.
-    //   ★새 탭의 씬은 **비워 둔다**: 메타데이터의 프롬프트가 이미 베이스+씬이 합쳐진
-    //     결과라, 씬에 또 넣으면 태그가 두 번 들어가 다른 그림이 된다 (`Canvas` 주석).
+
+    // 1) 프롬프트 구조 — 스타일·블록·캐릭터 카드 그대로 (새 탭으로 옮긴 **뒤**라 원본이 안 덮인다)
+    usePrompt.getState().load(srcPrompt);
+    // 2) 슬롯 구조 — 그 씬과 **그 씬이 든 카드의 공통 접두**까지.
+    //    ★접두를 빼면 안 된다: `generateAll` 이 `카드 접두 + 베이스 + 씬` 으로 이어 붙이므로
+    //      (`gen.ts`), 접두가 없으면 같은 씬이라도 다른 프롬프트가 나간다.
+    //    ★`sceneDest`(씬 프롬프트가 베이스로 가나 캐릭터로 가나)도 같은 이유로 옮긴다.
+    if (srcScene) {
+      get().setTab(tab.id, {
+        sceneDest: srcTab?.kind === "set" ? srcTab.sceneDest : undefined,
+        cards: tab.cards.map((k) =>
+          k.id === tab.cards[0]?.id
+            ? {
+                ...k,
+                prefix: srcScene.card.prefix,
+                color: srcScene.card.color,
+                cells: k.cells.map((c) =>
+                  c.id === cell.id
+                    ? { ...c, name: srcScene.cell.name, blocks: structuredClone(srcScene.cell.blocks ?? []) }
+                    : c,
+                ),
+              }
+            : k,
+        ),
+      });
+    }
+    // 3) 생성 설정·해상도·시드 — **그 그림의 메타데이터**에서 (구조가 아니라 값이다)
     o.apply?.();
     // ★`load` 는 저장을 예약하지 않는다 (`prompt.ts` 의 `onEdit` 는 편집에만 붙는다) —
     //   여기서 한 번 흘려보내야 새 탭의 프롬프트가 파일에 남는다

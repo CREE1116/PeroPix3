@@ -148,49 +148,27 @@ const applyBtn: React.CSSProperties = {
   transition: "background 120ms",
 };
 
-/** @param what `prompt` = 프롬프트만 · `all` = 설정·시드·이미지 입력까지 (그 그림을 재현한다) */
-export function applyMeta(m: ImageMeta, what: "prompt" | "all" = "all") {
-  const p = usePrompt.getState();
-
-  const block = (label: string, body?: string) =>
-    body ? [makeBlock(label, [], { tags: parseSegs(body), open: true })] : [];
-
-  const chars: Char[] = (m.characters ?? []).map((c, i) => ({
-    id: `c${Date.now().toString(36)}${i}`,
-    ref: null,
-    name: `#${i + 1}`,
-    color: CHAR_COLORS[i % CHAR_COLORS.length],
-    thumb: null,
-    prompt: block("Character", c.prompt),
-    uc: block("UC", c.negative),
-    on: true,
-    center: c.center ?? undefined,
-    stack: [],
-  })) as Char[];
-
-  p.load({
-    base: block("Prompt", m.prompt),
-    baseUc: block("UC", m.negative),
-    chars,
-  });
-
-  // ★프롬프트가 통째로 바뀐다 — 좌측 패널을 펴고 알린다 (사용자 지시 2026-08-13)
-  useUi.getState().reveal("left", "prompt");
-  if (what === "prompt") return;
-
-  // 설정 — 있는 것만 덮는다. 없는 값을 기본값으로 되돌리면 사용자가 잡아 둔 것이 날아간다.
-  // ★어느 필드가 어느 설정인가는 `lib/metaApply` **하나**가 정한다 — 강화도 같은 표를 쓴다
-  //   (`EnhanceDialog`, v2 `buildEnhanceRequest`). 두 벌이면 "이 그림 설정대로"가 두 화면에서
-  //   조용히 달라진다.
+/** 그 그림의 **설정·해상도·시드만** 얹는다 (프롬프트는 안 건드린다).
+ *
+ *  ★「새 탭으로 복제」가 쓴다. 거기서 프롬프트·스타일·캐릭터·슬롯은 **그 그림이 나온 탭과
+ *    씬에서 구조째** 가져오고(`cloneToNewTab`), 메타데이터에서는 값만 얹는다 —
+ *    메타데이터에는 합쳐진 문자열만 남아 구조가 없기 때문이다 (사용자 지시 2026-08-19).
+ *  ★표는 `lib/metaApply` **하나**를 쓴다. `applyMeta` 도 이 함수를 부른다. */
+export function applyMetaParams(m: ImageMeta) {
   const g = useGen.getState();
   useGen.setState({ params: { ...g.params, ...metaParams(m) } });
-  // ★해상도·시드는 **여기서** 되돌린다 (그 그림을 재현하는 자리라서)
   if (m.width !== undefined) g.set("width", m.width);
   if (m.height !== undefined) g.set("height", m.height);
   if (m.seed !== undefined) g.set("seed", m.seed);
   // ★시드를 되살렸으면 **랜덤을 끈다** — 안 끄면 다음 생성이 새 시드로 굴러 재현이 안 된다
   if (m.seed !== undefined) g.set("seed_mode", "fixed");
+}
 
+/** 그 그림의 **바이브**를 되살린다 (인코딩이 남아 있어 다시 굽지 않는다).
+ *
+ *  ★이미지 입력도 **「그 그림을 뽑은 환경」의 일부**다 — 「새 탭으로 복제」도 이것을 부른다
+ *    (사용자 지시 2026-08-19: 환경을 그대로 옮겨 이어서 쓰는 기능이다). */
+export function applyMetaVibes(m: ImageMeta) {
   // ★바이브는 **인코딩으로** 되살린다 (v2 index.html:18114-18150).
   //
   //  그림 자체는 메타데이터에 없고 구워진 인코딩만 남아 있다. 그 인코딩이 곧 쓸 수 있는
@@ -227,6 +205,45 @@ export function applyMeta(m: ImageMeta, what: "prompt" | "all" = "all") {
     im.setVibes([]);
     im.setVibeOn(false);
   }
+}
+
+/** @param what `prompt` = 프롬프트만 · `all` = 설정·시드·이미지 입력까지 (그 그림을 재현한다) */
+export function applyMeta(m: ImageMeta, what: "prompt" | "all" = "all") {
+  const p = usePrompt.getState();
+
+  const block = (label: string, body?: string) =>
+    body ? [makeBlock(label, [], { tags: parseSegs(body), open: true })] : [];
+
+  const chars: Char[] = (m.characters ?? []).map((c, i) => ({
+    id: `c${Date.now().toString(36)}${i}`,
+    ref: null,
+    name: `#${i + 1}`,
+    color: CHAR_COLORS[i % CHAR_COLORS.length],
+    thumb: null,
+    prompt: block("Character", c.prompt),
+    uc: block("UC", c.negative),
+    on: true,
+    center: c.center ?? undefined,
+    stack: [],
+  })) as Char[];
+
+  p.load({
+    base: block("Prompt", m.prompt),
+    baseUc: block("UC", m.negative),
+    chars,
+  });
+
+  // ★프롬프트가 통째로 바뀐다 — 좌측 패널을 펴고 알린다 (사용자 지시 2026-08-13)
+  useUi.getState().reveal("left", "prompt");
+  if (what === "prompt") return;
+
+  // 설정 — 있는 것만 덮는다. 없는 값을 기본값으로 되돌리면 사용자가 잡아 둔 것이 날아간다.
+  // ★어느 필드가 어느 설정인가는 `lib/metaApply` **하나**가 정한다 — 강화도 같은 표를 쓴다
+  //   (`EnhanceDialog`, v2 `buildEnhanceRequest`). 두 벌이면 "이 그림 설정대로"가 두 화면에서
+  //   조용히 달라진다.
+  applyMetaParams(m);
+
+  applyMetaVibes(m);
 }
 
 /** 1×1 투명 PNG — 인코딩만 있고 원본이 없는 바이브의 자리 그림 (v2 `placeholderImage`) */

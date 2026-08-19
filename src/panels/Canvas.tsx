@@ -20,7 +20,7 @@ import { EnhanceDialog } from "./EnhanceDialog";
 import { useGallery, type ImageMeta } from "../store/gallery";
 import { usePreviews, withPreviews } from "../store/previews";
 import { api } from "../lib/backend";
-import { applyMeta } from "./GalleryMeta";
+import { applyMetaParams, applyMetaVibes } from "./GalleryMeta";
 import { hasMeta } from "../lib/metaApply";
 
 /** 캔버스 — 씬 세트 줄 + 씬 무대 (마스크를 칠하는 동안에는 그 자리가 편집기다).
@@ -218,23 +218,32 @@ function SceneActions() {
 
   /** 「새 탭으로 복제」 — **그 그림을 그대로 다시 뽑을 수 있는** 탭을 만든다.
    *
-   *  ★★기준은 하나다: **복제한 뒤 생성을 누르면 그 그림과 똑같이 나와야 한다**
-   *    (사용자 지시 2026-08-19: *"프롬프트 토씨하나 안틀리게, 생성옵션까지 복제"*).
-   *    그러려면 **그 그림의 메타데이터**가 유일한 근거다 — 지금 화면은 그 사이 바뀌었을 수 있다.
-   *    `applyMeta(m, "all")` 가 프롬프트·네거티브·캐릭터·설정·해상도·시드·바이브를 전부 되돌린다.
-   *  ★★**씬 블록은 옮기지 않는다.** 메타데이터의 프롬프트는 생성 때 **베이스와 씬이 이미
-   *    합쳐진 결과**라, 새 탭의 씬에 그 태그를 또 넣으면 **두 번 들어가** 다른 그림이 된다.
-   *    새 탭의 씬은 비워 두는 것이 맞다 (합쳐진 것이 베이스에 그대로 있다).
-   *  ★블록 구조는 메타데이터에 안 남는다 (NAI 는 합쳐진 문자열만 저장한다) — 한 덩어리로
-   *    들어오고 캐릭터는 `#1`·`#2` 가 된다. **글자는 같으므로 결과는 같다.**
+   *  ★★기준은 하나다: **그 그림을 뽑을 때의 구조를 그대로 재현한다**
+   *    (사용자 지시 2026-08-19: *"스타일/캐릭터/슬롯 구조 그대로 재현"*).
+   *    나뉘어 온다:
+   *      구조 → **그 그림이 나온 탭과 씬**에서 (`cloneToNewTab`, 레코드의 `tab_id`·`cell_id`)
+   *             스타일 카드 · 베이스/네거티브 블록 · **캐릭터 카드** ·
+   *             그 씬의 블록 · **카드 공통 접두** · 씬 프롬프트 목적지
+   *             ★접두와 목적지를 빼면 같은 씬이라도 **다른 프롬프트가 나간다** (`gen.ts` 참조)
+   *      값   → **그 그림의 메타데이터**에서
+   *             생성 설정 · 해상도 · **시드** · **바이브**(인코딩이 남아 다시 안 굽는다)
+   *  ★★구조를 메타데이터에서 되살리려 하지 말 것. NAI 는 **합쳐진 문자열**만 저장해서
+   *    블록이 한 덩어리로 뭉치고 캐릭터가 `#1`·`#2` 로 다시 만들어지며 스타일 카드도 사라진다.
+   *    (한 번 그렇게 만들었다가 되돌렸다.)
    *  ★메타데이터를 **먼저** 읽는다. 탭을 만들고 나서 실패하면 되돌릴 자리가 없다.
-   *  ★메타데이터가 없는 그림(밖에서 온 것)은 되살릴 근거가 없어 지금 화면 값이 남는다. */
+   *  ★메타데이터가 없는 그림이면 값은 지금 것이 남는다 — 구조는 그래도 그 탭 것이 온다. */
   const cloneToNewTab = async () => {
     try {
       const m = await loadMeta().catch(() => null);
       const landed = await useWs.getState().cloneToNewTab(file, {
         excludeNo: useGen.getState().params.exclude_slot_number,
-        apply: hasMeta(m) ? () => applyMeta(m!, "all") : undefined,
+        apply: hasMeta(m)
+          ? () => {
+              applyMetaParams(m!);
+              // 이미지 입력도 환경이다 — 바이브는 메타데이터에 인코딩이 남아 되살릴 수 있다
+              applyMetaVibes(m!);
+            }
+          : undefined,
       });
       if (!landed) return;
       // ★새 탭의 씬 줄은 탭이 바뀔 때 고른 것을 놓는다 — 그 뒤에 세워야 남는다
