@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Icon } from "../components/Icon";
 
 /** 왼쪽 기둥의 **카테고리** — 이름 한 줄과 그 아래 내용. 이름을 누르면 접힌다.
  *
@@ -9,7 +10,10 @@ import { useState } from "react";
  *      카드       배너를 누르면 접힌다     ← `blocks/SectionCard`
  *
  *    카테고리 안에 카드가 들어가는 것이라 서로 다투지 않는다.
- *  ★접기 단추·화살표를 두지 않는다 — 누르는 자리는 이름 줄 전체다.
+ *  ★★층이 눈에 보여야 한다 (사용자 지적 2026-08-19): 이름은 **그 안의 어느 글자보다 크고**
+ *    진하고, 앞에 **접힘 화살표**가 선다. 예전에는 12px 흐린 글씨에 화살표도 없어서,
+ *    묶는 이름이 아니라 딸린 옵션으로 읽혔고 접히는 줄인 줄도 몰랐다.
+ *    ★화살표는 **표시**다 — 누르는 자리는 여전히 이름 줄 전체이고, 따로 단추를 두지 않는다.
  *
  *  ★묶는 단위는 **페로픽스 v2 의 절 그대로**다 (`index.html` 대조 2026-08-16):
  *    NAI Settings · Generation · Vibe / Character Ref · Base Image · Save Options.
@@ -47,12 +51,38 @@ export function Category({
           alignItems: "center",
           gap: "var(--sp-2)",
           padding: "0 var(--sp-1) var(--sp-2)",
-          fontSize: "var(--text-2xs)",
-          fontWeight: "var(--w-semi)",
-          color: folded ? "var(--ink-faint)" : "var(--ink-dim)",
+          /* ★★이름은 **그 안의 무엇보다도 커야 한다** (사용자 지적 2026-08-19).
+             12px 였을 때 항목 라벨(13 semi)·카드 이름(13.8 bold)보다 작고 흐려서,
+             묶는 이름이 아니라 **더 아래 딸린 옵션**으로 읽혔다. */
+          fontSize: "var(--text-lg)",
+          fontWeight: "var(--w-bold)",
+          color: folded ? "var(--ink-dim)" : "var(--ink)",
         }}
       >
-        <span onClick={toggle} style={{ cursor: "pointer", flex: 1, minWidth: 0 }}>
+        {/* ★접힌다는 것이 **보여야 한다** (사용자 지적 2026-08-19). 예전에는 화살표를 두지
+            않고 "누르는 자리는 이름 줄 전체"로만 뒀는데, 눌러 보기 전에는 접히는 줄인지
+            알 길이 없었다. 화살표는 표시일 뿐이고 누르는 자리는 그대로 이름 줄이다. */}
+        <span
+          onClick={toggle}
+          style={{
+            cursor: "pointer",
+            flex: 1,
+            minWidth: 0,
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--sp-2)",
+          }}
+        >
+          <span
+            style={{
+              display: "grid",
+              color: "var(--ink-faint)",
+              transform: folded ? "rotate(-90deg)" : undefined,
+              transition: "transform 120ms ease",
+            }}
+          >
+            {Icon.chevronDown14}
+          </span>
           {label}
         </span>
         {right}

@@ -157,6 +157,8 @@ export const Icon = {
   ),
   chevronUp: s(<path d="M6 15l6-6 6 6" />),
   chevronDown: s(<path d="M6 9l6 6 6-6" />),
+  /** 카테고리 이름 줄용 — 15px 글줄 옆에 서므로 아이콘은 한 치수 작다 */
+  chevronDown14: s(<path d="M6 9l6 6 6-6" />, 14),
   chevronRight: s(<path d="M9 6l6 6-6 6" />),
   chevronLeft: s(<path d="M15 6l-6 6 6 6" />),
   /** 접기/펼치기 전체 */
