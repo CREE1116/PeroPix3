@@ -23,6 +23,8 @@ import io
 import json
 from pathlib import Path
 
+import nai
+
 import piexif
 import piexif.helper
 from PIL import Image
@@ -193,48 +195,63 @@ def read_raw(image_bytes: bytes) -> dict:
 # ── 2. 정규화 ────────────────────────────────────────────────
 # index.html:17422-17668 이식. NAI 원본과 PeroPix 확장을 하나의 내부 형식으로 맞춘다.
 
-# ★두 가지다 — Enhance 용과 일반용. 하나만 두면 Enhance 이미지에서 태그가 남는다.
-V45_QUALITY_TAGS = [
-    ", very aesthetic, masterpiece, no text, -2::upscaled, blurry::,",  # Enhance
-    ", very aesthetic, masterpiece, no text",  # 일반
-]
-
-# ★한 글자도 바꾸지 말 것 — 네거티브 앞에서 이 문자열을 그대로 대조해 프리셋을 알아낸다.
-V45_UC_PRESETS = {
-    "Heavy": "nsfw, lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page",
-    "Light": "nsfw, lowres, artistic error, scan artifacts, worst quality, bad quality, jpeg artifacts, multiple views, very displeasing, too many watermarks, negative space, blank page",
-    "Furry Focus": "nsfw, {worst quality}, distracting watermark, unfinished, bad quality, {widescreen}, upscale, {sequence}, {{grandfathered content}}, blurred foreground, chromatic aberration, sketch, everyone, [sketch background], simple, [flat colors], ych (character), outline, multiple scenes, [[horror (theme)]], comic",
-    "Human Focus": "nsfw, lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page, @_@, mismatched pupils, glowing eyes, bad anatomy",
-}
-
-UC_PRESET_BY_NUM = {0: "Heavy", 1: "Light", 2: "Human Focus", 3: "None"}
+# ★★표는 **`nai.py` 하나**다 (2026-08-19). 여기 사본을 두던 때는 V4.5 Full 것 한 벌로
+#   모든 모델을 읽어서, V4.5 Curated 이미지의 퀄리티 접미사(`-0.8::feet::, rating:general`)가
+#   프롬프트에 남고 `ucPreset` 숫자도 엉뚱한 이름으로 풀렸다 (2 는 Full 에서 Furry Focus,
+#   Curated 에서 Human Focus 다). 보내는 표와 읽는 표가 갈리면 왕복이 조용히 깨진다.
 
 
-def _preset_candidates() -> list[tuple[str, str]]:
+def _quality_patterns(model: str) -> list[str]:
+    """그 모델의 퀄리티 접미사 — **Enhance 변형을 먼저** 본다 (긴 쪽이 먼저 걸려야 한다).
+    ★모델을 모르면 아는 모델의 것을 전부 대 본다. 문자열이 길고 서로 달라 헛맞지 않는다."""
+    out: list[str] = []
+    suffixes = (
+        [nai.quality_suffix(model)]
+        if model
+        else list(dict.fromkeys(nai.QUALITY_SUFFIX.values()))
+    )
+    for suf in suffixes:
+        if not suf:
+            continue
+        out.append(suf + nai.ENHANCE_PROMPT_ADD)
+        out.append(suf)
+    out.sort(key=len, reverse=True)
+    return out
+
+
+def _preset_candidates(model: str) -> list[tuple[str, str]]:
     """각 프리셋의 정상형 + NSFW 변형.
 
     ★NAI 는 프롬프트에 NSFW 가 있으면 프리셋 맨 앞의 `nsfw, ` 를 빼고 넣는다 (공홈 캡처로 확인).
-    ★길이 내림차순 정렬 — 안 하면 짧은 Heavy 가 먼저 걸려 긴 Human Focus 를 놓친다."""
+      그래서 `nai.UC_PRESETS` 의 본문(nsfw 없음)에 변형을 하나 더 만들어 둘 다 본다.
+    ★그 모델의 표를 먼저 보되 **다른 모델 표도 뒤에 붙인다** — 모델 id 가 없는 그림이 있다.
+    ★길이 내림차순 — 안 하면 짧은 Heavy 가 먼저 걸려 긴 Human Focus 를 놓친다."""
+    seen: set[str] = set()
     out: list[tuple[str, str]] = []
-    for name, tags in V45_UC_PRESETS.items():
-        out.append((name, tags))
-        if tags.startswith("nsfw, "):
-            out.append((name, tags[6:]))
+    lists = [nai.uc_presets(model)] if model else []
+    lists += list(nai.UC_PRESETS.values())
+    for plist in lists:
+        for _cat, name, text in plist:
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            out.append((name, text))
+            out.append((name, "nsfw, " + text))
     out.sort(key=lambda x: len(x[1]), reverse=True)
     return out
 
 
-def _strip_uc_preset(neg: str):
+def _strip_uc_preset(neg: str, model: str = ""):
     """네거티브 앞에서 프리셋 태그를 감지·제거. 매칭되면 (이름, 나머지), 아니면 None."""
     neg = neg or ""
-    for name, cand in _preset_candidates():
+    for name, cand in _preset_candidates(model):
         if neg.startswith(cand):
             rest = neg[len(cand) :]
             return name, rest.lstrip(", ").lstrip()
     return None
 
 
-def _detect_uc_preset_from_diff(full_uc: str, base_neg: str):
+def _detect_uc_preset_from_diff(full_uc: str, base_neg: str, model: str = ""):
     """구버전 PeroPix 이미지(uc_preset 미저장)의 프리셋 복원.
 
     최종 uc = <프리셋 태그> + ", " + <클린 네거티브> 구조이므로 차분으로 역산한다.
@@ -248,7 +265,7 @@ def _detect_uc_preset_from_diff(full_uc: str, base_neg: str):
             prefix = full_uc[: len(full_uc) - len(base_neg)].rstrip().rstrip(",").rstrip()
         else:
             return None
-    for name, cand in _preset_candidates():
+    for name, cand in _preset_candidates(model):
         if prefix == cand:
             return name
     return None
@@ -400,7 +417,21 @@ def normalize(meta: dict | None) -> dict | None:
         cs = c.get("centers") or []
         centers.append(cs[0] if cs else None)
 
-    uc_preset = UC_PRESET_BY_NUM.get(meta.get("ucPreset"), meta.get("ucPreset")) or "Heavy"
+    # ★★모델 id 를 **여기서 먼저** 잡는다 — 퀄리티 접미사도 UC 프리셋도 순서도 모델마다
+    #   다르다 (`nai.QUALITY_SUFFIX`·`nai.UC_PRESETS`). 아래 판정이 전부 이 값을 본다.
+    #   ★`request_type` 이 "PromptGenerateRequest" 같은 내부 타입이면 무시한다
+    nai_model = ""
+    for key in ("request_type", "model"):
+        v = meta.get(key)
+        if isinstance(v, str) and v.startswith("nai-diffusion"):
+            nai_model = v
+            break
+    quality_pats = _quality_patterns(nai_model)
+    # ★★`ucPreset` **숫자는 안 쓴다.** 프리셋은 네거티브 **앞에서 그 문자열을 떼어낼 수 있을
+    #   때만** 이름을 붙인다 — 못 떼면 그 태그가 네거티브에 남아 있는 것이라, 이름까지 붙이면
+    #   다시 그릴 때 프리셋이 **두 번** 들어간다. (숫자의 뜻도 모델마다 다르다:
+    #   V4.5 Full 의 2 는 Furry Focus, Curated 의 2 는 Human Focus)
+    uc_preset = "None"
     quality_tags = meta.get("qualityToggle")
     slot_prompt = ppx.get("slot_prompt") or ""
     prompt = meta.get("prompt") or ""
@@ -409,15 +440,23 @@ def normalize(meta: dict | None) -> dict | None:
     if is_pure_nai:
         # 순수 NAI: 프롬프트 끝의 퀄리티 태그 제거 (안 지우면 Apply 때마다 중복 누적)
         removed = False
-        for pat in V45_QUALITY_TAGS:
+        for pat in quality_pats:
             if prompt.endswith(pat):
                 prompt = prompt[: -len(pat)]
                 quality_tags = True
                 removed = True
                 break
+        # ★V2 는 접미사가 아니라 **앞에** 붙는다 (`nai.QUALITY_PREFIX`)
+        if not removed:
+            for pre in nai.QUALITY_PREFIX.values():
+                if prompt.startswith(pre):
+                    prompt = prompt[len(pre) :]
+                    quality_tags = True
+                    removed = True
+                    break
         if not removed:
             quality_tags = False
-        res = _strip_uc_preset(negative)
+        res = _strip_uc_preset(negative, nai_model)
         if res:
             uc_preset, negative = res
         else:
@@ -430,9 +469,9 @@ def normalize(meta: dict | None) -> dict | None:
         if ppx.get("uc_preset") is not None:
             uc_preset = ppx["uc_preset"]
         elif base_neg is not None:
-            uc_preset = _detect_uc_preset_from_diff(meta.get("uc") or "", base_neg or "") or "None"
+            uc_preset = _detect_uc_preset_from_diff(meta.get("uc") or "", base_neg or "", nai_model) or "None"
         else:
-            res = _strip_uc_preset(negative)
+            res = _strip_uc_preset(negative, nai_model)
             if res:
                 uc_preset, negative = res
             else:
@@ -440,13 +479,13 @@ def normalize(meta: dict | None) -> dict | None:
         if ppx.get("quality_tags") is not None:
             quality_tags = ppx["quality_tags"]
         else:
-            quality_tags = any((meta.get("prompt") or "").endswith(p) for p in V45_QUALITY_TAGS)
+            quality_tags = any((meta.get("prompt") or "").endswith(p) for p in quality_pats)
 
         # base_prompt 가 있으면 직접 (v3+), 없으면 슬롯 프롬프트 수동 제거 (v2 하위호환)
         if ppx.get("base_prompt") is not None:
             prompt = ppx["base_prompt"] or ""
         elif slot_prompt:
-            for pat in V45_QUALITY_TAGS:
+            for pat in quality_pats:
                 if prompt.endswith(pat):
                     prompt = prompt[: -len(pat)]
                     quality_tags = True
@@ -463,14 +502,6 @@ def normalize(meta: dict | None) -> dict | None:
     furry = bool(ppx.get("furry_mode"))
     if not furry and (meta.get("prompt") or "").startswith("fur dataset,"):
         furry = True
-
-    # ★모델명 — request_type 이 "PromptGenerateRequest" 같은 내부 타입이면 무시한다
-    nai_model = ""
-    for key in ("request_type", "model"):
-        v = meta.get(key)
-        if isinstance(v, str) and v.startswith("nai-diffusion"):
-            nai_model = v
-            break
 
     return {
         "prompt": prompt,

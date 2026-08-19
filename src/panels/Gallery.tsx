@@ -8,6 +8,7 @@ import { useGallery } from "../store/gallery";
 import { keepThumb, keepUrl } from "../lib/imgUrl";
 import { api } from "../lib/backend";
 import { ImageActions } from "./ImageActions";
+import { cloneMetaToNewTab } from "./GalleryMeta";
 import type { ImageMeta } from "../store/gallery";
 import { Icon } from "../components/Icon";
 import { onNearBottom } from "../lib/nearBottom";
@@ -386,6 +387,9 @@ function Big({
   const t = useI18n((s) => s.t);
   const box = useRef<HTMLDivElement>(null);
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
+  /** 보관함 그림의 메타데이터 — 「프롬프트 보기」와 「새 탭으로 복제」가 같은 것을 쓴다 */
+  const loadMeta = async () =>
+    (await api<{ meta: ImageMeta | null }>(`/api/keep/meta?file=${encodeURIComponent(file)}`)).meta;
   /** 이름 고치기 — 그 자리에서 입력칸으로 바뀐다 (v2 도 같은 방식이었다) */
   const [editing, setEditing] = useState<string | null>(null);
   /** ★적고 있는 글자를 **ref 로도** 든다. Esc 로 물린 직후 `blur` 가 오면 그 순간의
@@ -445,9 +449,13 @@ function Big({
             name={name}
             seed={seed}
             dims={dims}
-            loadMeta={async () =>
-              (await api<{ meta: ImageMeta | null }>(`/api/keep/meta?file=${encodeURIComponent(file)}`)).meta
-            }
+            loadMeta={loadMeta}
+            /* ★보관함 그림에는 워크스페이스 파일이 없다 — 그림에 남은 설정으로 새 탭을 만든다 */
+            hideSettings
+            onClone={async () => {
+              const m = await loadMeta();
+              if (m) await cloneMetaToNewTab(m);
+            }}
             /* ★같은 줄에 「탐색기에서 열기」를 둔다 — 뿌리만 보관함으로 갈아 끼운다.
                자리마다 다른 버튼을 만들면 어디서는 되고 어디서는 안 되는 상태가 생긴다. */
             revealPath={file}

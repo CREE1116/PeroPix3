@@ -768,7 +768,6 @@ export const en = {
     folderDelete: "Delete folder",
     folderDelConfirm: "Delete the folder '{name}'",
     folderNotEmpty: "This folder still has images. Move or delete them first.",
-    pureNai: "Made on NAI. UC preset and quality tags are not stored in the image, so they cannot be restored.",
     folders: "Folders",
     all: "All images",
     countImages: "{n} images",

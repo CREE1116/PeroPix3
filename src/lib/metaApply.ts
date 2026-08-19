@@ -28,6 +28,8 @@ export function metaParams(m: ImageMeta): Partial<GenParams> {
   if (m.uc_preset) p.uc_preset = m.uc_preset;
   if (m.quality_tags !== undefined) p.quality_tags = m.quality_tags;
   if (m.variety_plus !== undefined) p.variety_plus = m.variety_plus;
+  // ★프롬프트 앞의 `fur dataset, ` 도 서버가 떼어 내 값으로 돌려준다 — 빠져 있던 자리다
+  if (m.furry_mode !== undefined) p.furry_mode = m.furry_mode;
   // ★재생성에 쓰는 **모델 id** 다 (`source` 는 표시용 문자열이라 여기 못 쓴다)
   if (m.nai_model) p.model = m.nai_model;
   return p;

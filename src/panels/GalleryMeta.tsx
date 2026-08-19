@@ -1,4 +1,4 @@
-import { useI18n } from "../i18n";
+import { t, useI18n } from "../i18n";
 import { useState } from "react";
 import { makeBlock, parseSegs } from "../lib/blocks";
 import { useGen } from "../store/gen";
@@ -6,6 +6,8 @@ import { useGallery, type ImageMeta } from "../store/gallery";
 import { CHAR_COLORS, usePrompt, type Char } from "../store/prompt";
 import { useImageInput } from "../store/imageInput";
 import { useUi } from "../store/ui";
+import { useWs } from "../store/workspace";
+import { toast } from "../store/toast";
 import { metaParams } from "../lib/metaApply";
 
 /** 그림 정보 — 우 패널. 고른 **한 장**의 메타데이터를 보여주고, 프롬프트로 되돌린다.
@@ -43,8 +45,15 @@ export function GalleryMeta() {
     );
   }
 
-  const onApply = (what: "prompt" | "all") => {
-    applyMeta(meta, what);
+  /** ★★「설정 불러오기」가 아니라 **「새 탭으로 복제」**다 (사용자 지시 2026-08-19).
+   *
+   *  예전 이름은 **어디에 불러오는지**를 말하지 않아서, 지금 보고 있던 탭의 프롬프트가
+   *  통째로 갈리는 줄 모르고 누르게 됐다. 지금은 **새 탭을 만들고 거기에** 되돌린다 —
+   *  워크스페이스 그림의 「새 탭으로 복제」와 같은 뜻이다 (`workspace.cloneToNewTab`).
+   *  ★다른 점 하나: 갤러리 그림에는 생성 시점 스냅샷(`env`)이 없다. 그래서 되돌릴 수 있는
+   *    것은 **그림에 남은 것 전부**다 — 프롬프트·캐릭터·생성 옵션·해상도·시드·바이브. */
+  const onClone = async () => {
+    await cloneMetaToNewTab(meta);
     setFlash(true);
     setTimeout(() => setFlash(false), 1600);
   };
@@ -106,21 +115,16 @@ export function GalleryMeta() {
           gap: "var(--sp-2)",
         }}
       >
-        {/* ★순수 NAI 그림은 **되돌릴 수 없는 값**이 있다 — NAI 는 `ucPreset`·`qualityToggle` 을
-            null 로 돌려주므로(=클라이언트가 프롬프트에 직접 넣는 값), 그 둘은 추측이 된다.
-            숫자 필드로 프리셋을 판정하지 않는다 (v2 CLAUDE.md 의 round-trip 원칙). */}
-        {meta.pure_nai && (
-          <span data-pure-nai style={{ fontSize: "var(--text-2xs)", color: "var(--warn)" }}>
-            {t("gallery.pureNai")}
-          </span>
-        )}
+        {/* ★「NAI 원본은 복원되지 않는다」는 알림을 걷었다 (사용자 지적 2026-08-19).
+            UC 프리셋도 퀄리티 태그도 **모델별 표로 떼어내 되돌린다** (`backend/meta.py` —
+            표는 `nai.py` 하나를 본다). 못 되돌리는 것이 없으므로 경고할 것도 없다. */}
         {/* ★적용은 **하나**다 (사용자 지시 2026-08-05). 「프롬프트만」을 따로 두지 않는다 —
             프롬프트는 적용하는 것이 아니라 **보는 것**이고, 그건 큰 그림 아래
             「프롬프트 보기」가 한다 (ImageActions). */}
         <button
           data-gallery-apply-all
-          onClick={() => onApply("all")}
-          data-tip={t("act.settingsHint")}
+          onClick={() => void onClone()}
+          data-tip={t("act.cloneHint")}
           style={{
             ...applyBtn,
             background: flash ? "var(--ok)" : "var(--accent)",
@@ -128,11 +132,28 @@ export function GalleryMeta() {
             borderColor: flash ? "var(--ok)" : "var(--accent)",
           }}
         >
-          {flash ? t("act.applied") : t("act.settings")}
+          {flash ? t("act.cloned") : t("act.clone")}
         </button>
       </div>
     </Frame>
   );
+}
+
+/** 그 그림의 설정으로 **새 탭을 만든다** (갤러리의 유일한 되돌리기 창구).
+ *
+ *  ★워크스페이스 그림의 「새 탭으로 복제」(`workspace.cloneToNewTab`)와 같은 뜻이다.
+ *    다른 점은 **생성 시점 스냅샷(`env`)이 없다**는 것뿐 — 보관함 그림은 그때 탭 구조를
+ *    모르므로, 그림에 남은 것(프롬프트·캐릭터·생성 옵션·해상도·시드·바이브)을 되돌린다.
+ *  ★예전 이름 「설정 불러오기」는 **어디에 불러오는지**를 말하지 않아, 보고 있던 탭이
+ *    통째로 갈리는 줄 모르고 누르게 됐다 (사용자 지적 2026-08-19). */
+export async function cloneMetaToNewTab(m: ImageMeta) {
+  const ws = useWs.getState();
+  if (!ws.current || !ws.spec) return;
+  ws.addChar(t("chars.cloneName"));
+  applyMeta(m, "all");
+  await ws.save();
+  useUi.getState().setMode("generate");
+  toast(t("act.cloned"));
 }
 
 /** 메타데이터를 지금 작업 상태로 되돌린다 — 프롬프트·캐릭터·생성 설정 전부.

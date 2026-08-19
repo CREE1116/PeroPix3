@@ -48,6 +48,19 @@ QUALITY_SUFFIX = {
     "nai-diffusion-4-5-full": ", very aesthetic, masterpiece, no text",
     "nai-diffusion-4-5-curated": ", very aesthetic, masterpiece, no text, -0.8::feet::, rating:general",
     "custom": ", very aesthetic, masterpiece, no text",
+    # ★아래는 **우리가 만들지 않는 모델**이다 (목록에 없다). 그래도 표에 둔다 —
+    #   갤러리에 들어온 옛 그림에서 퀄리티 태그를 떼어내려면 그 모델의 접미사를 알아야 한다
+    #   (`meta.normalize`). 값은 공홈 번들 `ed()` 그대로다 (대조 2026-08-19).
+    "nai-diffusion-4-full": ", no text, best quality, very aesthetic, absurdres",
+    "nai-diffusion-4-curated-preview": ", rating:general, best quality, very aesthetic, absurdres",
+    "nai-diffusion-3": ", best quality, amazing quality, very aesthetic, absurdres",
+    "nai-diffusion-furry-3": ", {best quality}, {amazing quality}",
+}
+
+#: 퀄리티 태그를 **앞에** 붙이는 옛 모델 (`ed()` 의 `qualityTags`). V3 이후로는 전부 빈 값이라
+#: 생성 경로는 안 쓰고, 옛 그림을 읽을 때만 쓴다.
+QUALITY_PREFIX = {
+    "nai-diffusion-2": "very aesthetic, best quality, absurdres, ",
 }
 
 #: UC 프리셋 — **목록의 순서가 곧 공홈 `ucPreset` 인덱스**다 (`eF()`).
@@ -69,6 +82,18 @@ UC_PRESETS: dict[str, list[tuple[str, str, str]]] = {
         ("none", "None", ""),
     ],
 }
+# ★V4.0 계열도 표에 둔다 — 만들지는 않지만 **읽어야 한다** (위 QUALITY_SUFFIX 와 같은 이유).
+#   순서가 곧 그 모델의 `ucPreset` 인덱스다 (공홈 번들 대조 2026-08-19).
+UC_PRESETS["nai-diffusion-4-full"] = [
+    ("heavy", "Heavy", "blurry, lowres, error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, multiple views, logo, too many watermarks, white blank page, blank page"),
+    ("light", "Light", "blurry, lowres, error, worst quality, bad quality, jpeg artifacts, very displeasing, white blank page, blank page"),
+    ("none", "None", ""),
+]
+UC_PRESETS["nai-diffusion-4-curated-preview"] = [
+    ("heavy", "Heavy", "blurry, lowres, error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, logo, dated, signature, multiple views, gigantic breasts, white blank page, blank page"),
+    ("light", "Light", "blurry, lowres, error, worst quality, bad quality, jpeg artifacts, very displeasing, logo, dated, signature, white blank page, blank page"),
+    ("none", "None", ""),
+]
 UC_PRESETS["custom"] = UC_PRESETS["nai-diffusion-4-5-full"]
 
 #: uc 앞에 `nsfw, ` 를 붙이지 **않는** 모델 (공홈 예외집합 `V`).

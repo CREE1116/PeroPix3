@@ -25,6 +25,7 @@ export function ImageActions({
   name,
   seed,
   loadMeta,
+  hideSettings,
   dims,
   revealPath,
   revealApi = "/api/files/reveal",
@@ -48,6 +49,9 @@ export function ImageActions({
   revealApi?: string;
   /** 이 그림의 생성 설정. 없으면 「설정 불러오기」가 안 뜬다 */
   loadMeta?: () => Promise<ImageMeta | null>;
+  /** ★갤러리에서는 「설정 불러오기」를 안 띄운다 (사용자 지시 2026-08-19) — 거기서 되돌리는
+   *  창구는 **「새 탭으로 복제」 하나**다. 보고 있던 탭이 조용히 갈리는 길을 남기지 않는다. */
+  hideSettings?: boolean;
   onEnhance?: () => void;
   /** 4배 업스케일 — **워크스페이스 파일에만** 뜻이 있다 (갤러리 보관함에는 안 뜬다).
    *  ★배율을 안 받는다: 공홈이 언제나 4 로 보낸다 (`nai.py UPSCALE_SCALE`) */
@@ -194,15 +198,17 @@ export function ImageActions({
             <button data-act-prompt onClick={() => void showPrompt()} disabled={busy} style={btn}>
               {t("act.showPrompt")}
             </button>
-            <button
-              data-act-settings
-              onClick={() => void useSettings()}
-              disabled={busy}
-              data-tip={t("act.settingsHint")}
-              style={btn}
-            >
-              {t("act.settings")}
-            </button>
+            {!hideSettings && (
+              <button
+                data-act-settings
+                onClick={() => void useSettings()}
+                disabled={busy}
+                data-tip={t("act.settingsHint")}
+                style={btn}
+              >
+                {t("act.settings")}
+              </button>
+            )}
           </>
         )}
         {/* ★「설정을 가져다 쓰는 것」 무리에 둔다 — 이 단추가 옮기는 것도 그림 한 장과

@@ -777,7 +777,6 @@ export const ko: Dict = {
     folderDelete: "폴더 지우기",
     folderDelConfirm: "'{name}' 폴더를 지웁니다",
     folderNotEmpty: "그림이 든 폴더는 지울 수 없습니다. 먼저 옮기거나 지우세요.",
-    pureNai: "NAI 원본입니다. UC 프리셋과 퀄리티 태그는 그림에 안 남아 복원되지 않습니다.",
     folders: "폴더",
     all: "전체",
     countImages: "{n}장",

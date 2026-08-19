@@ -766,7 +766,6 @@ export const ja: Dict = {
     folderDelete: "フォルダを削除",
     folderDelConfirm: "'{name}' フォルダを削除します",
     folderNotEmpty: "画像が入っているフォルダは削除できません。先に移動するか削除してください。",
-    pureNai: "NAI 原本です。UC プリセットと品質タグは復元できません。",
     folders: "フォルダ",
     all: "すべて",
     countImages: "{n}枚",
