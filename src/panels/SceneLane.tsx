@@ -966,6 +966,8 @@ const HEAD_FADE = "linear-gradient(90deg, #000 0 72%, transparent 100%)";
 function CardGroup(p: GroupProps) {
   const t = useI18n((s) => s.t);
   const grad = p.card.color ?? colorOf(p.card.name);
+  /** 이름을 그 자리에서 고치는 중 — `null` 이면 아니다 (프롬프트 카드와 같은 방식) */
+  const [naming, setNaming] = useState<string | null>(null);
   /** ★블록과 **같은 포인터 드래그**로 순서를 바꾼다 — HTML5 드래그를 쓰면 안의 칩을
    *  끄는 순간 씬이 딸려 끌리고, WebView2 가 그걸 파일 드롭으로 가로챈다.
    *  ★판은 **줄 전체**다 (`useLaneReorder`) — 카드를 넘어 씬을 옮길 수 있어야 하고,
@@ -1068,7 +1070,46 @@ function CardGroup(p: GroupProps) {
             >
               {Icon.grip}
             </span>
-            <b style={{ fontSize: "0.8rem", fontWeight: "var(--w-bold)" }}>{p.card.name}</b>
+            {/* ★★이름을 **카드 안에서** 고친다 (사용자 지시 2026-08-19) — 프롬프트 카드·덱 카드와
+                같은 방식이다 (두 번 누르거나 연필 단추, 다시 누르면 저장하고 끝난다). */}
+            {naming === null ? (
+              <b
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setNaming(p.card.name);
+                }}
+                style={{ fontSize: "0.8rem", fontWeight: "var(--w-bold)", cursor: "text" }}
+              >
+                {p.card.name}
+              </b>
+            ) : (
+              <input
+                autoFocus
+                data-card-name={p.card.id}
+                value={naming}
+                onChange={(e) => setNaming(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                onBlur={() => {
+                  if (naming.trim()) p.onPatch({ name: naming.trim() });
+                  setNaming(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  if (e.key === "Escape") setNaming(null);
+                }}
+                style={{
+                  width: 130,
+                  background: "rgba(0,0,0,0.45)",
+                  border: "1px solid rgba(255,255,255,0.5)",
+                  borderRadius: "var(--r-1)",
+                  padding: "0 4px",
+                  color: "#fff",
+                  fontSize: "0.8rem",
+                  fontWeight: "var(--w-bold)",
+                }}
+              />
+            )}
           </div>
           {/* ★잠금은 **카드째**다 — 옛 「전체 잠금」이 이 자리로 왔다 (사용자 결정) */}
           <div
@@ -1082,6 +1123,22 @@ function CardGroup(p: GroupProps) {
               gap: 2,
             }}
           >
+            <button
+              data-card-rename={p.card.id}
+              data-tip={t("cards.rename")}
+              onPointerDown={(e) => e.stopPropagation()}
+              /* 입력칸이 안 흐려지게 — blur 가 먼저 오면 저장하고 닫힌 뒤 다시 열린다 */
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (naming === null) return setNaming(p.card.name);
+                if (naming.trim()) p.onPatch({ name: naming.trim() });
+                setNaming(null);
+              }}
+              style={bannerBtn}
+            >
+              {Icon.pencil}
+            </button>
             <button
               data-card-lock={p.card.id}
               onClick={() => p.onPatch({ locked: !p.card.locked })}
