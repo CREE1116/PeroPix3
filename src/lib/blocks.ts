@@ -151,6 +151,20 @@ export function serializeBlock(bl: Block): string {
     .join(", ");
 }
 
+/** 칩을 눌러 글 상자를 열 때 **그 태그의 쉼표 뒤**에 놓을 커서 자리와, 그때 펼칠 글.
+ *
+ *  ★태그 **끝**에 놓으면 치는 글자가 그 태그에 달라붙는다 (사용자 지적 2026-08-19).
+ *    칩을 누르는 것은 거기서부터 **이어 적으려는** 것이라, 자리는 다음 태그가 시작하는 곳이다.
+ *  ★한 태그가 한 조각이라(`serializeBlock`) 앞부분 길이 + `", "` 가 정확히 그 자리다.
+ *  ★마지막 태그면 이어 붙일 쉼표가 없다 — 하나 만들어 준다. 안 치고 나가면 빈 조각이라
+ *    `parseSegs` 가 버리므로 블록은 그대로다.
+ */
+export function caretAfterTag(bl: Block, i: number): { at: number; text: string } {
+  const head = serializeBlock({ ...bl, tags: bl.tags.slice(0, i + 1) });
+  const last = i >= bl.tags.length - 1;
+  return { at: head.length + 2, text: last ? `${head}, ` : serializeBlock(bl) };
+}
+
 /** 켜진 블록들에서 중복 태그를 찾는다 (계기판 — 고치지 않고 표시만 한다). */
 export function dupSet(blocks: Block[]): Set<string> {
   const seen = new Set<string>();

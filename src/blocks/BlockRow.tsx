@@ -1,6 +1,6 @@
 import { useI18n } from "../i18n";
 import { useEffect, useRef, useState } from "react";
-import { COLORS, EXTRA_COLOR, parseSegs, serializeBlock, type Block } from "../lib/blocks";
+import { caretAfterTag, COLORS, EXTRA_COLOR, parseSegs, serializeBlock, type Block } from "../lib/blocks";
 import { Chip, colorHex } from "./Chip";
 import { useTagSuggest } from "./TagSuggest";
 import { Icon } from "../components/Icon";
@@ -73,16 +73,17 @@ export function BlockRow({
     el.focus();
     // ★★**전체 선택을 하지 않는다** (사용자 지시 2026-08-18). 예전에는 `select()` 라
     //   열자마자 다 잡혀서, 뭐든 한 글자 치면 **블록이 통째로 지워졌다.**
-    //   누른 칩이 있으면 그 태그 끝에, 없으면 맨 뒤에 커서만 놓는다.
+    //   누른 칩이 있으면 그 태그의 쉼표 뒤에, 없으면 맨 뒤에 커서만 놓는다.
     const at = caretAt.current ?? el.value.length;
     el.setSelectionRange(at, at);
     caretAt.current = null;
   }, [editing]);
 
-  /** @param at 커서를 놓을 글자 자리 (안 주면 맨 뒤) */
-  const openText = (at?: number) => {
+  /** @param at 커서를 놓을 글자 자리 (안 주면 맨 뒤)
+   *  @param txt 열면서 넣을 글 (안 주면 블록을 그대로 편다) */
+  const openText = (at?: number, txt?: string) => {
     caretAt.current = at ?? null;
-    setText(serializeBlock(block));
+    setText(txt ?? serializeBlock(block));
     setEditing(true);
   };
 
@@ -347,15 +348,17 @@ export function BlockRow({
               onClick={(e) => {
                 // 칩을 끌고 난 직후의 클릭은 편집을 열지 않는다
                 if (tagDrag?.justDragged()) return;
-                // ★누른 칩이 있으면 **그 태그 끝**에 커서를 놓는다 (사용자 지시 2026-08-18).
+                // ★누른 칩이 있으면 커서를 **그 태그의 쉼표 뒤**에 놓는다 (사용자 지시 2026-08-19).
                 //   칩과 글 상자는 배치가 달라 클릭 좌표를 글자 자리로 옮기는 것은 어긋나므로,
                 //   "몇 번째 태그를 눌렀나"로 잡는다 — 그 편이 어긋날 일이 없다.
+                //   ★태그 **끝**에 놓으면 치는 글자가 그 태그에 달라붙는다. 칩을 누르는 것은
+                //     거기서부터 이어 적으려는 것이라, 자리는 다음 태그가 시작하는 곳이다.
                 const box = e.currentTarget;
                 const hit = (e.target as HTMLElement).closest("[data-chip]");
                 const i = hit ? [...box.querySelectorAll("[data-chip]")].indexOf(hit) : -1;
                 if (i < 0) return openText();
-                const upto = serializeBlock({ ...block, tags: block.tags.slice(0, i + 1) });
-                openText(upto.length);
+                const { at, text } = caretAfterTag(block, i);
+                openText(at, text);
               }}
               title={t("block.editAsText")}
               style={{
