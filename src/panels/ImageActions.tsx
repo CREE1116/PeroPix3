@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useI18n } from "../i18n";
-import { useGen, fitSizeToBase } from "../store/gen";
+import { fitSizeToBase } from "../store/gen";
 import { useImageInput } from "../store/imageInput";
 import { useUi } from "../store/ui";
 import { toast } from "../store/toast";
@@ -62,9 +62,9 @@ export function ImageActions({
   extra?: React.ReactNode;
 }) {
   const t = useI18n((s) => s.t);
-  const setParam = useGen((s) => s.set);
-  const seedNow = useGen((s) => s.params.seed);
   const [busy, setBusy] = useState(false);
+  /** 시드 강조는 **커서를 올린 동안만** (사용자 지시 2026-08-19) */
+  const [seedHot, setSeedHot] = useState(false);
   const opus = useSub((s) => (s.sub?.tier ?? 0) >= 3);
   const [seen, setSeen] = useState<ImageMeta | null>(null);
 
@@ -274,20 +274,20 @@ export function ImageActions({
         {extra}
 
         {/* ★시드·해상도는 **맨 뒤 우측**이다 (페로픽스파이 `.result-meta .seed`,
-            styles.css:380 "길이가 바뀌어도 앞 버튼들이 안 밀린다"). 시드는 테두리 없는
-            글자처럼 두되 누르면 그 값으로 고정된다 — 랜덤도 함께 꺼야 실제로 쓰인다. */}
-        {/* ★시드와 해상도는 **한 덩어리**로 오른쪽 끝에 — 따로 두면 줄이 넘칠 때
-            해상도만 다음 줄로 떨어진다 (실측 2026-08-05) */}
+            styles.css:380 "길이가 바뀌어도 앞 버튼들이 안 밀린다").
+            ★시드와 해상도는 **한 덩어리**로 — 따로 두면 줄이 넘칠 때 해상도만 다음 줄로
+              떨어진다 (실측 2026-08-05) */}
         <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "var(--sp-2)", flexShrink: 0 }}>
         {seed !== undefined && (
           <button
             data-act-seed
-            onClick={() => {
-              setParam("seed", seed);
-              setParam("seed_mode", "fixed");
-              toast(t("act.seedSet", { n: seed }));
-            }}
-            title={t("slots.seedReuse")}
+            /* ★★**누르면 복사**다 (사용자 지시 2026-08-19).
+                 예전에는 눌러 그 시드로 고정했는데, 지금 시드와 같아지면 강조가 **계속 남아**
+                 무엇이 눌린 상태인지 알 수 없었다. 강조는 이제 **커서를 올린 동안만**이다. */
+            onClick={() => void navigator.clipboard?.writeText(String(seed)).then(() => toast(t("act.copied")))}
+            onPointerEnter={() => setSeedHot(true)}
+            onPointerLeave={() => setSeedHot(false)}
+            title={t("act.seedCopy")}
             style={{
               border: "none",
               background: "none",
@@ -295,8 +295,9 @@ export function ImageActions({
               fontSize: "var(--text-2xs)",
               fontFamily: "var(--font-mono)",
               fontVariantNumeric: "tabular-nums",
-              textDecoration: seedNow === seed ? "underline" : undefined,
-              color: seedNow === seed ? "var(--accent)" : "var(--ink-faint)",
+              cursor: "pointer",
+              textDecoration: seedHot ? "underline" : undefined,
+              color: seedHot ? "var(--accent)" : "var(--ink-faint)",
             }}
           >
             seed {seed}

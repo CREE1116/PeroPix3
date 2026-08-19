@@ -341,7 +341,6 @@ export const en = {
     cfgRescale: "Guidance Rescale",
     furryMode: "Furry mode",
     starHint: "Base rate at this size",
-    sizeHint: "Cells {s}px · Ctrl and wheel to resize",
     resolution: "Resolution",
     portrait: "Portrait",
     landscape: "Landscape",
@@ -620,6 +619,7 @@ export const en = {
     close: "Close",
     copy: "Copy",
     copied: "Copied",
+    seedCopy: "Click to copy the seed",
   },
 
   ai: {
@@ -677,7 +677,6 @@ export const en = {
     destBase: "Base",
     destChar: "Character · {name}",
     destAll: "All characters",
-    sizeHint: "Cells {s}px · Ctrl and wheel to resize",
     cardLabel: "SCENE SET · {n}",
     addCard: "Add scene card",
     addCardFirst: "Add a scene card",

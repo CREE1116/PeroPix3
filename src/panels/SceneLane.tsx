@@ -66,18 +66,20 @@ export function SceneLane() {
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  /** ★★**바깥을 누르면 편집이 끝난다** (사용자 지시 2026-08-18). 예전에는 닫는 길이
-   *  그 씬의 머리를 다시 누르는 것뿐이라, 다른 데를 아무리 눌러도 펼친 채로 남았다.
+  /** ★★**글 상자 밖을 누르면 편집이 끝난다** (사용자 지시 2026-08-18).
+   *  예전에는 닫는 길이 그 씬의 머리를 다시 누르는 것뿐이라 어디를 눌러도 펼친 채였다.
    *
    *  ★`pointerdown` 을 **잡기 단계**(capture)로 듣는다 — 씬 줄의 가로 스크롤도, 칩 드래그도
    *    pointerdown 에서 시작하므로 버블을 기다리면 그것들이 먼저 삼킨다.
-   *  ★그 씬 안(`[data-scene]`)을 누른 것은 그대로 둔다 — 머리는 자기가 토글하고, 글 상자
-   *    안에서 글자를 고르려고 누른 것을 닫아 버리면 편집이 안 된다. */
+   *  ★★예외는 **글 상자 자신뿐**이다. 처음에는 그 씬 줄(`[data-scene]`) 전체를 예외로 뒀는데,
+   *    그러면 **같은 씬의 결과를 골라도 편집이 안 끝났다** (사용자 지적 2026-08-19).
+   *    머리를 눌러도 닫힌다 — 내 처리가 먼저 돌아 `null` 이 되고, 뒤이은 머리의 토글은
+   *    그 시점에 「펼쳐져 있음」이라 다시 `null` 을 넣는다. 다른 씬을 누르면 그 씬이 열린다. */
   useEffect(() => {
     if (!expandedId) return;
     const onDown = (e: PointerEvent) => {
       const t = e.target as HTMLElement | null;
-      if (t?.closest(`[data-scene="${CSS.escape(expandedId)}"]`)) return;
+      if (t?.closest("[data-scene-text]")) return;
       setExpandedId(null);
     };
     document.addEventListener("pointerdown", onDown, true);
@@ -440,13 +442,8 @@ export function SceneLane() {
         <span style={{ flex: 1 }} />
         {/* ★칸 크기는 **Ctrl + 휠**로 바꾼다 (사용자 지시 2026-08-14). 버튼 셋이
             차지하던 자리를 돌려주고, 손이 줄 위에 있는 채로 바로 조절된다.
-            지금 단계만 알려 준다 (`data-lane-step` 은 조작 테스트가 읽는다) */}
-        <span
-          data-lane-size={laneSize}
-          style={{ fontSize: "var(--text-2xs)", color: "var(--ink-ghost)", whiteSpace: "nowrap" }}
-        >
-          {t("scenes.sizeHint", { s: laneSize })}
-        </span>
+            ★안내 문구를 두지 않는다 (사용자 지시 2026-08-19) — 휠로 조절되는 것은
+              적어 두지 않아도 안다. 지금 크기도 칸을 보면 보인다. */}
         {/* ★「별표만 보기」 — **탭 전체를 거르는 보기 전환**이다 (옛 싱글 캔버스에서 옮겨 왔다).
             별표를 켜는 자리는 그대로 썸네일 우상단이고, 여기는 **거르는 창구**다.
             별표 수를 버튼 안 괄호에 적는 것도 그때와 같다 (줄에는 글자를 두지 않는다). */}

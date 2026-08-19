@@ -110,7 +110,6 @@ export function OptionsPanel() {
                   <NumBox data-size="w" value={p.width} onCommit={(v) => set("width", alignTo64(v))} />
                   <span style={{ color: "var(--ink-faint)", fontSize: "var(--text-2xs)" }}>×</span>
                   <NumBox data-size="h" value={p.height} onCommit={(v) => set("height", alignTo64(v))} />
-                  <Hint>{t("options.sizeHint")}</Hint>
                 </div>
               </Group>
               <Group label={t("options.steps")}>

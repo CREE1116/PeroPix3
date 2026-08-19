@@ -340,7 +340,6 @@ export const ja: Dict = {
     cfgRescale: "Guidance Rescale",
     furryMode: "Furry モード",
     starHint: "このサイズは基本料金",
-    sizeHint: "コマ {s}px · Ctrl+ホイールで調整",
     resolution: "解像度",
     portrait: "縦",
     landscape: "横",
@@ -619,6 +618,7 @@ export const ja: Dict = {
     close: "閉じる",
     copy: "コピー",
     copied: "コピーしました",
+    seedCopy: "クリックでシードをコピー",
   },
 
   ai: {
@@ -676,7 +676,6 @@ export const ja: Dict = {
     destBase: "ベースへ",
     destChar: "キャラクター · {name}へ",
     destAll: "キャラクター全員へ",
-    sizeHint: "コマ {s}px · Ctrl+ホイールで調整",
     cardLabel: "シーンセット · {n}",
     addCard: "シーンカード追加",
     addCardFirst: "シーンカードを追加",

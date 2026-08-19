@@ -20,7 +20,7 @@ import { EnhanceDialog } from "./EnhanceDialog";
 import { useGallery, type ImageMeta } from "../store/gallery";
 import { usePreviews, withPreviews } from "../store/previews";
 import { api } from "../lib/backend";
-import { applyMetaParams } from "./GalleryMeta";
+import { applyMeta } from "./GalleryMeta";
 import { hasMeta } from "../lib/metaApply";
 
 /** 캔버스 — 씬 세트 줄 + 씬 무대 (마스크를 칠하는 동안에는 그 자리가 편집기다).
@@ -216,29 +216,25 @@ function SceneActions() {
       )
     ).meta;
 
-  /** 「새 탭으로 복제」 — **생성을 누른 그때의 상태 그대로** 씬 하나짜리 새 탭을 만든다.
+  /** 「새 탭으로 복제」 — **그 그림을 그대로 다시 뽑을 수 있는** 탭을 만든다.
    *
-   *  ★★**프롬프트는 메타데이터에서 되살리지 않는다** (사용자 지적 2026-08-18: 캐릭터
-   *    프롬프트가 안 딸려 오고 블록 구조도 안 살아난다). NAI 메타데이터에는 **합쳐진 문자열**만
-   *    남아서, 거기서 되살리면 블록이 한 덩어리로 뭉치고 캐릭터가 `#1`·`#2` 로 다시 만들어진다.
-   *    블록 구조·캐릭터·그림체가 살아 있는 곳은 **떠나온 탭의 프롬프트뿐**이라 그것을 물려받고
-   *    (`cloneToNewTab` 이 스냅샷을 옮긴다), 메타데이터에서는 **설정·해상도·시드만** 얹는다.
-   *  ★**씬의 블록도 함께 옮긴다** — 베이스 프롬프트만 옮기면 그 그림을 만든 씬 태그가 빠져
-   *    새 탭에서 생성을 눌렀을 때 다른 그림이 나온다.
+   *  ★★기준은 하나다: **복제한 뒤 생성을 누르면 그 그림과 똑같이 나와야 한다**
+   *    (사용자 지시 2026-08-19: *"프롬프트 토씨하나 안틀리게, 생성옵션까지 복제"*).
+   *    그러려면 **그 그림의 메타데이터**가 유일한 근거다 — 지금 화면은 그 사이 바뀌었을 수 있다.
+   *    `applyMeta(m, "all")` 가 프롬프트·네거티브·캐릭터·설정·해상도·시드·바이브를 전부 되돌린다.
+   *  ★★**씬 블록은 옮기지 않는다.** 메타데이터의 프롬프트는 생성 때 **베이스와 씬이 이미
+   *    합쳐진 결과**라, 새 탭의 씬에 그 태그를 또 넣으면 **두 번 들어가** 다른 그림이 된다.
+   *    새 탭의 씬은 비워 두는 것이 맞다 (합쳐진 것이 베이스에 그대로 있다).
+   *  ★블록 구조는 메타데이터에 안 남는다 (NAI 는 합쳐진 문자열만 저장한다) — 한 덩어리로
+   *    들어오고 캐릭터는 `#1`·`#2` 가 된다. **글자는 같으므로 결과는 같다.**
    *  ★메타데이터를 **먼저** 읽는다. 탭을 만들고 나서 실패하면 되돌릴 자리가 없다.
-   *  ★메타데이터가 없는 그림이면 설정을 안 얹는다 — 프롬프트는 어차피 지금 탭 것이 간다. */
+   *  ★메타데이터가 없는 그림(밖에서 온 것)은 되살릴 근거가 없어 지금 화면 값이 남는다. */
   const cloneToNewTab = async () => {
     try {
       const m = await loadMeta().catch(() => null);
-      // 이 그림이 나온 씬의 블록 (없으면 밖에서 온 그림이라 빈 씬으로 둔다)
-      const cur = useWs.getState().activeTab();
-      const from = cur?.kind === "set" && rec?.cell_id
-        ? allScenes(cur).find((x) => x.cell.id === rec.cell_id)?.cell
-        : undefined;
       const landed = await useWs.getState().cloneToNewTab(file, {
         excludeNo: useGen.getState().params.exclude_slot_number,
-        blocks: from?.blocks,
-        apply: hasMeta(m) ? () => applyMetaParams(m!) : undefined,
+        apply: hasMeta(m) ? () => applyMeta(m!, "all") : undefined,
       });
       if (!landed) return;
       // ★새 탭의 씬 줄은 탭이 바뀔 때 고른 것을 놓는다 — 그 뒤에 세워야 남는다

@@ -210,7 +210,7 @@ type S = {
    *  @param o.apply 새 탭으로 옮겨 **간 뒤에** 부른다 (그 그림의 설정을 편집기에 얹는 자리) */
   cloneToNewTab: (
     file: string,
-    o: { excludeNo: boolean; blocks?: Block[]; apply?: () => void },
+    o: { excludeNo: boolean; apply?: () => void },
   ) => Promise<{ file: string; cell: string } | null>;
   /** ★지우기 = **휴지통으로 이동**. 파일이 실제로 자리에서 없어지고, `Ctrl+Z` 로 되돌아온다.
    *  비우는 것은 앱을 켤 때 (24시간 지난 것) — `backend/trash.py` 머리 주석. */
@@ -758,19 +758,9 @@ export const useWs = create<S>((set, get) => ({
     const cell = tab?.kind === "set" ? tab.cards[0]?.cells[0] : undefined;
     if (!sp || !tab || tab.kind !== "set" || !cell) return null;
     usePrompt.getState().load(seed);
-    // ★★씬의 블록도 옮긴다 — **생성을 누른 그때의 상태**여야 한다 (사용자 지적 2026-08-18).
-    //   베이스 프롬프트만 물려주면 그 그림을 만든 씬 태그가 빠져, 새 탭에서 생성을 눌렀을 때
-    //   다른 그림이 나온다. 블록은 통째로 베껴 담는다 (얕게 넘기면 원본 씬과 같은 객체를
-    //   공유해 한쪽을 고치면 다른 쪽이 따라 바뀐다).
-    if (o.blocks?.length) {
-      get().setTab(tab.id, {
-        cards: tab.cards.map((k) =>
-          k.id === tab.cards[0]?.id
-            ? { ...k, cells: k.cells.map((c) => (c.id === cell.id ? { ...c, blocks: structuredClone(o.blocks!) } : c)) }
-            : k,
-        ),
-      });
-    }
+    // ★그 뒤에 메타데이터를 얹는다 — **탭을 옮긴 뒤**라 원래 탭이 안 덮인다.
+    //   ★새 탭의 씬은 **비워 둔다**: 메타데이터의 프롬프트가 이미 베이스+씬이 합쳐진
+    //     결과라, 씬에 또 넣으면 태그가 두 번 들어가 다른 그림이 된다 (`Canvas` 주석).
     o.apply?.();
     // ★`load` 는 저장을 예약하지 않는다 (`prompt.ts` 의 `onEdit` 는 편집에만 붙는다) —
     //   여기서 한 번 흘려보내야 새 탭의 프롬프트가 파일에 남는다

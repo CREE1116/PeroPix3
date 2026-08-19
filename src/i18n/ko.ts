@@ -343,7 +343,6 @@ export const ko: Dict = {
     cfgRescale: "Guidance Rescale",
     furryMode: "Furry 모드",
     starHint: "이 크기는 기본 요금",
-    sizeHint: "칸 {s}px · Ctrl+휠로 조절",
     resolution: "해상도",
     portrait: "세로",
     landscape: "가로",
@@ -626,6 +625,7 @@ export const ko: Dict = {
     close: "닫기",
     copy: "복사",
     copied: "복사했습니다",
+    seedCopy: "누르면 시드를 복사합니다",
   },
 
   ai: {
@@ -685,7 +685,6 @@ export const ko: Dict = {
     destBase: "베이스에",
     destChar: "캐릭터 · {name}에",
     destAll: "캐릭터 전원에",
-    sizeHint: "칸 {s}px · Ctrl+휠로 조절",
     cardLabel: "씬 세트 · {n}개",
     addCard: "씬 카드 추가",
     addCardFirst: "씬 카드 추가하기",
