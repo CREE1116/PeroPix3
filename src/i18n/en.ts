@@ -740,6 +740,7 @@ export const en = {
   },
 
   gallery: {
+    moved: "Moved {n}",
     more: "{n} more below",
     keep: "Keep",
     keepHint: "Copies this image into the gallery with its settings (the original stays)",

@@ -738,6 +738,7 @@ export const ja: Dict = {
   },
 
   gallery: {
+    moved: "{n}枚を移動しました",
     more: "下にスクロールで残り {n} 枚",
     keep: "ギャラリーに保管",
     keepHint: "設定ごとコピーします",

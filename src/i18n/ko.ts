@@ -749,6 +749,7 @@ export const ko: Dict = {
   },
 
   gallery: {
+    moved: "{n}장 옮겼습니다",
     more: "아래로 내리면 {n}장 더",
     keep: "갤러리에 보관",
     keepHint: "이 그림을 갤러리에 복사합니다. 생성 옵션도 함께 가고 원본은 그대로 남습니다",
