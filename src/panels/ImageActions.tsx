@@ -292,7 +292,6 @@ export function ImageActions({
             onClick={() => void navigator.clipboard?.writeText(String(seed)).then(() => toast(t("act.copied")))}
             onPointerEnter={() => setSeedHot(true)}
             onPointerLeave={() => setSeedHot(false)}
-            data-tip={t("act.seedCopy")}
             style={{
               border: "none",
               background: "none",

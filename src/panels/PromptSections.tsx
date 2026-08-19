@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useI18n } from "../i18n";
 import { BlockList } from "../blocks/BlockList";
 import { SectionCard } from "../blocks/SectionCard";
@@ -142,6 +142,14 @@ export function CharSection({ ch, index, onThumb }: { ch: Char; index: number } 
 
   const img = useThumbDrop(ch.id, (di) => onThumb(ch.id, di));
 
+  /** ★★캐릭터 카드를 끌기 시작하면 **접힌 것을 편다** (사용자 지시 2026-08-19).
+   *  접으면 배너만 남고, 놓는 자리(위=스택·아래=교체)가 그 안에서 반씩 나뉘어 손톱만 해진다 —
+   *  사실상 못 넣는 상태였다. 편 채로 두는 것이 맞다: 어디에 놓는지가 보여야 한다. */
+  useEffect(() => {
+    if (active && folded[ch.id]) toggleFold(ch.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
+
   const name = ch.name || t("cards.charN", { n: index + 1 });
   return (
     <>
@@ -247,7 +255,7 @@ function StackPeek({ ch }: { ch: Char }) {
   // 맨 앞(다음 차례)이 섹션에 가장 가까이 = DOM 마지막
   const cards = [...ch.stack].reverse();
   return (
-    <div onClick={() => setOpen((v) => !v)} data-tip={t("cards.stackHint")} style={{ cursor: "pointer" }}>
+    <div onClick={() => setOpen((v) => !v)} style={{ cursor: "pointer" }}>
       {cards.map((c, i) => {
         const front = i === cards.length - 1;
         return (

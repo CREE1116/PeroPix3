@@ -74,12 +74,9 @@ type Persisted = {
   tagSuggest: boolean;
   /** 파일 관리의 보기 — 썸네일 격자 / 이름·크기·수정일 목록 (v2 `fmViewThumbnail`·`fmViewList`) */
   fmView: "grid" | "list";
-  /** 파일 관리의 PIP — 칸에 커서를 올리면 큰 그림이 따라다닌다 (v2 `fmPipModeBtn`) */
-  fmPip: boolean;
   /** 변환이 끝나면 저장한 폴더를 연다 (v2 `convertOpenFolder`, 기본 켬) */
   convertOpenFolder: boolean;
   /** 씬 줄의 PIP — 칸에 커서를 올리면 그 장이 떠 있는 창에 크게 뜬다 (v2 `pipModeEnabled`) */
-  lanePip: boolean;
   /** ★인핸스 창을 **마지막에 쓴 강도로** 연다 (v2 `enhanceLast`, index.html:24045).
    *  열 때마다 3 으로 되돌아가면 같은 값을 매번 다시 맞춰야 한다. 배율은 여기 없다 —
    *  그것은 원본 크기가 정한다 (`lib/enhance.ts`). */
@@ -105,9 +102,7 @@ const DEFAULTS: Persisted = {
   font: "pretendard",
   tagSuggest: true,
   fmView: "grid",
-  fmPip: false,
   convertOpenFolder: true,
-  lanePip: false,
   // v2 `enhanceLast` 의 초기값 그대로 (magnitude 3 = strength 0.5 · noise 0)
   enhanceLast: { mag: 3, adv: false, strength: 0.5, noise: 0 },
 };
@@ -149,9 +144,7 @@ type S = Persisted & {
   setNotifyVolume: (v: number) => void;
   setTagSuggest: (v: boolean) => void;
   setFmView: (v: "grid" | "list") => void;
-  setFmPip: (v: boolean) => void;
   setConvertOpenFolder: (v: boolean) => void;
-  setLanePip: (v: boolean) => void;
   setEnhanceLast: (v: { mag: number; adv: boolean; strength: number; noise: number }) => void;
   setFont: (f: FontId) => void;
   /** 설정 창 — 열려 있으면 그 탭, 닫혀 있으면 null.
@@ -231,16 +224,8 @@ export const useUi = create<S>((set, get) => ({
     set({ fmView: v });
     get().commitLayout();
   },
-  setFmPip: (v) => {
-    set({ fmPip: v });
-    get().commitLayout();
-  },
   setConvertOpenFolder: (v) => {
     set({ convertOpenFolder: v });
-    get().commitLayout();
-  },
-  setLanePip: (v) => {
-    set({ lanePip: v });
     get().commitLayout();
   },
   setEnhanceLast: (v) => {
@@ -278,7 +263,7 @@ export const useUi = create<S>((set, get) => ({
     const { leftWidth, rightWidth, leftCollapsed, rightCollapsed, cols, laneSize, laneHeadW,
       laneHeight, font, aiWidth, aiCollapsed,
       notifyDone, notifySound, notifyVolume, perSlot, curated,
-      tagSuggest, fmView, fmPip, convertOpenFolder, lanePip, enhanceLast } = get();
+      tagSuggest, fmView, convertOpenFolder, enhanceLast } = get();
     try {
       localStorage.setItem(
         KEY,
@@ -301,9 +286,7 @@ export const useUi = create<S>((set, get) => ({
           curated,
           tagSuggest,
           fmView,
-          fmPip,
           convertOpenFolder,
-          lanePip,
           enhanceLast,
         }),
       );

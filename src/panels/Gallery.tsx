@@ -478,7 +478,6 @@ function Big({
       {editing === null ? (
         <span
           data-keep-name
-          data-tip={t("gallery.renameHint")}
           onDoubleClick={(e) => {
             e.stopPropagation();
             draft.current = name;

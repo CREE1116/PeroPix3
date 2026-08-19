@@ -157,7 +157,6 @@ export function BlockRow({
         <span
           {...gripProps}
           onClick={(e) => e.stopPropagation()}
-          data-tip={t("block.dragToReorder")}
           style={{
             color: "var(--ink-faint)",
             fontSize: 11,
@@ -248,7 +247,6 @@ export function BlockRow({
               e.stopPropagation();
               setRenaming(true);
             }}
-            data-tip={t("block.renameHint")}
             style={{ fontSize: "var(--text-xs)", whiteSpace: "nowrap", userSelect: "none" }}
           >
             {block.label}
@@ -360,7 +358,6 @@ export function BlockRow({
                 const { at, text } = caretAfterTag(block, i);
                 openText(at, text);
               }}
-              data-tip={t("block.editAsText")}
               style={{
                 display: "flex",
                 flexWrap: "wrap",

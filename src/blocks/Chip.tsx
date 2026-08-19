@@ -1,4 +1,3 @@
-import { useI18n } from "../i18n";
 import { COLOR_HEX, fmtW, weightLevel, type Tag } from "../lib/blocks";
 
 /** 태그 칩.
@@ -27,7 +26,6 @@ export function Chip({
   onWeight: (w: number | null) => void;
   onRemove: () => void;
 }) {
-  const t = useI18n((s) => s.t);
   const lv = weightLevel(tag.w);
 
   // 강조 수준 → 배경·테두리 세기. 음수는 붉은 계열로 갈린다.
@@ -72,7 +70,7 @@ export function Chip({
         e.preventDefault();
         onRemove();
       }}
-      data-tip={readOnly ? tag.t : t("block.chipHint")}
+      data-tip={readOnly ? tag.t : undefined}
       style={{
         display: "inline-flex",
         alignItems: "center",

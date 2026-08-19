@@ -91,9 +91,6 @@ export function SceneLane() {
   const [editingName, setEditingName] = useState<string | null>(null);
   /** 고른 것을 한 번에 강화 — 창에 **목록**을 넘긴다 (`EnhanceDialog` 가 배치를 안다) */
   const [enhance, setEnhance] = useState<string[] | null>(null);
-  const lanePip = useUi((u) => u.lanePip);
-  /** PIP 에 띄울 장 — 칸에 커서를 올리면 바뀐다 */
-  const [hover, setHover] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   /** PIP 가 그 안에서만 움직이도록 가두는 상자 (줄 영역) */
   const boxRef = useRef<HTMLDivElement>(null);
@@ -335,9 +332,6 @@ export function SceneLane() {
   /** 레코드는 만든 차례대로 쌓이므로 **마지막이 최신**이다 (줄은 그것을 뒤집어 왼쪽에 둔다) */
   const dragTake = dragCell ? takesOfCell(dragCell).at(-1) : undefined;
 
-  /** PIP 가 띄울 장 (커서 아래) */
-  const hoverRec = hover ? all.find((r) => r.file === hover) : null;
-
   const pick = (file: string, add: boolean) => {
     const next = new Set(picked);
     if (!add) {
@@ -462,24 +456,6 @@ export function SceneLane() {
           {/* ★거르는 중에는 개수를 안 적는다 — 「전체 보기 (3)」 은 3장이 전부라는 말로 읽힌다 */}
           {starOnly ? t("canvas.starAll") : `${t("canvas.starOnly")} (${starCount})`}
         </button>
-        {/* ★PIP — 칸은 작게 두고 **커서를 올린 장만** 크게 본다 (v2 `pipBarBtn`).
-            칸 크기를 키우면 한 줄에 몇 장 안 들어가므로, 훑기와 자세히 보기를 가른다 */}
-        <button
-          data-lane-pip={lanePip ? "on" : "off"}
-          onClick={() => useUi.getState().setLanePip(!lanePip)}
-          data-tip={t("scenes.pip")}
-          style={{
-            display: "grid",
-            placeItems: "center",
-            width: 22,
-            height: 22,
-            borderRadius: "var(--r-1)",
-            color: lanePip ? "var(--accent)" : "var(--ink-faint)",
-            background: lanePip ? "var(--accent-bg)" : "transparent",
-          }}
-        >
-          {Icon.pip}
-        </button>
       </div>
 
       <div
@@ -506,15 +482,6 @@ export function SceneLane() {
       <div
         ref={scrollRef}
         data-lane-scroll
-        /* PIP 가 켜져 있을 때만 커서 아래 장을 따라간다 (꺼져 있으면 아무 일도 안 한다) */
-        onMouseOver={
-          lanePip
-            ? (e) => {
-                const f = (e.target as HTMLElement).closest?.("[data-take]")?.getAttribute("data-take");
-                if (f) setHover(f);
-              }
-            : undefined
-        }
         style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: "auto", background: "var(--bg)" }}
       >
         {!tab.cards.length ? (
@@ -642,8 +609,6 @@ export function SceneLane() {
           </div>
         )}
       </div>
-      {/* PIP — 줄 위에 떠 있는 작은 창. 켜 두면 커서를 올린 장이 여기 크게 뜬다 */}
-      {lanePip && <LanePip boxRef={boxRef} url={hoverRec ? takeSrc(hoverRec, base, ws, false) : null} />}
       </div>
 
       {/* 고른 것이 있을 때만 뜨는 줄 (멀티 무대의 선택 막대와 같은 자리) */}
@@ -835,164 +800,6 @@ function DropLine({ on }: { on: boolean }) {
   );
 }
 
-/** 마지막으로 놓아 둔 자리·크기 — ★모듈에 둔다 (탭별 줌·위치와 같은 취급).
- *  켰다 껐다 할 때마다 우하단으로 되돌아가면 자리를 다시 잡아야 한다. 저장하지는 않는다. */
-const pipBox = { left: null as number | null, top: null as number | null, w: 320, h: 320 };
-
-/** PIP 미리보기 — ★칸에 커서를 올리면 그 장이 여기 **원본 크기로** 뜬다 (v2 `pipFloat`).
- *
- *  ★썸네일이 아니라 원본을 쓴다. 자세히 보려고 여는 창이라 썸네일(긴 변 512)이면 뜻이 없다.
- *  ★줄 영역 **안에서만** 움직인다 — 머리를 끌면 자리, 좌상단 손잡이를 끌면 크기다
- *    (오른쪽 아래가 아니라 좌상단인 이유: 기본 자리가 우하단이라 그쪽이 붙박이여야 커진다). */
-function LanePip({
-  boxRef,
-  url,
-}: {
-  boxRef: React.RefObject<HTMLDivElement | null>;
-  url: string | null;
-}) {
-  const t = useI18n((s) => s.t);
-  const [, redraw] = useState(0);
-  /** 자리를 잡기 전에는 그리지 않는다 — 잡기 전 한 프레임이 좌상단에 번쩍인다 */
-  const [placed, setPlaced] = useState(pipBox.left !== null);
-  const drag = useRef<{ mode: "move" | "size"; x: number; y: number; box: typeof pipBox } | null>(null);
-
-  // 처음 뜰 때 자리를 잡는다 — 우하단에서 12px 띄운 자리
-  useEffect(() => {
-    const r = boxRef.current?.getBoundingClientRect();
-    if (!r) return;
-    // 줄 영역보다 클 수는 없다 (패널을 좁혀 두었을 때)
-    pipBox.w = Math.min(pipBox.w, Math.max(PIP_MIN, r.width - 24));
-    pipBox.h = Math.min(pipBox.h, Math.max(PIP_MIN, r.height - 24));
-    if (pipBox.left === null || pipBox.top === null) {
-      pipBox.left = Math.max(0, r.width - pipBox.w - 12);
-      pipBox.top = Math.max(0, r.height - pipBox.h - 12);
-    }
-    // 창이 줄어들어 밖으로 나가 있으면 도로 들여놓는다
-    pipBox.left = Math.min(pipBox.left, Math.max(0, r.width - pipBox.w));
-    pipBox.top = Math.min(pipBox.top, Math.max(0, r.height - pipBox.h));
-    setPlaced(true);
-    redraw((n) => n + 1);
-  }, [boxRef]);
-
-  const onDown = (mode: "move" | "size") => (e: React.PointerEvent) => {
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    drag.current = { mode, x: e.clientX, y: e.clientY, box: { ...pipBox } };
-    e.preventDefault();
-  };
-  const onMove = (e: React.PointerEvent) => {
-    const d = drag.current;
-    const r = boxRef.current?.getBoundingClientRect();
-    if (!d || !r) return;
-    const dx = e.clientX - d.x;
-    const dy = e.clientY - d.y;
-    if (d.mode === "move") {
-      pipBox.left = clamp((d.box.left ?? 0) + dx, 0, Math.max(0, r.width - pipBox.w));
-      pipBox.top = clamp((d.box.top ?? 0) + dy, 0, Math.max(0, r.height - pipBox.h));
-    } else {
-      // 좌상단을 끌면 우하단이 제자리에 남는다 — 폭·높이가 늘어난 만큼 자리가 당겨진다
-      const right = (d.box.left ?? 0) + d.box.w;
-      const bottom = (d.box.top ?? 0) + d.box.h;
-      const left = clamp((d.box.left ?? 0) + dx, 0, right - PIP_MIN);
-      const top = clamp((d.box.top ?? 0) + dy, 0, bottom - PIP_MIN);
-      pipBox.left = left;
-      pipBox.top = top;
-      pipBox.w = right - left;
-      pipBox.h = bottom - top;
-    }
-    redraw((n) => n + 1);
-  };
-  const onUp = () => {
-    drag.current = null;
-  };
-
-  return (
-    <div
-      data-lane-pip-panel
-      style={{
-        position: "absolute",
-        left: pipBox.left ?? 0,
-        top: pipBox.top ?? 0,
-        width: pipBox.w,
-        height: pipBox.h,
-        visibility: placed ? "visible" : "hidden",
-        zIndex: 8,
-        display: "flex",
-        flexDirection: "column",
-        borderRadius: "var(--r-3)",
-        border: "1px solid var(--line)",
-        background: "var(--panel)",
-        boxShadow: "var(--shadow-3)",
-        overflow: "hidden",
-      }}
-    >
-      {/* 머리 — 끌어서 자리를 옮긴다 */}
-      <div
-        onPointerDown={onDown("move")}
-        onPointerMove={onMove}
-        onPointerUp={onUp}
-        onPointerCancel={onUp}
-        data-tip={t("scenes.pipMove")}
-        style={{
-          flexShrink: 0,
-          height: 22,
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--sp-2)",
-          padding: "0 var(--sp-3)",
-          borderBottom: "1px solid var(--line-soft)",
-          background: "var(--bg)",
-          color: "var(--ink-dim)",
-          fontSize: "var(--text-2xs)",
-          cursor: "grab",
-          userSelect: "none",
-        }}
-      >
-        {t("scenes.pipTitle")}
-      </div>
-
-      <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          display: "grid",
-          placeItems: "center",
-          padding: "var(--sp-2)",
-          background: "var(--bg)",
-        }}
-      >
-        {url ? (
-          <img
-            data-lane-pip-img
-            src={url}
-            alt=""
-            draggable={false}
-            style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
-          />
-        ) : (
-          <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-ghost)", textAlign: "center" }}>
-            {t("scenes.pipHint")}
-          </span>
-        )}
-      </div>
-
-      {/* 크기 손잡이 — 좌상단 */}
-      <div
-        data-lane-pip-resize
-        onPointerDown={onDown("size")}
-        onPointerMove={onMove}
-        onPointerUp={onUp}
-        onPointerCancel={onUp}
-        data-tip={t("scenes.pipResize")}
-        style={{ position: "absolute", left: 0, top: 0, width: 14, height: 14, cursor: "nwse-resize" }}
-      />
-    </div>
-  );
-}
-
-const PIP_MIN = 140;
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-
 /** 비었을 때 — ★그릇만 있는 상태. 여기서는 씬을 못 만든다 (씬은 카드에 속한다) */
 function Empty({ onAdd }: { onAdd: () => void }) {
   const t = useI18n((s) => s.t);
@@ -1087,8 +894,6 @@ type GroupProps = {
 
 /** 씬 세트 머리의 높이 — ★절반으로 줄였다 (사용자 지적 2026-08-16: 56 은 너무 두꺼웠다) */
 const HEAD_H = 28;
-/** 머리에서 그림이 보이는 폭 — 줄 머리(이름·단추)가 얹히는 자리와 같다 */
-const HEAD_W = 302;
 /** ★자르지 않고 **끝만 부드럽게 뺀다** — 잘라 두면 줄 가운데서 뚝 끊긴 것처럼 보인다 */
 const HEAD_FADE = "linear-gradient(90deg, #000 0 72%, transparent 100%)";
 
@@ -1143,8 +948,10 @@ function CardGroup(p: GroupProps) {
           style={{
             position: "sticky",
             left: 0,
-            // ★줄 머리 폭에 맞춘다 — 이름·단추가 여기 얹힌다
-            width: HEAD_W,
+            /* ★★폭은 **줄 머리와 같은 값**이어야 한다 (사용자 지적 2026-08-19).
+               상수 302 로 박혀 있었는데 줄 머리는 사용자가 끄는 값이라(`laneHeadW`, 기본 286),
+               그림이 끝나는 자리와 아래 줄들의 경계가 어긋나 **가운데서 잘린 것처럼** 보였다. */
+            width: p.headw,
             height: HEAD_H,
             overflow: "hidden",
             borderRadius: p.folded ? "11px 0 0 11px" : "11px 0 0 0",
@@ -1164,11 +971,15 @@ function CardGroup(p: GroupProps) {
               background: bannerEmptyFill(grad),
             }}
           />
+          {/* ★어둡게 눕히는 겹도 **같은 마스크**를 쓴다 — 안 그러면 그림은 사라졌는데 이 겹만
+              끝에서 뚝 끊겨 세로 이음매가 보인다 (사용자 지적 2026-08-19) */}
           <div
             style={{
               position: "absolute",
               inset: 0,
               pointerEvents: "none",
+              maskImage: HEAD_FADE,
+              WebkitMaskImage: HEAD_FADE,
               background: "linear-gradient(180deg, rgba(0,0,0,0) 20%, rgba(0,0,0,0.5) 100%)",
             }}
           />
@@ -1190,7 +1001,6 @@ function CardGroup(p: GroupProps) {
             <span
               data-card-grip={p.card.id}
               {...cardGrip}
-              data-tip={t("scenes.dragCard")}
               style={{ ...cardGrip.style, display: "grid", alignSelf: "center", color: "rgba(255,255,255,0.78)" }}
             >
               {Icon.grip}
@@ -1417,7 +1227,6 @@ function SceneRow(
           if ((e.target as HTMLElement).closest("button, input, textarea, [data-head-action]")) return;
           p.onExpand(expanded ? null : c.id);
         }}
-        data-tip={t(expanded ? "scenes.fold" : "scenes.unfold")}
         style={{
           cursor: "pointer",
           position: "sticky",
@@ -1438,7 +1247,6 @@ function SceneRow(
           <span
             {...p.grip}
             onClick={(e) => e.stopPropagation()}
-            data-tip={t("scenes.dragScene")}
             style={{ color: "var(--ink-faint)", display: "grid", ...p.grip.style }}
           >
             {Icon.grip}
@@ -1535,7 +1343,6 @@ function SceneRow(
                 e.preventDefault();
                 p.onStepField(c.id, e.shiftKey ? -1 : 1, "text");
               }}
-              data-tip={t("scenes.tabHint")}
               placeholder={t("slots.textPlaceholder")}
               rows={3}
               style={{
@@ -1566,7 +1373,6 @@ function SceneRow(
                   : null;
               p.onExpand(c.id);
             }}
-            data-tip={t("scenes.unfold")}
             style={{
               flex: 1,
               minHeight: 0,
@@ -1627,7 +1433,7 @@ function SceneRow(
               key={r.file}
               data-take={r.file}
               data-take-unsaved={un ? "" : undefined}
-              data-tip={un ? undefined : t("canvas.takeDragHint", { seed: r.seed })}
+              data-tip={un ? undefined : `seed ${r.seed}`}
               // ★★**생성물을 끌면 카드 그림(커버)이 된다** — 덱·손패·프롬프트 배너가 받는다
               //   (`dir: "image"` 드롭존들). 싱글 캔버스를 걷을 때 이 출발점이 함께 사라져
               //   드래그가 통째로 죽어 있었다 (사용자 지적 2026-08-18).
@@ -1745,7 +1551,6 @@ function NameCell({
   onRename: (v: string) => void;
   onTab: (dir: 1 | -1) => void;
 }) {
-  const t = useI18n((s) => s.t);
   if (editing)
     return (
       <input
@@ -1772,7 +1577,6 @@ function NameCell({
             onTab(e.shiftKey ? -1 : 1);
           }
         }}
-        data-tip={t("scenes.tabHint")}
         style={{
           flex: 1,
           minWidth: 0,
@@ -1790,7 +1594,6 @@ function NameCell({
         e.stopPropagation();
         onEditing(true);
       }}
-      data-tip={t("block.renameHint")}
       style={{
         flex: 1,
         minWidth: 0,

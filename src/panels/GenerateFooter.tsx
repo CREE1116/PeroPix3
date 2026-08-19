@@ -370,7 +370,6 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
           // ★★**랜덤이어도 고칠 수 있다** (사용자 지적 2026-08-16). 랜덤은 아무 숫자를
           //   넣는 게 아니라 **여기 적힌 값으로 뽑고 나서** 이 칸을 굴리는 것이라,
           //   잠그면 "이 시드로 한 장 더" 를 아예 못 한다 (`lib/seedRounds` 머리 주석).
-          data-tip={t("options.seedHint")}
           style={{
             flex: 1,
             minWidth: 0,

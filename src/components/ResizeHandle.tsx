@@ -1,4 +1,3 @@
-import { useI18n } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 
 /** 패널 폭 조절 손잡이.
@@ -19,7 +18,6 @@ export function ResizeHandle({
   /** left = 손잡이 왼쪽에 패널이 있음 / right = 오른쪽에 있음 */
   side?: "left" | "right";
 }) {
-  const t = useI18n((s) => s.t);
   const [dragging, setDragging] = useState(false);
   const start = useRef({ x: 0, w: 0 });
 
@@ -55,7 +53,6 @@ export function ResizeHandle({
         start.current = { x: e.clientX, w: width };
         setDragging(true);
       }}
-      data-tip={t("panel.resizeHint")}
       style={{
         flex: "0 0 5px",
         cursor: "ew-resize",

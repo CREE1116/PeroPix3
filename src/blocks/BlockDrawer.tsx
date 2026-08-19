@@ -228,7 +228,6 @@ function Row({ it, onRemove }: { it: LibItem; onRemove: () => void }) {
       onPointerDown={(e) =>
         start(e, { dir: "apply", kind: "blocklib", item: it }, undefined, () => setOpen((v) => !v))
       }
-      data-tip={t("lib.itemHint")}
       style={{
         marginBottom: 2,
         borderRadius: "var(--r-1)",

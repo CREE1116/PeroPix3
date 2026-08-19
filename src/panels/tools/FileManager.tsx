@@ -3,7 +3,7 @@ import { useI18n } from "../../i18n";
 import { useFiles, type FileNode } from "../../store/files";
 import { useGen } from "../../store/gen";
 import { useUi } from "../../store/ui";
-import { fileMgrImg, fileMgrThumb } from "../../lib/imgUrl";
+import { fileMgrThumb } from "../../lib/imgUrl";
 import { ask } from "../../store/ask";
 import { toast } from "../../store/toast";
 import { Icon } from "../../components/Icon";
@@ -27,14 +27,10 @@ export function FileManager({ onConvert }: { onConvert: () => void }) {
     pickRange, pickAll, clearPick } = useFiles();
   const view = useUi((s) => s.fmView);
   const setView = useUi((s) => s.setFmView);
-  const pipOn = useUi((s) => s.fmPip);
-  const setPip = useUi((s) => s.setFmPip);
   const onScroll = onNearBottom(() => void more());
   const [over, setOver] = useState<string | null>(null);
   /** 폴더 행의 ⋮ 메뉴 — 열려 있는 폴더 경로 하나 */
   const [menu, setMenu] = useState<string | null>(null);
-  /** 커서를 따라다니는 큰 그림 (v2 `fmPipPreview`) */
-  const [pip, setPip2] = useState<{ src: string; x: number; y: number } | null>(null);
   /** 훑어 고르기 — 시작 칸과 "정말 움직였나". null 이면 안 끌고 있다 */
   const drag = useRef<{ start: number; moved: boolean } | null>(null);
   /** ★훑고 나서 따라오는 click 은 한 번 삼킨다 — 안 삼키면 뗀 자리 한 장만 남는다
@@ -44,11 +40,6 @@ export function FileManager({ onConvert }: { onConvert: () => void }) {
   useEffect(() => {
     void loadTree().then(() => useFiles.getState().go(useFiles.getState().folder));
   }, [loadTree]);
-
-  // ★끄면 떠 있던 것도 함께 내린다 — 남아 있으면 화면 위에 그림이 박힌다
-  useEffect(() => {
-    if (!pipOn) setPip2(null);
-  }, [pipOn]);
 
   const move = async (dest: string) => {
     const files = [...picked];
@@ -140,7 +131,6 @@ export function FileManager({ onConvert }: { onConvert: () => void }) {
     //   (CLAUDE.md ★절) — `draggable` 을 갈라 주는 쪽이 같은 결과를 부작용 없이 낸다.
     draggable: picked.has(file),
     onDragStart: (e: React.DragEvent) => {
-      setPip2(null);
       drag.current = null;
       e.dataTransfer.effectAllowed = "move";
     },
@@ -148,17 +138,13 @@ export function FileManager({ onConvert }: { onConvert: () => void }) {
       if (e.button !== 0 || e.shiftKey || picked.has(file)) return;
       drag.current = { start: i, moved: false };
     },
-    onPointerEnter: (e: React.PointerEvent) => {
+    onPointerEnter: () => {
       const d = drag.current;
       if (d) {
         if (i !== d.start) d.moved = true;
         pickRange(d.start, i);
-      } else if (pipOn) setPip2({ src: fileMgrImg(base, file), x: e.clientX, y: e.clientY });
+      }
     },
-    onPointerMove: (e: React.PointerEvent) => {
-      if (pipOn && !drag.current) setPip2((p) => (p ? { ...p, x: e.clientX, y: e.clientY } : p));
-    },
-    onPointerLeave: () => setPip2(null),
     onClick: (e: React.MouseEvent) => {
       if (swallow.current) return void (swallow.current = false);
       pick(i, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey });
@@ -364,14 +350,6 @@ export function FileManager({ onConvert }: { onConvert: () => void }) {
             >
               {Icon.list}
             </button>
-            <button
-              data-fm-pip
-              onClick={() => setPip(!pipOn)}
-              data-tip={t("files.pip")}
-              style={{ ...iconBtn, ...(pipOn ? onSt : {}) }}
-            >
-              {Icon.pip}
-            </button>
           </span>
           <span style={{ fontSize: "var(--text-xs)", color: "var(--ink-soft)", fontWeight: "var(--w-semi)" }}>
             {folder || t("files.root")}
@@ -539,34 +517,11 @@ export function FileManager({ onConvert }: { onConvert: () => void }) {
         )}
       </div>
 
-      {/* PIP — 커서를 따라다니되 **화면 밖으로는 안 나간다** (v2 `fmUpdatePipPosition`) */}
-      {pip && (
-        <img
-          data-fm-pip-view
-          src={pip.src}
-          alt=""
-          style={{
-            position: "fixed",
-            left: Math.max(8, Math.min(pip.x + 16, window.innerWidth - PIP - 8)),
-            top: Math.max(8, Math.min(pip.y + 16, window.innerHeight - PIP - 8)),
-            width: PIP,
-            height: PIP,
-            objectFit: "contain",
-            background: "var(--bg-deep)",
-            border: "1px solid var(--line-strong)",
-            borderRadius: "var(--r-3)",
-            boxShadow: "var(--shadow-3)",
-            pointerEvents: "none",
-            zIndex: 80,
-          }}
-        />
-      )}
     </div>
   );
 }
 
 /** PIP 한 변 — 커서를 가리지 않으면서 무엇인지 알아볼 만한 크기 */
-const PIP = 320;
 
 const More = ({ t, n, span }: { t: (k: string, p?: Record<string, number>) => string; n: number; span?: boolean }) => (
   <span

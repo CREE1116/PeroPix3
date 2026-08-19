@@ -1,5 +1,4 @@
 import { useState, type ReactNode, type PointerEvent } from "react";
-import { useI18n } from "../i18n";
 import { dragSourceStyle } from "../cards/dragStore";
 import { FittedImg } from "../cards/FittedImg";
 import { BANNER_BG, BANNER_CUT, BANNER_IMG_W, BANNER_STEP, bannerEmptyFill } from "../cards/banner";
@@ -53,7 +52,6 @@ export function SectionCard({
   innerRef?: (el: HTMLDivElement | null) => void;
   children: ReactNode;
 }) {
-  const t = useI18n((s) => s.t);
   const [hover, setHover] = useState(false);
   const lifted = outline && outline !== "none";
   return (
@@ -86,7 +84,6 @@ export function SectionCard({
         onClick={onBannerPointerDown ? undefined : onFold}
         onMouseEnter={() => hoverLift && setHover(true)}
         onMouseLeave={() => setHover(false)}
-        data-tip={onFold ? t(folded ? "prompt.unfold" : "prompt.fold") : undefined}
         style={{
           position: "relative",
           height: 56,

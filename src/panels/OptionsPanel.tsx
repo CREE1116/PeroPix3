@@ -24,7 +24,10 @@ export function OptionsPanel() {
   const t = useI18n((s) => s.t);
 
   return (
-    <div style={{ padding: "var(--sp-4)", display: "flex", flexDirection: "column", gap: "var(--sp-3)" }}>
+    /* ★★좌우 여백을 주지 않는다 (사용자 지적 2026-08-19) — 이 패널은 프롬프트와 **같은
+       스크롤 칸 안**에 산다 (`PromptPanel`). 여기서 또 주면 「NAI 설정」부터 한 칸씩
+       들여쓰기가 되어, 위의 「베이스 프롬프트」와 시작점이 어긋난다. */
+    <div style={{ paddingBottom: "var(--sp-4)", display: "flex", flexDirection: "column", gap: "var(--sp-3)" }}>
       {/* ★★묶음은 **페로픽스 v2 의 절 그대로**다 (`index.html` 통째로 대조 2026-08-16):
             NAI Settings · Generation · Vibe / Character Ref · Base Image · Save Options.
           ★접는 층은 **카테고리 하나뿐**이다 — 항목마다 접으면 훑을 수가 없다. */}

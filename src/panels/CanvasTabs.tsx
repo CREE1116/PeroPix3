@@ -81,7 +81,6 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
               });
             }}
             data-tab={t.id}
-            data-tip={tr("tabs.dragToSave")}
             style={{
               display: "flex",
               alignItems: "center",
