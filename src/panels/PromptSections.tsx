@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useI18n } from "../i18n";
+import { Icon } from "../components/Icon";
 import { BlockList } from "../blocks/BlockList";
 import { SectionCard } from "../blocks/SectionCard";
 import {
@@ -76,6 +77,8 @@ export function StyleSection({ onThumb }: SectionProps) {
       }}
       name={style.name}
       sub={t("prompt.styleCard")}
+      /* ★스타일 카드에는 이름 바꾸기가 아예 없었다 (사용자 지적 2026-08-19) */
+      onRename={(v) => setStyle({ ...style, name: v })}
       gradient={style.color}
       thumb={useThumbView(style.thumb)}
       zone="thumb-base"
@@ -175,25 +178,20 @@ export function CharSection({ ch, index, onThumb }: { ch: Char; index: number } 
             thumb: ch.thumb,
           }, undefined, () => toggleFold(ch.id))
         }
+        /* ★이름은 **카드 안에서** 고친다 (사용자 지시 2026-08-19) — 시스템 `prompt()` 창을
+           띄우던 자리다. 연필 단추는 `SectionCard` 가 스스로 단다. */
+        onRename={(v) => renameChar(ch.id, v)}
         bannerActions={
           <>
+            {/* ★아이콘은 언제나 SVG (CLAUDE.md) — 여기는 `● ○ × ✎` 글자를 쓰고 있었다 */}
             <BannerBtn
               title={ch.on ? t("block.toggleOff") : t("block.toggleOn")}
               onClick={() => toggleChar(ch.id)}
             >
-              {ch.on ? "●" : "○"}
+              {ch.on ? Icon.dotOn : Icon.dotOff}
             </BannerBtn>
             <BannerBtn title={t("cards.removeChar")} onClick={() => removeChar(ch.id)}>
-              ×
-            </BannerBtn>
-            <BannerBtn
-              title={t("cards.renameChar")}
-              onClick={() => {
-                const v = prompt(t("cards.renameChar"), ch.name);
-                if (v != null) renameChar(ch.id, v);
-              }}
-            >
-              ✎
+              {Icon.close12}
             </BannerBtn>
           </>
         }

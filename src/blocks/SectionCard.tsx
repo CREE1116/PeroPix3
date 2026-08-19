@@ -1,4 +1,5 @@
 import { useState, type ReactNode, type PointerEvent } from "react";
+import { Icon } from "../components/Icon";
 import { dragSourceStyle } from "../cards/dragStore";
 import { FittedImg } from "../cards/FittedImg";
 import { BANNER_BG, BANNER_CUT, BANNER_IMG_W, BANNER_STEP, bannerEmptyFill } from "../cards/banner";
@@ -16,6 +17,7 @@ export function SectionCard({
   dim,
   outline,
   overlay,
+  onRename,
   bannerActions,
   hoverLift,
   thumb,
@@ -37,6 +39,9 @@ export function SectionCard({
   outline?: "none" | "dashed" | "solid";
   /** **카드 전체**를 덮는 겹침 층 (드롭 존). 배너가 아니라 섹션 높이 전부를 받는다 */
   overlay?: ReactNode;
+  /** ★이름을 **카드 안에서** 고친다 (사용자 지시 2026-08-19) — 시스템 `prompt()` 창을 쓰지
+   *  않는다. 주면 이름을 두 번 눌러 그 자리에서 고칠 수 있고, 배너에 연필 단추가 선다. */
+  onRename?: (v: string) => void;
   /** 배너 우측 버튼 (켜기·삭제 등) */
   bannerActions?: ReactNode;
   /** 배너를 끌 수 있음을 알리는 살짝 떠오름 */
@@ -53,6 +58,8 @@ export function SectionCard({
   children: ReactNode;
 }) {
   const [hover, setHover] = useState(false);
+  /** 이름을 그 자리에서 고치는 중 — `null` 이면 아니다 */
+  const [editing, setEditing] = useState<string | null>(null);
   const lifted = outline && outline !== "none";
   return (
     <div
@@ -146,7 +153,41 @@ export function SectionCard({
             textShadow: "0 1px 5px rgba(0,0,0,0.55)",
           }}
         >
-          <b style={{ fontSize: "0.86rem", fontWeight: "var(--w-bold)" }}>{name}</b>
+          {editing !== null ? (
+            <input
+              autoFocus
+              data-card-rename
+              value={editing}
+              onChange={(e) => setEditing(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onBlur={() => {
+                if (editing.trim()) onRename?.(editing.trim());
+                setEditing(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                if (e.key === "Escape") setEditing(null);
+              }}
+              style={{
+                width: 130,
+                background: "rgba(0,0,0,0.45)",
+                border: "1px solid rgba(255,255,255,0.5)",
+                borderRadius: "var(--r-1)",
+                padding: "0 4px",
+                color: "#fff",
+                fontSize: "0.86rem",
+                fontWeight: "var(--w-bold)",
+              }}
+            />
+          ) : (
+            <b
+              onDoubleClick={onRename && ((e) => { e.stopPropagation(); setEditing(name); })}
+              style={{ fontSize: "0.86rem", fontWeight: "var(--w-bold)", cursor: onRename ? "text" : undefined }}
+            >
+              {name}
+            </b>
+          )}
           <span
             style={{
               fontSize: "0.6rem",
@@ -158,7 +199,7 @@ export function SectionCard({
             {sub}
           </span>
         </div>
-        {bannerActions && (
+        {(bannerActions || onRename) && (
           <div
             style={{
               position: "absolute",
@@ -166,10 +207,34 @@ export function SectionCard({
               bottom: 6,
               zIndex: 2,
               display: "flex",
+              alignItems: "center",
               gap: 4,
             }}
           >
             {bannerActions}
+            {/* ★이름 고치기는 **카드가 스스로** 단다 — 섹션마다 따로 만들면 어디는 있고
+                어디는 없는 상태가 된다 (스타일 카드에는 아예 없었다) */}
+            {onRename && (
+              <button
+                data-card-rename-btn
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditing(name);
+                }}
+                style={{
+                  display: "grid",
+                  placeItems: "center",
+                  width: 20,
+                  height: 20,
+                  borderRadius: 5,
+                  background: "rgba(0,0,0,0.4)",
+                  color: "#fff",
+                }}
+              >
+                {Icon.pencil}
+              </button>
+            )}
           </div>
         )}
         {/* ★★접기에는 **아무 표시도 두지 않는다** (사용자 지시 2026-08-16).

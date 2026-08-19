@@ -82,6 +82,7 @@ export const en = {
   },
 
   cards: {
+    rename: "Rename",
     dropToSave: "Drop here to save",
     hand: {
       styles: "Style cards",
@@ -89,11 +90,6 @@ export const en = {
       posesets: "Scene set cards",
     },
     short: { styles: "Style", characters: "Character", posesets: "Scene set" },
-    hint: {
-      styles: "Drop on the style section to swap the look",
-      characters: "Drop on a character to swap or stack",
-      posesets: "Drop near the set row to add a scene set",
-    },
     escClose: "Esc to close",
     empty: "No cards saved yet.",
     emptyHint: "Drag a section banner onto this card in the hand to save it.",
@@ -328,6 +324,15 @@ export const en = {
     portrait: "Portrait",
     landscape: "Landscape",
     square: "Square",
+    /** 해상도 목록 오른쪽에 적는 묶음 이름 (`SizePicker`) */
+    sizeGroup: {
+      landscape: "Standard",
+      square: "Standard",
+      portrait: "Standard",
+      small: "Small",
+      large: "Large",
+      wallpaper: "Wallpaper",
+    },
     steps: "Steps",
     stepsHint: "Above 28 costs extra Anlas",
     cfg: "Guidance (CFG)",

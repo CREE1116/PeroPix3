@@ -82,6 +82,7 @@ export const ja: Dict = {
   },
 
   cards: {
+    rename: "名前を変更",
     dropToSave: "ここに置くと保存されます",
     hand: {
       styles: "スタイルカード",
@@ -89,11 +90,6 @@ export const ja: Dict = {
       posesets: "シーンセットカード",
     },
     short: { styles: "スタイル", characters: "キャラクター", posesets: "シーンセット" },
-    hint: {
-      styles: "スタイルセクションに置くと絵柄が入れ替わります",
-      characters: "キャラクターの上に置くと交換・スタック",
-      posesets: "セット列の近くに置くとシーンセットが追加されます",
-    },
     escClose: "Esc で閉じる",
     empty: "保存されたカードはまだありません。",
     emptyHint: "セクションのバナーを右下の手札のこのカードへドラッグすると保存されます。",
@@ -327,6 +323,15 @@ export const ja: Dict = {
     portrait: "縦",
     landscape: "横",
     square: "正方形",
+    /** 해상도 목록 오른쪽에 적는 묶음 이름 (`SizePicker`) */
+    sizeGroup: {
+      landscape: "基本",
+      square: "基本",
+      portrait: "基本",
+      small: "小",
+      large: "大",
+      wallpaper: "壁紙",
+    },
     steps: "Steps",
     stepsHint: "28 を超えると追加課金",
     cfg: "Guidance (CFG)",

@@ -64,50 +64,10 @@ export function OptionsPanel() {
       <Category id="opt-gen" label={t("options.catGeneration")}>
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}>
               <Group label={t("options.resolution")} flashKey="size">
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "var(--sp-2)" }}>
-                  {SIZE_PRESETS.flatMap((g) => g.items).map(([w, h, star]) => {
-                    const on = p.width === w && p.height === h;
-                    const name = w > h ? "landscape" : w === h ? "square" : "portrait";
-                    return (
-                      <button
-                        key={`${w}x${h}`}
-                        onClick={() => {
-                          set("width", w);
-                          set("height", h);
-                        }}
-                        // ★강조는 **테두리**로 나타낸다 (페로픽스파이 `button.active`).
-                        //   고른 것만 옅은 강조 배경이 깔리고, **글자는 강조색을 쓰지 않는다** —
-                        //   테두리·배경·글자 3중으로 칠하면 패널에서 가장 큰 색 덩어리가 된다.
-                        onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
-                        onMouseLeave={(e) =>
-                          (e.currentTarget.style.borderColor = on ? "var(--accent)" : "var(--line)")
-                        }
-                        style={{
-                          flex: 1,
-                          padding: "var(--sp-2)",
-                          borderRadius: "var(--r-2)",
-                          border: `1px solid ${on ? "var(--accent)" : "var(--line)"}`,
-                          // ★목록 행은 가라앉은 톤 (페로픽스파이 `.res-item`) — 패널 위에 눌러 앉는다
-                          background: on ? "var(--accent-bg)" : "var(--bg)",
-                          color: "var(--ink)",
-                          fontSize: "var(--text-2xs)",
-                          lineHeight: 1.3,
-                        }}
-                      >
-                        {t(`options.${name}`)}
-                        {star && (
-                          <span data-tip={t("options.starHint")} style={{ display: "inline-grid", verticalAlign: "-2px", marginLeft: 2 }}>
-                            {Icon.spark12}
-                          </span>
-                        )}
-                        <br />
-                        <span style={{ fontFamily: "var(--font-mono)" }}>
-                          {w}×{h}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                {/* ★★모양이 곧 목록이다 (사용자 지시 2026-08-19, 페로픽스파이 `.res-item` 이식).
+                    전부 늘어놓으면 열넷이라 훑을 수가 없어서 **가로·세로·정방 탭**으로 가르고,
+                    줄마다 그 비율의 사각형을 함께 그린다 — 숫자보다 모양이 먼저 읽힌다. */}
+                <SizePicker w={p.width} h={p.height} onPick={(w, h) => { set("width", w); set("height", h); }} />
                 {/* ★직접 입력 — NAI 는 64 배수만 받는다. 입력을 떠날 때 올려 맞추고 그 값을 보여 준다
                     (서버도 같은 정렬을 하지만, 무엇이 갈지 지금 보여야 한다) */}
                 <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
@@ -176,6 +136,99 @@ export function OptionsPanel() {
       <Category id="opt-img" label={t("options.catImage")} defaultFolded>
         <ImageInputPanel />
       </Category>
+    </div>
+  );
+}
+
+/** 해상도 고르기 — **가로·세로·정방 탭** + 그 비율을 그린 목록 (사용자 지시 2026-08-19).
+ *
+ *  ★페로픽스파이의 `.res-item` 을 옮긴 것이다: [비율 사각형][W × H][묶음 이름].
+ *  ★탭은 **지금 값이 있는 쪽**이 열린 채로 시작한다 — 고른 것이 안 보이는 채로 열리면
+ *    무엇이 골라져 있는지 알 수 없다. 다른 탭에 있으면 그 탭에 점을 찍어 알린다.
+ *  ★묶음(Small·Large·Wallpaper)은 지우지 않고 **줄 오른쪽에 이름으로** 남긴다 — 가르는
+ *    축은 방향 하나뿐이어야 훑을 수 있다. */
+function SizePicker({ w, h, onPick }: { w: number; h: number; onPick: (w: number, h: number) => void }) {
+  const t = useI18n((s) => s.t);
+  const dirOf = (a: number, b: number) => (a > b ? "landscape" : a === b ? "square" : "portrait");
+  const cur = dirOf(w, h);
+  const [tab, setTab] = useState(cur);
+  const shown = SIZE_PRESETS.flatMap((g) => g.items.map((it) => ({ group: g.group, item: it })))
+    .filter((x) => dirOf(x.item[0], x.item[1]) === tab);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
+      <div style={{ display: "flex", gap: "var(--sp-2)" }}>
+        {(["landscape", "portrait", "square"] as const).map((d) => {
+          const on = tab === d;
+          return (
+            <button
+              key={d}
+              data-size-tab={d}
+              onClick={() => setTab(d)}
+              style={{
+                flex: 1,
+                padding: "3px var(--sp-2)",
+                borderRadius: "var(--r-2)",
+                border: `1px solid ${on ? "var(--accent)" : "var(--line)"}`,
+                background: on ? "var(--accent-bg)" : "var(--panel)",
+                color: on ? "var(--ink)" : "var(--ink-dim)",
+                fontSize: "var(--text-2xs)",
+                fontWeight: on ? "var(--w-semi)" : 400,
+              }}
+            >
+              {t(`options.${d}`)}
+              {cur === d && !on && <span style={{ marginLeft: 4, color: "var(--accent)" }}>·</span>}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        {shown.map(({ group, item: [pw, ph, star] }) => {
+          const on = w === pw && h === ph;
+          // 긴 변을 26px 로 맞춘 사각형 — 비율이 한눈에 들어온다
+          const k = 26 / Math.max(pw, ph);
+          return (
+            <button
+              key={`${pw}x${ph}`}
+              data-size-preset={`${pw}x${ph}`}
+              onClick={() => onPick(pw, ph)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--sp-3)",
+                padding: "3px var(--sp-2)",
+                borderRadius: "var(--r-2)",
+                border: `1px solid ${on ? "var(--accent)" : "var(--line)"}`,
+                background: on ? "var(--accent-bg)" : "var(--bg)",
+                color: "var(--ink)",
+                fontSize: "var(--text-2xs)",
+                textAlign: "left",
+              }}
+            >
+              <span style={{ width: 28, height: 28, display: "grid", placeItems: "center", flexShrink: 0 }}>
+                <span
+                  style={{
+                    width: Math.round(pw * k),
+                    height: Math.round(ph * k),
+                    borderRadius: 2,
+                    background: on ? "var(--accent)" : "var(--ink-ghost)",
+                  }}
+                />
+              </span>
+              <span style={{ flex: 1, fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums" }}>
+                {pw}×{ph}
+              </span>
+              {star && (
+                <span data-tip={t("options.starHint")} style={{ display: "inline-grid", color: "var(--ink-faint)" }}>
+                  {Icon.spark12}
+                </span>
+              )}
+              <span style={{ width: 62, textAlign: "right", color: "var(--ink-faint)" }}>
+                {t(`options.sizeGroup.${group}`)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

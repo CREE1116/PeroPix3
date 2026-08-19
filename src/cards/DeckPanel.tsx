@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { useCards, type AnyCard, type CardKind } from "../store/cards";
 import { useDrag, useDragSource, useDropZone, dragSourceStyle, type DragImage, type SectionThumb } from "./dragStore";
@@ -41,11 +41,57 @@ export function DeckPanel({
   // ★스크롤로 밀려 안 보이는 카드는 그림을 못 받는다 — 각 카드 존을 이 칸으로 자른다
   //   (사용자 지시 2026-08-19: "해당 카드가 받을 수 있게 노출된 상태일 때만")
   const view = useRef<HTMLDivElement | null>(null);
+  const t = useI18n((s) => s.t);
+  /** ★셀렉터에서 **새 객체를 만들지 않는다** — 매 호출 새 참조를 돌려주면 React 가 무한
+   *  렌더로 본다 (페로픽스파이 `ParamsPanel` 주석의 그 함정). 원시값만 따로 고른다. */
+  const nStyles = useCards((s) => s.styles.length);
+  const nChars = useCards((s) => s.characters.length);
+  const nSets = useCards((s) => s.posesets.length);
+  const counts: Record<CardKind, number> = { styles: nStyles, characters: nChars, posesets: nSets };
+  /** ★★종류마다 **탭**이다 (사용자 지시 2026-08-19) — 셋을 한 줄에 쌓아 두면 카드가 늘수록
+   *  아래 것이 안 보이고, 접었다 폈다로 관리하게 된다. 한 번에 한 종류만 본다. */
+  const [tab, setTab] = useState<CardKind>("styles");
+  /** 카드를 끌기 시작하면 **그 종류의 탭으로 옮긴다** — 안 보이는 탭에는 놓을 수가 없다
+   *  (캐릭터 섹션이 접혀 있으면 못 넣던 것과 같은 문제, `PromptSections`) */
+  const dragKind = useDrag((s) => (s.drag?.dir === "save" ? (s.drag.kind as CardKind) : null));
+  useEffect(() => {
+    if (dragKind && KINDS.includes(dragKind)) setTab(dragKind);
+  }, [dragKind]);
   return (
-    <div ref={view} style={{ display: "flex", flexDirection: "column", height: "100%", overflowY: "auto" }}>
-      {KINDS.map((k) => (
-        <Section key={k} kind={k} onAsk={onAsk} onImageDrop={onImageDrop} view={view} />
-      ))}
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
+      <div style={{ display: "flex", gap: 2, padding: "var(--sp-2) var(--sp-3) 0", flexShrink: 0 }}>
+        {KINDS.map((k) => {
+          const on = tab === k;
+          return (
+            <button
+              key={k}
+              data-deck-tab={k}
+              onClick={() => setTab(k)}
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 4,
+                padding: "4px var(--sp-2)",
+                borderRadius: "var(--r-2) var(--r-2) 0 0",
+                border: "1px solid var(--line)",
+                borderBottomColor: on ? "transparent" : "var(--line)",
+                background: on ? "var(--surface)" : "transparent",
+                color: on ? "var(--ink)" : "var(--ink-dim)",
+                fontSize: "var(--text-2xs)",
+                fontWeight: on ? "var(--w-semi)" : 400,
+              }}
+            >
+              {t(`cards.short.${k}`)}
+              <span style={{ color: "var(--ink-ghost)", fontVariantNumeric: "tabular-nums" }}>{counts[k]}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div ref={view} style={{ flex: 1, minHeight: 0, overflowY: "auto", background: "var(--surface)" }}>
+        <Section kind={tab} onAsk={onAsk} onImageDrop={onImageDrop} view={view} />
+      </div>
     </div>
   );
 }
@@ -70,8 +116,6 @@ function Section({
   const t = useI18n((s) => s.t);
   const cards = useCards((s) => s[kind]);
   const remove = useCards((s) => s.remove);
-  const [folded, setFolded] = useState(false);
-
   // ★저장 — 손패가 하던 것을 그대로 옮겼다 (그쪽 주석): 같은 id 가 이미 있으면 **묻는다**.
   //   조용히 덮으면 그 카드를 쓰는 다른 워크스페이스까지 바뀌고, 언제나 새로 추가만 하면
   //   같은 이름이 끝없이 쌓인다.
@@ -101,40 +145,18 @@ function Section({
       data-deck-section={kind}
       data-over={over ? "1" : "0"}
       style={{
-        borderBottom: "1px solid var(--line)",
+        minHeight: "100%",
         background: over ? "var(--accent-bg)" : undefined,
         outline: active ? `1px dashed ${over ? "var(--accent)" : "var(--line-strong)"}` : undefined,
         outlineOffset: -3,
       }}
     >
-      {/* ★머리를 누르면 접힌다 — 접기 단추를 따로 두지 않는다 (사용자 지시 2026-08-16) */}
-      <div
-        onClick={() => setFolded((v) => !v)}
-        data-tip={t(`cards.hint.${kind}`)}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--sp-2)",
-          padding: "5px var(--sp-4)",
-          cursor: "pointer",
-          fontSize: "var(--text-2xs)",
-          fontWeight: "var(--w-semi)",
-          color: "var(--ink-dim)",
-        }}
-      >
-        <span>{t(`cards.short.${kind}`)}</span>
-        <span style={{ color: "var(--ink-ghost)", fontVariantNumeric: "tabular-nums" }}>
-          {cards.length}
-        </span>
-      </div>
-
-      {!folded && (
         <div
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fill, minmax(84px, 1fr))",
             gap: "var(--sp-3)",
-            padding: "0 var(--sp-4) var(--sp-4)",
+            padding: "var(--sp-3) var(--sp-4) var(--sp-4)",
           }}
         >
           {cards.length === 0 ? (
@@ -163,7 +185,6 @@ function Section({
             ))
           )}
         </div>
-      )}
     </div>
   );
 }
@@ -186,6 +207,8 @@ function PanelCard({
   const startDrag = useDragSource();
   const me = useDrag((s) => s.drag?.card?.id === card.id);
   const [hover, setHover] = useState(false);
+  /** 이름을 그 자리에서 고치는 중 (사용자 지시 2026-08-19: 카드마다 수정 단추) */
+  const [renaming, setRenaming] = useState<string | null>(null);
   const fv = normThumb(card.thumb);
   /** ★생성물을 이 카드에 떨구면 **이 카드의 그림**이 된다 (사용자 결정 2026-08-19).
    *  ★`clip` 으로 **덱 칸에 보이는 만큼만** 받는다 — 스크롤로 밀려 안 보이는 카드가
@@ -207,7 +230,7 @@ function PanelCard({
       // ★지우기 단추는 **끌기에서 비켜 간다** — pointerdown 의 기본 동작 막기가 호환 click 을
       //   삼켜서, 안 비키면 단추가 통째로 죽는다 (CLAUDE.md 「잊기 쉬운 것」)
       onPointerDown={(e) => {
-        if ((e.target as HTMLElement).closest("[data-card-del]")) return;
+        if ((e.target as HTMLElement).closest("[data-card-del],[data-card-rename]")) return;
         startDrag(e, { dir: "apply", kind, card });
       }}
       onMouseEnter={() => setHover(true)}
@@ -248,11 +271,65 @@ function PanelCard({
           whiteSpace: "nowrap",
         }}
       >
-        {card.name}
+        {renaming === null ? (
+          card.name
+        ) : (
+          <input
+            autoFocus
+            data-deck-rename={card.id}
+            value={renaming}
+            onChange={(e) => setRenaming(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onBlur={() => {
+              const v = renaming.trim();
+              if (v && v !== card.name) void useCards.getState().save(kind, { ...card, name: v });
+              setRenaming(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              if (e.key === "Escape") setRenaming(null);
+            }}
+            style={{
+              width: "100%",
+              background: "rgba(0,0,0,0.5)",
+              border: "1px solid rgba(255,255,255,0.5)",
+              borderRadius: 3,
+              color: "#fff",
+              fontSize: "0.62rem",
+              padding: "0 2px",
+            }}
+          />
+        )}
       </div>
       {/* ★★끌기 손잡이 아이콘을 걷고 그 자리에 **지우기**를 뒀다 (사용자 지시 2026-08-19).
           카드는 통째로 잡아 끄는 것이라 손잡이가 없어도 끌리는 줄 알고, 지우는 길은
           **우클릭뿐이라 보이지 않았다.** 보이는 단추가 하나 필요한 자리였다. */}
+      {hover && (
+        <button
+          data-card-rename={card.id}
+          data-tip={t("cards.rename")}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            setRenaming(card.name);
+          }}
+          style={{
+            position: "absolute",
+            top: 3,
+            right: 25,
+            display: "grid",
+            placeItems: "center",
+            width: 18,
+            height: 18,
+            borderRadius: "var(--r-1)",
+            background: "rgba(10,14,20,0.55)",
+            color: "#fff",
+          }}
+        >
+          {Icon.pencil}
+        </button>
+      )}
       {hover && (
         <button
           data-card-del={card.id}

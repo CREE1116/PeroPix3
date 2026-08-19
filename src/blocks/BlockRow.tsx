@@ -354,7 +354,13 @@ export function BlockRow({
                 const box = e.currentTarget;
                 const hit = (e.target as HTMLElement).closest("[data-chip]");
                 const i = hit ? [...box.querySelectorAll("[data-chip]")].indexOf(hit) : -1;
-                if (i < 0) return openText();
+                // ★빈 자리를 눌러도 **이어 적는 자리**로 연다 (사용자 지시 2026-08-19) —
+                //   마지막 칩을 누른 것과 같은 뜻이라, 쉼표까지 같이 만들어 준다
+                if (i < 0) {
+                  if (!block.tags.length) return openText();
+                  const last = caretAfterTag(block, block.tags.length - 1);
+                  return openText(last.at, last.text);
+                }
                 const { at, text } = caretAfterTag(block, i);
                 openText(at, text);
               }}

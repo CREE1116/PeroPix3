@@ -82,6 +82,7 @@ export const ko: Dict = {
   },
 
   cards: {
+    rename: "이름 바꾸기",
     dropToSave: "여기 놓으면 저장됩니다",
     hand: {
       styles: "스타일 카드",
@@ -89,11 +90,6 @@ export const ko: Dict = {
       posesets: "씬 세트 카드",
     },
     short: { styles: "스타일", characters: "캐릭터", posesets: "씬 세트" },
-    hint: {
-      styles: "스타일 섹션에 놓으면 그림체가 교체됩니다",
-      characters: "캐릭터 위에 놓으면 교체 · 스택",
-      posesets: "세트 줄 근처에 놓으면 씬 세트가 추가됩니다",
-    },
     escClose: "Esc 닫기",
     empty: "아직 저장한 카드가 없습니다.",
     emptyHint: "섹션 배너를 우하단 핸드의 이 카드로 끌면 저장됩니다.",
@@ -331,6 +327,15 @@ export const ko: Dict = {
     portrait: "세로",
     landscape: "가로",
     square: "정방",
+    /** 해상도 목록 오른쪽에 적는 묶음 이름 (`SizePicker`) */
+    sizeGroup: {
+      landscape: "기본",
+      square: "기본",
+      portrait: "기본",
+      small: "작게",
+      large: "크게",
+      wallpaper: "배경화면",
+    },
     steps: "Steps",
     stepsHint: "28 초과는 추가 과금",
     cfg: "Guidance (CFG)",
