@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import time
 import sys
 from pathlib import Path
 
@@ -170,14 +171,81 @@ def restore(root: Path, entries: list[dict]) -> dict:
     return trash.restore_at(root, entries)
 
 
+def _to_front(hwnd) -> None:
+    """★열린 탐색기 창을 **앞으로** 끌어온다 (v2 `_force_foreground_window` 이식).
+
+    윈도우는 다른 프로세스가 포커스를 뺏는 것을 막는다. v2 는 지금 앞에 있는 창의 스레드에
+    `AttachThreadInput` 으로 붙어 그 제한을 넘겼다 — 그 방법 그대로다."""
+    import ctypes
+
+    import win32con
+    import win32gui
+    import win32process
+
+    if win32gui.IsIconic(hwnd):
+        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+    if win32gui.GetForegroundWindow() == hwnd:
+        return
+    fore = win32gui.GetForegroundWindow()
+    fore_thread = win32process.GetWindowThreadProcessId(fore)[0]
+    mine = win32process.GetWindowThreadProcessId(hwnd)[0]
+    if fore_thread != mine:
+        ctypes.windll.user32.AttachThreadInput(mine, fore_thread, True)
+        win32gui.BringWindowToTop(hwnd)
+        win32gui.SetForegroundWindow(hwnd)
+        ctypes.windll.user32.AttachThreadInput(mine, fore_thread, False)
+    else:
+        win32gui.BringWindowToTop(hwnd)
+        win32gui.SetForegroundWindow(hwnd)
+
+
+def _explorer_window(path: Path):
+    """그 폴더를 이미 열어 둔 탐색기 창 (없으면 None). ★없으면 새로 여는 것이 맞다."""
+    import urllib.parse
+
+    import win32com.client
+
+    want = os.path.normcase(os.path.normpath(str(path)))
+    for w in win32com.client.Dispatch("Shell.Application").Windows():
+        try:
+            loc = str(w.LocationURL)
+            if not loc.startswith("file:///"):
+                continue
+            here = urllib.parse.unquote(loc[8:]).replace("/", "\\")
+            if os.path.normcase(os.path.normpath(here)) == want:
+                return w
+        except Exception:
+            continue
+    return None
+
+
 def _open(p: Path, select: bool) -> None:
-    """탐색기 호출 한 곳. `select` 면 그 파일을 고른 채로, 아니면 폴더만 연다."""
+    """탐색기 호출 한 곳. `select` 면 그 파일을 고른 채로, 아니면 폴더만 연다.
+
+    ★★**창을 앞으로 가져온다** (사용자 지적 2026-08-19: 눌러도 뒤에서 열렸다).
+      이미 그 폴더가 열려 있으면 **그 창을 살리고**, 아니면 열고 나서 앞으로 끈다 (v2 와 같다).
+      pywin32 가 없거나 실패하면 **여는 것까지는 그대로** 된다 — 조용히 삼키지 않는다."""
     target = p if p.is_dir() else p.parent
     if sys.platform == "win32":
+        try:
+            w = _explorer_window(target)
+            if w is not None and not (select and p.is_file()):
+                _to_front(w.HWND)
+                return
+        except Exception as e:  # pywin32 없음·COM 실패 — 아래 기본 경로로 간다
+            print(f"[reveal] 창을 찾지 못했습니다 ({e})")
         if select and p.is_file():
             subprocess.Popen(["explorer", "/select,", str(p)])
         else:
             os.startfile(str(target))  # noqa: S606
+        # 새로 연 창이 뜰 때까지 잠깐 — v2 도 0.3초를 뒀다
+        try:
+            time.sleep(0.3)
+            w = _explorer_window(target)
+            if w is not None:
+                _to_front(w.HWND)
+        except Exception as e:
+            print(f"[reveal] 앞으로 가져오지 못했습니다 ({e})")
     elif sys.platform == "darwin":
         subprocess.Popen(["open", "-R", str(p)] if select and p.is_file() else ["open", str(target)])
     else:

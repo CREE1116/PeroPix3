@@ -251,7 +251,7 @@ export const ja: Dict = {
     brushSize: "太さ",
     maskClear: "消す",
     maskInvert: "反転",
-    maskDoneBtn: "完了",
+    maskApply: "適用",
     vibe: "Vibe Transfer",
     vibeHint: "最大16枚",
     vibeAdd: "バイブを追加",
@@ -646,6 +646,8 @@ export const ja: Dict = {
   },
 
   scenes: {
+    removeConfirm: "シーン「{name}」を削除します (画像 {n} 枚)",
+    removeConfirmBody: "画像ファイルは残りますが、画面からは一緒に消えます。",
     lockCard: "カードごとロックします。このカードのシーンは生成から外れます",
     pickOne: "下でカットを選ぶとここに大きく出ます",
     title: "シーン",

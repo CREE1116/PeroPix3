@@ -13,3 +13,7 @@ websockets>=12.0
 #   torch 만 4.4GB 라 v2 는 "처음 켤 때 설치"를 골라야 했다. onnxruntime 은 그 100분의 1이다.
 numpy>=1.26
 onnxruntime>=1.17
+
+# ★탐색기 창을 **앞으로** 끌어올 때만 쓴다 (`files._to_front`, v2 이식).
+#   없어도 폴더는 열린다 — 앞으로 오지 않을 뿐이다 (윈도우 전용).
+pywin32>=306; sys_platform == "win32"

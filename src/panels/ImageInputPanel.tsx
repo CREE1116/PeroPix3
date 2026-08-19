@@ -489,8 +489,15 @@ function Section({
   children: React.ReactNode;
 } & Record<string, unknown>) {
   const flash = useFlash(flashKey ?? "");
+  /** ★강조가 켜지면 **그 자리로 데려간다** (사용자 지시 2026-08-19) — 접힌 것을 펴 줘도
+   *  화면 밖이면 못 본다. `nearest` 라 이미 보이면 화면이 안 흔들린다. */
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (flash) box.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [flash]);
   return (
     <div
+      ref={box}
       style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)", ...flashStyle(!!flashKey && flash) }}
       {...rest}
     >

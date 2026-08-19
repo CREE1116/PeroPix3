@@ -252,7 +252,7 @@ export const en = {
     brushSize: "Size",
     maskClear: "Clear",
     maskInvert: "Invert",
-    maskDoneBtn: "Done",
+    maskApply: "Apply",
     vibe: "Vibe Transfer",
     vibeHint: "Up to 16 images",
     vibeAdd: "Add vibe",
@@ -647,6 +647,8 @@ export const en = {
   },
 
   scenes: {
+    removeConfirm: "Delete scene \"{name}\" ({n} images)",
+    removeConfirmBody: "The image files stay on disk, but they disappear from this view.",
     lockCard: "Lock card. Its scenes are skipped",
     pickOne: "Pick a take below to see it here",
     title: "Scenes",

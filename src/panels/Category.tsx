@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { flashStyle, useFlash } from "../store/ui";
 import { Icon } from "../components/Icon";
 
 /** 왼쪽 기둥의 **카테고리** — 이름 한 줄과 그 아래 내용. 이름을 누르면 접힌다.
@@ -28,6 +29,7 @@ export function Category({
   label,
   right,
   defaultFolded,
+  flashKey,
   children,
 }: {
   /** 접힘을 기억하는 열쇠 */
@@ -36,15 +38,30 @@ export function Category({
   /** 이름 줄 오른쪽 — 그 카테고리에 딸린 창구 (예: 블록 저장소) */
   right?: React.ReactNode;
   defaultFolded?: boolean;
+  /** ★★밖에서 값이 바뀌면 **펴고 강조한다** (사용자 지시 2026-08-19) — 「설정 불러오기」로
+   *  옵션이 통째로 갈리는데 접혀 있으면 무엇이 바뀌었는지 알 수가 없다. */
+  flashKey?: string;
   children: React.ReactNode;
 }) {
   const [folded, setFolded] = useState(foldState[id] ?? !!defaultFolded);
+  const flash = useFlash(flashKey ?? "");
+  useEffect(() => {
+    if (flash && folded) {
+      foldState[id] = false;
+      setFolded(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flash]);
   const toggle = () => {
     foldState[id] = !folded;
     setFolded(!folded);
   };
   return (
-    <div data-category={id} data-folded={folded ? "" : undefined} style={{ marginBottom: "var(--sp-5)" }}>
+    <div
+      data-category={id}
+      data-folded={folded ? "" : undefined}
+      style={{ marginBottom: "var(--sp-5)", ...flashStyle(!!flashKey && flash) }}
+    >
       <div
         style={{
           display: "flex",

@@ -31,7 +31,7 @@ export function OptionsPanel() {
       {/* ★★묶음은 **페로픽스 v2 의 절 그대로**다 (`index.html` 통째로 대조 2026-08-16):
             NAI Settings · Generation · Vibe / Character Ref · Base Image · Save Options.
           ★접는 층은 **카테고리 하나뿐**이다 — 항목마다 접으면 훑을 수가 없다. */}
-      <Category id="opt-nai" label={t("options.catNai")}>
+      <Category id="opt-nai" label={t("options.catNai")} flashKey="params">
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}>
               <Group label={t("options.model")}>
                 {/* ★옛 워크스페이스가 없어진 모델(V4.0)을 들고 있으면 목록에 없어 빈칸으로 보인다 —
@@ -61,7 +61,7 @@ export function OptionsPanel() {
         </div>
       </Category>
 
-      <Category id="opt-gen" label={t("options.catGeneration")}>
+      <Category id="opt-gen" label={t("options.catGeneration")} flashKey="params">
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}>
               <Group label={t("options.resolution")} flashKey="size">
                 {/* ★★모양이 곧 목록이다 (사용자 지시 2026-08-19, 페로픽스파이 `.res-item` 이식).
@@ -133,7 +133,7 @@ export function OptionsPanel() {
       </Category>
 
       {/* v2 의 `Vibe / Character Ref` + `Base Image` 절 */}
-      <Category id="opt-img" label={t("options.catImage")} defaultFolded>
+      <Category id="opt-img" label={t("options.catImage")} defaultFolded flashKey="base">
         <ImageInputPanel />
       </Category>
     </div>

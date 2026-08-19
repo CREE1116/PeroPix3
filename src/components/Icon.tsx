@@ -74,14 +74,16 @@ export const Icon = {
   bookmark: s(<path d="M6 4h12v16l-6-4.5L6 20z" />, 13),
   /** 생성 — 예전엔 ✦ 글자를 썼다 */
   spark12: s(<path d="M12 3l2.1 5.6L20 11l-5.9 2.4L12 19l-2.1-5.6L4 11l5.9-2.4z" />, 11),
-  /** 주사위 — 시드를 그 자리에서 새로 뽑는다 */
+  /** 주사위 — 시드를 그 자리에서 새로 뽑는다.
+   *  ★눈이 **다섯**이다 (사용자 지적 2026-08-19: 네 귀퉁이만 찍으면 주사위로 안 읽힌다). */
   dice: s(
     <>
-      <rect x="4" y="4" width="16" height="16" rx="3" />
-      <circle cx="9" cy="9" r="1.3" fill="currentColor" />
-      <circle cx="15" cy="15" r="1.3" fill="currentColor" />
-      <circle cx="15" cy="9" r="1.3" fill="currentColor" />
-      <circle cx="9" cy="15" r="1.3" fill="currentColor" />
+      <rect x="3.5" y="3.5" width="17" height="17" rx="3.5" />
+      <circle cx="8.5" cy="8.5" r="1.35" fill="currentColor" stroke="none" />
+      <circle cx="15.5" cy="8.5" r="1.35" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.35" fill="currentColor" stroke="none" />
+      <circle cx="8.5" cy="15.5" r="1.35" fill="currentColor" stroke="none" />
+      <circle cx="15.5" cy="15.5" r="1.35" fill="currentColor" stroke="none" />
     </>,
   ),
   /** 켜짐 — 블록의 `◉`. ★이 모양을 **잠금에도 같이 쓴다** (사용자 지시 2026-08-16) */

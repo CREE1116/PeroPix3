@@ -15,6 +15,7 @@ import { useDragSource } from "../cards/dragStore";
 import { DragGhost } from "../cards/DragGhost";
 import { useLaneReorder, type LaneDrop } from "../lib/useReorder";
 import { useSceneFocus } from "../store/sceneFocus";
+import { ask } from "../store/ask";
 import { usePreviews, withPreviews } from "../store/previews";
 import { BANNER_BG, bannerEmptyFill } from "../cards/banner";
 
@@ -63,7 +64,15 @@ export function SceneLane() {
 
   /** 지금 보고 있는 씬과 장 — ★프리뷰가 다른 컴포넌트라 스토어로 나눠 갖는다 */
   const focus = useSceneFocus();
-  const setFocus = (f: { cell: string; file: string | null }) => focus.focus(f.cell, f.file);
+  /** ★★씬을 고르면 **그 씬의 맨 앞(최신) 장**이 함께 골라진다 (사용자 지시 2026-08-19).
+   *  씬만 고르고 그림이 안 골라지면 큰 자리가 비어, 한 번 더 눌러야 뭔가 보였다.
+   *  ★파일을 **딱 집어** 넘긴 경우(썸네일 클릭)는 그대로 둔다. */
+  const setFocus = (f: { cell: string; file: string | null }) => {
+    if (f.file) return focus.focus(f.cell, f.file);
+    const cell = tab?.kind === "set" ? allCells(tab).find((c) => c.id === f.cell) : undefined;
+    const first = cell ? [...takesOfCell(cell)].sort(newestFirst)[0] : undefined;
+    focus.focus(f.cell, first?.file ?? null);
+  };
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -259,10 +268,25 @@ export function SceneLane() {
       const el = e.target as HTMLElement;
       if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
       if (e.key === "Escape" && picked.size) return setPicked(new Set());
-      if ((e.key === "Delete" || e.key === "Backspace") && picked.size) {
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (picked.size) {
+          e.preventDefault();
+          void deleteFiles([...picked]);
+          setPicked(new Set());
+          return;
+        }
+        // ★★고른 **한 장**도 Del 로 지운다 (사용자 지시 2026-08-19). 지운 뒤에는
+        //   **오른쪽 장**으로 옮겨 간다 (없으면 왼쪽, 그것도 없으면 아무것도 안 고른 상태) —
+        //   줄은 최신이 왼쪽이라, 오른쪽이 '그 다음으로 옛것'이다.
+        const cur = useSceneFocus.getState();
+        if (!cur.file) return;
+        const cell = tab?.kind === "set" ? allCells(tab).find((c) => c.id === cur.cell) : undefined;
+        const list = cell ? [...takesOfCell(cell)].sort(newestFirst) : [];
+        const at = list.findIndex((r) => r.file === cur.file);
         e.preventDefault();
-        void deleteFiles([...picked]);
-        setPicked(new Set());
+        void deleteFiles([cur.file]);
+        const next = list[at + 1] ?? list[at - 1] ?? null;
+        useSceneFocus.getState().focus(cur.cell, next?.file ?? null);
         return;
       }
       if ((e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z")) {
@@ -1294,9 +1318,23 @@ function SceneRow(
           {!p.only && (
             <button
               data-scene-remove={c.id}
+              /* ★★그림이 든 씬은 **묻고 지운다** (사용자 지시 2026-08-19). 씬을 지워도 파일은
+                 남지만, 그 그림들이 화면에서 통째로 사라지는 것은 같다 (묶는 키가 `cell_id` 다). */
               onClick={(e) => {
                 e.stopPropagation();
-                p.onPatch({ cells: p.card.cells.filter((x) => x.id !== c.id) });
+                const n = takes.length;
+                if (!n) return p.onPatch({ cells: p.card.cells.filter((x) => x.id !== c.id) });
+                void (async () => {
+                  if (
+                    await ask({
+                      title: t("scenes.removeConfirm", { name: c.name, n }),
+                      body: t("scenes.removeConfirmBody"),
+                      ok: t("common.delete"),
+                      cancel: t("common.cancel"),
+                    })
+                  )
+                    p.onPatch({ cells: p.card.cells.filter((x) => x.id !== c.id) });
+                })();
               }}
               data-tip={t("slots.remove")}
               style={iconBtn}
@@ -1432,7 +1470,6 @@ function SceneRow(
               key={r.file}
               data-take={r.file}
               data-take-unsaved={un ? "" : undefined}
-              data-tip={un ? undefined : `seed ${r.seed}`}
               // ★★**생성물을 끌면 카드 그림(커버)이 된다** — 덱·손패·프롬프트 배너가 받는다
               //   (`dir: "image"` 드롭존들). 싱글 캔버스를 걷을 때 이 출발점이 함께 사라져
               //   드래그가 통째로 죽어 있었다 (사용자 지적 2026-08-18).

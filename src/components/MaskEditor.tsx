@@ -40,7 +40,6 @@ const PAINT_COLOR = "rgba(255,64,96,0.55)";
 export function MaskEditor() {
   const t = useI18n((s) => s.t);
   const image = useImageInput((s) => s.baseImage);
-  const baseName = useImageInput((s) => s.baseName);
   const savedMask = useImageInput((s) => s.baseMask);
   const focused = useImageInput((s) => s.focused);
   const rectNatural = useImageInput((s) => s.tileRect);
@@ -50,12 +49,21 @@ export function MaskEditor() {
   const imgRef = useRef<HTMLCanvasElement>(null);
   const showRef = useRef<HTMLCanvasElement>(null);
   const overRef = useRef<HTMLCanvasElement>(null);
+  /** 붓이 닿을 자리를 미리 보여 주는 판 (사용자 지시 2026-08-19) */
+  const cursorRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [brush, setBrush] = useState(30);
   const [erase, setErase] = useState(false);
   /** 이미 칠한 칸 — 다시 칠하지 않는다 (v2 `paintedCells`) */
   const painted = useRef(new Set<string>());
   const [count, setCount] = useState(0);
+  /** ★★「취소」가 되돌릴 자리 — **들어올 때의 마스크와 사각형** (사용자 지시 2026-08-19).
+   *  칠하기는 그때그때 스토어에 반영되므로, 되돌리려면 들어온 순간을 들고 있어야 한다. */
+  const enter = useRef<{ mask: string; rect: typeof rectNatural; focused: boolean } | null>(null);
+  if (enter.current === null) {
+    const st = useImageInput.getState();
+    enter.current = { mask: st.baseMask, rect: st.tileRect, focused: st.focused };
+  }
   /** ★되돌리기 더미. **칠한 칸이 곧 마스크**라(칸은 8px 순흑백) 판을 통째로 떠 두지 않고
    *  칸마다 1바이트로 얼려 둔다 — 2048² 짜리도 한 걸음이 64KB 다 (256×256 칸). */
   const [undos, setUndos] = useState<Uint8Array[]>([]);
@@ -90,8 +98,9 @@ export function MaskEditor() {
       const mc = maskRef.current!;
       const sc = showRef.current!;
       const oc = overRef.current!;
-      ic.width = mc.width = sc.width = oc.width = w;
-      ic.height = mc.height = sc.height = oc.height = h;
+      const cc = cursorRef.current!;
+      ic.width = mc.width = sc.width = oc.width = cc.width = w;
+      ic.height = mc.height = sc.height = oc.height = cc.height = h;
       ic.getContext("2d")!.drawImage(img, 0, 0, w, h);
       const mx = mc.getContext("2d")!;
       mx.fillStyle = "black";
@@ -202,6 +211,31 @@ export function MaskEditor() {
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [undos, size.w, size.h]);
+
+  /** ★★붓 미리보기 — **눌렀을 때 칠해질 칸**을 그대로 그린다 (사용자 지시 2026-08-19).
+   *
+   *  ★`fillArea` 와 **같은 식**이어야 한다 (span·half). 다르게 그리면 보이는 것과 칠해지는
+   *    것이 어긋나, 미리보기가 오히려 헷갈리게 만든다.
+   *  ★지우개일 때는 흰 테두리다 — 무엇을 하는 붓인지 색으로 갈린다. */
+  const drawCursor = (e: React.PointerEvent | null) => {
+    const cc = cursorRef.current;
+    if (!cc) return;
+    const cx = cc.getContext("2d");
+    if (!cx) return;
+    cx.clearRect(0, 0, cc.width, cc.height);
+    if (!e || drag.current) return;
+    const { gx, gy } = cellAt(e);
+    const span = Math.max(1, Math.floor(brush / GRID));
+    const half = span >> 1;
+    const x = (gx - half) * GRID;
+    const y = (gy - half) * GRID;
+    const side = (half * 2 + 1) * GRID;
+    cx.fillStyle = erase ? "rgba(255,255,255,0.14)" : "rgba(255,64,96,0.22)";
+    cx.fillRect(x, y, side, side);
+    cx.strokeStyle = erase ? "rgba(255,255,255,0.85)" : "rgba(255,64,96,0.9)";
+    cx.lineWidth = Math.max(1, Math.round(size.w / 600));
+    cx.strokeRect(x + 0.5, y + 0.5, side - 1, side - 1);
+  };
 
   /** 화면 좌표 → 판 좌표.
    *  ★자를 대는 것은 **화면에 보이는 판**(overlay)이다. 데이터 판(mask)은 `display:none` 이라
@@ -399,24 +433,6 @@ export function MaskEditor() {
       style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)", padding: "0 var(--sp-4)" }}>
-        {/* ★지금 무슨 상황인지 **맨 앞에서** 말한다. 화면이 통째로 바뀌는 자리라,
-            무엇을 하는 중인지와 어느 그림인지가 한눈에 보여야 한다 */}
-        <span
-          data-mask-title
-          style={{
-            display: "inline-flex", alignItems: "center", gap: "var(--sp-2)",
-            padding: "3px var(--sp-3)", borderRadius: "var(--r-2)",
-            background: "var(--accent-bg, var(--panel))", border: "1px solid var(--accent)",
-            fontSize: "var(--text-2xs)", color: "var(--accent)", fontWeight: "var(--w-semi)",
-            flexShrink: 0, maxWidth: 260,
-          }}
-        >
-          {Icon.brush}
-          {t("imgIn.inpaint")}
-          <span style={{ color: "var(--ink-faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {baseName}
-          </span>
-        </span>
         <span style={{ width: 1, alignSelf: "stretch", background: "var(--line)" }} />
         {(["brush", "eraser"] as const).map((tool) => (
           <button
@@ -468,14 +484,34 @@ export function MaskEditor() {
               : ""}
         </span>
         {/* ★실행 버튼은 여기 없다 — 「생성」이 한다 (사용자 지시 2026-08-19).
-            칠하기를 끝내지 않아도 눌리므로, 이 단추는 화면을 닫는 것뿐이다. */}
+            나가는 길은 둘이다: **취소**(들어올 때로 되돌리고 나간다) · **적용**(칠한 채로 나간다).
+            ★`×` 하나였을 때는 그것이 되돌리는 것인지 남기는 것인지 알 수 없었다. */}
+        <button
+          data-mask-cancel
+          onClick={() => {
+            const st = useImageInput.getState();
+            const e0 = enter.current!;
+            st.patchBase({ baseMask: e0.mask });
+            st.setTileRect(e0.rect);
+            if (st.focused !== e0.focused) st.setFocused(e0.focused);
+            st.endEdit();
+          }}
+          style={{ ...btn, background: "var(--panel)" }}
+        >
+          {t("common.cancel")}
+        </button>
         <button
           data-mask-done
           onClick={() => useImageInput.getState().endEdit()}
-          data-tip={t("imgIn.maskDoneBtn")}
-          style={{ ...btn, background: "var(--panel)", padding: "var(--sp-2)" }}
+          style={{
+            ...btn,
+            background: "var(--accent)",
+            borderColor: "var(--accent)",
+            color: "var(--accent-on)",
+            fontWeight: "var(--w-semi)",
+          }}
         >
-          {Icon.close}
+          {t("imgIn.maskApply")}
         </button>
       </div>
 
@@ -500,6 +536,8 @@ export function MaskEditor() {
               그래서 **데이터 판은 숨기고**(mask) 보여 주는 판을 따로 둔다(show). */}
           <canvas ref={maskRef} data-mask-canvas style={{ display: "none" }} />
           <canvas ref={showRef} data-mask-show style={layer} />
+          {/* 붓이 닿을 자리 — 조작은 안 받는다 (`pointerEvents: none`) */}
+          <canvas ref={cursorRef} data-mask-cursor style={{ ...layer, pointerEvents: "none" }} />
           <canvas
             ref={overRef}
             data-mask-overlay
@@ -522,6 +560,8 @@ export function MaskEditor() {
               paint(e);
             }}
             onPointerMove={(e) => {
+              // 붓이 닿을 자리를 미리 보여 준다 (사각형을 끄는 중이면 안 그린다)
+              drawCursor(e);
               const d = drag.current;
               if (d) {
                 const p = at(e);
@@ -558,8 +598,11 @@ export function MaskEditor() {
             }}
             onPointerCancel={() => {
               drag.current = null;
+              drawCursor(null);
               if (drawing.current) { drawing.current = false; lastCell.current = null; commit(); }
             }}
+            onPointerLeave={() => drawCursor(null)}
+            onPointerEnter={(e) => drawCursor(e)}
           />
         </div>
       </div>

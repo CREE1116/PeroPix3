@@ -1,4 +1,6 @@
 import { useI18n } from "../i18n";
+import { api } from "../lib/backend";
+import { toast } from "../store/toast";
 import { cardBlocks } from "../lib/blocks";
 import { useState } from "react";
 import { allCells, useWs, type CanvasTab } from "../store/workspace";
@@ -296,9 +298,14 @@ function SaveHint() {
   const tr = useI18n((s) => s.t);
   const tab = spec?.tabs.find((x) => x.id === spec.activeTab);
   if (!tab) return null;
+  /** 화면에 적힌 그 자리 — 탐색기로 열 때도 **같은 문자열**을 쓴다 (둘이 갈리면 안 된다) */
+  const rel = `output/멀티/${tab.name}${cell ? `/${cell}` : ""}`;
   return (
     <span
       style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
         fontSize: "var(--text-2xs)",
         color: "var(--ink-ghost)",
         fontFamily: "var(--font-mono)",
@@ -309,8 +316,23 @@ function SaveHint() {
       {/* ★실제 저장 자리를 그대로 보인다 — 옛 `work/` 를 보여 주고 있어 틀렸었다.
           ★폴더 이름 `멀티/` 는 **디스크에 이미 있는 구조**다 (싱글/멀티 구분은 폐기됐지만
             폴더를 바꾸면 이미 만든 그림이 갈라진다 — `backend/workspace.py` 의 `out_dir`) */}
-      workspaces/{current}/output/멀티/{tab.name}
-      {cell ? `/${cell}` : ""}
+      workspaces/{current}/{rel}
+      {/* ★그 자리를 **여는 단추** (사용자 지시 2026-08-19) — 경로만 적혀 있으면
+          탐색기에서 손으로 찾아 들어가야 했다 */}
+      <button
+        data-open-out
+        data-tip={tr("files.reveal")}
+        onClick={() =>
+          void api("/api/files/reveal", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: `${current}/${rel}` }),
+          }).catch((e) => toast(String(e), "warn"))
+        }
+        style={{ display: "grid", color: "var(--ink-faint)", padding: 1 }}
+      >
+        {Icon.folderOpen}
+      </button>
     </span>
   );
 }

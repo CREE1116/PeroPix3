@@ -177,6 +177,10 @@ const applyBtn: React.CSSProperties = {
  *  ★표는 `lib/metaApply` **하나**를 쓴다. `applyMeta` 도 이 함수를 부른다. */
 export function applyMetaParams(m: ImageMeta) {
   const g = useGen.getState();
+  // ★★값이 밖에서 갈리면 **그 자리를 펴고 강조한다** (사용자 지시 2026-08-19) —
+  //   왼쪽 패널이 접혀 있으면 무엇이 바뀌었는지 알 길이 없다 (`Category` 의 `flashKey`)
+  useUi.getState().reveal("left", "params");
+  useUi.getState().reveal("left", "size");
   useGen.setState({ params: { ...g.params, ...metaParams(m) } });
   if (m.width !== undefined) g.set("width", m.width);
   if (m.height !== undefined) g.set("height", m.height);

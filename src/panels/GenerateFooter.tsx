@@ -59,10 +59,9 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
    *  예전에는 여기를 잠그고 마스크 편집 화면 안에 실행 버튼을 따로 뒀다. 지금 인페인트는
    *  i2i 와 같은 **베이스 이미지 옵션**이라, 씬이 여럿이면 i2i 와 똑같이 씬마다 나간다.
    *
-   *  ★단, 인페인트인데 **칠한 곳이 없으면** 막는다. 그대로 보내면 백엔드가 마스크 없는
-   *    요청으로 보고 **그냥 i2i 로** 그린다 (`nai.py`: `base_mode == "inpaint" and base_mask`) —
-   *    조용히 다른 그림이 나오는 자리라, 이유를 말하고 세운다. */
-  const needMask = !!img.baseImage && img.baseMode === "inpaint" && !img.costInpaint();
+   *  ★★**칠한 곳이 없다고 막지 않는다** (사용자 지시 2026-08-19). 한 번 막아 봤는데,
+   *    인페인트를 켜 두고 안 칠한 채 그냥 보내는 것은 **사용자의 자유**다 (그때는 백엔드가
+   *    마스크 없는 i2i 로 보낸다). 값 계산은 그 사실을 그대로 따른다 (`costInpaint`).
   /** ★해상도 칸이 아니라 **나가는 크기**로 센다 — Focused 인페인트는 서버가 조각을 1MP 로
    *  키워 보내므로 둘이 다르다 (`imageInput.costSize`) */
   const size = img.costSize();
@@ -94,7 +93,7 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
    *  데려간다. 지금까지는 검사가 없어 눌러 놓고 실패를 기다려야 했다 (감사 C5). */
   const noToken = !useHasToken();
   const openSettings = useUi((s) => s.openSettings);
-  const off = busy || blocked || needMask;
+  const off = busy || blocked;
   /** 이 버튼이 지금 하는 일 — 토큰이 없으면 「만들기」가 아니라 「넣으러 가기」다 */
   const fire = () => {
     if (noToken) return openSettings("general");
@@ -174,9 +173,7 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
           ? "gen.overLimit"
           : noToken
             ? "gen.needToken"
-            : needMask
-              ? "focus.paintFirst"
-              : compact
+            : compact
                 ? "canvas.generate"
                 : "canvas.generateShortcut",
         { a: MAX_PER_IMAGE },
@@ -429,8 +426,6 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
 
       {genBtn}
 
-      {/* ★「고칠 자리를 칠하세요」 같은 안내는 안 띄운다 (사용자 지시 2026-08-19) —
-          단추가 잠긴 것으로 족하고, 이유는 단추에 올리면 뜬다 */}
       {/* ★막았으면 **왜 막혔는지**를 같은 자리에서 말한다. v2 는 눌렀을 때 토스트였는데,
           버튼이 잠긴 채 이유가 없으면 무엇을 고쳐야 하는지 알 수 없다 */}
       {blocked && (

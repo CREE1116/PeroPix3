@@ -253,7 +253,7 @@ export const ko: Dict = {
     brushSize: "굵기",
     maskClear: "지우기",
     maskInvert: "반전",
-    maskDoneBtn: "완료",
+    maskApply: "적용",
     vibe: "Vibe Transfer",
     vibeHint: "최대 16장",
     vibeAdd: "바이브 추가",
@@ -656,6 +656,8 @@ export const ko: Dict = {
   },
 
   scenes: {
+    removeConfirm: "「{name}」 씬을 지웁니다 (그림 {n}장)",
+    removeConfirmBody: "그림 파일은 남지만 화면에서는 함께 사라집니다.",
     lockCard: "카드째 잠급니다. 이 카드의 씬은 생성에서 빠집니다",
     pickOne: "씬 칸에서 장을 고르면 여기 크게 뜹니다",
     title: "씬",

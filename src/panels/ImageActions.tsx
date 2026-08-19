@@ -105,7 +105,9 @@ export function ImageActions({
       // ★공홈처럼 **해상도를 그림에 맞춘다** — 안 맞추면 전송 직전 리샘플이 그림을 늘린다
       await fitSizeToBase(b64);
       // ★그림이 들어간 자리도 보여 준다 — 우측 패널이 접혀 있으면 펴진다
-      useUi.getState().reveal("right", "base");
+      // ★그림이 들어간 자리를 **펴고 강조하고 그리로 스크롤**한다 (사용자 지시 2026-08-19).
+      //   이미지 입력은 **왼쪽 기둥**에 산다 (`OptionsPanel` 안) — 예전 `right` 는 옛 자리다
+      useUi.getState().reveal("left", "base");
       s.patchBase({ baseMode: mode });
       useUi.getState().setMode("generate");
       onLeave?.();
