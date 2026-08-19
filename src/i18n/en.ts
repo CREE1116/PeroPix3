@@ -725,6 +725,8 @@ export const en = {
   /** ★This lower row is the "set" row. The row above is now called "tab", so keep the
    *  word "tab" out of this group (2026-08-18). */
   tabs: {
+    closeConfirm: "Close set \"{name}\" ({n} images)",
+    closeConfirmBody: "The image files stay on disk, but they disappear from this view.",
     closeTab: "Close set",
     newSet: "New set",
     newSetTab: "New scene set",

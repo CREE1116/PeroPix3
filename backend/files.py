@@ -253,8 +253,15 @@ def _open(p: Path, select: bool) -> None:
 
 
 def reveal(root: Path, rel: str = "") -> None:
-    """탐색기에서 그 자리를 연다. ★파일이면 **고른 채로** 연다 (v2 와 같은 동작)."""
+    """탐색기에서 그 자리를 연다. ★파일이면 **고른 채로** 연다 (v2 와 같은 동작).
+
+    ★★없는 자리면 **있는 데까지** 올라가 연다 (사용자 지적 2026-08-19: 저장 자리를 여는
+      단추가 400 이었다). 저장 폴더는 **첫 그림이 나올 때 생기므로**, 아직 안 만든 씬에서는
+      없는 것이 정상이다. 그때 열 것이 없다고 세우는 것보다 워크스페이스 폴더를 열어 주는
+      편이 쓸모 있다. ★뿌리 밖으로는 절대 안 나간다 (`under` 가 이미 막는다)."""
     p = under(root, rel)
+    while not p.exists() and p != root and root in p.parents:
+        p = p.parent
     if not p.exists():
         raise ValueError("없는 항목입니다")
     _open(p, True)

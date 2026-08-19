@@ -17,7 +17,7 @@ import type { Block } from "../lib/blocks";
 export type DragDir = "apply" | "save" | "image";
 /** ★`blocklib` = 블록 저장소 → 블록 목록. 카드와 **같은 판을 쓴다** — 끄는 방식·존 판정이
  *  같아야 하나만 고치면 둘 다 고쳐진다 (드래그 구현을 두 벌 두지 않는다) */
-export type ZoneKind = CardKind | "image" | "blocklib";
+export type ZoneKind = CardKind | "image" | "blocklib" | "keep";
 
 /** 생성된 이미지 한 장 — 썸네일로 넣을 때 끌고 다니는 것.
  *  ★`url` 은 **썸네일** 주소다 (고스트 92×126, 위치 잡는 창 ≤396px — 원본이 필요 없다).
@@ -31,6 +31,10 @@ export type Dragging = {
   card?: AnyCard;
   /** dir 가 image 일 때 */
   img?: DragImage;
+  /** kind 가 keep 일 때 — 보관함에서 끌고 있는 그림들 (폴더 줄이 받는다).
+   *  ★★**HTML5 드래그를 쓰지 않는다** (머리 주석): Tauri 가 `dragDropEnabled` 로 그것을
+   *    가로채므로 앱 안에서는 `dragstart` 가 안 온다. 끌기는 전부 이 포인터 판을 쓴다. */
+  files?: string[];
   /** kind 가 blocklib · dir 가 apply 일 때 — 저장소에서 끌어낸 항목 (놓으면 **사본**이 들어간다) */
   item?: LibItem;
   /** kind 가 blocklib · dir 가 save 일 때 — 프롬프트에서 저장소로 끌어온 블록.

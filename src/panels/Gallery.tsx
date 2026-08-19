@@ -4,7 +4,8 @@ import { toast } from "../store/toast";
 import { useEffect, useRef, useState } from "react";
 import { useGen } from "../store/gen";
 import { useWs } from "../store/workspace";
-import { KEEP_DND, useGallery } from "../store/gallery";
+import { useGallery } from "../store/gallery";
+import { useDragSource } from "../cards/dragStore";
 import { keepThumb, keepUrl } from "../lib/imgUrl";
 import { api } from "../lib/backend";
 import { ImageActions } from "./ImageActions";
@@ -313,6 +314,7 @@ function Cell({
   /** 끌기 시작 — 폴더 목록이 받는다 (`GalleryFolders`) */
   onDragFiles: () => string[];
 }) {
+  const startDrag = useDragSource();
   return (
     // ★★**단추가 아니라 `div` 다** (사용자 지적 2026-08-19: 갤러리 그림이 안 끌렸다).
     //   크로미움은 `<button>` 에 `draggable` 을 줘도 끌기를 시작하지 않는다 — 폼 컨트롤의
@@ -321,7 +323,6 @@ function Cell({
       data-gallery-cell={name}
       role="button"
       tabIndex={0}
-      onClick={(e) => onOpen(e.ctrlKey || e.metaKey)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
@@ -329,13 +330,18 @@ function Cell({
         }
       }}
       data-tip={name}
-      /* ★그림을 **폴더로 끌어다 옮긴다**. 고른 것이 있으면 **고른 것 전부**가 함께 간다 */
-      draggable
-      onDragStart={(e) => {
-        const files = onDragFiles();
-        e.dataTransfer.setData(KEEP_DND, JSON.stringify(files));
-        e.dataTransfer.effectAllowed = "move";
-      }}
+      /* ★★그림을 **폴더로 끌어다 옮긴다** (사용자 지시 2026-08-19).
+         ★HTML5 `draggable` 은 이 앱에서 안 된다 — Tauri 가 `dragDropEnabled` 로 드래그를
+           가로채기 때문이다 (`cards/dragStore` 머리 주석). 그래서 **앱의 포인터 끌기**를 쓴다.
+         ★누르기는 `onTap` 으로 받는다 — pointerdown 의 기본 동작 막기가 호환 click 을 삼킨다. */
+      onPointerDown={(e) =>
+        startDrag(
+          e,
+          { dir: "apply", kind: "keep", files: onDragFiles(), img: { ws: "", file: name, url: src } },
+          undefined,
+          () => onOpen(e.ctrlKey || e.metaKey),
+        )
+      }
       style={{
         position: "relative",
         aspectRatio: "832 / 1216",

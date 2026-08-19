@@ -420,9 +420,11 @@ function ScenePreview() {
   );
 }
 
-/** 포즈세트 카드의 드롭 존 — **탭 줄 + 캔버스 상단**.
- *  ★상단만 받는 이유: 시작 지점(덱은 화면 가운데)과 겹치면 드래그를 시작하는 순간 이미
- *    강조돼 "지금 떼면 여기" 신호가 죽는다. */
+/** 씬 세트 카드의 드롭 존 — **캔버스 하단, 씬 줄 자리**.
+ *
+ *  ★★위에서 아래로 옮겼다 (사용자 지시 2026-08-19). 위였던 까닭은 옛 **전체 화면 덱**이
+ *    화면 가운데에서 시작해 겹쳤기 때문인데, 덱이 오른쪽 기둥으로 간 뒤로는 그 이유가 없다.
+ *    씬 세트가 놓이는 자리는 **씬이 사는 곳**이라, 그 위에 놓는 것이 뜻과 맞는다. */
 function SetZone() {
   const tr = useI18n((s) => s.t);
   const addSetTab = useWs((s) => s.addSetTab);
@@ -442,7 +444,7 @@ function SetZone() {
       data-tip={tr("cards.zoneSet")}
       style={{
         position: "absolute",
-        top: 6,
+        bottom: 6,
         left: 10,
         right: 10,
         height: "32%",

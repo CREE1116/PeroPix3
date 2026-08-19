@@ -734,6 +734,8 @@ export const ko: Dict = {
   /** ★아래 줄은 「세트」다. 위 줄이 「탭」이 되면서 둘 다 "탭"이라 부르면 구별이 안 된다
    *  (2026-08-18). 이 그룹의 문구에 「탭」을 되살리지 말 것. */
   tabs: {
+    closeConfirm: "「{name}」 세트를 닫습니다 (그림 {n}장)",
+    closeConfirmBody: "그림 파일은 남지만 화면에서는 함께 사라집니다.",
     closeTab: "세트 닫기",
     newSet: "새 세트",
     newSetTab: "새 씬 세트",

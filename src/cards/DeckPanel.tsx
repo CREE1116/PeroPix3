@@ -319,13 +319,16 @@ function FolderTab({
     },
   });
   return (
-    // ★드롭존은 `div` 를 잡는다 (`useDropZone` 의 ref 형이 그렇다). 누르는 것은 안쪽 단추다.
-    <div ref={zone.ref} style={{ display: "inline-flex" }}>
-    <button
+    // ★★지우는 단추는 **칩 안에** 있다 (사용자 지시 2026-08-19: 씬 세트 탭과 같은 모양).
+    //   칩 밖에 붙이면 탭 사이 간격이 벌어져 어느 칩의 단추인지 흐려진다 (`CanvasTabs` 와 같다).
+    // ★드롭존은 `div` 를 잡는다 (`useDropZone` 의 ref 형이 그렇다).
+    <div
+      ref={zone.ref}
       data-deck-folder={folder}
       onClick={onPick}
       style={{
         ...subTab,
+        cursor: "pointer",
         background: zone.over ? "var(--accent-bg)" : on ? "var(--panel)" : "transparent",
         borderColor: zone.over || on ? "var(--accent)" : "var(--line)",
         color: on ? "var(--ink)" : "var(--ink-dim)",
@@ -334,20 +337,19 @@ function FolderTab({
     >
       {label}
       <span style={{ color: "var(--ink-ghost)", fontVariantNumeric: "tabular-nums" }}>{n}</span>
-    </button>
-    {onDelete && (
-      <button
-        data-deck-folder-del={folder}
-        data-tip={t("cards.folderDelete")}
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete();
-        }}
-        style={{ display: "grid", placeItems: "center", padding: "0 3px", color: "var(--ink-ghost)" }}
-      >
-        {Icon.close12}
-      </button>
-    )}
+      {onDelete && (
+        <button
+          data-deck-folder-del={folder}
+          data-tip={t("cards.folderDelete")}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          style={{ color: "var(--ink-faint)", padding: 0, display: "grid" }}
+        >
+          {Icon.close12}
+        </button>
+      )}
     </div>
   );
 }

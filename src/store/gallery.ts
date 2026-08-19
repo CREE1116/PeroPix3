@@ -48,10 +48,6 @@ export type ImageMeta = {
 };
 
 /** 폴더 전체를 뜻하는 값. `null` 은 "아직 안 정함"과 구분이 안 돼 쓰지 않는다. */
-/** ★보관함 그림을 끄는 표식. **격자와 폴더 목록이 같은 것을 본다** — 이름이 갈리면
- *  놓아도 아무 일이 안 일어난다 (`GalleryFolders` · `Gallery`). */
-export const KEEP_DND = "application/x-keep-files";
-
 export const ALL = "";
 
 type S = {

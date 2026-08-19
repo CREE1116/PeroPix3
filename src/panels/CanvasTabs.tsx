@@ -3,7 +3,8 @@ import { api } from "../lib/backend";
 import { toast } from "../store/toast";
 import { cardBlocks } from "../lib/blocks";
 import { useState } from "react";
-import { allCells, useWs, type CanvasTab } from "../store/workspace";
+import { allCells, takesOf, useWs, type CanvasTab } from "../store/workspace";
+import { ask } from "../store/ask";
 import { useGen } from "../store/gen";
 import { useDragSource } from "../cards/dragStore";
 import { colorOf } from "../store/cards";
@@ -29,7 +30,7 @@ import { Icon } from "../components/Icon";
  *    「탭」을 되살리지 말 것. 두 줄이 같은 이름이 되면 구별이 안 된다. */
 export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) {
   const { spec, setActiveTab, closeTab, renameTab, addSetTab,
-    switchChar, addChar, renameChar, removeChar } = useWs();
+    switchChar, addChar, renameChar, removeChar, records, isDeleted } = useWs();
   const tr = useI18n((s) => s.t);
   const [editing, setEditing] = useState<string | null>(null);
   const [editingChar, setEditingChar] = useState<string | null>(null);
@@ -137,9 +138,23 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
             {/* ★**마지막 하나는 못 닫는다** — 닫으면 이 캐릭터에 탭이 없어진다 (`closeTab` 주석) */}
             {inGroup.length > 1 && (
               <button
+                /* ★★그림이 든 탭은 **묻고 닫는다** (사용자 지시 2026-08-19) — 파일은 남지만
+                   그 탭의 결과가 화면에서 통째로 사라진다 (묶는 키가 `tab_id` 다). */
                 onClick={(e) => {
                   e.stopPropagation();
-                  closeTab(t.id);
+                  const n = takesOf(records, t, undefined).filter((r) => !isDeleted(r.file)).length;
+                  if (!n) return closeTab(t.id);
+                  void (async () => {
+                    if (
+                      await ask({
+                        title: tr("tabs.closeConfirm", { name: t.name, n }),
+                        body: tr("tabs.closeConfirmBody"),
+                        ok: tr("common.delete"),
+                        cancel: tr("common.cancel"),
+                      })
+                    )
+                      closeTab(t.id);
+                  })();
                 }}
                 data-tip={tr("tabs.closeTab")}
                 data-tab-close
@@ -298,8 +313,14 @@ function SaveHint() {
   const tr = useI18n((s) => s.t);
   const tab = spec?.tabs.find((x) => x.id === spec.activeTab);
   if (!tab) return null;
-  /** 화면에 적힌 그 자리 — 탐색기로 열 때도 **같은 문자열**을 쓴다 (둘이 갈리면 안 된다) */
-  const rel = `output/멀티/${tab.name}${cell ? `/${cell}` : ""}`;
+  /** 화면에 적힌 그 자리 — 탐색기로 열 때도 **같은 문자열**을 쓴다 (둘이 갈리면 안 된다).
+   *
+   *  ★★규칙 정본은 `backend/workspace.out_dir` 다: `output/멀티/<탭>/<세트>/`.
+   *    여기 적혀 있던 것은 **틀렸다** (사용자 지적 2026-08-19: 열면 400):
+   *      · 위층(탭=`chars`) 폴더가 빠져 있었다
+   *      · 씬 폴더를 붙이고 있었는데 **씬은 폴더가 아니다** (파일 이름 앞의 번호다) */
+  const charName = (spec?.chars ?? []).find((c) => c.id === spec?.activeChar)?.name;
+  const rel = `output/멀티/${charName ? `${charName}/` : ""}${tab.name}`;
   return (
     <span
       style={{
@@ -317,6 +338,8 @@ function SaveHint() {
           ★폴더 이름 `멀티/` 는 **디스크에 이미 있는 구조**다 (싱글/멀티 구분은 폐기됐지만
             폴더를 바꾸면 이미 만든 그림이 갈라진다 — `backend/workspace.py` 의 `out_dir`) */}
       workspaces/{current}/{rel}
+      {/* ★씬 이름은 **파일 이름 앞**에 붙는다 (`file_lead`) — 폴더가 아니다 */}
+      {cell ? <span style={{ color: "var(--ink-faint)" }}>/{cell}_*.png</span> : ""}
       {/* ★그 자리를 **여는 단추** (사용자 지시 2026-08-19) — 경로만 적혀 있으면
           탐색기에서 손으로 찾아 들어가야 했다 */}
       <button

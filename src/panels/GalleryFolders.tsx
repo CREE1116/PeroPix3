@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { useWs } from "../store/workspace";
-import { ALL, KEEP_DND, useGallery } from "../store/gallery";
+import { ALL, useGallery } from "../store/gallery";
+import { useDropZone } from "../cards/dragStore";
 import { ask } from "../store/ask";
 import { toast } from "../store/toast";
 import { Icon } from "../components/Icon";
@@ -192,7 +193,13 @@ function Row({
   onDropFiles?: (files: string[]) => void;
 }) {
   const t = useI18n((s) => s.t);
-  const [over, setOver] = useState(false);
+  /** ★앱의 포인터 끌기를 받는다 — HTML5 드롭은 Tauri 가 가로채 안 온다 (`cards/dragStore`) */
+  const zone = useDropZone({
+    id: `keep-folder-${label}`,
+    kind: "keep",
+    prio: 10,
+    onDrop: (d) => d.files?.length && onDropFiles?.(d.files),
+  });
   // 폴더는 `work/유나/포즈1` 처럼 계층이라, 마지막 조각을 굵게 두고 앞은 흐리게 둔다
   const parts = label.split("/");
   const leaf = parts.pop()!;
@@ -202,26 +209,13 @@ function Row({
       //   늘 보이면 폴더 목록이 단추 줄로 읽힌다.
       className="keep-folder-row"
       data-keep-folder-row={label}
-      onDragOver={onDropFiles && ((e) => {
-        // ★그림을 든 끌기만 받는다 — 폴더 순서 바꾸기 같은 다른 끌기와 섞이지 않게
-        if (!e.dataTransfer.types.includes(KEEP_DND)) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        setOver(true);
-      })}
-      onDragLeave={() => setOver(false)}
-      onDrop={onDropFiles && ((e) => {
-        e.preventDefault();
-        setOver(false);
-        const raw = e.dataTransfer.getData(KEEP_DND);
-        if (raw) onDropFiles(JSON.parse(raw) as string[]);
-      })}
+      ref={zone.ref}
       style={{
         display: "flex",
         alignItems: "center",
         borderRadius: "var(--r-2)",
-        outline: over ? "1px solid var(--accent)" : undefined,
-        background: over ? "var(--accent-bg)" : undefined,
+        outline: zone.over ? "1px solid var(--accent)" : undefined,
+        background: zone.over ? "var(--accent-bg)" : undefined,
       }}
     >
     <button

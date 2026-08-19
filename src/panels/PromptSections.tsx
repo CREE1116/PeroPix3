@@ -254,17 +254,6 @@ const CARD_H = 48; // 접힌 스택 카드의 실제 높이
 const PEEK = 22; // 섹션 위로 드러나는 높이 — 이름이 잘리지 않을 만큼
 const STEP = 6; // 뒤에 더 쌓인 카드가 한 장씩 더 드러나는 양
 
-/** 스택 카드 위의 작은 단추 — 그림 위라 어두운 판을 깔고 흰 아이콘 */
-const stackBtn: React.CSSProperties = {
-  display: "grid",
-  placeItems: "center",
-  width: 18,
-  height: 18,
-  borderRadius: "var(--r-1)",
-  background: "rgba(10,14,20,0.55)",
-  color: "#fff",
-};
-
 function StackPeek({ ch }: { ch: Char }) {
   const t = useI18n((s) => s.t);
   const [open, setOpen] = useState(false);
@@ -315,7 +304,9 @@ function StackPeek({ ch }: { ch: Char }) {
                 background: "rgba(0,0,0,0.5)",
               }}
             />
-            <span style={{ position: "relative" }}>{c.name}</span>
+            <b style={{ position: "relative", fontSize: "0.86rem", fontWeight: "var(--w-bold)" }}>
+              {c.name}
+            </b>
             {front && (
               <span
                 style={{
@@ -331,34 +322,28 @@ function StackPeek({ ch }: { ch: Char }) {
             )}
             {/* ★펼쳤을 때만 단추가 선다 (사용자 지시 2026-08-19) — 접혀 있으면 카드가
                 몇 px 만 보여서 누를 자리가 없다. 앞으로 가져오기 · 빼기 둘이다. */}
-            {open && (
-              <span style={{ position: "relative", marginLeft: "auto", display: "flex", gap: 4 }}>
-                <button
-                  data-stack-front={i}
-                  data-tip={t("cards.stackFront")}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    frontStack(ch.id, cards.length - 1 - i);
-                  }}
-                  style={stackBtn}
-                >
-                  {/* ★아래 방향이다 (사용자 지적 2026-08-19) — 스택은 **아래에 있는 앞 카드**로
-                      내려보내는 것이라, 위로 향한 화살표는 뜻이 거꾸로 읽힌다 */}
-                  {Icon.chevronDown}
-                </button>
-                <button
-                  data-stack-drop={i}
-                  data-tip={t("cards.stackDrop")}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    dropStack(ch.id, cards.length - 1 - i);
-                  }}
-                  style={stackBtn}
-                >
-                  {Icon.close12}
-                </button>
-              </span>
-            )}
+            {/* ★★단추는 **앞 카드와 같은 것**이다 (사용자 지적 2026-08-19: 오버레이만 깔지
+                말고 오른쪽 디자인도 통일하라). 크기·모서리·바탕·자리를 앞 카드 배너와 맞춘다 —
+                같은 카드인데 앞에 있느냐 뒤에 있느냐로 생김새가 달라지면 안 된다.
+                ★아래 방향 화살표다 — 스택은 **아래에 있는 앞 카드**로 내려보내는 것이다. */}
+            <span
+              style={{
+                position: "absolute",
+                right: 8,
+                top: 0,
+                height: PEEK,
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              <BannerBtn title={t("cards.stackFront")} onClick={() => frontStack(ch.id, cards.length - 1 - i)}>
+                {Icon.chevronDown}
+              </BannerBtn>
+              <BannerBtn title={t("cards.stackDrop")} onClick={() => dropStack(ch.id, cards.length - 1 - i)}>
+                {Icon.close12}
+              </BannerBtn>
+            </span>
           </div>
         );
       })}
