@@ -132,21 +132,9 @@ export const defaultUc = (): Block[] => [
 
 /** 저장 예약 — 순환 참조를 피하려 workspace 스토어가 여기에 자기 저장 함수를 꽂는다. */
 let onEditRaw: (() => void) | null = null;
-let paused = false;
-const onEdit = () => {
-  if (!paused) onEditRaw?.();
-};
+const onEdit = () => onEditRaw?.();
 export const setPromptSaver = (fn: () => void) => {
   onEditRaw = fn;
-};
-
-/** ★인페인트 중에는 저장을 멈춘다.
- *
- *  인페인트는 **씬 프롬프트의 사본**을 편집한다 (사용자 결정 2026-08-13: 구조는 같아야 하고,
- *  거기서 고친 것이 씬 카드에 남으면 안 된다). 이 패널은 편집할 때마다 워크스페이스에
- *  저장을 예약하므로, 멈추지 않으면 **사본이 씬 카드를 덮어쓴다.** */
-export const pausePromptSave = (v: boolean) => {
-  paused = v;
 };
 
 const newId = () => "ch_" + Math.random().toString(36).slice(2, 8);

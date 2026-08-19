@@ -285,7 +285,7 @@ export function ImageInputPanel() {
                 data-base-strength="img2img"
               />
             )}
-            {/* ★노이즈는 이어 그리기에만 붙는다 — 인페인트에는 NAI 가 안 받는다 (nai.py) */}
+            {/* ★노이즈는 i2i 에만 붙는다 — 인페인트에는 NAI 가 안 받는다 (nai.py) */}
             {s.baseMode === "img2img" && (
               // ★step 도 v2 그대로 .05 다 (`baseImageNoise`, index.html:9253)
               <Slide

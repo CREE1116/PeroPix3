@@ -1,10 +1,8 @@
 import { create } from "zustand";
 import { vibeDefaults } from "../lib/vibeDefaults";
-import { canFocus, defaultRect, wholeRectMask } from "../lib/focused";
+import { canFocus, defaultRect, focusedPlan, wholeRectMask } from "../lib/focused";
 import { sizeForBase } from "../lib/baseSize";
 import { toast } from "./toast";
-import { useSceneFocus } from "./sceneFocus";
-import { pausePromptSave, usePrompt } from "./prompt";
 import { t } from "../i18n";
 import { useGen } from "./gen";
 import { api } from "../lib/backend";
@@ -81,10 +79,10 @@ type S = {
   focused: boolean;
   /** 크롭 사각형 (원본 좌표계) */
   tileRect: { x: number; y: number; w: number; h: number } | null;
-  /** 지금 마스크를 칠하는 중인가. 켜면 캔버스 자리가 마스크 편집으로 바뀐다 */
+  /** 지금 마스크를 칠하는 중인가. 켜면 캔버스 자리가 마스크 편집으로 바뀐다.
+   *  ★**편집 중인지는 생성과 무관하다** (사용자 지시 2026-08-19) — 인페인트는 i2i 와
+   *    똑같이 베이스 이미지 옵션이고, 칠하기는 그 마스크를 만드는 도구일 뿐이다. */
   editing: boolean;
-  /** 고치는 그림이 있던 **씬 칸**. 결과를 그 옆에 붙이려고 들고 있는다 (`queueInpaint`) */
-  originCell: { id: string } | null;
 
   setVibeOn: (v: boolean) => void;
   setNormalizeVibe: (v: boolean) => void;
@@ -99,6 +97,8 @@ type S = {
   costStrength: () => number;
   /** 지금 **마스크를 실어 보내는가** — 공홈은 인페인트면 바이브 비용을 통째로 뺀다 (9절) */
   costInpaint: () => boolean;
+  /** ★실제로 **나가는 요청 해상도**. 화면의 해상도 칸과 다를 수 있다 (Focused 인페인트) */
+  costSize: () => { width: number; height: number };
 
   setRefOn: (v: boolean) => void;
   addRef: (r: PreciseRef) => void;
@@ -127,15 +127,19 @@ let measuring: Promise<void> | null = null;
 /** 캐시 조회 회차. 늦게 온 답이 새 목록을 덮지 않게 한다 */
 let syncSeq = 0;
 
-/** ★인페인트는 **씬 프롬프트의 사본**을 편집한다 (사용자 결정 2026-08-13).
+/** ★★**마스크가 실제로 나가는가** — 값을 매기는 쪽과 보내는 쪽이 이 하나를 본다.
  *
- *  구조는 같아야 한다: 같은 왼쪽 패널에서 블록·캐릭터·UC 를 그대로 고친다. 다만 거기서
- *  고친 것이 **씬 카드에 남으면 안 된다** (얼굴 고치려고 프롬프트를 줄였는데 그 씬이
- *  통째로 바뀌는 사고). 그래서 들어갈 때 씬 것을 치워 두고 사본을 얹는다.
- *  ★사본은 나가도 남는다. 마스크와 한 짝이라, 여러 번 돌릴 때 그대로 이어져야 한다. */
-type PromptSnap = ReturnType<typeof usePrompt.getState>["snapshot"] extends () => infer R ? R : never;
-let sceneStash: PromptSnap | null = null;
-let inpaintPrompt: PromptSnap | null = null;
+ *  칠한 것이 없어도 Focused 사각형이 있으면 **안쪽 전체**가 마스크가 된다 (`payload`).
+ *  둘 다 없으면 백엔드는 `base_mode` 가 인페인트여도 **그냥 i2i 로 보낸다**(`nai.py`:
+ *  `if req.base_mode == "inpaint" and req.base_mask`). 그때 인페인트 값으로 값을 매기면
+ *  화면의 예상 Anlas 가 실제 청구와 어긋난다. */
+const maskRides = (s: S) =>
+  s.baseMode === "inpaint" && !!s.baseImage && (!!s.baseMask || (s.focused && !!s.tileRect));
+
+/** ★조각만 잘라 보내는가 (Focused Inpainting). **서버가 자르는 조건과 같은 식**이어야 한다
+ *  (`server.py`: `if body.inpaint_from and body.inpaint_rect`). 워크스페이스 파일이 아니면
+ *  경로가 없어(`baseFrom`) 잘라 보낼 수 없다 — 그때는 지금까지의 인페인트 그대로다. */
+const focusingNow = (s: S) => s.baseMode === "inpaint" && s.focused && !!s.tileRect && !!s.baseFrom;
 
 export const useImageInput = create<S>((set, get) => ({
   vibeOn: false,
@@ -155,7 +159,6 @@ export const useImageInput = create<S>((set, get) => ({
   focused: false,
   tileRect: null,
   editing: false,
-  originCell: null,
 
   // ★바이브와 레퍼런스는 **동시에 못 쓴다** (NAI 제약, v2 index.html:18366). 켜면 다른 쪽을 끈다
   setVibeOn: (v) => set(v ? { vibeOn: true, refOn: false } : { vibeOn: false }),
@@ -232,20 +235,27 @@ export const useImageInput = create<S>((set, get) => ({
   },
 
   costStrength() {
-    // ★`y = mask ? (inpaintImg2ImgStrength ?? 1) : (image ? strength : 1)` (9절).
-    //   ★인페인트는 **칠하는 동안에만** 베이스가 실린다 (`payload()` 와 같은 규칙) —
-    //     나간 상태에서 인페인트 강도로 세면 실제로 안 나가는 값으로 값을 매기게 된다.
+    // ★`y = mask ? (inpaintImg2ImgStrength ?? 1) : (image ? strength : 1)` (9절)
     const s = get();
-    if (s.baseMode === "inpaint") return s.editing && s.baseImage ? s.baseInpaintStrength : 1;
+    if (maskRides(s)) return s.baseInpaintStrength;
     return s.baseImage ? s.baseStrength : 1;
   },
 
   costInpaint() {
     // ★`costStrength` 의 인페인트 갈래와 **같은 조건**이다 — 마스크가 실리는 때가 곧
-    //   인페인트다 (`payload()`: 나간 상태에서는 베이스도 마스크도 안 싣는다).
-    //   갈라 적으면 강도는 인페인트로 세면서 바이브는 아닌 것으로 세는 상태가 생긴다
+    //   인페인트다. 갈라 적으면 강도는 인페인트로 세면서 바이브는 아닌 것으로 세는 상태가 생긴다
+    return maskRides(get());
+  },
+
+  costSize() {
+    // ★★Focused 인페인트는 **서버가 요청 크기를 갈아 끼운다** — 사각형 조각을 1MP 로 키워
+    //   보낸다 (`server.py`: `req.width, req.height = imgutil.fit_to_1mp(w, h)`). 그동안
+    //   화면의 해상도 칸은 **원본 크기**라(`setFocused`), 그 값으로 세면 2048² 짜리를
+    //   고칠 때 80 Anlas 라고 떠 놓고 실제로는 0 이 나간다.
     const s = get();
-    return s.baseMode === "inpaint" && s.editing && !!s.baseImage;
+    const p = useGen.getState().params;
+    if (maskRides(s) && focusingNow(s)) return focusedPlan(s.tileRect!).req;
+    return { width: p.width, height: p.height };
   },
 
   setRefOn: (v) => set(v ? { refOn: true, vibeOn: false } : { refOn: false }),
@@ -254,10 +264,8 @@ export const useImageInput = create<S>((set, get) => ({
   removeRef: (i) => set((s) => ({ refs: s.refs.filter((_, k) => k !== i) })),
 
   setBase: (image, name, from = null) => {
-    // 대상이 바뀌면 인페인트 프롬프트 사본도 버린다 (다른 그림의 프롬프트다)
-    inpaintPrompt = null;
     set({ baseImage: image, baseName: name, baseMask: "", baseFrom: from,
-          baseSize: null, tileRect: null, focused: false, editing: false, originCell: null });
+          baseSize: null, tileRect: null, focused: false, editing: false });
     // ★크기는 **여기서 한 번만** 잰다. 사각형·최종 해상도·자동 켜기가 전부 이 값을 본다.
     //   부르는 쪽마다 따로 재게 하면 어느 값이 진짜인지 갈린다.
     measuring = new Promise<void>((done) => {
@@ -272,7 +280,7 @@ export const useImageInput = create<S>((set, get) => ({
   },
   clearBase: () =>
     set({ baseImage: "", baseName: "", baseMask: "", baseMode: "img2img", baseFrom: null,
-          baseSize: null, tileRect: null, focused: false, editing: false, originCell: null }),
+          baseSize: null, tileRect: null, focused: false, editing: false }),
   setTileRect: (r) => set({ tileRect: r }),
 
   setFocused: (v) => {
@@ -294,14 +302,10 @@ export const useImageInput = create<S>((set, get) => ({
 
   startEdit: () => {
     if (!get().baseImage) return;
-    // ★어느 씬 칸의 그림인지 **여기서** 잡아 둔다. 결과가 그 자리에 붙어야 화면에 보인다
-    const cell = useSceneFocus.getState().cell;
-    set({ editing: true, baseMode: "inpaint", originCell: cell ? { id: cell } : null });
-    // 씬 프롬프트를 치워 두고 인페인트 사본을 얹는다 (없으면 씬 것을 복사해 시작)
-    const p = usePrompt.getState();
-    sceneStash = p.snapshot();
-    pausePromptSave(true);
-    p.load(inpaintPrompt ?? sceneStash);
+    // ★★프롬프트는 **손대지 않는다** (사용자 지시 2026-08-19). 예전에는 들어올 때
+    //   씬 프롬프트를 치워 두고 인페인트 사본을 얹었는데, 인페인트가 i2i 와 같은
+    //   베이스 옵션이 된 지금 그 사본은 "어느 쪽이 진짜인가"만 만든다.
+    set({ editing: true, baseMode: "inpaint" });
     // ★큰 그림은 켜 두고 알린다. 끈 채로 보내면 결과가 통째로 줄어드는 그림이다.
     //   크기를 아직 재는 중일 수 있어 그 뒤에 판단한다 (`measuring`)
     void (measuring ?? Promise.resolve()).then(() => {
@@ -312,42 +316,22 @@ export const useImageInput = create<S>((set, get) => ({
       toast(t("focus.auto"));
     });
   },
-  endEdit: () => {
-    if (!get().editing) return;
-    // 사본을 들고 나가고 씬 프롬프트를 되돌린다
-    const p = usePrompt.getState();
-    inpaintPrompt = p.snapshot();
-    if (sceneStash) p.load(sceneStash);
-    sceneStash = null;
-    pausePromptSave(false);
-    set({ editing: false });
-  },
+  // 칠하기를 끝낸다. ★마스크는 남는다 — 생성은 이 상태와 무관하게 마스크를 싣는다
+  endEdit: () => set({ editing: false }),
 
   patchBase: (p) => {
-    // ★이어 그리기로 돌아가면 Focused 를 끈다. 켜져 있는 동안 해상도 칸은 **원본 크기**라,
+    // ★i2i 로 돌아가면 Focused 를 끈다. 켜져 있는 동안 해상도 칸은 **원본 크기**라,
     //   그대로 i2i 로 나가면 3MP 를 넘어 NAI 가 거절한다 (2048² = 4.2MP)
     if (p.baseMode === "img2img" && get().focused) get().setFocused(false);
     set(p);
   },
 
   payload() {
+    // ★★인페인트는 **i2i 와 같은 베이스 옵션**이다 (사용자 지시 2026-08-19).
+    //   예전에는 "칠하는 동안에만" 실었고, 그래서 편집에서 나오면 베이스가 통째로
+    //   빠졌다. 지금은 켜 둔 대로 나간다 — 씬이 여럿이면 i2i 와 똑같이 씬마다 나간다.
     const s = get();
-    // ★인페인트는 **칠하는 동안에만** 존재한다 (사용자 지적 2026-08-13).
-    //   나간 뒤에도 베이스가 남아 있으면, 슬롯 전체를 도는 「생성」이 인페인트로 나가
-    //   5슬롯에 5장이 만들어진다. 나간 상태에서는 베이스를 아예 안 싣는다.
-    if (s.baseMode === "inpaint" && !s.editing) {
-      return {
-        vibe_transfer: s.vibeOn ? s.vibes : [],
-        precise_references: s.refOn ? s.refs.map((r) => ({
-          image: r.image, mode: r.mode, strength: r.strength, fidelity: r.fidelity,
-        })) : [],
-        normalize_reference_strength: s.normalizeVibe,
-        base_image: "", base_mode: "img2img", base_strength: s.baseStrength,
-        base_inpaint_strength: s.baseInpaintStrength, base_noise: s.baseNoise,
-        base_mask: "", inpaint_from: "", inpaint_rect: null,
-      };
-    }
-    const focusing = s.baseMode === "inpaint" && s.focused && !!s.tileRect && !!s.baseFrom;
+    const focusing = focusingNow(s);
     // ★아무것도 안 칠했으면 **사각형 안쪽 전체**를 보낸다 (공홈과 같다). 화면에 미리 칠해
     //   보여 주지 않으므로 마스크는 비어 있고, 보낼 때 여기서 만든다.
     const mask =

@@ -54,15 +54,21 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
     ? allScenes(setTab).filter((x) => !x.cell.locked && !x.card.locked).length
     : 1;
   const count = slots * perSlot;
-  /** ★인페인트 중에는 **이 버튼을 잠근다** (사용자 지적 2026-08-13).
+  /** ★★인페인트도 **이 버튼이 만든다** (사용자 지시 2026-08-19).
    *
-   *  이 버튼의 뜻은 언제나 「슬롯 전체」다. 인페인트는 「이 한 장」이라 단위가 다르고,
-   *  그래서 실행 버튼도 마스크 편집 화면 안에 따로 있다. 여기서 뜻을 갈아 끼우면
-   *  5슬롯을 열어 둔 채 인페인트했을 때 5장이 나온다. */
-  const editing = img.editing;
+   *  예전에는 여기를 잠그고 마스크 편집 화면 안에 실행 버튼을 따로 뒀다. 지금 인페인트는
+   *  i2i 와 같은 **베이스 이미지 옵션**이라, 씬이 여럿이면 i2i 와 똑같이 씬마다 나간다.
+   *
+   *  ★단, 인페인트인데 **칠한 곳이 없으면** 막는다. 그대로 보내면 백엔드가 마스크 없는
+   *    요청으로 보고 **그냥 i2i 로** 그린다 (`nai.py`: `base_mode == "inpaint" and base_mask`) —
+   *    조용히 다른 그림이 나오는 자리라, 이유를 말하고 세운다. */
+  const needMask = !!img.baseImage && img.baseMode === "inpaint" && !img.costInpaint();
+  /** ★해상도 칸이 아니라 **나가는 크기**로 센다 — Focused 인페인트는 서버가 조각을 1MP 로
+   *  키워 보내므로 둘이 다르다 (`imageInput.costSize`) */
+  const size = img.costSize();
   const cost = anlasCost({
-    width: params.width,
-    height: params.height,
+    width: size.width,
+    height: size.height,
     steps: params.steps,
     opus: (sub?.tier ?? 0) >= 3,
     uncachedVibes: img.vibeOn ? img.vibes.filter((v) => !v.encoded).length : 0,
@@ -88,15 +94,18 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
    *  데려간다. 지금까지는 검사가 없어 눌러 놓고 실패를 기다려야 했다 (감사 C5). */
   const noToken = !useHasToken();
   const openSettings = useUi((s) => s.openSettings);
-  const off = busy || editing || blocked;
+  const off = busy || blocked || needMask;
   /** 이 버튼이 지금 하는 일 — 토큰이 없으면 「만들기」가 아니라 「넣으러 가기」다 */
   const fire = () => {
     if (noToken) return openSettings("general");
+    // ★칠하던 중이면 편집에서 나온다 — 가운데가 편집기인 채로는 결과를 못 본다.
+    //   마스크는 남으므로 다시 들어가면 그대로 이어진다
+    if (img.editing) img.endEdit();
     // ★큐에 넣기 **직전**의 잔액을 적어 둔다. 배치가 끝나면 다시 물어 실제 청구를 낸다
     //   (`store/anlasMeter`). 위 `cost` 는 예상값일 뿐이라 맞는지 확인할 길이 이것뿐이다
     useAnlasMeter.getState().arm(cost.total, {
-      width: params.width,
-      height: params.height,
+      width: size.width,
+      height: size.height,
       steps: params.steps,
       opus: (sub?.tier ?? 0) >= 3,
       refs: img.refOn ? img.refs.length : 0,
@@ -120,7 +129,9 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
     //   그래서 접어 둔 채로도 단축키가 살아 있고, 두 번 걸리지도 않는다.
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Enter" || !(e.ctrlKey || e.metaKey) || e.repeat) return;
-      if (document.querySelector("[data-enhance], [data-settings], [data-mask-editor], [data-ask], [data-prompt-view]"))
+      // ★마스크 편집기는 **빼지 않는다** — 인페인트도 이 버튼이 만들므로(2026-08-19),
+      //   칠하다가 그대로 눌러 생성하는 것이 이 단축키의 쓰임이다
+      if (document.querySelector("[data-enhance], [data-settings], [data-ask], [data-prompt-view]"))
         return;
       if (off) return;
       e.preventDefault();
@@ -163,8 +174,8 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
           ? "gen.overLimit"
           : noToken
             ? "gen.needToken"
-            : editing
-              ? "focus.lockedByInpaint"
+            : needMask
+              ? "focus.paintFirst"
               : compact
                 ? "canvas.generate"
                 : "canvas.generateShortcut",
@@ -419,10 +430,10 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
 
       {genBtn}
 
-      {/* 인페인트 중에는 이 버튼이 왜 잠겼는지 그 자리에서 말한다 */}
-      {editing && (
-        <span data-gen-locked style={{ fontSize: "var(--text-2xs)", color: "var(--accent)" }}>
-          {t("focus.lockedByInpaint")}
+      {/* 인페인트인데 칠한 곳이 없으면 왜 잠겼는지 그 자리에서 말한다 */}
+      {needMask && (
+        <span data-gen-need-mask style={{ fontSize: "var(--text-2xs)", color: "var(--accent)" }}>
+          {t("focus.paintFirst")}
         </span>
       )}
       {/* ★막았으면 **왜 막혔는지**를 같은 자리에서 말한다. v2 는 눌렀을 때 토스트였는데,

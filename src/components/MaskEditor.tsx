@@ -3,10 +3,6 @@ import { useI18n } from "../i18n";
 import { Icon } from "./Icon";
 import { alignTo64 } from "../store/gen";
 import { useImageInput } from "../store/imageInput";
-import { anlasCost } from "../lib/anlas";
-import { useSub } from "../store/sub";
-import { useAnlasMeter } from "../store/anlasMeter";
-import { useGen } from "../store/gen";
 import {
   MIN_RECT,
   SAFE_MARGIN,
@@ -19,9 +15,13 @@ import {
 
 /** 인페인트 마스크 에디터. **캔버스 자리를 대신한다** (모달이 아니다).
  *
- *  ★모달이었을 때는 칠하는 동안 프롬프트도 결과도 못 봤고, 생성은 창을 닫은 뒤에 눌러야 했다.
- *    지금은 가운데 화면이 이 편집기로 바뀌고, 왼쪽 아래 생성 버튼이 「인페인트」가 된다
- *    (사용자 결정 2026-08-13). 생성하면 편집에서 나가 결과를 보여 주고 **마스크는 남는다.**
+ *  ★★여기는 **마스크를 만드는 곳일 뿐**이다 (사용자 지시 2026-08-19).
+ *    인페인트 자체는 i2i 와 똑같이 왼쪽 생성부의 **베이스 이미지 옵션**이고, 생성은
+ *    아래 「생성」 버튼이 한다. 예전에는 이 화면 안에 실행 버튼·강도·비용이 따로 있어서
+ *    같은 값을 두 곳에서 만졌고, 인페인트만 씬 파이프라인 밖으로 나가 있었다.
+ *
+ *  ★그린 것은 **Ctrl+Z 로 되돌린다** (사용자 지시 2026-08-19). 되돌림 단위는 **한 획**이고,
+ *    지우기·반전도 한 단계다.
  *
  *  ★**8×8 그리드에 붙는 사각 브러시**다. 둥글게 보여도 사각이고, 안티앨리어싱이 없다
  *    (NAI 웹·NAIS2 와 같은 방식). "둥근 브러시가 자연스럽다"고 고치면 **결과가 달라진다** —
@@ -41,15 +41,10 @@ export function MaskEditor() {
   const t = useI18n((s) => s.t);
   const image = useImageInput((s) => s.baseImage);
   const baseName = useImageInput((s) => s.baseName);
-  const params = useGen((s) => s.params);
-  const busy = useGen((s) => s.busy);
-  const queueInpaint = useGen((s) => s.queueInpaint);
-  const opus = useSub((s) => (s.sub?.tier ?? 0) >= 3);
   const savedMask = useImageInput((s) => s.baseMask);
   const focused = useImageInput((s) => s.focused);
   const rectNatural = useImageInput((s) => s.tileRect);
   const baseSize = useImageInput((s) => s.baseSize);
-  const inpaintStrength = useImageInput((s) => s.baseInpaintStrength);
 
   const maskRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLCanvasElement>(null);
@@ -61,6 +56,9 @@ export function MaskEditor() {
   /** 이미 칠한 칸 — 다시 칠하지 않는다 (v2 `paintedCells`) */
   const painted = useRef(new Set<string>());
   const [count, setCount] = useState(0);
+  /** ★되돌리기 더미. **칠한 칸이 곧 마스크**라(칸은 8px 순흑백) 판을 통째로 떠 두지 않고
+   *  칸마다 1바이트로 얼려 둔다 — 2048² 짜리도 한 걸음이 64KB 다 (256×256 칸). */
+  const [undos, setUndos] = useState<Uint8Array[]>([]);
   /** 원본 픽셀 크기 — 판은 64 배수로 맞춰져 있어 좌표를 되돌릴 때 쓴다 */
   const natural = useRef({ w: 0, h: 0 });
   const drag = useRef<{ kind: "move" | "size"; corner?: string; sx: number; sy: number; r0: Rect } | null>(null);
@@ -101,6 +99,8 @@ export function MaskEditor() {
       sc.getContext("2d")!.clearRect(0, 0, w, h);
       painted.current.clear();
       setCount(0);
+      // 다른 그림으로 갈아탔으면 되돌릴 것도 그 그림 것이 아니다
+      setUndos([]);
       if (savedMask) {
         const m = new Image();
         m.onload = () => {
@@ -150,6 +150,58 @@ export function MaskEditor() {
     s.patchBase({ baseMask: painted.current.size ? maskRef.current!.toDataURL("image/png").split(",")[1] : "" });
     setCount(painted.current.size);
   };
+
+  /** ★되돌리기 — 한 걸음은 **한 획**이다 (긋는 동안이 아니라 시작할 때 찍는다).
+   *  지우기·반전도 같은 한 걸음이다. 더미가 깊어지면 오래된 것부터 버린다. */
+  const UNDO_MAX = 40;
+  const cols = () => Math.floor(size.w / GRID);
+  const mark = () => {
+    const c = cols();
+    const rows = Math.floor(size.h / GRID);
+    const a = new Uint8Array(c * rows);
+    for (const k of painted.current) {
+      const i = k.indexOf(",");
+      const gx = +k.slice(0, i);
+      const gy = +k.slice(i + 1);
+      if (gx < c && gy < rows) a[gy * c + gx] = 1;
+    }
+    setUndos((u) => [...u.slice(-(UNDO_MAX - 1)), a]);
+  };
+  const undo = () => {
+    const prev = undos[undos.length - 1];
+    const canvas = maskRef.current;
+    if (!prev || !canvas) return;
+    setUndos((u) => u.slice(0, -1));
+    const mx = canvas.getContext("2d")!;
+    mx.fillStyle = "black";
+    mx.fillRect(0, 0, canvas.width, canvas.height);
+    painted.current.clear();
+    const c = cols();
+    mx.fillStyle = "white";
+    for (let i = 0; i < prev.length; i++) {
+      if (!prev[i]) continue;
+      const gx = i % c;
+      const gy = (i / c) | 0;
+      mx.fillRect(gx * GRID, gy * GRID, GRID, GRID);
+      painted.current.add(`${gx},${gy}`);
+    }
+    repaintShow();
+    commit();
+  };
+
+  /** ★`Ctrl+Z` (사용자 지시 2026-08-19). 글 상자 안에서 누른 것은 그 칸 것이라 비켜 간다 */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== "z" || !(e.ctrlKey || e.metaKey) || e.shiftKey) return;
+      const el = e.target as HTMLElement | null;
+      if (el?.closest("input, textarea, [contenteditable='true']")) return;
+      e.preventDefault();
+      undo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [undos, size.w, size.h]);
 
   /** 화면 좌표 → 판 좌표.
    *  ★자를 대는 것은 **화면에 보이는 판**(overlay)이다. 데이터 판(mask)은 `display:none` 이라
@@ -308,6 +360,7 @@ export function MaskEditor() {
   }, [rect?.x, rect?.y, rect?.w, rect?.h, size.w, size.h, kx, ky]);
 
   const clear = () => {
+    mark();
     const c = maskRef.current!;
     const mx = c.getContext("2d")!;
     mx.fillStyle = "black";
@@ -319,6 +372,7 @@ export function MaskEditor() {
 
   /** 반전 — 칠한 칸과 아닌 칸을 맞바꾼다 */
   const invert = () => {
+    mark();
     const c = maskRef.current!;
     const mx = c.getContext("2d")!;
     const cols = Math.floor(c.width / GRID);
@@ -338,20 +392,6 @@ export function MaskEditor() {
   const ready = size.w > 0;
   const plan = rectNatural && focused ? focusedPlan(rectNatural) : null;
   const big = !!baseSize && canFocus(baseSize.w, baseSize.h);
-  /** ★실행 버튼은 **이 화면 안에** 있다 (사용자 지적 2026-08-13).
-   *
-   *  왼쪽 생성 푸터를 빌려 쓰면 「생성」이 슬롯 전체를 도는 문법과 부딪힌다.
-   *  5슬롯을 열어 둔 채 인페인트하면 5장이 나왔다. 강화·업스케일이 그림 아래 줄에서
-   *  자기 버튼으로 도는 것과 같은 계열로 둔다. */
-  const req = plan ? plan.req : { width: params.width, height: params.height };
-  const cost = anlasCost({
-    width: req.width, height: req.height, steps: params.steps, opus,
-    // ★인페인트 강도가 값을 정한다 (`y = mask ? inpaintImg2ImgStrength : …`, 9절).
-    //   1 이면 그대로, 낮추면 그만큼 싸진다 — 슬라이더를 만들었으니 값도 따라가야 한다
-    uncachedVibes: 0, activeVibes: 0, refCount: 0, strength: inpaintStrength, count: 1,
-  });
-  // 아무것도 안 칠해도 사각형이 있으면 안쪽 전체를 다시 그린다
-  const canRun = !busy && (count > 0 || (focused && !!rectNatural));
 
   return (
     <div
@@ -399,30 +439,18 @@ export function MaskEditor() {
                  onChange={(e) => setBrush(Number(e.target.value))} />
           <span style={{ width: 22, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{brush}</span>
         </label>
-        {/* ★강도 — v2 도 마스크 편집기 안에 같은 슬라이더를 뒀다 (index.html:10521-10527).
-            칠하면서 바로 조절하는 값이라 왼쪽 패널까지 가지 않아도 되어야 한다.
-            1 이면 칠한 자리를 완전히 새로 그리고, 낮추면 원본을 그만큼 남긴다 */}
-        <label
-          title={t("imgIn.inpaintStrengthHint")}
-          style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", fontSize: "var(--text-2xs)" }}
+        {/* ★강도 슬라이더는 여기 없다 — **왼쪽 생성부의 베이스 이미지 옵션 하나**다
+            (사용자 지시 2026-08-19, 하나의 정보에는 하나의 창구). 그 패널은 칠하는 동안에도
+            그대로 보이므로, 여기 또 두면 같은 값을 두 곳에서 만지는 화면이 된다. */}
+        <button
+          data-mask-undo
+          onClick={undo}
+          disabled={!undos.length}
+          style={{ ...btn, color: undos.length ? "var(--ink-soft)" : "var(--ink-ghost)" }}
+          title={t("imgIn.maskUndo")}
         >
-          <span style={{ color: "var(--ink-faint)" }}>{t("imgIn.strength")}</span>
-          <input
-            type="range"
-            data-mask-strength
-            min={0.01}
-            max={1}
-            step={0.01}
-            value={inpaintStrength}
-            style={{ width: 84 }}
-            onChange={(e) =>
-              useImageInput.getState().patchBase({ baseInpaintStrength: Number(e.target.value) })
-            }
-          />
-          <span style={{ width: 26, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-            {inpaintStrength}
-          </span>
-        </label>
+          {Icon.undo}
+        </button>
         <button data-mask-clear onClick={clear} style={btn} title={t("imgIn.maskClear")}>{Icon.trash}</button>
         <button data-mask-invert onClick={invert} style={btn} title={t("imgIn.maskInvert")}>{Icon.refresh}</button>
 
@@ -439,36 +467,8 @@ export function MaskEditor() {
                 ? ""
                 : t("focus.paintFirst")}
         </span>
-        {/* 실행. 이 화면의 버튼이고 언제나 **이 한 장**에만 먹는다 */}
-        <button
-          data-mask-run
-          disabled={!canRun}
-          onClick={() => {
-            if (!canRun) return;
-            // ★큐에 넣기 직전의 잔액을 적어 둔다. 끝나면 실제 청구가 나온다
-            //   (`store/anlasMeter`). 인페인트는 강도 계수·바이브 면제가 걸린 자리라
-            //   예상이 맞는지 재 볼 값어치가 특히 크다 (9절의 `y` · `!mask`)
-            useAnlasMeter.getState().arm(cost.total, {
-              width: req.width, height: req.height, steps: params.steps, opus,
-              refs: 0, vibes: 0, inpaint: true, count: 1, from: "inpaint",
-            });
-            // 나가는 것은 `queueInpaint` 가 페이로드를 굳힌 뒤에 한다 (순서가 걸려 있다)
-            void queueInpaint(1);
-          }}
-          style={{
-            ...btn,
-            background: canRun ? "var(--accent)" : "var(--panel)",
-            borderColor: canRun ? "var(--accent)" : "var(--line)",
-            color: canRun ? "var(--accent-on)" : "var(--ink-faint)",
-            fontWeight: "var(--w-semi)",
-          }}
-        >
-          {Icon.spark}
-          {t("focus.inpaintBtn")}
-          <span style={{ opacity: 0.82, fontVariantNumeric: "tabular-nums" }}>
-            {t("focus.oneCost", { a: cost.total })}
-          </span>
-        </button>
+        {/* ★실행 버튼은 여기 없다 — 「생성」이 한다 (사용자 지시 2026-08-19).
+            칠하기를 끝내지 않아도 눌리므로, 이 단추는 화면을 닫는 것뿐이다. */}
         <button
           data-mask-done
           onClick={() => useImageInput.getState().endEdit()}
@@ -515,6 +515,8 @@ export function MaskEditor() {
                 if (hit === "move") { drag.current = { kind: "move", sx: p.x, sy: p.y, r0: rect }; return; }
                 if (hit !== "paint") { drag.current = { kind: "size", corner: hit, sx: p.x, sy: p.y, r0: rect }; return; }
               }
+              // 한 획이 한 걸음이다 — 긋기 **전에** 지금 상태를 얼려 둔다
+              mark();
               drawing.current = true;
               lastCell.current = null;
               paint(e);

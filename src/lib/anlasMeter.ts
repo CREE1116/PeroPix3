@@ -22,7 +22,8 @@ export type MeterCond = {
   inpaint: boolean;
   count: number;
   /** 어느 창구가 걸었나. 강도 계수·해상도 규칙이 달라 조건을 가를 때 필요하다 */
-  from: "generate" | "inpaint" | "enhance";
+  /** ★인페인트는 여기 없다 — 「생성」이 만든다 (2026-08-19). 자기 실행 버튼이 없어졌다 */
+  from: "generate" | "enhance";
 };
 
 /** 판정 결과. **`ok: false` 면 화면에도 콘솔에도 아무것도 내지 않는다.** */

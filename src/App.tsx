@@ -31,7 +31,6 @@ import { DeckPanel } from "./cards/DeckPanel";
 import { DragLayer } from "./cards/DragLayer";
 import { SaveDialog, type SaveAsk } from "./cards/SaveDialog";
 import { useSub } from "./store/sub";
-import { useImageInput } from "./store/imageInput";
 import { BlockDrawer } from "./blocks/BlockDrawer";
 import { WildcardModal } from "./panels/WildcardModal";
 import { useWildcards } from "./store/wildcards";
@@ -78,9 +77,6 @@ export function App() {
   const closeSettings = useUi((s) => s.closeSettings);
   // ★탭 줄의 「+」 — 게이트를 그 자리에서 띄운다 (워크스페이스를 닫지 않고 하나 더 연다)
   const [gate, setGate] = useState(false);
-  /** ★인페인트 중에는 왼쪽 패널이 **씬 프롬프트가 아니라 그 인페인트의 사본**을 편집한다
-   *  (`store/imageInput` 의 startEdit). 머리글이 안 바뀌면 씬 프롬프트를 고치는 줄 안다. */
-  const inpainting = useImageInput((s) => s.editing);
 
   // ★저장된 글꼴 선택을 부팅 때 한 번 꽂는다. `--font-sans` 는 CSS 기본값이 Pretendard 라,
   //   이걸 안 하면 다른 글꼴을 골라 뒀어도 새로 켤 때 Pretendard 로 돌아간다.
@@ -187,11 +183,9 @@ export function App() {
            "지금 편집하는 것이 무엇인지"가 흐려진다 (갤러리는 과거를 보는 화면이다).
            머리글도 함께 바뀌어야 한다 — 안 그러면 "프롬프트" 아래 폴더가 뜬다. */
         leftLabel={
-          mode === "gallery"
-            ? tr("gallery.folders")
-            : inpainting
-              ? tr("focus.promptLabel")
-              : tr("panel.prompt")
+          /* ★인페인트라고 머리글이 바뀌지 않는다 — 칠하는 동안에도 **그 씬의 프롬프트**를
+             고치는 것이 맞다 (사용자 지시 2026-08-19). 예전에는 여기서 사본을 편집했다. */
+          mode === "gallery" ? tr("gallery.folders") : tr("panel.prompt")
         }
         rightLabel={mode === "gallery" ? tr("gallery.meta") : tr("panel.deck")}
         /* ★프롬프트·생성 옵션은 **생성 모드에만** (사용자 지적 2026-08-05).

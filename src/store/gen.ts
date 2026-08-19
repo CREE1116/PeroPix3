@@ -155,8 +155,6 @@ type S = {
   /** @param extra 요청에 얹을 것 (강화의 `enhance_of` 등) */
   generate: (cell?: string | null, extra?: Record<string, unknown>) => Promise<void>;
   generateAll: () => Promise<void>;
-  /** 인페인트 한 장. 탭 종류를 안 가리고, 결과를 원본이 있던 씬 칸에 붙인다 */
-  queueInpaint: (count: number) => Promise<void>;
 };
 
 export const useGen = create<S>((set, get) => ({
@@ -247,57 +245,6 @@ export const useGen = create<S>((set, get) => ({
     } finally {
       set({ busy: false });
     }
-  },
-
-  /** 인페인트 한 장. **탭 종류를 안 가린다**.
-   *
-   *  ★`generateAll` 은 씬을 전부 돈다. 인페인트는 **그림 한 장을 고치는 일**이라 그게 아니다.
-   *  ★결과는 **원본이 있던 씬 칸**에 붙는다 (`origin`). 안 붙이면 씬 탭에서는 셀 없는
-   *    레코드가 되어 화면 어디에도 안 뜬다 (`lib/takes.ts`).
-   *  ★프롬프트는 **왼쪽 패널에 있는 그대로** 쓴다. 인페인트 중에는 그 패널이 씬 프롬프트가
-   *    아니라 **인페인트 사본**을 들고 있다 (`store/imageInput` 의 startEdit). 여기서 씬
-   *    블록을 또 붙이면 사본에 이미 든 것이 두 번 들어간다. */
-  async queueInpaint(count) {
-    const ws = useWs.getState();
-    const tab = ws.activeTab();
-    if (!tab) return;
-    const raw = usePrompt.getState().compiled();
-    const pools = wildcardPools();
-    const { prompt, uc, chars } = resolveShot(pools, raw);
-    const origin = useImageInput.getState().originCell;
-    const found = tab.kind === "set" && origin
-      ? allScenes(tab).find((x) => x.cell.id === origin.id)
-      : null;
-    // ★씬 번호(1부터) — 탭에서의 자리다 (`generateAll` 과 같은 규칙)
-    const cellNo = tab.kind === "set" && found
-      ? allCells(tab).findIndex((x) => x.id === found.cell.id) + 1
-      : null;
-    // ★페이로드를 **먼저** 굳힌다. `payload()` 와 `compiled()` 는 편집 중일 때만 인페인트
-    //   내용을 내므로, 편집에서 나가기 전에 다 읽어 둬야 한다
-    const body = {
-      ...get().params,
-      ...useImageInput.getState().payload(),
-      prompt,
-      negative_prompt: uc,
-      characters: chars,
-      workspace: ws.current,
-      char: ws.activeCharOf()?.name ?? null,
-      tab: tab.name,
-      tab_id: tab.id,
-      // ★씬 번호도 함께 보낸다 — 파일 이름 앞이 `<번호>_<씬 이름>` 이라(`workspace.file_lead`),
-      //   번호가 빠지면 인페인트 결과만 `수영복_001.png` 로 나와 같은 폴더 안에서 어긋난다
-      ...(found ? { cell: found.cell.name, cell_id: found.cell.id, cell_no: cellNo } : {}),
-    };
-    // ★보냈으면 편집에서 나온다 (사용자 결정 2026-08-13). 여기 머물면 결과를 못 본다.
-    //   마스크·사각형·프롬프트 사본은 남아, 다시 들어가면 그대로 이어진다
-    useImageInput.getState().endEdit();
-    // ★시드도 와일드카드도 장마다 여기서 확정한다 (`generateAll` 과 같은 규칙)
-    const shots = rounds(Math.max(1, count), get().params, [null], (_, seed) => {
-      const s = resolveShot(pools, raw);
-      return { seed, prompt: s.prompt, negative_prompt: s.uc, characters: s.chars };
-    });
-    await useQueue.getState().enqueue(body, shots, 1);
-    if (get().params.seed_mode !== "fixed") get().set("seed", randomSeed());
   },
 
   async generateAll() {
