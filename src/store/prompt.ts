@@ -310,8 +310,10 @@ export const usePrompt = create<S>((set, get) => ({
 
   load: (p) =>
     set({
-      base: p.base?.length ? p.base : defaultBase(),
-      baseUc: p.baseUc?.length ? p.baseUc : defaultUc(),
+      // ★★**빈 목록과 「없음」은 다르다** (2026-08-19). 예전에는 빈 목록에도 기본 블록을
+      //   채워서, 스타일 카드를 비워 두면 다시 열 때 기본값이 되살아났다. 없을 때만 채운다.
+      base: p.base ?? defaultBase(),
+      baseUc: p.baseUc ?? defaultUc(),
       style: p.style
         ? { ...p.style, thumb: normThumb(p.style.thumb) }
         : { ref: null, name: t("prompt.defaultStyleName"), color: DEFAULT_STYLE_COLOR, thumb: null },
@@ -330,10 +332,18 @@ export const usePrompt = create<S>((set, get) => ({
     chars: get().chars,
   }),
 
-  /** 스타일 카드를 빼거나 되돌린다 (사용자 지시 2026-08-19).
-   *  ★블록은 **지우지 않는다** — 되돌리면 적어 둔 것이 그대로 있어야 한다. 나가는 것만 막는다. */
+  /** 스타일 카드를 빼거나 새로 넣는다 (사용자 지시 2026-08-19).
+   *
+   *  ★★**캐릭터 카드와 같은 규칙이다**: 빼면 내용도 사라지고, 넣으면 **빈 카드**가 생긴다
+   *    (사용자 지적 2026-08-19: 추가했더니 빼기 전의 「여름 스타일」이 되살아났다).
+   *    「잠깐 꺼 두는 스위치」가 아니라 **카드를 지우고 새로 만드는 것**이다. */
   setStyleOn(v) {
-    set({ styleOn: v });
+    set({
+      styleOn: v,
+      style: { ref: null, name: t("prompt.defaultStyleName"), color: DEFAULT_STYLE_COLOR, thumb: null },
+      base: [],
+      baseUc: [],
+    });
     onEdit();
   },
 
