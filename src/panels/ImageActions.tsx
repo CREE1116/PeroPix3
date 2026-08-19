@@ -298,7 +298,7 @@ export function ImageActions({
             data-tip={`${t("gallery.keep")} — ${t("gallery.keepHint")}`}
             style={iconBtn}
           >
-            {Icon.bookmark}
+            {Icon.images}
           </button>
         )}
         {extra}

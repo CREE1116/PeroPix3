@@ -307,7 +307,7 @@ export function WildcardModal() {
                   fontSize: "var(--text-2xs)",
                 }}
               >
-                {Icon.dice}
+                {Icon.cards}
                 {t("wc.preview")}
               </button>
             </div>
@@ -408,7 +408,7 @@ export function WildcardButton() {
       data-tip={t("wc.openHint")}
       style={{ color: open ? "var(--accent)" : "var(--ink-faint)", display: "grid", padding: "0 4px" }}
     >
-      {Icon.dice}
+      {Icon.cards}
     </button>
   );
 }
