@@ -534,6 +534,7 @@ function Card({
   onRemove: () => void;
   children: React.ReactNode;
 } & Record<string, unknown>) {
+  const t = useI18n((s) => s.t);
   return (
     <div
       style={{
@@ -572,7 +573,7 @@ function Card({
         {badge && (
           <span style={{ fontSize: "var(--text-3xs, 10px)", color: "var(--ok, var(--accent))" }}>{badge}</span>
         )}
-        <button onClick={onRemove} data-tip="×" style={{ color: "var(--ink-faint)", display: "grid" }}>
+        <button onClick={onRemove} data-tip={t("imgIn.baseClear")} style={{ color: "var(--ink-faint)", display: "grid" }}>
           {Icon.close}
         </button>
       </div>

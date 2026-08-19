@@ -12,14 +12,14 @@ import { Icon } from "./Icon";
  *  설명 문구를 화면에 **상시 노출하지 않는다**는 규칙과 한 짝이다 (`CLAUDE.md`) —
  *  값이 무엇을 하는지는 라벨 옆 `?`(`Help`)에 넣고, 단추의 이름은 여기로 뜬다. */
 
-/** 처음 뜰 때까지 (ms). 지나가다 스치는 것에는 안 뜬다 */
-const DELAY = 130;
-/** 방금 하나 닫혔으면 이만큼 동안은 곧바로 뜬다 */
-const WARM = 600;
+/** ★★처음 뜰 때까지 (ms). **넉넉히 기다린다** — 커서를 옮길 때마다 여기저기서 툴팁이
+ *  튀어나오면 그것 자체가 방해다 (사용자 지적 2026-08-19). 지나가다 스치는 것에는 안 뜬다.
+ *  ★단추 이름은 대개 **몰라서 보는 것이 아니라** 확인하려고 보는 것이라, 급할 이유가 없다. */
+const DELAY = 650;
+/** `?` 는 **설명을 보려고 일부러 대는 것**이라 곧바로 뜬다 (`Help` — 사용자 지시: 반응성) */
+const DELAY_HELP = 120;
 
 type Shown = { text: string; x: number; y: number; below: boolean };
-
-let warmUntil = 0;
 
 export function TipLayer() {
   const [tip, setTip] = useState<Shown | null>(null);
@@ -34,13 +34,17 @@ export function TipLayer() {
     };
     const hide = () => {
       stop();
-      if (target.current) warmUntil = Date.now() + WARM;
       target.current = null;
       setTip(null);
     };
     const show = (el: HTMLElement) => {
       const text = el.getAttribute("data-tip");
       if (!text) return;
+      // ★★**이미 보이는 글은 다시 안 띄운다** (사용자 지적 2026-08-19). 이름을 그대로
+      //   툴팁으로도 단 자리가 많다 (탭·카드·파일 이름) — 그건 커서를 댈 때마다 같은 글자가
+      //   한 번 더 뜨는 것뿐이다. **잘려 있을 때만** 뜬다 (그때는 알 길이 그것뿐이다).
+      const shown = (el.textContent ?? "").trim();
+      if (shown && shown === text.trim() && el.scrollWidth <= el.clientWidth + 1) return;
       const r = el.getBoundingClientRect();
       // 위가 좁으면 아래로 내린다. 아래로 내릴 때도 화면 밖으로는 안 나간다
       const below = r.top < 72;
@@ -56,8 +60,9 @@ export function TipLayer() {
       if (!el || el === target.current) return;
       stop();
       target.current = el;
-      if (Date.now() < warmUntil) return show(el);
-      timer.current = window.setTimeout(() => show(el), DELAY);
+      // ★★**한 번 뜬 뒤 잠깐은 곧바로**… 를 뺐다 (사용자 지적 2026-08-19). 줄지어 있는
+      //   단추 위를 지나가는 것만으로 툴팁이 따라다녔다. 언제나 같은 만큼 기다린다.
+      timer.current = window.setTimeout(() => show(el), el.hasAttribute("data-help") ? DELAY_HELP : DELAY);
     };
     const leave = (e: PointerEvent) => {
       const to = e.relatedTarget as Node | null;

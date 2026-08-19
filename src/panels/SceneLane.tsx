@@ -445,7 +445,6 @@ export function SceneLane() {
         <button
           data-star-filter
           onClick={() => useUi.getState().setLaneStarOnly(!starOnly)}
-          data-tip={t(starOnly ? "canvas.starAll" : "canvas.starOnly")}
           style={{
             display: "inline-flex",
             alignItems: "center",

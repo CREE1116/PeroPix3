@@ -204,24 +204,14 @@ function PanelCard({
       ref={drop.ref}
       data-deck-card={card.id}
       data-over={drop.over ? "1" : "0"}
-      onPointerDown={(e) => startDrag(e, { dir: "apply", kind, card })}
+      // ★지우기 단추는 **끌기에서 비켜 간다** — pointerdown 의 기본 동작 막기가 호환 click 을
+      //   삼켜서, 안 비키면 단추가 통째로 죽는다 (CLAUDE.md 「잊기 쉬운 것」)
+      onPointerDown={(e) => {
+        if ((e.target as HTMLElement).closest("[data-card-del]")) return;
+        startDrag(e, { dir: "apply", kind, card });
+      }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        void (async () => {
-          if (
-            await ask({
-              title: t("cards.deleteConfirm", { name: card.name }),
-              body: t("common.toTrash"),
-              ok: t("common.delete"),
-              cancel: t("cards.cancel"),
-            })
-          )
-            onDelete();
-        })();
-      }}
-      data-tip={card.name}
       style={{
         position: "relative",
         aspectRatio: "3 / 4",
@@ -260,18 +250,42 @@ function PanelCard({
       >
         {card.name}
       </div>
+      {/* ★★끌기 손잡이 아이콘을 걷고 그 자리에 **지우기**를 뒀다 (사용자 지시 2026-08-19).
+          카드는 통째로 잡아 끄는 것이라 손잡이가 없어도 끌리는 줄 알고, 지우는 길은
+          **우클릭뿐이라 보이지 않았다.** 보이는 단추가 하나 필요한 자리였다. */}
       {hover && (
-        <span
+        <button
+          data-card-del={card.id}
+          data-tip={t("common.delete")}
+          onClick={(e) => {
+            e.stopPropagation();
+            void (async () => {
+              if (
+                await ask({
+                  title: t("cards.deleteConfirm", { name: card.name }),
+                  body: t("common.toTrash"),
+                  ok: t("common.delete"),
+                  cancel: t("cards.cancel"),
+                })
+              )
+                onDelete();
+            })();
+          }}
           style={{
             position: "absolute",
             top: 3,
             right: 3,
-            color: "rgba(255,255,255,0.7)",
             display: "grid",
+            placeItems: "center",
+            width: 18,
+            height: 18,
+            borderRadius: "var(--r-1)",
+            background: "rgba(10,14,20,0.55)",
+            color: "#fff",
           }}
         >
-          {Icon.grip}
-        </span>
+          {Icon.close12}
+        </button>
       )}
     </div>
   );

@@ -266,7 +266,6 @@ export function ImageActions({
                 body: JSON.stringify({ path: revealPath }),
               }).catch((e) => toast(String(e), "warn"))
             }
-            data-tip={t("files.reveal")}
             style={btn}
           >
             {t("files.reveal")}
