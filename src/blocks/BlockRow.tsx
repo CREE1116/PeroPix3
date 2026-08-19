@@ -275,6 +275,21 @@ export function BlockRow({
 
         {/* ★태그 개수를 적지 않는다 (사용자 지시 2026-08-13) — 접혀 있으면 요약이 이미
             보이고 펼치면 칩이 다 보인다. 한 줄에 정보가 너무 많았다 */}
+        {/* ★★차례는 앱 전체에서 하나다: **이름변경 · 온오프 · 삭제** (사용자 지시 2026-08-19).
+            ★「추가」 블록은 이름을 못 바꾼다 (칸의 종류라 이름이 고정이다) */}
+        {!block.extra && (
+          <button
+            data-block-rename={block.id}
+            onClick={(e) => {
+              e.stopPropagation();
+              setRenaming(true);
+            }}
+            data-tip={t("cards.rename")}
+            style={{ color: "var(--ink-faint)", padding: "0 2px", display: "grid" }}
+          >
+            {Icon.pencil}
+          </button>
+        )}
         <button
           onClick={(e) => {
             e.stopPropagation();

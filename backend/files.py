@@ -170,36 +170,78 @@ def restore(root: Path, entries: list[dict]) -> dict:
     return trash.restore_at(root, entries)
 
 
-def _allow_foreground() -> None:
-    """★★탐색기가 **스스로 앞으로 올 수 있게** 허가한다 (사용자 지적 2026-08-19).
+def _to_front(folder: Path) -> None:
+    """열려 있는 탐색기 창을 **앞으로**. 못 찾으면 조용히 넘어간다.
 
-    윈도우는 포커스를 빼앗기지 않으려고 `SetForegroundWindow` 를 막는다. v2 는 열린 창을
-    COM 으로 전부 훑어 찾은 뒤 `AttachThreadInput` 으로 그 제한을 넘겼는데, 그 방법은
-    **창을 두 번 훑고 0.3초를 자느라** 누를 때마다 눈에 띄게 느렸다 (그것도 이벤트 루프
-    위에서). `AllowSetForegroundWindow(ASFW_ANY)` 는 **다음에 뜨는 창에 권한을 넘기는**
-    한 줄짜리 호출이라 훑을 것도 잘 것도 없다."""
+    ★★COM(`Shell.Application`)으로 훑지 않는다 (사용자 지적 2026-08-19: 느렸다) —
+      `EnumWindows` 로 **최상위 창만** 훑는다. 창 목록은 수십 개라 눈 깜짝할 새다.
+    ★탐색기 창의 제목은 **폴더 이름**이다 (클래스 `CabinetWClass`). 이름만 맞으면 앞으로 낸다.
+    ★포커스 제한은 `AttachThreadInput` 으로 넘는다 (v2 와 같은 수법, 다만 창 찾기가 싸다)."""
     if sys.platform != "win32":
         return
     try:
         import ctypes
+        from ctypes import wintypes
 
-        ctypes.windll.user32.AllowSetForegroundWindow(-1)  # ASFW_ANY
-    except Exception as e:  # 권한이 없어도 여는 것까지는 된다
-        print(f"[reveal] 앞으로 보내기를 허가하지 못했습니다 ({e})")
+        u = ctypes.windll.user32
+        want = folder.name or str(folder)
+        found = []
+
+        @ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+        def each(hwnd, _):
+            cls = ctypes.create_unicode_buffer(64)
+            u.GetClassNameW(hwnd, cls, 64)
+            if cls.value != "CabinetWClass":
+                return True
+            n = u.GetWindowTextLengthW(hwnd)
+            buf = ctypes.create_unicode_buffer(n + 1)
+            u.GetWindowTextW(hwnd, buf, n + 1)
+            if buf.value == want:
+                found.append(hwnd)
+                return False
+            return True
+
+        u.EnumWindows(each, 0)
+        if not found:
+            return
+        hwnd = found[0]
+        if u.IsIconic(hwnd):
+            u.ShowWindow(hwnd, 9)  # SW_RESTORE
+        fore = u.GetForegroundWindow()
+        mine = u.GetWindowThreadProcessId(hwnd, None)
+        other = u.GetWindowThreadProcessId(fore, None)
+        if mine != other:
+            u.AttachThreadInput(mine, other, True)
+            u.BringWindowToTop(hwnd)
+            u.SetForegroundWindow(hwnd)
+            u.AttachThreadInput(mine, other, False)
+        else:
+            u.BringWindowToTop(hwnd)
+            u.SetForegroundWindow(hwnd)
+    except Exception as e:  # 앞으로 못 내도 창은 열려 있다
+        print(f"[reveal] 앞으로 가져오지 못했습니다 ({e})")
 
 
 def _open(p: Path, select: bool) -> None:
-    """탐색기 호출 한 곳. `select` 면 그 파일을 고른 채로, 아니면 폴더만 연다.
+    """탐색기에서 그 자리를 연다.
 
-    ★**창을 앞으로 가져온다** (사용자 지적 2026-08-19) — 여는 것만으로는 뒤에서 열린다.
-      허가만 주고 여는 것은 탐색기가 한다 (`_allow_foreground` 주석)."""
+    ★★**폴더를 연다. 파일을 고른 채로 열지 않는다** (사용자 지적 2026-08-19: 느렸다).
+      `explorer /select,` 는 **탐색기 프로세스를 새로 띄우고 창도 새로 만든다** — 누를 때마다
+      눈에 띄게 느렸고 창이 쌓였다. v2 도 `os.startfile(folder)` 로 폴더만 열었다
+      (`open_folder_in_explorer`). 열려 있으면 그 창을 다시 쓰므로 즉시 뜬다.
+    ★연 뒤 **앞으로 낸다** — 그냥 열면 뒤에서 열린다 (`_to_front`)."""
     target = p if p.is_dir() else p.parent
     if sys.platform == "win32":
-        _allow_foreground()
-        if select and p.is_file():
-            subprocess.Popen(["explorer", "/select,", str(p)])
-        else:
-            os.startfile(str(target))  # noqa: S606
+        try:
+            ctypes_ok = True
+            import ctypes
+
+            ctypes.windll.user32.AllowSetForegroundWindow(-1)  # ASFW_ANY
+        except Exception:
+            ctypes_ok = False
+        os.startfile(str(target))  # noqa: S606
+        if ctypes_ok:
+            _to_front(target)
     elif sys.platform == "darwin":
         subprocess.Popen(["open", "-R", str(p)] if select and p.is_file() else ["open", str(target)])
     else:

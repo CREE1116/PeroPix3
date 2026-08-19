@@ -327,17 +327,26 @@ function SaveHint() {
         display: "inline-flex",
         alignItems: "center",
         gap: 4,
+        /* ★★자리가 모자라면 **줄이 밀리는 대신 말줄임**이다 (사용자 지시 2026-08-19) —
+           서브탭이 늘면 이 줄이 탭을 밀어냈다. 폴더 이름은 뒤쪽이 중요하지만, 여기서는
+           **어느 탭·세트인지**가 뒤에 오므로 앞을 자르지 않고 끝을 자른다 (툴팁에 전체가 있다). */
+        minWidth: 0,
+        flexShrink: 1,
+        overflow: "hidden",
+        whiteSpace: "nowrap",
         fontSize: "var(--text-2xs)",
         color: "var(--ink-ghost)",
         fontFamily: "var(--font-mono)",
         paddingBottom: 6,
       }}
-      data-tip={tr("canvas.saveLocation")}
+      data-tip={`workspaces/${current}/${rel}`}
     >
       {/* ★실제 저장 자리를 그대로 보인다 — 옛 `work/` 를 보여 주고 있어 틀렸었다.
           ★폴더 이름 `멀티/` 는 **디스크에 이미 있는 구조**다 (싱글/멀티 구분은 폐기됐지만
             폴더를 바꾸면 이미 만든 그림이 갈라진다 — `backend/workspace.py` 의 `out_dir`) */}
-      workspaces/{current}/{rel}
+      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        workspaces/{current}/{rel}
+      </span>
       {/* ★씬 이름은 **파일 이름 앞**에 붙는다 (`file_lead`) — 폴더가 아니다 */}
       {cell ? <span style={{ color: "var(--ink-faint)" }}>/{cell}_*.png</span> : ""}
       {/* ★그 자리를 **여는 단추** (사용자 지시 2026-08-19) — 경로만 적혀 있으면

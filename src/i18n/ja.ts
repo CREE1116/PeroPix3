@@ -67,7 +67,7 @@ export const ja: Dict = {
     finalPrompt: "最終プロンプト",
     chars: "{n} 文字",
     empty: "（空）",
-    defaultStyleName: "夏スタイル",
+    defaultStyleName: "新しいスタイル",
   },
 
   thumb: {
@@ -187,6 +187,7 @@ export const ja: Dict = {
   },
 
   queue: {
+    cancelling: "取り消し中…",
     cancelSent: "取り消しました — 生成中の1枚だけ出ます",
     err402: "Anlas が足りません。解像度か枚数を減らしてください。",
     err401: "NAI トークンが無効です。設定で入れ直してください。",
@@ -595,7 +596,9 @@ export const ja: Dict = {
     cloneHint: "この画像とその設定だけを入れたシーン1つのタブを作ります。元の画像はそのまま残ります",
     cloned: "新しいタブに複製しました",
     showPrompt: "プロンプトを見る",
-    i2i: "この画像から (i2i)",
+    /** ★글자로 남는 **유일한** 단추다 — 이름 자체가 짧은 낱말이라 아이콘이 오히려 흐리다.
+     *  ★군더더기를 붙이지 않는다 (사용자 지적 2026-08-19: 「이 그림으로 (i2i)」였다) */
+    i2i: "i2i",
     inpaint: "インペイント",
     seedSet: "シード {n} に固定",
     sentI2i: "画像入力に入れました",

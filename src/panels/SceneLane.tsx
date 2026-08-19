@@ -37,9 +37,6 @@ import { BANNER_BG, bannerEmptyFill } from "../cards/banner";
  *  ★3단 버튼도 없앴다. Ctrl+휠 한 번에 12% 씩 움직인다 (`store/ui` 의 LANE_MIN·LANE_MAX). */
 const ZOOM = 1.12;
 const GAP = 6;
-/** ★줄 머리 폭은 **사용자가 끈다** (사용자 지시 2026-08-14). 그 씬의 프롬프트가
- *  들어가는 자리라, 넓히면 프롬프트가 잘 보이고 좁히면 장이 더 보인다. */
-const RULER_H = 19;
 
 export function SceneLane() {
   const t = useI18n((s) => s.t);
@@ -353,12 +350,6 @@ export function SceneLane() {
   const starCount = takesOf(all, tab, undefined).filter(
     (r) => !isDeleted(r.file) && isStarred(r.file),
   ).length;
-  const maxLen = Math.max(
-    1,
-    ...tab.cards.flatMap((k) =>
-      k.cells.map((c) => takesOfCell(c).length + queued.filter((p) => p.cellId === c.id).length),
-    ),
-  );
 
   /** 카드마다 **앞선 카드들의 씬 수**.
    *  ★줄 앞 번호는 **탭 안에서 통째로** 센다 — 그 값이 곧 파일 이름 앞의 번호이기 때문이다
@@ -465,9 +456,11 @@ export function SceneLane() {
             {canAll && (
               <option value="all">{t("scenes.destAll")}</option>
             )}
-            {chars.map((c) => (
+            {/* ★이름이 비어 있으면 **화면에 뜨는 이름**을 그대로 쓴다 (사용자 지적 2026-08-19:
+                갓 만든 캐릭터가 공백으로 떴다). 카드 머리도 같은 규칙이다 (`CharSection`) */}
+            {chars.map((c, i) => (
               <option key={c.id} value={c.id}>
-                {t("scenes.destChar", { name: c.name })}
+                {t("scenes.destChar", { name: c.name || t("cards.charN", { n: i + 1 }) })}
               </option>
             ))}
           </select>
@@ -554,38 +547,8 @@ export function SceneLane() {
           <Empty onAdd={() => addCard(tab.id)} />
         ) : (
           <div style={{ width: "max-content", minWidth: "100%" }}>
-            {/* 눈금 — ★그릇 것이라 카드가 몇 장이든 이어진다 */}
-            <div
-              style={{
-                position: "sticky",
-                top: 0,
-                zIndex: 3,
-                display: "flex",
-                alignItems: "center",
-                height: RULER_H,
-                background: "var(--bg)",
-                borderBottom: "1px solid var(--line-soft)",
-              }}
-            >
-              <div style={{ width: headw, flexShrink: 0 }} />
-              {Array.from({ length: maxLen }, (_, k) => (
-                <div
-                  key={k}
-                  style={{
-                    width: w,
-                    marginLeft: k ? GAP : 8,
-                    flexShrink: 0,
-                    textAlign: "center",
-                    fontSize: 11,
-                    fontFamily: "var(--font-mono)",
-                    color: "var(--ink-ghost)",
-                  }}
-                >
-                  {k + 1}
-                </div>
-              ))}
-            </div>
-
+            {/* ★눈금 줄(1·2·3…)을 걷었다 (사용자 지시 2026-08-19) — 몇 번째 장인지는
+                세어서 쓸 일이 없고, 줄마다 자리를 하나씩 먹고 있었다. */}
             {tab.cards.map((card, ci) => (
               <Fragment key={card.id}>
               {/* ★카드를 끌 때 놓일 자리 — **레이아웃을 안 밀도록** 높이 0 위에 띄운다

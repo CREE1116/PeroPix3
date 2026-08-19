@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { useDragSource, dragSourceStyle } from "../cards/dragStore";
 import { useGen } from "../store/gen";
-import { useWs, takesOfScene, allCells, allScenes } from "../store/workspace";
+import { useWs, takesOfScene, allCells, allScenes, type ShotEnv } from "../store/workspace";
 import { SceneLane, takeSrc } from "./SceneLane";
 import { useSceneFocus } from "../store/sceneFocus";
 import { useUi } from "../store/ui";
@@ -231,6 +231,18 @@ function SceneActions() {
         name={un ? tr("scenes.unsaved") : file.split("/").pop() ?? file}
         seed={(un ?? rec)?.seed ?? 0}
         loadMeta={loadMeta}
+        /* ★설정 불러오기도 **그때 구조**를 쓴다 (사용자 지적 2026-08-19: 블록이 한 뭉텅이로 왔다).
+           미저장 그림에는 레코드가 없어 스냅샷도 없다 — 그때는 메타데이터로 떨어진다. */
+        loadEnv={
+          un
+            ? undefined
+            : async () =>
+                (
+                  await api<{ env: ShotEnv | null }>(
+                    `/api/workspaces/${encodeURIComponent(ws)}/env?file=${encodeURIComponent(file)}`,
+                  )
+                ).env
+        }
         onClone={cloneToNewTab}
         dims={dims}
         /* ★미저장이면 누를 때 저장하고 그 경로로 연다 (`revealPath` 는 함수도 받는다) */

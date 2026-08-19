@@ -5,7 +5,9 @@ import { fitSizeToBase } from "../store/gen";
 import { useImageInput } from "../store/imageInput";
 import { useUi } from "../store/ui";
 import { toast } from "../store/toast";
-import { applyMeta } from "./GalleryMeta";
+import { applyMeta, applyMetaParams, applyMetaVibes } from "./GalleryMeta";
+import { usePrompt } from "../store/prompt";
+import type { ShotEnv } from "../store/workspace";
 import { api } from "../lib/backend";
 import { upscaleCost } from "../lib/anlas";
 import { useSub } from "../store/sub";
@@ -26,6 +28,7 @@ export function ImageActions({
   name,
   seed,
   loadMeta,
+  loadEnv,
   ensureFile,
   hideSettings,
   dims,
@@ -56,6 +59,8 @@ export function ImageActions({
   /** 파일이 있어야 하는 일 **앞에** 부른다 — 미저장 그림이면 저장하고 새 경로를 돌려준다.
    *  ★없으면 지금 경로를 그대로 쓴다 (갤러리·저장된 그림). 이 갈래를 부르는 쪽이 안다. */
   ensureFile?: () => Promise<string | null>;
+  /** 생성할 때 남겨 둔 **그때 구조** (`gen.ts` 의 `env`). 있으면 설정 불러오기가 이걸 먼저 쓴다 */
+  loadEnv?: () => Promise<ShotEnv | null>;
   /** ★갤러리에서는 「설정 불러오기」를 안 띄운다 (사용자 지시 2026-08-19) — 거기서 되돌리는
    *  창구는 **「새 탭으로 복제」 하나**다. 보고 있던 탭이 조용히 갈리는 길을 남기지 않는다. */
   hideSettings?: boolean;
@@ -127,13 +132,27 @@ export function ImageActions({
 
   /** ★가르지 않는다 — **설정으로 쓰는 것 하나**다 (사용자 지시 2026-08-05).
    *  「프롬프트만」은 적용이 아니라 **보는 것**이라, 아래 `프롬프트 보기`로 갈라 나갔다. */
+  /** 이 그림의 설정을 지금 화면으로 가져온다.
+   *
+   *  ★★**블록 구조를 지킨다** (사용자 지적 2026-08-19: 한 뭉텅이로 왔다).
+   *    메타데이터에는 **합쳐진 문자열**만 남아서, 그것만으로 되돌리면 블록이 한 덩어리가 되고
+   *    캐릭터가 `#1`·`#2` 로 다시 만들어진다. 그래서 생성할 때 남겨 둔 **그때 구조**(`env`)를
+   *    먼저 쓴다 — 「새 탭으로 복제」가 쓰는 것과 같은 것이다 (`gen.ts` 의 `env`).
+   *    ★스냅샷이 없는 옛 그림·갤러리 그림만 메타데이터로 떨어진다. */
   const useSettings = async () => {
     if (!loadMeta || busy) return;
     setBusy(true);
     try {
       const m = await loadMeta();
       if (!m) return toast(t("act.noMeta"), "warn");
-      applyMeta(m, "all");
+      const env = loadEnv ? await loadEnv().catch(() => null) : null;
+      if (env?.prompt) {
+        // 구조는 스냅샷에서, 값(해상도·시드·바이브)은 메타데이터에서
+        usePrompt.getState().load(env.prompt);
+        useUi.getState().reveal("left", "prompt");
+        applyMetaParams(m);
+        applyMetaVibes(m);
+      } else applyMeta(m, "all");
       toast(t("act.applied"));
     } catch (e) {
       toast(String(e), "warn");
@@ -207,26 +226,21 @@ export function ImageActions({
       >
         {loadMeta && (
           <>
-            {/* ★글자로 남는 것은 **「i2i」 하나**다 (사용자 지시 2026-08-19) — 그건 이름 자체가
-                짧은 낱말이라 아이콘으로 옮기면 오히려 흐려진다 */}
-            <button
-              data-act-prompt
-              onClick={() => void showPrompt()}
-              disabled={busy}
-              data-tip={t("act.showPrompt")}
-              style={iconBtn}
-            >
-              {Icon.text}
+            {/* ★★맨 왼쪽 셋(보기·설정·복제)은 **글자**다 (사용자 지시 2026-08-19).
+                셋 다 「무엇을 어디로」가 걸린 일이라 그림 하나로는 뜻이 안 잡힌다.
+                오른쪽 무리(인페인트·강화·업스케일·탐색기·보관)는 아이콘이다. */}
+            <button data-act-prompt onClick={() => void showPrompt()} disabled={busy} style={btn}>
+              {t("act.showPrompt")}
             </button>
             {!hideSettings && (
               <button
                 data-act-settings
                 onClick={() => void useSettings()}
                 disabled={busy}
-                data-tip={`${t("act.settings")} — ${t("act.settingsHint")}`}
-                style={iconBtn}
+                data-tip={t("act.settingsHint")}
+                style={btn}
               >
-                {Icon.sliders}
+                {t("act.settings")}
               </button>
             )}
           </>
@@ -243,10 +257,10 @@ export function ImageActions({
             data-act-clone
             onClick={() => void runClone()}
             disabled={busy}
-            data-tip={`${t("act.clone")} — ${t("act.cloneHint")}`}
-            style={iconBtn}
+            data-tip={t("act.cloneHint")}
+            style={btn}
           >
-            {Icon.duplicate}
+            {t("act.clone")}
           </button>
         )}
 

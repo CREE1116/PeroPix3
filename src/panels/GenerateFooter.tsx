@@ -37,6 +37,13 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
   /** 잔액을 다시 물어본 횟수 — 누를 때마다 아이콘을 **한 바퀴 더** 돌린다 (v2 `refreshAnlasBtn`).
    *  ★각도를 원위치시키지 않고 누적한다. 되돌리면 애니메이션이 거꾸로 돌아 흔들려 보인다. */
   const [turns, setTurns] = useState(0);
+  /** ★★취소를 **받았다**는 상태 (사용자 지적 2026-08-19: 눌러도 눌린 느낌이 없었다).
+   *  받은 뒤에는 다시 못 누르고, 단추가 「취소 중」으로 바뀐다. 배치가 끝나면 저절로 풀린다. */
+  const [cancelled, setCancelled] = useState(false);
+  /** ★★막 눌렀다 (사용자 지적 2026-08-19: 눌린 느낌이 없다). 큐가 돌기 시작하기까지
+   *  잠깐이지만 그 사이에 아무 반응이 없으면 **안 눌린 줄 안다.** 그동안 눌린 모양으로 두고
+   *  다시 못 누르게 한다 — 그 뒤로는 `running` 이 이어받는다. */
+  const [firing, setFiring] = useState(false);
   const tab = useWs((s) => s.activeTab());
   const img = useImageInput();
 
@@ -85,11 +92,15 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
     count,
   });
   const running = progress.total > progress.completed;
+  useEffect(() => {
+    if (!running) setCancelled(false);
+  }, [running]);
   /** ★★취소를 누르면 **받았다고 말한다** (사용자 지적 2026-08-19: 눌러도 아무 일이 없어
    *  보였다). NAI 는 이미 나간 한 장을 못 끊으므로 **지금 것은 끝까지 나오고** 나머지가
    *  빠진다 — 그 사실을 그 자리에서 알린다. 안 알리면 「안 눌렸다」로 읽혀 또 누르게 된다. */
   const cancelQueue = async () => {
-    if (!running) return;
+    if (!running || cancelled) return;
+    setCancelled(true);
     toast(t("queue.cancelSent"));
     await cancelAll();
   };
@@ -102,7 +113,7 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
    *  데려간다. 지금까지는 검사가 없어 눌러 놓고 실패를 기다려야 했다 (감사 C5). */
   const noToken = !useHasToken();
   const openSettings = useUi((s) => s.openSettings);
-  const off = busy || blocked;
+  const off = busy || blocked || firing;
   /** 이 버튼이 지금 하는 일 — 토큰이 없으면 「만들기」가 아니라 「넣으러 가기」다 */
   const fire = () => {
     if (noToken) return openSettings("general");
@@ -122,6 +133,8 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
       count,
       from: "generate",
     });
+    setFiring(true);
+    setTimeout(() => setFiring(false), 700);
     void generateAll();
   };
 
@@ -188,8 +201,9 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
         { a: MAX_PER_IMAGE },
       )}
       style={{
-        background: off ? "var(--panel)" : "var(--accent)",
-        color: off ? "var(--ink-faint)" : "var(--accent-on)",
+        // ★막 누른 동안은 **가라앉은 액센트** — 「못 누름(회색)」과 다르게 보여야 한다
+        background: firing ? "var(--accent-bg)" : off ? "var(--panel)" : "var(--accent)",
+        color: firing ? "var(--accent)" : off ? "var(--ink-faint)" : "var(--accent-on)",
         borderRadius: "var(--r-2)",
         padding: compact ? "var(--sp-3) 0" : "var(--sp-3)",
         fontWeight: "var(--w-semi)",
@@ -203,7 +217,7 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
     >
       {/* ★★아이콘을 안 붙인다 (사용자 지시 2026-08-19) — 이름이 이미 적혀 있고, 접었을 때는
           **v2 처럼 `Q`** 다 (그쪽 `collapsedQueueBtn`). 글자 하나가 아이콘보다 또렷하다. */}
-      {compact ? "Q" : busy ? t("canvas.generating") : t("canvas.generate")}
+      {compact ? "Q" : busy || firing ? t("canvas.generating") : t("canvas.generate")}
       {/* ★몇 장을 만들지·얼마가 드는지를 **누르기 전에** 보여 준다.
           ★Opus 무료 구간이면 숫자 대신 **FREE** 다 (v2 `anlasFreeTag`, index.html:9438).
             `anlas.ts` 가 세 두고도 아무도 안 읽던 값이다 (감사 C3). */}
@@ -220,23 +234,47 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
     return (
       <div style={{ padding: "var(--sp-2)", borderTop: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: 4 }}>
         {genBtn}
+      {/* ★★취소는 **생성 버튼 바로 아래**다 (사용자 지시 2026-08-19) — 접었을 때(`C`)와
+          같은 자리여야 헷갈리지 않는다. 예전에는 큐 줄 안에 있어서 접고 펴면 자리가 달라졌다.
+          ★받은 뒤에는 「취소 중」으로 바뀌고 안 눌린다 — 눌렀다는 것이 보여야 한다. */}
+      {running && (
+        <button
+          data-queue-cancel
+          onClick={() => void cancelQueue()}
+          disabled={cancelled}
+          data-tip={t("queue.cancelHint")}
+          style={{
+            ...qbtn,
+            width: "100%",
+            padding: "var(--sp-2)",
+            textAlign: "center",
+            color: cancelled ? "var(--ink-ghost)" : "var(--err)",
+            borderColor: cancelled ? "var(--line)" : "var(--err)",
+          }}
+        >
+          {cancelled ? t("queue.cancelling") : t("queue.cancel")}
+        </button>
+      )}
         {/* ★★`CQ` 는 **늘 있다** (사용자 지시 2026-08-19, v2 `collapsedClearQBtn`) —
             돌 때만 나타나면 멈추려는 순간에 자리를 찾게 된다. 돌지 않을 때는 눌러도
             할 일이 없으므로 흐리게 둔다. */}
         <button
           data-queue-cancel="compact"
           onClick={() => void cancelQueue()}
-          disabled={!running}
+          disabled={!running || cancelled}
           data-tip={`${t("queue.cancel")} — ${t("queue.cancelHint")}`}
           style={{
             ...qbtn,
             width: "100%",
+            padding: "var(--sp-2) 0",
             textAlign: "center",
-            color: running ? "var(--err)" : "var(--ink-ghost)",
-            borderColor: running ? "var(--err)" : "var(--line)",
+            /* ★★`CQ` 두 글자는 좁은 레일에서 넘쳤다 (사용자 지적 2026-08-19) — 한 글자다.
+               ★받은 뒤에는 흐려지고 안 눌린다. */
+            color: running && !cancelled ? "var(--err)" : "var(--ink-ghost)",
+            borderColor: running && !cancelled ? "var(--err)" : "var(--line)",
           }}
         >
-          CQ
+          C
         </button>
         {running && (
           <div
@@ -315,16 +353,7 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
             {/* ★취소는 **버튼 하나**다 (사용자 결정 2026-08-18). NAI 는 이미 나간 한 장을
                 못 끊으므로 「지금 것만 중단」과 「대기만 비우기」를 가를 실익이 없었고,
                 v3 는 배치가 잡 하나라 「큐 비우기」 혼자서는 아무것도 안 멈췄다 (감사 D5). */}
-            {running && (
-              <button
-                data-queue-cancel
-                onClick={() => void cancelQueue()}
-                data-tip={t("queue.cancelHint")}
-                style={{ ...qbtn, color: "var(--err)", borderColor: "var(--err)" }}
-              >
-                {t("queue.cancel")}
-              </button>
-            )}
+
           </div>
           {/* 진행바 — v2 `progressFill` 이관 (index.html:9442-9444, 16119-16127) */}
           <div

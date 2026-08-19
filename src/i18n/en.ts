@@ -67,7 +67,7 @@ export const en = {
     finalPrompt: "Final prompt",
     chars: "{n} chars",
     empty: "(empty)",
-    defaultStyleName: "Summer Style",
+    defaultStyleName: "New style",
   },
 
   thumb: {
@@ -187,6 +187,7 @@ export const en = {
   },
 
   queue: {
+    cancelling: "Cancelling…",
     cancelSent: "Cancelled — the image being made will still finish",
     err402: "Not enough Anlas. Try a smaller size or fewer images.",
     err401: "The NAI token is not valid. Set it again in settings.",
@@ -596,7 +597,9 @@ export const en = {
     cloneHint: "Makes a new one-scene tab holding just this image and its settings. The original stays where it is",
     cloned: "Duplicated into a new tab",
     showPrompt: "View prompt",
-    i2i: "Use as image (i2i)",
+    /** ★글자로 남는 **유일한** 단추다 — 이름 자체가 짧은 낱말이라 아이콘이 오히려 흐리다.
+     *  ★군더더기를 붙이지 않는다 (사용자 지적 2026-08-19: 「이 그림으로 (i2i)」였다) */
+    i2i: "i2i",
     inpaint: "Inpaint",
     seedSet: "Seed {n} locked in",
     sentI2i: "Loaded into image input",
