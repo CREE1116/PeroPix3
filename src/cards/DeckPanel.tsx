@@ -114,8 +114,17 @@ function Section({
   onImageDrop: (kind: CardKind, card: AnyCard, img: DragImage) => void;
 }) {
   const t = useI18n((s) => s.t);
-  const cards = useCards((s) => s[kind]);
+  const all = useCards((s) => s[kind]) as AnyCard[];
   const remove = useCards((s) => s.remove);
+  /** ★★종류 안의 **서브탭 = 폴더** (사용자 지시 2026-08-19). 빈 값이 뿌리다.
+   *  ★목록은 **카드에서 뽑는다** — 폴더는 카드에 적힌 값이라 따로 저장할 것이 없다.
+   *    새로 만든 빈 폴더만 화면이 잠깐 들고 있는다 (`extra`), 카드가 들어가면 그때부터 자동이다. */
+  const [extra, setExtra] = useState<string[]>([]);
+  const [adding, setAdding] = useState<string | null>(null);
+  const folders = [...new Set(["", ...all.map((c) => c.folder ?? ""), ...extra])];
+  const [folder, setFolder] = useState("");
+  const here = folders.includes(folder) ? folder : "";
+  const cards = all.filter((c) => (c.folder ?? "") === here);
   // ★저장 — 손패가 하던 것을 그대로 옮겼다 (그쪽 주석): 같은 id 가 이미 있으면 **묻는다**.
   //   조용히 덮으면 그 카드를 쓰는 다른 워크스페이스까지 바뀌고, 언제나 새로 추가만 하면
   //   같은 이름이 끝없이 쌓인다.
@@ -127,9 +136,13 @@ function Section({
     onDrop: (d) => {
       const card = d.card;
       if (!card) return;
-      const existing = card.id ? useCards.getState()[kind].find((c) => c.id === card.id) : null;
-      if (existing) onAsk({ kind, card, existing, thumb: d.thumb ?? null });
-      else void saveCardWithThumb(kind, { ...card, id: undefined }, d.thumb ?? null);
+      // ★★있는 카드인지는 **이름으로** 본다 (사용자 지시 2026-08-19) — id 로 보던 때는
+      //   같은 이름이 폴더 안에 얼마든지 쌓였다. 지금 열어 둔 폴더 안에서만 찾는다.
+      const existing = useCards
+        .getState()
+        [kind].find((c) => (c.folder ?? "") === here && c.name === card.name);
+      if (existing) onAsk({ kind, card: { ...card, folder: here }, existing, thumb: d.thumb ?? null });
+      else void saveCardWithThumb(kind, { ...card, id: undefined, folder: here }, d.thumb ?? null);
     },
   });
   // ★★그림은 **카드 한 장 한 장**이 받는다 (`PanelCard`), 섹션이 아니다.
@@ -151,6 +164,51 @@ function Section({
         outlineOffset: -3,
       }}
     >
+        {/* ★서브탭 — 폴더처럼 쓴다. 카드를 여기 끌어다 놓으면 **그 폴더로 옮겨진다** */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 3, padding: "var(--sp-2) var(--sp-3) 0" }}>
+          {folders.map((f) => (
+            <FolderTab
+              key={f || "-"}
+              kind={kind}
+              folder={f}
+              label={f || t("cards.rootFolder")}
+              on={here === f}
+              n={all.filter((c) => (c.folder ?? "") === f).length}
+              onPick={() => setFolder(f)}
+            />
+          ))}
+          {adding === null ? (
+            <button
+              data-deck-newfolder
+              onClick={() => setAdding("")}
+              data-tip={t("cards.newFolder")}
+              style={{ ...subTab, color: "var(--ink-faint)" }}
+            >
+              {Icon.plus}
+            </button>
+          ) : (
+            <input
+              autoFocus
+              data-deck-newfolder-input
+              value={adding}
+              onChange={(e) => setAdding(e.target.value)}
+              onBlur={() => {
+                const v = adding.trim();
+                if (v && !folders.includes(v)) {
+                  setExtra((x) => [...x, v]);
+                  setFolder(v);
+                }
+                setAdding(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                if (e.key === "Escape") setAdding(null);
+              }}
+              placeholder={t("cards.newFolder")}
+              style={{ ...subTab, width: 90, background: "var(--panel)", color: "var(--ink)" }}
+            />
+          )}
+        </div>
         <div
           style={{
             display: "grid",
@@ -185,6 +243,67 @@ function Section({
             ))
           )}
         </div>
+    </div>
+  );
+}
+
+const subTab: React.CSSProperties = {
+  padding: "2px var(--sp-2)",
+  borderRadius: "var(--r-1)",
+  border: "1px solid var(--line)",
+  background: "transparent",
+  color: "var(--ink-dim)",
+  fontSize: "var(--text-2xs)",
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 3,
+};
+
+/** 서브탭 한 칸 — 누르면 그 폴더를 보고, **카드를 끌어다 놓으면 그리로 옮긴다**.
+ *  ★옮기는 것도 **적용 끌기와 같은 몸짓**이다 (`dir: "apply"`) — 카드에 끌기가 하나뿐이라
+ *    새 몸짓을 만들면 무엇이 무엇인지 알 수 없다. */
+function FolderTab({
+  kind,
+  folder,
+  label,
+  on,
+  n,
+  onPick,
+}: {
+  kind: CardKind;
+  folder: string;
+  label: string;
+  on: boolean;
+  n: number;
+  onPick: () => void;
+}) {
+  const zone = useDropZone({
+    id: `deck-folder-${kind}-${folder}`,
+    kind,
+    prio: 30,
+    onDrop: (d) => {
+      const c = d.card as AnyCard | undefined;
+      if (!c?.id || (c.folder ?? "") === folder) return;
+      void useCards.getState().save(kind, { ...c, folder });
+    },
+  });
+  return (
+    // ★드롭존은 `div` 를 잡는다 (`useDropZone` 의 ref 형이 그렇다). 누르는 것은 안쪽 단추다.
+    <div ref={zone.ref} style={{ display: "inline-flex" }}>
+    <button
+      data-deck-folder={folder}
+      onClick={onPick}
+      style={{
+        ...subTab,
+        background: zone.over ? "var(--accent-bg)" : on ? "var(--panel)" : "transparent",
+        borderColor: zone.over || on ? "var(--accent)" : "var(--line)",
+        color: on ? "var(--ink)" : "var(--ink-dim)",
+        fontWeight: on ? "var(--w-semi)" : 400,
+      }}
+    >
+      {label}
+      <span style={{ color: "var(--ink-ghost)", fontVariantNumeric: "tabular-nums" }}>{n}</span>
+    </button>
     </div>
   );
 }

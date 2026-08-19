@@ -82,6 +82,9 @@ export const ja: Dict = {
   },
 
   cards: {
+    rootFolder: "全体",
+    newFolder: "フォルダ追加",
+    nameTaken: "「{name}」はそのフォルダに既にあります",
     rename: "名前を変更",
     dropToSave: "ここに置くと保存されます",
     hand: {

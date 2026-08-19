@@ -25,6 +25,9 @@ type Common = {
   color: [string, string];
   thumb?: ThumbView | null;
   updatedAt?: string;
+  /** ★서브탭(폴더). 빈 값이 뿌리다 (사용자 지시 2026-08-19).
+   *  **같은 종류·같은 폴더 안에서 이름이 겹칠 수 없다** — 폴더가 다르면 겹쳐도 된다. */
+  folder?: string;
 };
 export type StyleCard = Common & { base: Block[]; uc: Block[] };
 export type CharCard = Common & { prompt: Block[]; uc: Block[] };
@@ -88,11 +91,32 @@ export const useCards = create<S>((set, get) => ({
     });
   },
 
+  /** ★★카드의 **신원은 이름**이다 (사용자 지시 2026-08-19).
+   *
+   *  같은 폴더 안에 같은 이름을 둘 수 없다:
+   *    · **새로 추가**하다 겹치면 뒤에 `(1)`·`(2)` 를 붙여 **새 카드로** 넣는다.
+   *    · **이름을 고치다** 겹치면 **거절한다** — 자동으로 딴 이름을 붙이면 사용자가
+   *      고친 이름과 다른 것이 저장돼, 무엇이 바뀌었는지 알 수 없다.
+   *  ★판정은 여기 한 곳이다. 부르는 자리마다 검사하면 규칙이 갈린다. */
   async save(kind, card) {
+    const list = get()[kind] as AnyCard[];
+    const folder = card.folder ?? "";
+    const editing = !!card.id && list.some((c) => c.id === card.id);
+    const taken = (n: string) =>
+      list.some((c) => c.id !== card.id && (c.folder ?? "") === folder && c.name === n);
+    if (editing && taken(card.name)) {
+      toast(t("cards.nameTaken", { name: card.name }), "warn");
+      throw new Error("name taken");
+    }
+    if (!editing && taken(card.name)) {
+      let i = 1;
+      while (taken(`${card.name} (${i})`)) i++;
+      card = { ...card, name: `${card.name} (${i})` };
+    }
     const r = await api<{ card: AnyCard }>(`/api/cards/${kind}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ card: { ...card, color: card.color ?? colorOf(card.name) } }),
+      body: JSON.stringify({ card: { ...card, folder, color: card.color ?? colorOf(card.name) } }),
     });
     const saved = hydrate(r.card) as AnyCard;
     // 같은 id 가 있으면 갈아 끼우고 없으면 맨 앞에 (목록은 최근 갱신 순)

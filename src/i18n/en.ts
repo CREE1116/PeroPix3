@@ -82,6 +82,9 @@ export const en = {
   },
 
   cards: {
+    rootFolder: "All",
+    newFolder: "New folder",
+    nameTaken: "\"{name}\" already exists in that folder",
     rename: "Rename",
     dropToSave: "Drop here to save",
     hand: {

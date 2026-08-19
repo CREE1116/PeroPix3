@@ -250,7 +250,9 @@ export function App() {
         ask={ask}
         onCancel={() => setAsk(null)}
         onOverwrite={() => {
-          if (ask) void saveCardWithThumb(ask.kind, ask.card, ask.thumb);
+          // ★덮어쓰기는 **그 카드의 id 로** 간다 — 이름으로 찾은 그 장을 고치는 것이다
+          //   (신원이 이름이 된 뒤로, 끌어온 카드의 id 는 다른 폴더 것일 수 있다)
+          if (ask) void saveCardWithThumb(ask.kind, { ...ask.card, id: ask.existing.id }, ask.thumb);
           setAsk(null);
         }}
         onAddNew={() => {

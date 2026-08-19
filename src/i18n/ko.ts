@@ -82,6 +82,9 @@ export const ko: Dict = {
   },
 
   cards: {
+    rootFolder: "전체",
+    newFolder: "폴더 추가",
+    nameTaken: "「{name}」 이름이 그 폴더에 이미 있습니다",
     rename: "이름 바꾸기",
     dropToSave: "여기 놓으면 저장됩니다",
     hand: {
