@@ -112,6 +112,8 @@ export const en = {
     zoneJoin: "Add as another character",
     zoneSet: "Add as a scene set",
     nextUp: "next",
+    stackFront: "Bring to front",
+    stackDrop: "Remove from stack",
     saved: "Saved to deck: {name}",
   },
 

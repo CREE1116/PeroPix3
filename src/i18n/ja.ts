@@ -112,6 +112,8 @@ export const ja: Dict = {
     zoneJoin: "別のキャラクターとして追加",
     zoneSet: "シーンセットとして追加",
     nextUp: "次",
+    stackFront: "先頭へ",
+    stackDrop: "スタックから外す",
     saved: "デッキに保存: {name}",
   },
 

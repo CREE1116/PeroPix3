@@ -263,10 +263,10 @@ function SceneActions() {
                 data-save-preview
                 disabled={saving}
                 onClick={() => void ensureSaved()}
-                style={{ ...rowBtn, color: "var(--warn)" }}
+                data-tip={tr("scenes.saveToFile")}
+                style={{ ...rowBtn, color: "var(--warn)", minWidth: 28, justifyContent: "center" }}
               >
                 {Icon.save}
-                {tr("scenes.saveToFile")}
               </button>
             ) : (
               <button
@@ -275,11 +275,10 @@ function SceneActions() {
                   void deleteFiles([file]);
                   useSceneFocus.getState().focus(useSceneFocus.getState().cell, null);
                 }}
-                data-tip={tr("canvas.hideHint")}
-                style={{ ...rowBtn, color: "var(--danger, var(--err))" }}
+                data-tip={`${tr("common.delete")} — ${tr("canvas.hideHint")}`}
+                style={{ ...rowBtn, color: "var(--danger, var(--err))", minWidth: 28, justifyContent: "center" }}
               >
                 {Icon.trash}
-                {tr("common.delete")}
               </button>
             )}
             {/* 저장 안 한 동안만 — 파일이 아니라 **화면의 미리보기**를 버린다 */}

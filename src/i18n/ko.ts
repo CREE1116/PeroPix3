@@ -112,6 +112,8 @@ export const ko: Dict = {
     zoneJoin: "다른 캐릭터로 추가",
     zoneSet: "씬 세트로 추가",
     nextUp: "다음",
+    stackFront: "맨 앞으로",
+    stackDrop: "스택에서 빼기",
     saved: "덱에 저장: {name}",
   },
 

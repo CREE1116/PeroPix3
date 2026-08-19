@@ -254,9 +254,22 @@ const CARD_H = 48; // 접힌 스택 카드의 실제 높이
 const PEEK = 22; // 섹션 위로 드러나는 높이 — 이름이 잘리지 않을 만큼
 const STEP = 6; // 뒤에 더 쌓인 카드가 한 장씩 더 드러나는 양
 
+/** 스택 카드 위의 작은 단추 — 그림 위라 어두운 판을 깔고 흰 아이콘 */
+const stackBtn: React.CSSProperties = {
+  display: "grid",
+  placeItems: "center",
+  width: 18,
+  height: 18,
+  borderRadius: "var(--r-1)",
+  background: "rgba(10,14,20,0.55)",
+  color: "#fff",
+};
+
 function StackPeek({ ch }: { ch: Char }) {
   const t = useI18n((s) => s.t);
   const [open, setOpen] = useState(false);
+  const dropStack = usePrompt((s) => s.dropStack);
+  const frontStack = usePrompt((s) => s.frontStack);
   // 맨 앞(다음 차례)이 섹션에 가장 가까이 = DOM 마지막
   const cards = [...ch.stack].reverse();
   return (
@@ -285,10 +298,22 @@ function StackPeek({ ch }: { ch: Char }) {
               background: `radial-gradient(120px 45px at 82% 20%, rgba(255,255,255,0.3), transparent 70%), linear-gradient(100deg, ${c.color[0]}, ${c.color[1]} 60%)`,
             }}
           >
-            <span>{c.name}</span>
+            {/* ★★뒤 카드에도 **같은 검은 겹**을 깐다 (사용자 지시 2026-08-19) — 앞 카드(배너)에는
+                있고 여기만 없어서, 밝은 그라데이션 위의 흰 글자가 묻혔다. */}
+            <span
+              style={{
+                position: "absolute",
+                inset: 0,
+                borderRadius: 12,
+                pointerEvents: "none",
+                background: "linear-gradient(180deg, rgba(0,0,0,0) 20%, rgba(0,0,0,0.5) 100%)",
+              }}
+            />
+            <span style={{ position: "relative" }}>{c.name}</span>
             {front && (
               <span
                 style={{
+                  position: "relative",
                   background: "rgba(0,0,0,0.4)",
                   borderRadius: 4,
                   padding: "0 5px",
@@ -296,6 +321,34 @@ function StackPeek({ ch }: { ch: Char }) {
                 }}
               >
                 {t("cards.nextUp")}
+              </span>
+            )}
+            {/* ★펼쳤을 때만 단추가 선다 (사용자 지시 2026-08-19) — 접혀 있으면 카드가
+                몇 px 만 보여서 누를 자리가 없다. 앞으로 가져오기 · 빼기 둘이다. */}
+            {open && (
+              <span style={{ position: "relative", marginLeft: "auto", display: "flex", gap: 4 }}>
+                <button
+                  data-stack-front={i}
+                  data-tip={t("cards.stackFront")}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    frontStack(ch.id, cards.length - 1 - i);
+                  }}
+                  style={stackBtn}
+                >
+                  {Icon.chevronUp}
+                </button>
+                <button
+                  data-stack-drop={i}
+                  data-tip={t("cards.stackDrop")}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    dropStack(ch.id, cards.length - 1 - i);
+                  }}
+                  style={stackBtn}
+                >
+                  {Icon.close12}
+                </button>
               </span>
             )}
           </div>

@@ -227,15 +227,18 @@ export function ImageActions({
             **그 그림의 설정**이다 (페로픽스파이도 `.result-meta` 에서 「설정 불러오기」
             바로 옆에 「다른 워크스페이스로 복제」를 뒀다). 아래 줄은 이 그림을 **재료로**
             쓰는 무리라 성격이 다르다. */}
+        {/* ★아이콘만 쓰는 자리는 **이름을 툴팁이 말한다** (사용자 지시 2026-08-19:
+            아이콘화하되 비직관적인 것만 글자로). 글자로 남긴 것: 프롬프트 보기 · 설정 ·
+            i2i · 인페인트 · 업스케일(값이 붙는다) — 그림만으로는 뜻이 안 잡히는 것들이다. */}
         {onClone && (
           <button
             data-act-clone
             onClick={() => void runClone()}
             disabled={busy}
-            data-tip={t("act.cloneHint")}
-            style={btn}
+            data-tip={`${t("act.clone")} — ${t("act.cloneHint")}`}
+            style={iconBtn}
           >
-            {t("act.clone")}
+            {Icon.duplicate}
           </button>
         )}
 
@@ -248,8 +251,8 @@ export function ImageActions({
           {t("act.inpaint")}
         </button>
         {onEnhance && (
-          <button data-act-enhance onClick={onEnhance} style={btn}>
-            {t("enhance.button")}
+          <button data-act-enhance onClick={onEnhance} data-tip={t("enhance.button")} style={iconBtn}>
+            {Icon.spark}
           </button>
         )}
         {upscale && dims && (
@@ -282,14 +285,20 @@ export function ImageActions({
                 }).catch((e) => toast(String(e), "warn"));
               })()
             }
-            style={btn}
+            data-tip={t("files.reveal")}
+            style={iconBtn}
           >
-            {t("files.reveal")}
+            {Icon.folderOpen}
           </button>
         )}
         {onKeep && (
-          <button data-act-keep onClick={() => void onKeep()} data-tip={t("gallery.keepHint")} style={btn}>
-            {t("gallery.keep")}
+          <button
+            data-act-keep
+            onClick={() => void onKeep()}
+            data-tip={`${t("gallery.keep")} — ${t("gallery.keepHint")}`}
+            style={iconBtn}
+          >
+            {Icon.bookmark}
           </button>
         )}
         {extra}
@@ -450,6 +459,18 @@ function PromptView({ meta, onClose }: { meta: ImageMeta; onClose: () => void })
     </div>
   );
 }
+
+/** 아이콘만 있는 단추 — 글자 단추와 **같은 높이**로 선다 (줄이 들쭉날쭉하면 안 된다) */
+const iconBtn: React.CSSProperties = {
+  display: "grid",
+  placeItems: "center",
+  border: "1px solid var(--line)",
+  borderRadius: "var(--r-2)",
+  background: "var(--panel)",
+  color: "var(--ink-soft)",
+  padding: "3px var(--sp-2)",
+  minWidth: 28,
+};
 
 const btn: React.CSSProperties = {
   border: "1px solid var(--line)",

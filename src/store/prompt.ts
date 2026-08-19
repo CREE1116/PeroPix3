@@ -89,6 +89,9 @@ type S = {
   addChar: (c: Partial<Char>) => string;
   swapChar: (id: string, c: Partial<Char>) => void;
   stackChar: (id: string, c: { ref: string | null; name: string; color: [string, string] }) => void;
+  /** 스택에서 한 장 빼기 · 한 장을 맨 앞으로 (사용자 지시 2026-08-19) */
+  dropStack: (id: string, at: number) => void;
+  frontStack: (id: string, at: number) => void;
   removeChar: (id: string) => void;
   renameChar: (id: string, name: string) => void;
   toggleChar: (id: string) => void;
@@ -241,6 +244,37 @@ export const usePrompt = create<S>((set, get) => ({
 
   toggleChar(id) {
     set({ chars: get().chars.map((c) => (c.id === id ? { ...c, on: !c.on } : c)) });
+    onEdit();
+  },
+
+  /** 스택에서 한 장을 뺀다 (사용자 지시 2026-08-19) */
+  dropStack(id, at) {
+    set({
+      chars: get().chars.map((c) =>
+        c.id === id ? { ...c, stack: c.stack.filter((_, k) => k !== at) } : c,
+      ),
+    });
+    onEdit();
+  },
+
+  /** 스택의 한 장을 **맨 앞(지금 인물)으로**. 지금 인물은 맨 뒤로 간다 (`rotateStack` 과 같은 규칙) */
+  frontStack(id, at) {
+    set({
+      chars: get().chars.map((c) => {
+        const pick = c.id === id ? c.stack[at] : undefined;
+        if (!pick) return c;
+        return {
+          ...c,
+          ref: pick.ref,
+          name: pick.name,
+          color: pick.color,
+          stack: [
+            ...c.stack.filter((_, k) => k !== at),
+            { ref: c.ref, name: c.name, color: c.color },
+          ],
+        };
+      }),
+    });
     onEdit();
   },
 
