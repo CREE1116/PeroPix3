@@ -7,9 +7,6 @@ import { SceneLane, takeSrc } from "./SceneLane";
 import { useSceneFocus } from "../store/sceneFocus";
 import { useUi } from "../store/ui";
 import { CanvasTabs } from "./CanvasTabs";
-import { useDropZone } from "../cards/dragStore";
-import { cardIcon, zoneIcon } from "../cards/CardArt";
-import type { PoseCard } from "../store/cards";
 import { imgUrl } from "../lib/imgUrl";
 import { Icon } from "../components/Icon";
 import { toast } from "../store/toast";
@@ -49,7 +46,6 @@ export function Canvas() {
     >
       {/* ★씬 세트 줄 — 이 층이 가르는 것이 바로 아래 결과라 여기 붙는다 (사용자 제안 2026-08-05) */}
       <CanvasTabs part="sets" />
-      <SetZone />
 
       {/* ★씬 칸 (2026-08-11) — 그릇 + 얹은 카드 + 씬 줄. 위는 **고른 한 장**의 프리뷰다 */}
       {editing ? <MaskEditor /> : <SceneStage />}
@@ -416,54 +412,6 @@ function ScenePreview() {
           {tr("scenes.pickOne")}
         </div>
       )}
-    </div>
-  );
-}
-
-/** 씬 세트 카드의 드롭 존 — **캔버스 하단, 씬 줄 자리**.
- *
- *  ★★위에서 아래로 옮겼다 (사용자 지시 2026-08-19). 위였던 까닭은 옛 **전체 화면 덱**이
- *    화면 가운데에서 시작해 겹쳤기 때문인데, 덱이 오른쪽 기둥으로 간 뒤로는 그 이유가 없다.
- *    씬 세트가 놓이는 자리는 **씬이 사는 곳**이라, 그 위에 놓는 것이 뜻과 맞는다. */
-function SetZone() {
-  const tr = useI18n((s) => s.t);
-  const addSetTab = useWs((s) => s.addSetTab);
-  const { ref, over, active } = useDropZone({
-    id: "canvas-setzone",
-    kind: "posesets",
-    onDrop: (d) => {
-      const c = d.card as PoseCard;
-      addSetTab(c.name, c.cells);
-    },
-  });
-  if (!active) return null;
-  return (
-    <div
-      ref={ref}
-      data-zone="set"
-      data-tip={tr("cards.zoneSet")}
-      style={{
-        position: "absolute",
-        bottom: 6,
-        left: 10,
-        right: 10,
-        height: "32%",
-        zIndex: 32,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 9,
-        color: "#fff",
-        fontSize: "0.8rem",
-        fontWeight: "var(--w-bold)",
-        boxSizing: "border-box",
-        border: `3px ${over ? "solid" : "dashed"} #fff`,
-        borderRadius: 12,
-        background: over ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.08)",
-      }}
-    >
-      <span style={{ display: "flex" }}>{cardIcon("posesets", 20)}</span>
-      {zoneIcon.add(20)}
     </div>
   );
 }

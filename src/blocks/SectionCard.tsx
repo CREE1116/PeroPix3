@@ -11,7 +11,6 @@ import { BANNER_BG, BANNER_CUT, BANNER_IMG_W, BANNER_STEP, bannerEmptyFill } fro
  *  배너를 끌어 우하단 핸드에 넣으면 덱에 저장된다(역드래그) — 그래서 포인터 핸들러를 받는다. */
 export function SectionCard({
   name,
-  sub,
   gradient,
   accent,
   dim,
@@ -29,7 +28,6 @@ export function SectionCard({
   children,
 }: {
   name: string;
-  sub: string;
   gradient: [string, string];
   /** 카드 종류 색 — 섹션 테두리에 옅게 반영된다 */
   accent?: string;
@@ -188,16 +186,9 @@ export function SectionCard({
               {name}
             </b>
           )}
-          <span
-            style={{
-              fontSize: "0.6rem",
-              fontWeight: "var(--w-medium)",
-              opacity: 0.85,
-              letterSpacing: "0.08em",
-            }}
-          >
-            {sub}
-          </span>
+          {/* ★★카드 종류를 적지 않는다 (사용자 지시 2026-08-19) — 「스타일 카드」·
+              「CHARACTER CARD」는 그 자리에 있는 것만으로 이미 아는 것이라, 이름 옆에서
+              자리만 먹었다. 프롭도 함께 걷었다. */}
         </div>
         {(bannerActions || onRename) && (
           <div

@@ -11,7 +11,7 @@ import { EnhanceDialog } from "./EnhanceDialog";
 import { Icon } from "../components/Icon";
 import { colorOf } from "../store/cards";
 import { cardBlocks, compileBlocks, makeBlock, parseSegs } from "../lib/blocks";
-import { useDragSource } from "../cards/dragStore";
+import { useDragSource, useDropZone } from "../cards/dragStore";
 import { DragGhost } from "../cards/DragGhost";
 import { useLaneReorder, type LaneDrop } from "../lib/useReorder";
 import { useSceneFocus } from "../store/sceneFocus";
@@ -64,6 +64,19 @@ export function SceneLane() {
 
   /** 지금 보고 있는 씬과 장 — ★프리뷰가 다른 컴포넌트라 스토어로 나눠 갖는다 */
   const focus = useSceneFocus();
+  /** 씬 세트 카드를 받는 자리 — **줄 전체**다. 놓으면 카드가 아래에 하나 더 붙는다 */
+  const setDrop = useDropZone({
+    id: "lane-setzone",
+    kind: "posesets",
+    prio: 5,
+    onDrop: (d) => {
+      const c = d.card as { name: string; color?: [string, string]; cells?: Slot[] } | undefined;
+      const cur = useWs.getState().activeTab();
+      if (!c?.cells?.length || cur?.kind !== "set") return;
+      addCard(cur.id, { name: c.name, color: c.color, cells: c.cells });
+    },
+  });
+
   /** ★★씬을 고르면 **그 씬의 맨 앞(최신) 장**이 함께 골라진다 (사용자 지시 2026-08-19).
    *  씬만 고르고 그림이 안 골라지면 큰 자리가 비어, 한 번 더 눌러야 뭔가 보였다.
    *  ★파일을 **딱 집어** 넘긴 경우(썸네일 클릭)는 그대로 둔다. */
@@ -510,10 +523,32 @@ export function SceneLane() {
         onPointerCancel={() => { grip.current = null; }}
         style={{ position: "absolute", left: headw - 3, top: 0, bottom: 0, width: 7, zIndex: 6, cursor: "col-resize" }}
       />
+      {/* ★★씬 세트 카드는 **이 줄이 받는다** (사용자 지시 2026-08-19).
+          예전에는 캔버스에 고정 크기 판을 띄웠는데, 씬이 사는 자리와 다른 데다 받는 넓이가
+          화면 크기에 매여 있었다. 이제 **씬 줄 그대로가 받는 자리**다 — 줄이 늘고 줄면 받는
+          자리도 같이 변한다.
+          ★놓으면 **아래에 카드가 하나 더 붙는다** — 탭을 새로 만들거나 있는 것을 갈아
+            끼우지 않는다 (카드를 겹쳐 쌓는 것이 이 화면의 문법이다). */}
       <div
-        ref={scrollRef}
+        ref={(el) => {
+          scrollRef.current = el;
+          // ★드롭존의 ref 는 **객체**다 (`useDropZone`) — 여기서는 스크롤 ref 와 둘 다 걸어야 해서
+          //   콜백 ref 로 받아 손으로 채운다
+          (setDrop.ref as React.MutableRefObject<HTMLDivElement | null>).current = el;
+        }}
         data-lane-scroll
-        style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: "auto", background: "var(--bg)" }}
+        data-set-drop={setDrop.over ? "over" : setDrop.active ? "on" : undefined}
+        style={{
+          flex: 1,
+          minHeight: 0,
+          minWidth: 0,
+          overflow: "auto",
+          background: "var(--bg)",
+          outline: setDrop.active
+            ? `2px dashed ${setDrop.over ? "var(--accent)" : "var(--line-strong)"}`
+            : undefined,
+          outlineOffset: -3,
+        }}
       >
         {!tab.cards.length ? (
           <Empty onAdd={() => addCard(tab.id)} />
@@ -736,9 +771,6 @@ export function SceneLane() {
                 }}
               >
                 <b style={{ fontSize: "0.8rem", fontWeight: "var(--w-bold)" }}>{dragCard.name}</b>
-                <span style={{ fontSize: 10, letterSpacing: "0.08em", opacity: 0.85 }}>
-                  {t("scenes.cardLabel", { n: dragCard.cells.length })}
-                </span>
               </span>
             </div>
           ) : (
@@ -1037,9 +1069,6 @@ function CardGroup(p: GroupProps) {
               {Icon.grip}
             </span>
             <b style={{ fontSize: "0.8rem", fontWeight: "var(--w-bold)" }}>{p.card.name}</b>
-            <span style={{ fontSize: 10, letterSpacing: "0.08em", opacity: 0.85 }}>
-              {t("scenes.cardLabel", { n: p.card.cells.length })}
-            </span>
           </div>
           {/* ★잠금은 **카드째**다 — 옛 「전체 잠금」이 이 자리로 왔다 (사용자 결정) */}
           <div

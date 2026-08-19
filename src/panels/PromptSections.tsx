@@ -48,7 +48,6 @@ function useThumbDrop(section: string, onAsk: (img: DragImage) => void) {
 
 /* ── 스타일 섹션 = Base ───────────────────────────────────────── */
 export function StyleSection({ onThumb }: SectionProps) {
-  const t = useI18n((s) => s.t);
   const { base, baseUc, style, update, setStyle, folded, toggleFold } = usePrompt();
   const startDrag = useDragSource();
 
@@ -83,7 +82,6 @@ export function StyleSection({ onThumb }: SectionProps) {
         img.ref.current = el;
       }}
       name={style.name}
-      sub={t("prompt.styleCard")}
       /* ★스타일 카드에는 이름 바꾸기가 아예 없었다 (사용자 지적 2026-08-19) */
       onRename={(v) => setStyle({ ...style, name: v })}
       gradient={style.color}
@@ -167,7 +165,6 @@ export function CharSection({ ch, index, onThumb }: { ch: Char; index: number } 
       <SectionCard
         innerRef={(el) => (img.ref.current = el)}
         name={name}
-        sub={t("cards.charCardLabel")}
         gradient={ch.color}
         thumb={useThumbView(ch.thumb)}
         zone={`thumb-${ch.id}`}
