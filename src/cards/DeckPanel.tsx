@@ -90,7 +90,10 @@ export function DeckPanel({
         })}
       </div>
       <div ref={view} style={{ flex: 1, minHeight: 0, overflowY: "auto", background: "var(--surface)" }}>
-        <Section kind={tab} onAsk={onAsk} onImageDrop={onImageDrop} view={view} />
+        {/* ★★`key` 로 **종류마다 새로 만든다** (사용자 지적 2026-08-19: 서브탭이 공용이었다) —
+            React 는 같은 자리의 같은 컴포넌트를 **재활용**해서, 종류를 바꿔도 폴더 선택이
+            그대로 따라왔다. */}
+        <Section key={tab} kind={tab} onAsk={onAsk} onImageDrop={onImageDrop} view={view} />
       </div>
     </div>
   );
@@ -175,6 +178,30 @@ function Section({
               on={here === f}
               n={all.filter((c) => (c.folder ?? "") === f).length}
               onPick={() => setFolder(f)}
+              /* ★뿌리는 못 지운다 — 폴더가 아니라 「폴더 밖」이다 */
+              onDelete={
+                f
+                  ? () =>
+                      void (async () => {
+                        const n = all.filter((c) => (c.folder ?? "") === f).length;
+                        if (
+                          n &&
+                          !(await ask({
+                            title: t("cards.folderDeleteConfirm", { name: f, n }),
+                            body: t("cards.folderDeleteBody"),
+                            ok: t("common.delete"),
+                            cancel: t("common.cancel"),
+                          }))
+                        )
+                          return;
+                        // ★카드는 **안 지운다** — 뿌리로 올린다 (폴더는 정리용 이름일 뿐이다)
+                        for (const c of all.filter((x) => (x.folder ?? "") === f))
+                          await useCards.getState().save(kind, { ...c, folder: "" });
+                        setExtra((x) => x.filter((v) => v !== f));
+                        setFolder("");
+                      })()
+                  : undefined
+              }
             />
           ))}
           {adding === null ? (
@@ -269,6 +296,7 @@ function FolderTab({
   on,
   n,
   onPick,
+  onDelete,
 }: {
   kind: CardKind;
   folder: string;
@@ -276,7 +304,10 @@ function FolderTab({
   on: boolean;
   n: number;
   onPick: () => void;
+  /** 없으면 지우는 단추가 안 뜬다 (뿌리) */
+  onDelete?: () => void;
 }) {
+  const t = useI18n((s) => s.t);
   const zone = useDropZone({
     id: `deck-folder-${kind}-${folder}`,
     kind,
@@ -304,6 +335,19 @@ function FolderTab({
       {label}
       <span style={{ color: "var(--ink-ghost)", fontVariantNumeric: "tabular-nums" }}>{n}</span>
     </button>
+    {onDelete && (
+      <button
+        data-deck-folder-del={folder}
+        data-tip={t("cards.folderDelete")}
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete();
+        }}
+        style={{ display: "grid", placeItems: "center", padding: "0 3px", color: "var(--ink-ghost)" }}
+      >
+        {Icon.close12}
+      </button>
+    )}
     </div>
   );
 }

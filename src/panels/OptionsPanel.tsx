@@ -61,21 +61,27 @@ export function OptionsPanel() {
         </div>
       </Category>
 
+      {/* ★★해상도는 **따로 선 카테고리**다 (사용자 지시 2026-08-19). 생성 옵션 안에 있으면
+          설정을 얹을 때 강조 테두리가 **겹쳐 그려진다** (묶음 하나와 카테고리 하나가 서로
+          안쪽·바깥쪽으로). 강조 자리가 겹치지 않으려면 층이 하나여야 한다. */}
+      <Category id="opt-size" label={t("options.resolution")} flashKey="size">
+        {/* ★★모양이 곧 목록이다 (페로픽스파이 `.res-item` 이식). 전부 늘어놓으면 열넷이라
+            훑을 수가 없어서 **가로·세로·정방 탭**으로 가르고, 줄마다 그 비율의 사각형을
+            함께 그린다 — 숫자보다 모양이 먼저 읽힌다. */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
+          <SizePicker w={p.width} h={p.height} onPick={(w, h) => { set("width", w); set("height", h); }} />
+          {/* ★직접 입력 — NAI 는 64 배수만 받는다. 입력을 떠날 때 올려 맞추고 그 값을 보여 준다
+              (서버도 같은 정렬을 하지만, 무엇이 갈지 지금 보여야 한다) */}
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
+            <NumBox data-size="w" value={p.width} onCommit={(v) => set("width", alignTo64(v))} />
+            <span style={{ color: "var(--ink-faint)", fontSize: "var(--text-2xs)" }}>×</span>
+            <NumBox data-size="h" value={p.height} onCommit={(v) => set("height", alignTo64(v))} />
+          </div>
+        </div>
+      </Category>
+
       <Category id="opt-gen" label={t("options.catGeneration")} flashKey="params">
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}>
-              <Group label={t("options.resolution")} flashKey="size">
-                {/* ★★모양이 곧 목록이다 (사용자 지시 2026-08-19, 페로픽스파이 `.res-item` 이식).
-                    전부 늘어놓으면 열넷이라 훑을 수가 없어서 **가로·세로·정방 탭**으로 가르고,
-                    줄마다 그 비율의 사각형을 함께 그린다 — 숫자보다 모양이 먼저 읽힌다. */}
-                <SizePicker w={p.width} h={p.height} onPick={(w, h) => { set("width", w); set("height", h); }} />
-                {/* ★직접 입력 — NAI 는 64 배수만 받는다. 입력을 떠날 때 올려 맞추고 그 값을 보여 준다
-                    (서버도 같은 정렬을 하지만, 무엇이 갈지 지금 보여야 한다) */}
-                <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
-                  <NumBox data-size="w" value={p.width} onCommit={(v) => set("width", alignTo64(v))} />
-                  <span style={{ color: "var(--ink-faint)", fontSize: "var(--text-2xs)" }}>×</span>
-                  <NumBox data-size="h" value={p.height} onCommit={(v) => set("height", alignTo64(v))} />
-                </div>
-              </Group>
               <Group label={t("options.steps")} help={t("options.stepsHint")}>
                 <Num value={p.steps} min={1} max={NAI_MAX.steps} onChange={(v) => set("steps", v)} />
               </Group>

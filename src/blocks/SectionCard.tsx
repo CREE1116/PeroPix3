@@ -252,6 +252,23 @@ export function SectionCard({
               넘으면 덱으로 저장하는 역드래그다 (그쪽 주석). */}
       </div>
 
+      {/* ★★접혀 있다는 것을 **작은 바**로 알린다 (사용자 지시 2026-08-19).
+          배너만 남으면 「짧은 카드」인지 「접힌 카드」인지 구별이 안 됐다. 접힌 카드 아래에
+          한 줄이 삐져나온 모양이라, 아래에 뭔가 더 있다는 것이 그림으로 읽힌다. */}
+      {folded && (
+        <div
+          data-card-folded
+          onClick={onFold}
+          style={{
+            height: 7,
+            margin: "0 8px",
+            borderRadius: "0 0 var(--r-2) var(--r-2)",
+            background: "var(--line)",
+            cursor: onFold ? "pointer" : undefined,
+          }}
+        />
+      )}
+
       {/* 내용 — 접으면 배너만 남는다 */}
       {!folded && (
         <div

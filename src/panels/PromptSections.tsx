@@ -298,15 +298,21 @@ function StackPeek({ ch }: { ch: Char }) {
               background: `radial-gradient(120px 45px at 82% 20%, rgba(255,255,255,0.3), transparent 70%), linear-gradient(100deg, ${c.color[0]}, ${c.color[1]} 60%)`,
             }}
           >
-            {/* ★★뒤 카드에도 **같은 검은 겹**을 깐다 (사용자 지시 2026-08-19) — 앞 카드(배너)에는
-                있고 여기만 없어서, 밝은 그라데이션 위의 흰 글자가 묻혔다. */}
+            {/* ★★뒤 카드도 **앞 카드와 같은 밝기**여야 한다 (사용자 지적 2026-08-19).
+                앞 카드(배너)는 **아래쪽**이 0.5 로 눕는데, 스택 카드는 보이는 것이 **위쪽 띠**라
+                같은 그라데이션을 깔면 그 자리가 투명한 쪽이라 훨씬 밝게 보였다.
+                접혀 있을 때는 **고르게 0.5**(= 앞 카드의 글자 자리와 같은 값), 펼쳐서 카드가
+                통째로 보일 때만 앞 카드와 같은 아래쪽 그라데이션을 쓴다. */}
             <span
               style={{
                 position: "absolute",
                 inset: 0,
                 borderRadius: 12,
                 pointerEvents: "none",
-                background: "linear-gradient(180deg, rgba(0,0,0,0) 20%, rgba(0,0,0,0.5) 100%)",
+                /* ★펼쳐도 보이는 것은 **겹쳐 있는 띠**라(카드끼리 −18px 로 물린다), 아래쪽만
+                   눕히는 앞 카드식 그라데이션은 그 자리가 투명한 쪽이라 훨씬 밝게 보인다.
+                   접히든 펴지든 **고르게 0.5** 다 (사용자 지적 2026-08-19, 두 번째). */
+                background: "rgba(0,0,0,0.5)",
               }}
             />
             <span style={{ position: "relative" }}>{c.name}</span>
@@ -336,7 +342,9 @@ function StackPeek({ ch }: { ch: Char }) {
                   }}
                   style={stackBtn}
                 >
-                  {Icon.chevronUp}
+                  {/* ★아래 방향이다 (사용자 지적 2026-08-19) — 스택은 **아래에 있는 앞 카드**로
+                      내려보내는 것이라, 위로 향한 화살표는 뜻이 거꾸로 읽힌다 */}
+                  {Icon.chevronDown}
                 </button>
                 <button
                   data-stack-drop={i}

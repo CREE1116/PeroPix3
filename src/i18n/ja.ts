@@ -82,6 +82,9 @@ export const ja: Dict = {
   },
 
   cards: {
+    folderDelete: "フォルダを削除",
+    folderDeleteConfirm: "フォルダ「{name}」を削除します (カード {n} 枚)",
+    folderDeleteBody: "カードは削除されず、フォルダの外に出ます。",
     rootFolder: "全体",
     newFolder: "フォルダ追加",
     nameTaken: "「{name}」はそのフォルダに既にあります",

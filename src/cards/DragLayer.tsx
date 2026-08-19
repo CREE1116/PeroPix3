@@ -44,24 +44,28 @@ export function DragLayer() {
 
   return (
     <>
+      {/* ★★어둠을 **옅게** 깐다 (사용자 지적 2026-08-19: 놓을 자리가 안 보였다).
+          0.78 은 화면을 거의 지워서, 어디에 놓는지도 어느 자리가 받는지도 안 보였다.
+          끌고 있다는 것만 알리면 되므로 그 일에 필요한 만큼만 남긴다. */}
       <div
         style={{
           position: "fixed",
           inset: 0,
           zIndex: 30,
           pointerEvents: "none",
-          background: "rgba(0,0,0,0.78)",
+          background: "rgba(0,0,0,0.3)",
         }}
       />
+      {/* ★잔상은 **커서 오른쪽 아래**에 작게 매단다 (사용자 지시 2026-08-19) —
+          커서 한가운데에 쥐고 있으면 정작 가리키는 자리를 자기가 덮는다 */}
       <DragGhost
         x={pos.x}
         y={pos.y}
-        anchor="center"
         tilt={0}
         z={60}
         style={{
-          width: 92,
-          height: 126,
+          width: 54,
+          height: 74,
           borderRadius: 10,
           overflow: "hidden",
           border: "1.5px solid rgba(255,255,255,0.7)",

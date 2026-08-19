@@ -314,12 +314,22 @@ function Cell({
   onDragFiles: () => string[];
 }) {
   return (
-    <button
+    // ★★**단추가 아니라 `div` 다** (사용자 지적 2026-08-19: 갤러리 그림이 안 끌렸다).
+    //   크로미움은 `<button>` 에 `draggable` 을 줘도 끌기를 시작하지 않는다 — 폼 컨트롤의
+    //   기본 눌림 처리가 먼저 가져간다. 누르는 것은 `role="button"` 으로 그대로 둔다.
+    <div
       data-gallery-cell={name}
+      role="button"
+      tabIndex={0}
       onClick={(e) => onOpen(e.ctrlKey || e.metaKey)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen(e.ctrlKey || e.metaKey);
+        }
+      }}
       data-tip={name}
-      /* ★★그림을 **폴더로 끌어다 옮긴다** (사용자 지시 2026-08-19) — 예전에는 골라서
-         드롭다운으로 옮기는 길뿐이었다. 고른 것이 있으면 **고른 것 전부**가 함께 간다. */
+      /* ★그림을 **폴더로 끌어다 옮긴다**. 고른 것이 있으면 **고른 것 전부**가 함께 간다 */
       draggable
       onDragStart={(e) => {
         const files = onDragFiles();
@@ -331,6 +341,7 @@ function Cell({
         aspectRatio: "832 / 1216",
         borderRadius: "var(--r-2)",
         overflow: "hidden",
+        cursor: "pointer",
         background: "var(--surface2)",
         border: `2px solid ${picked ? "var(--accent)" : "transparent"}`,
       }}
@@ -369,7 +380,7 @@ function Cell({
             12px 그대로다 — 글자 높이에 맞아야 줄이 안 흔들린다 */}
         {starred ? Icon.star18On : Icon.star18}
       </span>
-    </button>
+    </div>
   );
 }
 

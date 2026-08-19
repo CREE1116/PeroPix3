@@ -257,7 +257,11 @@ export const usePrompt = create<S>((set, get) => ({
     onEdit();
   },
 
-  /** 스택의 한 장을 **맨 앞(지금 인물)으로**. 지금 인물은 맨 뒤로 간다 (`rotateStack` 과 같은 규칙) */
+  /** 스택의 한 장을 **맨 앞(지금 인물)으로**.
+   *
+   *  ★★**자리를 맞바꾼다** (사용자 지시 2026-08-19) — 지금 인물이 그 카드가 있던 자리로 간다.
+   *    한 칸씩 밀어 돌리면(`rotateStack`) 나머지 순서가 통째로 흔들려, 「이 카드를 앞으로」가
+   *    아니라 「한 바퀴 돌리기」가 된다. */
   frontStack(id, at) {
     set({
       chars: get().chars.map((c) => {
@@ -268,10 +272,9 @@ export const usePrompt = create<S>((set, get) => ({
           ref: pick.ref,
           name: pick.name,
           color: pick.color,
-          stack: [
-            ...c.stack.filter((_, k) => k !== at),
-            { ref: c.ref, name: c.name, color: c.color },
-          ],
+          stack: c.stack.map((x, k) =>
+            k === at ? { ref: c.ref, name: c.name, color: c.color } : x,
+          ),
         };
       }),
     });

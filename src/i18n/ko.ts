@@ -82,6 +82,9 @@ export const ko: Dict = {
   },
 
   cards: {
+    folderDelete: "폴더 지우기",
+    folderDeleteConfirm: "폴더 「{name}」 을 지웁니다 (카드 {n}장)",
+    folderDeleteBody: "카드는 지워지지 않고 폴더 밖으로 나옵니다.",
     rootFolder: "전체",
     newFolder: "폴더 추가",
     nameTaken: "「{name}」 이름이 그 폴더에 이미 있습니다",

@@ -257,7 +257,14 @@ export function SceneLane() {
 
   // 탭을 옮기면 고른 것을 놓는다 — 다른 탭의 파일을 고른 채로 두면 안 된다
   const tabId = tab?.id;
+  /** ★★**처음 뜰 때는 놓지 않는다** (사용자 지적 2026-08-19: 인페인트에 들어갔다 나오면
+   *  고른 것이 풀려 있었다). 마스크 편집기는 캔버스 자리를 통째로 차지해서 이 줄이 **언마운트**
+   *  되고, 돌아올 때 다시 마운트된다 — 그때마다 이 효과가 돌아 골라 둔 장을 지웠다.
+   *  탭이 **실제로 바뀐 때만** 놓는다. */
+  const lastTab = useRef(tabId);
   useEffect(() => {
+    if (lastTab.current === tabId) return;
+    lastTab.current = tabId;
     setPicked(new Set());
     useSceneFocus.getState().clear();
   }, [tabId]);
