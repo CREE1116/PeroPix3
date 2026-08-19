@@ -14,6 +14,24 @@ import type { Rec } from "../lib/takes";
 /** 탭이 들고 있는 프롬프트 — ★**서브 탭마다 스타일·캐릭터가 다르다** (사용자 결정 2026-08-03).
  *  v2 의 "캐릭터 리스트 프리셋"을 이것이 대신한다: 조합을 파일로 저장하는 대신
  *  탭에 얹어 두고 탭째로 쓴다. */
+/** ★★**그 그림을 뽑을 때의 화면 구조** — 생성할 때 레코드에 남긴다 (`gen.ts` 의 `env`).
+ *
+ *  「새 탭으로 복제」의 근거다. PNG 메타데이터에는 **합쳐진 문자열**만 남아서 스타일 카드·
+ *  블록 나눔·캐릭터 카드를 못 되살린다. 그래서 구조는 여기 따로 남긴다 —
+ *  **그 뒤에 탭을 고치거나 지워도** 그때 환경 그대로 복제된다 (사용자 지시 2026-08-19).
+ *
+ *  ★담는 것은 **`generateAll` 이 읽는 것 전부**여야 한다 (회귀 `lib/cloneEnv.test.ts` 가 맞댄다).
+ *  ★그림 바이트는 안 담는다 — 구조뿐이라 작고, 값(설정·시드·바이브)은 PNG 메타데이터에 있다.
+ *  ★목록에는 안 실린다 (`server.py` 의 `_light`). 복제할 때 한 장씩 가져간다. */
+export type ShotEnv = {
+  prompt: TabPrompt;
+  /** 그 씬이 든 카드의 공통 접두 */
+  prefix?: string;
+  /** 씬 프롬프트가 베이스로 가나 캐릭터로 가나 */
+  sceneDest?: string;
+  cell: { name: string; blocks: Block[] };
+};
+
 export type TabPrompt = {
   base: Block[];
   baseUc: Block[];
@@ -752,22 +770,33 @@ export const useWs = create<S>((set, get) => ({
 
     // ★★**그 그림을 뽑을 때의 구조를 그대로 옮긴다** (사용자 지시 2026-08-19:
     //   *"스타일/캐릭터/슬롯 구조 그대로 재현"*). 구조는 **메타데이터에 안 남는다** —
-    //   NAI 는 합쳐진 문자열만 저장한다. 살아 있는 곳은 **그 그림이 나온 탭과 씬**뿐이다.
-    //   ★지금 보고 있는 탭이 아니라 **레코드가 가리키는 탭**에서 가져온다 (`tab_id`·`cell_id`).
-    //     다른 탭을 보다가 복제해도 그 그림의 것이 와야 한다.
+    //   NAI 는 합쳐진 문자열만 저장한다.
+    //
+    //   ★★그래서 **생성할 때 그때 구조를 레코드에 남긴다** (`gen.ts` 의 `env`).
+    //     그것이 있으면 그것이 정본이다 — 그 뒤에 탭을 고치거나 **지웠어도** 그때 환경이 온다.
+    //   ★없는 그림(이 기능 전에 만든 것)만 **그 그림이 나온 탭**에서 가져온다.
+    //     그때도 지금 보고 있는 탭이 아니라 **레코드가 가리키는 탭**이다 (`tab_id`·`cell_id`).
     const rec = records.find((r) => r.file === file);
+    const saved = await api<{ env: ShotEnv | null }>(
+      `/api/workspaces/${encodeURIComponent(current)}/env?file=${encodeURIComponent(file)}`,
+    ).catch(() => ({ env: null }));
     // 편집기 내용을 spec 에 먼저 담는다 — 원본 탭이 지금 보고 있는 탭이면 이게 최신이다
     const cur = stash(spec, spec.activeTab);
     const srcTab =
       cur.tabs.find((x) => x.kind === "set" && x.id === rec?.tab_id) ??
       cur.tabs.find((x) => x.id === cur.activeTab);
     // 스타일·베이스·네거티브·**캐릭터 카드**가 통째로 여기 있다 (`promptOf` — 멀티는 캐릭터 소유)
-    const srcPrompt = structuredClone(promptOf(cur, srcTab));
+    const srcPrompt = structuredClone(saved.env?.prompt ?? promptOf(cur, srcTab));
     // 그 그림이 나온 **씬과 그 씬이 든 카드**. 못 찾으면 그 탭의 첫 씬
-    const srcScene =
+    const fallbackScene =
       srcTab?.kind === "set"
         ? (allScenes(srcTab).find((x) => x.cell.id === rec?.cell_id) ?? allScenes(srcTab)[0])
         : undefined;
+    /** 남겨 둔 스냅샷이 있으면 그것이, 없으면 그 탭의 씬이 정본이다 */
+    const srcScene = saved.env
+      ? { prefix: saved.env.prefix, color: fallbackScene?.card.color, cell: saved.env.cell }
+      : fallbackScene && { prefix: fallbackScene.card.prefix, color: fallbackScene.card.color, cell: fallbackScene.cell };
+    const srcDest = saved.env ? saved.env.sceneDest : srcTab?.kind === "set" ? srcTab.sceneDest : undefined;
 
     set({ spec: cur });
     get().addChar(t("chars.cloneName"));
@@ -784,13 +813,13 @@ export const useWs = create<S>((set, get) => ({
     //    ★`sceneDest`(씬 프롬프트가 베이스로 가나 캐릭터로 가나)도 같은 이유로 옮긴다.
     if (srcScene) {
       get().setTab(tab.id, {
-        sceneDest: srcTab?.kind === "set" ? srcTab.sceneDest : undefined,
+        sceneDest: srcDest,
         cards: tab.cards.map((k) =>
           k.id === tab.cards[0]?.id
             ? {
                 ...k,
-                prefix: srcScene.card.prefix,
-                color: srcScene.card.color,
+                prefix: srcScene.prefix,
+                color: srcScene.color,
                 cells: k.cells.map((c) =>
                   c.id === cell.id
                     ? { ...c, name: srcScene.cell.name, blocks: structuredClone(srcScene.cell.blocks ?? []) }

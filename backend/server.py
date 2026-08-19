@@ -292,6 +292,12 @@ class GenBody(BaseModel):
     #   (옛 레코드에는 없다 — 클라이언트가 id 우선·이름 폴백으로 읽는다)
     tab_id: str | None = None
     cell_id: str | None = None
+    #: ★★**그 그림을 뽑을 때의 화면 구조** — 「새 탭으로 복제」가 이것으로 환경을 되살린다.
+    #:  스타일 카드·베이스/네거티브 블록·캐릭터 카드·그 씬의 블록·카드 공통 접두·씬 목적지.
+    #:  ★PNG 메타데이터에는 **합쳐진 문자열**만 남아 구조를 못 되살린다. 그래서 여기 남긴다 —
+    #:   나중에 그 탭을 고치거나 지워도 복제는 그때 환경 그대로 나온다 (사용자 지시 2026-08-19).
+    #:  ★그림 바이트는 안 들어간다 (구조뿐이라 작다). 서버는 **들고만 있고 해석하지 않는다.**
+    env: dict | None = None
     # 프롬프트는 블록 에디터가 컴파일해 넣는다
     prompt: str = ""
     negative_prompt: str = ""
@@ -781,10 +787,21 @@ async def list_workspaces():
     return {"items": store.list()}
 
 
+#: 목록에서 빼는 무거운 항목 — 화면은 목록에서 이것들을 안 읽는다
+HEAVY_REC = ("resolved", "env")
+
+
+def _light(rec: dict) -> dict:
+    return {k: v for k, v in rec.items() if k not in HEAVY_REC}
+
+
 @app.get("/api/workspaces/{ws}")
 async def get_workspace(ws: str):
     spec = store.load(ws)
-    return {"spec": spec, "records": store.records(ws)}
+    # ★★무거운 것은 목록에서 뺀다 — `resolved`(그때 나간 페이로드, 바이브·베이스 그림의
+    #   base64 가 들어 있다)와 `env`(화면 구조 스냅샷)다. **둘 다 화면이 목록에서 안 읽는다.**
+    #   필요할 때 한 장씩 `/api/workspaces/{ws}/env` 로 가져간다.
+    return {"spec": spec, "records": [_light(r) for r in store.records(ws)]}
 
 
 @app.put("/api/workspaces/{ws}")
@@ -826,6 +843,19 @@ class CopyBody(BaseModel):
     cell_no: int | None = None
     char: str | None = None
     exclude_slot_number: bool = False
+
+
+@app.get("/api/workspaces/{ws}/env")
+async def gallery_env(ws: str, file: str):
+    """그 그림을 뽑을 때의 **화면 구조**. 「새 탭으로 복제」가 이것으로 환경을 되살린다.
+
+    ★없을 수 있다 — 이 기능이 생기기 전(2026-08-19)에 만든 그림은 안 남겼다.
+      그때는 화면이 **그 그림이 나온 탭**에서 가져간다 (`cloneToNewTab` 의 폴백)."""
+    rec = next(
+        (r for r in reversed(store.records(ws, limit=100000)) if r.get("file") == file),
+        None,
+    )
+    return {"env": (rec or {}).get("env")}
 
 
 @app.post("/api/workspaces/{ws}/copy")
@@ -1160,6 +1190,7 @@ async def _generate_one(body: GenBody) -> dict:
             "enhance_of": body.enhance_of,
             "seed": seed,
             "resolved": payload,
+            "env": body.env,
         },
     )
     return {"ok": True, "file": rel, "seed": seed, "bytes": len(data),

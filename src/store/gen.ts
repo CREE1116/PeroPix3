@@ -386,6 +386,18 @@ export const useGen = create<S>((set, get) => ({
           prompt: shot.prompt,
           negative_prompt: shot.uc,
           characters: shot.chars,
+          // ★★**이 장을 뽑는 화면 구조를 그대로 남긴다** (사용자 지시 2026-08-19).
+          //   「새 탭으로 복제」가 이것으로 환경을 되살린다 — PNG 메타데이터에는 **합쳐진
+          //   문자열**만 남아 스타일 카드·블록 나눔·캐릭터 카드를 못 되살리기 때문이다.
+          //   ★남겨 두면 나중에 그 탭을 고치거나 지워도 **그때 환경 그대로** 복제된다.
+          //   ★여기 담는 것은 **`generateAll` 이 읽는 것 전부**여야 한다 (회귀 `cloneEnv.test.ts`).
+          //     그림 바이트는 안 담는다 — 구조뿐이라 작다.
+          env: {
+            prompt: usePrompt.getState().snapshot(),
+            prefix: card.prefix,
+            sceneDest: tab.sceneDest,
+            cell: { name: c.name, blocks: c.blocks },
+          },
         };
       }),
       1,
