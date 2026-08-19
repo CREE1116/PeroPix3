@@ -8,7 +8,7 @@ from __future__ import annotations
 import base64
 import io
 
-from PIL import Image, ImageFilter
+from PIL import Image, ImageChops, ImageFilter
 
 
 def ensure_png_base64(b64: str, force_reencode: bool = False) -> str:
@@ -99,11 +99,19 @@ def blend_mask_8px(b64_mask: str, width: int, height: int) -> Image.Image:
 
     sw, sh = max(1, width // 8), max(1, height // 8)
     small = mask.resize((sw, sh), Image.NEAREST).point(lambda v: 255 if v >= 155 else 0, mode="L")
+    # 칠한 영역 그대로 (와이어로 보내는 마스크와 같은 8px 격자)
+    hard = small.resize((width, height), Image.NEAREST)
     # dilate 반경 4 = 9x9 최대값 필터 (1/8 스케일)
     small = small.filter(ImageFilter.MaxFilter(9))
     blend = small.resize((width, height), Image.NEAREST)
     for _ in range(2):
         blend = blend.filter(ImageFilter.GaussianBlur(20))
+    # ★칠한 영역 **안**은 알파 255 로 고정한다 (2026-08-20, v2 유저 제보 "인페인트 흔적").
+    #   PIL 의 GaussianBlur(radius) 는 radius 가 표준편차라 2회면 유효 시그마 약 28 이고,
+    #   팽창 32px 과 맞먹어 칠한 경계 안쪽 알파가 194~222 까지만 올라갔다. 지운 것이
+    #   최대 24% 비쳐 흔적으로 남는다 (가는 선·작은 점은 칠한 자리 전체가 평균 14~18%).
+    #   전이 구간은 칠한 영역 **바깥**에만 있어야 한다. v2 수정: PeroPix 11b25ae
+    blend = ImageChops.lighter(blend, hard)
     return blend
 
 
