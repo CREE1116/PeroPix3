@@ -1264,9 +1264,8 @@ function SceneRow(
             onRename={(v) => patchCell({ name: v })}
             onTab={(dir) => p.onStepField(c.id, dir, "name")}
           />
-          <span style={{ fontSize: 11, color: "var(--ink-ghost)", fontVariantNumeric: "tabular-nums" }}>
-            {takes.length}
-          </span>
+          {/* ★그림 수를 적지 않는다 (사용자 지시 2026-08-19) — 오른쪽에 그 그림들이 그대로
+              늘어서 있어서 세어 줄 이유가 없다 */}
           <button
             data-scene-lock={c.id}
             onClick={(e) => {
