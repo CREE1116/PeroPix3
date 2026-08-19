@@ -281,7 +281,7 @@ function SceneActions() {
               void deleteFiles([file]);
               useSceneFocus.getState().focus(useSceneFocus.getState().cell, null);
             }}
-            title={tr("canvas.hideHint")}
+            data-tip={tr("canvas.hideHint")}
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -434,7 +434,7 @@ function SetZone() {
     <div
       ref={ref}
       data-zone="set"
-      title={tr("cards.zoneSet")}
+      data-tip={tr("cards.zoneSet")}
       style={{
         position: "absolute",
         top: 6,

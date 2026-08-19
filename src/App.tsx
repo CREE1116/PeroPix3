@@ -18,6 +18,7 @@ import { GenerateFooter } from "./panels/GenerateFooter";
 import { Settings } from "./app/Settings";
 import { useHealth, type Health } from "./store/health";
 import { Toasts } from "./app/Toasts";
+import { TipLayer } from "./components/Tip";
 import { AskDialog } from "./app/AskDialog";
 import { AiChat } from "./panels/AiChat";
 import { Canvas } from "./panels/Canvas";
@@ -147,6 +148,7 @@ export function App() {
         {!wsLoading && <WorkspaceGate />}
         <AskDialog />
         <Toasts />
+        <TipLayer />
       </WindowFrame>
     );
 
@@ -161,7 +163,7 @@ export function App() {
             <button
               data-settings-open
               onClick={() => openSettings("general")}
-              title={tr("settings.title")}
+              data-tip={tr("settings.title")}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -313,6 +315,8 @@ export function App() {
       <WildcardModal />
       <AskDialog />
       <Toasts />
+      {/* 툴팁 층 — 화면 아무 데나 `data-tip` 을 달면 여기서 뜬다 (`components/Tip`) */}
+      <TipLayer />
       <DragLayer />
     </WindowFrame>
   );
@@ -360,10 +364,10 @@ function QueueStatus() {
         {progress.completed}/{progress.total}
       </b>
       {progress.queue_length > 0 && (
-        <span title={t("queue.waiting", { n: progress.queue_length })}>+{progress.queue_length}</span>
+        <span data-tip={t("queue.waiting", { n: progress.queue_length })}>+{progress.queue_length}</span>
       )}
       {/* ★취소는 **버튼 하나**다 (사용자 결정 2026-08-18) — 생성 푸터와 같은 창구다 */}
-      <button onClick={() => void cancelAll()} style={navBtn} title={t("queue.cancelHint")}>
+      <button onClick={() => void cancelAll()} style={navBtn} data-tip={t("queue.cancelHint")}>
         {t("queue.cancel")}
       </button>
     </span>
@@ -390,7 +394,7 @@ function ThemeButton() {
   return (
     <button
       onClick={toggle}
-      title={dark ? t("window.themeToLight") : t("window.themeToDark")}
+      data-tip={dark ? t("window.themeToLight") : t("window.themeToDark")}
       style={{
         display: "inline-flex",
         alignItems: "center",

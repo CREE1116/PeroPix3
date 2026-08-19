@@ -3,6 +3,7 @@ import { Category } from "./Category";
 import { useEffect, useState } from "react";
 import { MODELS, NAI_MAX, SIZE_PRESETS, alignTo64, useGen } from "../store/gen";
 import { Icon } from "../components/Icon";
+import { Help } from "../components/Tip";
 import { ImageInputPanel } from "./ImageInputPanel";
 import { flashStyle, useFlash } from "../store/ui";
 
@@ -92,7 +93,7 @@ export function OptionsPanel() {
                       >
                         {t(`options.${name}`)}
                         {star && (
-                          <span title={t("options.starHint")} style={{ display: "inline-grid", verticalAlign: "-2px", marginLeft: 2 }}>
+                          <span data-tip={t("options.starHint")} style={{ display: "inline-grid", verticalAlign: "-2px", marginLeft: 2 }}>
                             {Icon.spark12}
                           </span>
                         )}
@@ -112,9 +113,8 @@ export function OptionsPanel() {
                   <NumBox data-size="h" value={p.height} onCommit={(v) => set("height", alignTo64(v))} />
                 </div>
               </Group>
-              <Group label={t("options.steps")}>
+              <Group label={t("options.steps")} help={t("options.stepsHint")}>
                 <Num value={p.steps} min={1} max={NAI_MAX.steps} onChange={(v) => set("steps", v)} />
-                <Hint>{t("options.stepsHint")}</Hint>
               </Group>
               <Group label={t("options.cfg")}>
                 <Num value={p.cfg} min={1} max={NAI_MAX.cfg} step={0.1} onChange={(v) => set("cfg", v)} />
@@ -147,17 +147,17 @@ export function OptionsPanel() {
                 {/* ★그림을 공유할 때만 쓴다 — 지우면 그 그림으로 재생성할 수 없다 */}
                 <Check
                   label={t("options.stripMetadata")}
+                  help={t("options.stripHint")}
                   checked={p.strip_metadata}
                   onChange={(v) => set("strip_metadata", v)}
                 />
-                {p.strip_metadata && <Hint>{t("options.stripHint")}</Hint>}
         {/* ★v2 `autoSaveToggle` — 끄면 파일도 기록도 안 남기고 미리보기만 (대조 2026-08-16) */}
         <Check
           label={t("options.autoSave")}
+          help={t("options.autoSaveHint")}
           checked={p.auto_save}
           onChange={(v) => set("auto_save", v)}
         />
-        {!p.auto_save && <Hint>{t("options.autoSaveHint")}</Hint>}
         {/* ★v2 `excludeSlotNumber` — 옮기다 빠져 있었다 (대조 2026-08-16).
             번호는 탐색기에서 씬 순서를 만드는 것이라, 순서가 필요 없을 때만 끈다. */}
         <Check
@@ -180,11 +180,14 @@ export function OptionsPanel() {
 function Group({
   label,
   flashKey,
+  help,
   children,
 }: {
   label: string;
   /** 방금 이 자리가 바뀌었으면 강조한다 (`useUi.reveal`) */
   flashKey?: string;
+  /** ★설명은 **라벨 옆 `?`** 로만 나온다 (사용자 지시 2026-08-19) — 화면에 펼쳐 두지 않는다 */
+  help?: string;
   children: React.ReactNode;
 }) {
   const on = useFlash(flashKey ?? "");
@@ -197,17 +200,14 @@ function Group({
       data-opt-group={label}
       style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)", ...flashStyle(!!flashKey && on) }}
     >
-      <span style={{ fontSize: "var(--text-xs)", fontWeight: "var(--w-semi)", color: "var(--ink-soft)" }}>
+      <span style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", fontSize: "var(--text-xs)", fontWeight: "var(--w-semi)", color: "var(--ink-soft)" }}>
         {label}
+        {help && <Help tip={help} />}
       </span>
       {children}
     </div>
   );
 }
-
-const Hint = ({ children }: { children: React.ReactNode }) => (
-  <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>{children}</span>
-);
 
 /** ★페로픽스파이의 `input, select, textarea, button` 규칙과 같은 모양
  *  (panel 바탕 + border 1px + radius 6). 포커스는 globals.css 가 테두리 색으로 처리한다. */
@@ -319,10 +319,12 @@ function Check({
   label,
   checked,
   onChange,
+  help,
 }: {
   label: string;
   checked: boolean;
   onChange: (v: boolean) => void;
+  help?: string;
 }) {
   return (
     <label
@@ -342,6 +344,7 @@ function Check({
         style={{ accentColor: "var(--accent)" }}
       />
       {label}
+      {help && <Help tip={help} />}
     </label>
   );
 }

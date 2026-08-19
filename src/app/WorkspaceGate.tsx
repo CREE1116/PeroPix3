@@ -86,7 +86,7 @@ export function WorkspaceGate({ onClose }: { onClose?: () => void } = {}) {
           <button
             data-ws-gate-close
             onClick={onClose}
-            title={t("common.close")}
+            data-tip={t("common.close")}
             style={{
               position: "absolute",
               top: "var(--sp-4)",
@@ -189,7 +189,7 @@ export function WorkspaceGate({ onClose }: { onClose?: () => void } = {}) {
                   {/* 열려 있는 것 표시 — 지금 보는 것은 채운 점, 열어만 둔 것은 빈 점.
                       ★자리는 늘 차지한다. 안 그러면 이름의 왼쪽 끝이 줄마다 어긋난다 */}
                   <span
-                    title={here ? t("gate.here") : opened ? t("gate.opened") : undefined}
+                    data-tip={here ? t("gate.here") : opened ? t("gate.opened") : undefined}
                     style={{
                       width: 7,
                       height: 7,
@@ -236,7 +236,7 @@ export function WorkspaceGate({ onClose }: { onClose?: () => void } = {}) {
                     )
                       remove(w.name);
                   }}
-                  title={t("gate.delete")}
+                  data-tip={t("gate.delete")}
                   style={{
                     // ★`display: grid` 만 주면 아이콘이 **위로 붙는다** — 행이 41px 인데
                     //   17px 짜리 SVG 가 위쪽에 놓여 × 가 글자보다 높이 떠 있었다

@@ -5,6 +5,7 @@ import { useLlm } from "../store/llm";
 import { useCli, CLI_EFFORTS } from "../store/cli";
 // ★같은 모양을 두 벌 만들지 않는다 — 설정 화면의 묶음 상자를 그대로 쓴다
 import { Group } from "./Settings";
+import { Help } from "../components/Tip";
 import { openExternal } from "../lib/openExternal";
 
 /** AI 조수 설정 — **어떤 엔진으로 도는가**가 먼저다 (스튜디오 `SettingsPanel` 의 구성 참고).
@@ -26,7 +27,7 @@ function AskForModel({ url }: { url: string }) {
       <button
         data-llm-ask-link
         onClick={() => openExternal(url)}
-        title={url}
+        data-tip={url}
         style={{ color: "var(--accent)", textDecoration: "underline" }}
       >
         {url.replace(/^https?:\/\//, "")}
@@ -80,7 +81,7 @@ function GuideBox() {
   const dirty = text !== saved;
   const over = text.length > max;
   return (
-    <Group label={t("settings.guide")}>
+    <Group label={t("settings.guide")} help={t("settings.guideHint")}>
       <textarea
         data-guide
         value={text}
@@ -114,7 +115,6 @@ function GuideBox() {
         </button>
       </div>
       {err && <span style={{ fontSize: "0.62rem", color: "var(--err)" }}>{err}</span>}
-      <Hint>{t("settings.guideHint")}</Hint>
     </Group>
   );
 }
@@ -201,7 +201,6 @@ export function AiSettings() {
       {engine === "cli" ? (
         <>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
-            <Hint>{t("settings.cliPick")}</Hint>
             <span style={{ flex: 1 }} />
             <button data-cli-rescan onClick={() => void detect()} disabled={scanning} style={btn}>
               {scanning ? t("settings.scanning") : t("settings.rescan")}
@@ -217,7 +216,7 @@ export function AiSettings() {
                   data-cli={c.id}
                   onClick={() => pick(c.id)}
                   disabled={off}
-                  title={c.path ?? t("settings.cliNone")}
+                  data-tip={c.path ?? t("settings.cliNone")}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -411,6 +410,8 @@ export function AiSettings() {
             </Line>
           )}
           <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
+            {/* ★키를 어디에 두는지는 **`?` 안에** 있다 (사용자 지시 2026-08-19) */}
+            <Help tip={t("settings.llmHint")} />
             <input
               data-llm-key
               type="password"
@@ -448,7 +449,6 @@ export function AiSettings() {
               {verdict === "ok" ? t("settings.verifyOk") : verdict}
             </span>
           )}
-          <Hint>{t("settings.llmHint")}</Hint>
         </>
       )}
     </div>
@@ -530,10 +530,6 @@ const Chip = ({
   >
     {children}
   </button>
-);
-
-const Hint = ({ children }: { children: React.ReactNode }) => (
-  <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>{children}</span>
 );
 
 const field: React.CSSProperties = {

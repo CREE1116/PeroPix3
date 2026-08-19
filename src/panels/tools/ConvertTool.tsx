@@ -8,6 +8,7 @@ import { useFiles } from "../../store/files";
 import { useUi } from "../../store/ui";
 import { toast } from "../../store/toast";
 import { Icon } from "../../components/Icon";
+import { Help } from "../../components/Tip";
 import { DragGhost } from "../../cards/DragGhost";
 
 /** 이름 변환 — **형식과 이름을 한 번에** 바꾼다 (v2 `보조 도구 › 이미지 변환`).
@@ -278,13 +279,13 @@ export function ConvertTool() {
                               .join("  ")}
                     </span>
                   </span>
-                  <button onClick={() => swap(i, i - 1)} style={mini} title={t("tools.up")}>
+                  <button onClick={() => swap(i, i - 1)} style={mini} data-tip={t("tools.up")}>
                     {Icon.chevronUp}
                   </button>
-                  <button onClick={() => swap(i, i + 1)} style={mini} title={t("tools.down")}>
+                  <button onClick={() => swap(i, i + 1)} style={mini} data-tip={t("tools.down")}>
                     {Icon.chevronDown}
                   </button>
-                  <button onClick={() => drop(i)} style={mini} title={t("common.delete")}>
+                  <button onClick={() => drop(i)} style={mini} data-tip={t("common.delete")}>
                     {Icon.close12}
                   </button>
                 </div>
@@ -325,8 +326,8 @@ export function ConvertTool() {
           <label style={lbl}>
             <input type="checkbox" data-strip checked={strip} onChange={(e) => setStrip(e.target.checked)} />
             {t("tools.strip")}
+            <Help tip={strip ? t("tools.stripHint") : t("tools.keepHint")} />
           </label>
-          <Hint>{strip ? t("tools.stripHint") : t("tools.keepHint")}</Hint>
         </Section>
 
         <Section label={t("tools.rename")}>
@@ -363,7 +364,7 @@ export function ConvertTool() {
           <Hint>{t("tools.preview", { s: example })}</Hint>
         </Section>
 
-        <Section label={t("tools.dest")}>
+        <Section label={t("tools.dest")} help={t("tools.destHint")}>
           <select data-dest value={dest} onChange={(e) => setDest(e.target.value)} style={{ ...box, width: "100%" }}>
             <option value="">{t("tools.destBeside")}</option>
             {flat.map((f) => (
@@ -373,7 +374,8 @@ export function ConvertTool() {
               </option>
             ))}
           </select>
-          <Hint>{needDest && !dest ? t("tools.needDest") : t("tools.destHint")}</Hint>
+          {/* ★남는 것은 **지금 막힌 이유**뿐이다 — 무엇을 하는 자리인지는 라벨 옆 `?` 에 있다 */}
+          {needDest && !dest && <Hint>{t("tools.needDest")}</Hint>}
           {/* ★여는 것은 **방금 우리가 쓴 자리**뿐이다 (backend/files.py `open_dir` 주석) */}
           <label style={lbl}>
             <input
@@ -460,9 +462,13 @@ function flatten(nodes: { path: string; children: unknown[] }[], depth = 0, out:
   return out;
 }
 
-const Section = ({ label, children }: { label: string; children: React.ReactNode }) => (
+/** ★설명은 **라벨 옆 `?`** 로만 나온다 (사용자 지시 2026-08-19) */
+const Section = ({ label, help, children }: { label: string; help?: string; children: React.ReactNode }) => (
   <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
-    <span style={{ fontSize: "var(--text-xs)", fontWeight: "var(--w-semi)", color: "var(--ink-soft)" }}>{label}</span>
+    <span style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", fontSize: "var(--text-xs)", fontWeight: "var(--w-semi)", color: "var(--ink-soft)" }}>
+      {label}
+      {help && <Help tip={help} />}
+    </span>
     {children}
   </div>
 );

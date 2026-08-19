@@ -230,7 +230,7 @@ function PanelHeader({
       side={side}
       collapsed={false}
       onClick={onCollapse}
-      title={t("panel.collapse", { name: title })}
+      data-tip={t("panel.collapse", { name: title })}
     />
   );
   return (

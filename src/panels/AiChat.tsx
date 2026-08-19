@@ -68,7 +68,7 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
       {/* 지금 보고 있는 것 */}
       <div
         data-ai-context
-        title={t("ai.contextHint")}
+        data-tip={t("ai.contextHint")}
         style={{
           flexShrink: 0,
           display: "flex",
@@ -96,7 +96,7 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
         <button
           data-ai-engine={engine}
           onClick={onOpenSettings}
-          title={t("ai.engineHint")}
+          data-tip={t("ai.engineHint")}
           style={{
             display: "flex",
             alignItems: "center",
@@ -120,7 +120,7 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
         <button
           data-ai-list
           onClick={() => setShowList((v) => !v)}
-          title={t("ai.history")}
+          data-tip={t("ai.history")}
           style={{ color: showList ? "var(--accent)" : "var(--ink-faint)", display: "grid" }}
         >
           {Icon.folder}
@@ -130,7 +130,7 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
             data-ai-new
             onClick={newChat}
             disabled={sending}
-            title={sending ? t("ai.busyLock") : t("ai.reset")}
+            data-tip={sending ? t("ai.busyLock") : t("ai.reset")}
             style={{ color: sending ? "var(--ink-ghost)" : "var(--ink-faint)", display: "grid" }}
           >
             {Icon.plus}
@@ -173,7 +173,7 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
               key={c.id}
               data-ai-chat={c.id}
               data-locked={sending ? "" : undefined}
-              title={sending ? t("ai.busyLock") : undefined}
+              data-tip={sending ? t("ai.busyLock") : undefined}
               onClick={() => {
                 if (sending) return; // ★돌던 응답이 그 대화에 붙는다
                 void open(c.id);
@@ -218,7 +218,7 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
                   e.stopPropagation();
                   void remove(c.id);
                 }}
-                title={t("common.delete")}
+                data-tip={t("common.delete")}
                 style={{ flexShrink: 0, color: "var(--ink-faint)", display: "grid" }}
               >
                 {Icon.close12}
@@ -372,7 +372,7 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
               onClick={submit}
               disabled={!text.trim()}
               // 도는 중에 보내면 곧바로 안 가고 이 턴이 끝난 뒤에 간다 — 그것을 미리 알린다
-              title={sending ? t("ai.queue") : undefined}
+              data-tip={sending ? t("ai.queue") : undefined}
               style={sendBtn}
             >
               {t("ai.send")}
@@ -418,7 +418,7 @@ function ModelChip({ onOpenSettings }: { onOpenSettings?: () => void }) {
       <button
         data-ai-model
         onClick={() => setOpen((v) => !v)}
-        title={`${cli ? "CLI" : cfg?.provider ?? ""} · ${name}${eff ? " · " + eff : ""}`}
+        data-tip={`${cli ? "CLI" : cfg?.provider ?? ""} · ${name}${eff ? " · " + eff : ""}`}
         style={{
           display: "flex",
           alignItems: "center",
@@ -714,7 +714,7 @@ function Row({ line }: { line: Line }) {
   return (
     <div
       data-ai-tool={line.name}
-      title={line.note || undefined}
+      data-tip={line.note || undefined}
       style={{
         display: "flex",
         alignItems: "center",

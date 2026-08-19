@@ -38,7 +38,7 @@ export function WorkspaceTabs({ onAdd }: { onAdd: () => void }) {
             data-ws-tab={name}
             data-on={on ? "" : undefined}
             onClick={() => !on && void open(name)}
-            title={name}
+            data-tip={name}
             style={{
               display: "flex",
               alignItems: "center",
@@ -62,7 +62,7 @@ export function WorkspaceTabs({ onAdd }: { onAdd: () => void }) {
                 e.stopPropagation();
                 void closeWs(name);
               }}
-              title={t("gate.closeTab")}
+              data-tip={t("gate.closeTab")}
               style={{
                 // ★`display: grid` 만 주면 아이콘이 위로 붙는다 (목록의 휴지통과 같은 자리)
                 display: "grid",
@@ -79,7 +79,7 @@ export function WorkspaceTabs({ onAdd }: { onAdd: () => void }) {
       <button
         data-ws-tab-add
         onClick={onAdd}
-        title={t("gate.openAnother")}
+        data-tip={t("gate.openAnother")}
         style={{
           display: "grid",
           placeItems: "center",

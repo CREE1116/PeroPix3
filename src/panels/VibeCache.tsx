@@ -189,7 +189,7 @@ export function VibeCache({ onClose }: { onClose: () => void }) {
                   data-vibe-cache-item={it.file}
                   disabled={!!busy}
                   onClick={() => void use(it)}
-                  title={t("imgIn.cacheUse")}
+                  data-tip={t("imgIn.cacheUse")}
                   style={{ display: "block", width: "100%", padding: 0, textAlign: "left" }}
                 >
                   <img
@@ -213,7 +213,7 @@ export function VibeCache({ onClose }: { onClose: () => void }) {
                   data-vibe-cache-del={it.file}
                   disabled={!!busy}
                   onClick={() => void remove(it)}
-                  title={t("imgIn.cacheDelete")}
+                  data-tip={t("imgIn.cacheDelete")}
                   style={{
                     position: "absolute",
                     top: "var(--sp-2)",

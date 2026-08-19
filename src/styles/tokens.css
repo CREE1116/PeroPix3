@@ -49,6 +49,12 @@
   --accent-line: #2f6fa855;
   --accent-on: #ffffff;
 
+  /* ── 툴팁 (`components/Tip`) ──
+     ★떠 있는 것은 **면을 뒤집어** 알린다 — 패널과 같은 색이면 어느 층인지 안 읽힌다 */
+  --tip-bg: #2b323b;
+  --tip-ink: #f3f6f9;
+  --tip-line: rgba(255, 255, 255, 0.12);
+
   /* ── 의미색 (기능이 색을 갖는다) ── */
   --char-c: #7a58b8;      /* 캐릭터 섹션 */
   --uc-c: #a8433b;        /* Undesired Content */
@@ -153,6 +159,10 @@
     --accent-line: #7c6cf055;
     --accent-on: #ffffff;
 
+    --tip-bg: #33333d;
+    --tip-ink: #ececf1;
+    --tip-line: #43434e;
+
     --char-c: #9d8cf5;
     --uc-c: #e05555;
     --warn: #fbbf24;
@@ -200,6 +210,10 @@
   --accent-bg: #2a2640;
   --accent-line: #7c6cf055;
   --accent-on: #ffffff;
+
+  --tip-bg: #33333d;
+  --tip-ink: #ececf1;
+  --tip-line: #43434e;
 
   --char-c: #9d8cf5;
   --uc-c: #e05555;

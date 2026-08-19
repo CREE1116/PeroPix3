@@ -423,7 +423,7 @@ export function MaskEditor() {
             key={tool}
             data-mask-tool={tool}
             onClick={() => setErase(tool === "eraser")}
-            title={t(tool === "brush" ? "imgIn.brush" : "imgIn.eraser")}
+            data-tip={t(tool === "brush" ? "imgIn.brush" : "imgIn.eraser")}
             style={{
               ...btn,
               background: erase === (tool === "eraser") ? "var(--accent)" : "var(--panel)",
@@ -447,12 +447,12 @@ export function MaskEditor() {
           onClick={undo}
           disabled={!undos.length}
           style={{ ...btn, color: undos.length ? "var(--ink-soft)" : "var(--ink-ghost)" }}
-          title={t("imgIn.maskUndo")}
+          data-tip={t("imgIn.maskUndo")}
         >
           {Icon.undo}
         </button>
-        <button data-mask-clear onClick={clear} style={btn} title={t("imgIn.maskClear")}>{Icon.trash}</button>
-        <button data-mask-invert onClick={invert} style={btn} title={t("imgIn.maskInvert")}>{Icon.refresh}</button>
+        <button data-mask-clear onClick={clear} style={btn} data-tip={t("imgIn.maskClear")}>{Icon.trash}</button>
+        <button data-mask-invert onClick={invert} style={btn} data-tip={t("imgIn.maskInvert")}>{Icon.refresh}</button>
 
         <span style={{ flex: 1 }} />
         {/* 지금 무엇이 나가는지 한 줄. 칠한 것이 없으면 사각형 안쪽 전체다 */}
@@ -463,16 +463,16 @@ export function MaskEditor() {
               : t("focus.willSendWhole", { w: plan.req.width, h: plan.req.height })
             : big
               ? t("focus.offWarn")
-              : count
-                ? ""
-                : t("focus.paintFirst")}
+              /* ★칠하기 전에 「칠하세요」라고 적지 않는다 (사용자 지시 2026-08-19) —
+                 이 줄은 **무엇이 나가는지**를 말하는 자리다 */
+              : ""}
         </span>
         {/* ★실행 버튼은 여기 없다 — 「생성」이 한다 (사용자 지시 2026-08-19).
             칠하기를 끝내지 않아도 눌리므로, 이 단추는 화면을 닫는 것뿐이다. */}
         <button
           data-mask-done
           onClick={() => useImageInput.getState().endEdit()}
-          title={t("imgIn.maskDoneBtn")}
+          data-tip={t("imgIn.maskDoneBtn")}
           style={{ ...btn, background: "var(--panel)", padding: "var(--sp-2)" }}
         >
           {Icon.close}

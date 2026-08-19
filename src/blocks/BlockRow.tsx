@@ -157,7 +157,7 @@ export function BlockRow({
         <span
           {...gripProps}
           onClick={(e) => e.stopPropagation()}
-          title={t("block.dragToReorder")}
+          data-tip={t("block.dragToReorder")}
           style={{
             color: "var(--ink-faint)",
             fontSize: 11,
@@ -174,7 +174,7 @@ export function BlockRow({
         {/* ★「추가」는 **색을 못 고른다** — 네모난 고정 표식이라 동그란 색점과 구별된다 */}
         {block.extra ? (
           <span
-            title={t("block.extraHint")}
+            data-tip={t("block.extraHint")}
             style={{
               width: 10,
               height: 10,
@@ -192,7 +192,7 @@ export function BlockRow({
               const i = COLORS.indexOf(block.color);
               onChange({ ...block, color: COLORS[(i + 1) % COLORS.length] });
             }}
-            title={t("block.color")}
+            data-tip={t("block.color")}
             style={{
               width: 10,
               height: 10,
@@ -207,7 +207,7 @@ export function BlockRow({
         {block.extra ? (
           // ★이름 고정 — 더블클릭해도 안 바뀐다. 대문자 라벨로 "칸의 종류"임을 알린다
           <b
-            title={t("block.extraHint")}
+            data-tip={t("block.extraHint")}
             style={{
               fontSize: "var(--text-2xs)",
               fontWeight: "var(--w-bold)",
@@ -248,7 +248,7 @@ export function BlockRow({
               e.stopPropagation();
               setRenaming(true);
             }}
-            title={t("block.renameHint")}
+            data-tip={t("block.renameHint")}
             style={{ fontSize: "var(--text-xs)", whiteSpace: "nowrap", userSelect: "none" }}
           >
             {block.label}
@@ -281,7 +281,7 @@ export function BlockRow({
             e.stopPropagation();
             onChange({ ...block, on: !block.on });
           }}
-          title={block.on ? t("block.toggleOff") : t("block.toggleOn")}
+          data-tip={block.on ? t("block.toggleOff") : t("block.toggleOn")}
           style={{ color: "var(--ink-faint)", padding: "0 2px", display: "grid" }}
         >
           {block.on ? Icon.dotOn : Icon.dotOff}
@@ -291,7 +291,7 @@ export function BlockRow({
             e.stopPropagation();
             onRemove();
           }}
-          title={t("block.remove")}
+          data-tip={t("block.remove")}
           style={{ color: "var(--ink-faint)", padding: "0 2px", display: "grid" }}
         >
           {Icon.close12}
@@ -360,7 +360,7 @@ export function BlockRow({
                 const { at, text } = caretAfterTag(block, i);
                 openText(at, text);
               }}
-              title={t("block.editAsText")}
+              data-tip={t("block.editAsText")}
               style={{
                 display: "flex",
                 flexWrap: "wrap",

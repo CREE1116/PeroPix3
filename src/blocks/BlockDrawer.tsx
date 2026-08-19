@@ -80,7 +80,7 @@ export function BlockDrawer() {
         <button
           data-block-drawer-close
           onClick={() => setOpen(false)}
-          title={t("lib.close")}
+          data-tip={t("lib.close")}
           style={{ color: "var(--ink-faint)", display: "grid" }}
         >
           {Icon.close12}
@@ -178,7 +178,7 @@ function Category({
         ref={zone.ref}
         data-lib-cat={cat}
         onClick={onFold}
-        title={t("lib.dropHere")}
+        data-tip={t("lib.dropHere")}
         style={{
           display: "flex",
           alignItems: "center",
@@ -228,7 +228,7 @@ function Row({ it, onRemove }: { it: LibItem; onRemove: () => void }) {
       onPointerDown={(e) =>
         start(e, { dir: "apply", kind: "blocklib", item: it }, undefined, () => setOpen((v) => !v))
       }
-      title={t("lib.itemHint")}
+      data-tip={t("lib.itemHint")}
       style={{
         marginBottom: 2,
         borderRadius: "var(--r-1)",
@@ -289,7 +289,7 @@ function Row({ it, onRemove }: { it: LibItem; onRemove: () => void }) {
           data-lib-del={it.id}
           onPointerDown={(e) => e.stopPropagation()}
           onClick={onRemove}
-          title={t("lib.remove")}
+          data-tip={t("lib.remove")}
           style={{ color: "var(--ink-faint)", display: "grid" }}
         >
           {Icon.close12}
@@ -325,7 +325,7 @@ export function BlockLibButton() {
       data-block-lib-toggle
       data-on={open ? "" : undefined}
       onClick={() => setOpen(!open)}
-      title={t("lib.title")}
+      data-tip={t("lib.title")}
       style={{ color: open ? "var(--accent)" : "var(--ink-faint)", display: "grid", padding: "0 4px" }}
     >
       {Icon.bookmark}

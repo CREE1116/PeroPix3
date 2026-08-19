@@ -55,7 +55,7 @@ export function ResizeHandle({
         start.current = { x: e.clientX, w: width };
         setDragging(true);
       }}
-      title={t("panel.resizeHint")}
+      data-tip={t("panel.resizeHint")}
       style={{
         flex: "0 0 5px",
         cursor: "ew-resize",

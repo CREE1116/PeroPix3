@@ -235,7 +235,7 @@ export function FileManager({ onConvert }: { onConvert: () => void }) {
               e.stopPropagation();
               setMenu(node.path);
             }}
-            title={t("files.folderMenu")}
+            data-tip={t("files.folderMenu")}
             style={{ display: "grid", placeItems: "center", color: "var(--ink-faint)" }}
           >
             {Icon.dots}
@@ -351,7 +351,7 @@ export function FileManager({ onConvert }: { onConvert: () => void }) {
             <button
               data-fm-view="grid"
               onClick={() => setView("grid")}
-              title={t("files.viewGrid")}
+              data-tip={t("files.viewGrid")}
               style={{ ...iconBtn, ...(view === "grid" ? onSt : {}) }}
             >
               {Icon.grid}
@@ -359,7 +359,7 @@ export function FileManager({ onConvert }: { onConvert: () => void }) {
             <button
               data-fm-view="list"
               onClick={() => setView("list")}
-              title={t("files.viewList")}
+              data-tip={t("files.viewList")}
               style={{ ...iconBtn, ...(view === "list" ? onSt : {}) }}
             >
               {Icon.list}
@@ -367,7 +367,7 @@ export function FileManager({ onConvert }: { onConvert: () => void }) {
             <button
               data-fm-pip
               onClick={() => setPip(!pipOn)}
-              title={t("files.pip")}
+              data-tip={t("files.pip")}
               style={{ ...iconBtn, ...(pipOn ? onSt : {}) }}
             >
               {Icon.pip}

@@ -110,7 +110,7 @@ function Section({
       {/* ★머리를 누르면 접힌다 — 접기 단추를 따로 두지 않는다 (사용자 지시 2026-08-16) */}
       <div
         onClick={() => setFolded((v) => !v)}
-        title={t(`cards.hint.${kind}`)}
+        data-tip={t(`cards.hint.${kind}`)}
         style={{
           display: "flex",
           alignItems: "center",
@@ -221,7 +221,7 @@ function PanelCard({
             onDelete();
         })();
       }}
-      title={card.name}
+      data-tip={card.name}
       style={{
         position: "relative",
         aspectRatio: "3 / 4",

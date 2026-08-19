@@ -247,7 +247,7 @@ function StackPeek({ ch }: { ch: Char }) {
   // 맨 앞(다음 차례)이 섹션에 가장 가까이 = DOM 마지막
   const cards = [...ch.stack].reverse();
   return (
-    <div onClick={() => setOpen((v) => !v)} title={t("cards.stackHint")} style={{ cursor: "pointer" }}>
+    <div onClick={() => setOpen((v) => !v)} data-tip={t("cards.stackHint")} style={{ cursor: "pointer" }}>
       {cards.map((c, i) => {
         const front = i === cards.length - 1;
         return (
@@ -318,7 +318,7 @@ export function JoinZone() {
     <div
       ref={ref}
       data-zone="join"
-      title={t("cards.zoneJoin")}
+      data-tip={t("cards.zoneJoin")}
       style={{
         position: "relative",
         zIndex: 31,
@@ -369,7 +369,7 @@ function Zone({
     <div
       ref={innerRef}
       data-zone={name}
-      title={label}
+      data-tip={label}
       style={{
         position: "absolute",
         left: 0,
@@ -411,7 +411,7 @@ function BannerBtn({
 }) {
   return (
     <button
-      title={title}
+      data-tip={title}
       onPointerDown={(e) => e.stopPropagation()} // 배너의 역드래그가 걸리지 않게
       onClick={onClick}
       style={{
@@ -486,7 +486,7 @@ function Tab({
   return (
     <button
       onClick={onClick}
-      title={full ? t("prompt.ucHasContent") : undefined}
+      data-tip={full ? t("prompt.ucHasContent") : undefined}
       style={{
         padding: "2px 1px 3px",
         fontSize: "0.72rem",

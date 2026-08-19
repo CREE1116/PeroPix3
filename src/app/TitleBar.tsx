@@ -110,7 +110,7 @@ function WinBtn({
   const [hover, setHover] = useState(false);
   return (
     <button
-      title={title}
+      data-tip={title}
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}

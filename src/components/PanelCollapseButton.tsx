@@ -27,7 +27,7 @@ export function PanelCollapseButton({
   return (
     <button
       onClick={onClick}
-      title={title ?? (collapsed ? t("panel.expand", { name: "" }) : t("panel.collapse", { name: "" }))}
+      data-tip={title ?? (collapsed ? t("panel.expand", { name: "" }) : t("panel.collapse", { name: "" }))}
       style={{
         width: 32,
         height: 32,

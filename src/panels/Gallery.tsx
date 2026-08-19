@@ -311,7 +311,7 @@ function Cell({
     <button
       data-gallery-cell={name}
       onClick={(e) => onOpen(e.ctrlKey || e.metaKey)}
-      title={name}
+      data-tip={name}
       style={{
         position: "relative",
         aspectRatio: "832 / 1216",
@@ -470,7 +470,7 @@ function Big({
       {editing === null ? (
         <span
           data-keep-name
-          title={t("gallery.renameHint")}
+          data-tip={t("gallery.renameHint")}
           onDoubleClick={(e) => {
             e.stopPropagation();
             draft.current = name;

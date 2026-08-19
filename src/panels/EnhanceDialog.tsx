@@ -319,7 +319,7 @@ export function EnhanceDialog({
             {skipped.length > 0 && (
               <span
                 data-enhance-skipped={skipped.length}
-                title={t("slots.enhanceSkip")}
+                data-tip={t("slots.enhanceSkip")}
                 style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}
               >
                 {t("enhance.excluded", { n: skipped.length })}

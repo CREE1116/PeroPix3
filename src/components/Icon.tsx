@@ -214,6 +214,15 @@ export const Icon = {
     </>,
     12,
   ),
+  /** 도움말 — 라벨 옆의 `?` (`components/Tip` 의 `Help`). ★글자 「?」가 아니라 SVG 다 */
+  help: s(
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.7 9.3a2.4 2.4 0 1 1 3.2 2.3c-.7.3-1 .9-1 1.6v.3" />
+      <circle cx="11.9" cy="16.8" r="1" fill="currentColor" stroke="none" />
+    </>,
+    14,
+  ),
   /** 되돌리기 — 왼쪽으로 굽은 화살표 (마스크 편집의 Ctrl+Z) */
   undo: s(
     <>

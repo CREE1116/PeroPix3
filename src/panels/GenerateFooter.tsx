@@ -169,7 +169,7 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
       onClick={fire}
       disabled={off}
       /* ★펼쳐 놓았을 때는 **단축키를 알려 준다** — 있는 줄 모르면 없는 것과 같다 */
-      title={t(
+      data-tip={t(
         blocked
           ? "gen.overLimit"
           : noToken
@@ -294,7 +294,7 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
               <button
                 data-queue-cancel
                 onClick={() => void cancelAll()}
-                title={t("queue.cancelHint")}
+                data-tip={t("queue.cancelHint")}
                 style={{ ...qbtn, color: "var(--err)", borderColor: "var(--err)" }}
               >
                 {t("queue.cancel")}
@@ -370,7 +370,7 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
           // ★★**랜덤이어도 고칠 수 있다** (사용자 지적 2026-08-16). 랜덤은 아무 숫자를
           //   넣는 게 아니라 **여기 적힌 값으로 뽑고 나서** 이 칸을 굴리는 것이라,
           //   잠그면 "이 시드로 한 장 더" 를 아예 못 한다 (`lib/seedRounds` 머리 주석).
-          title={t("options.seedHint")}
+          data-tip={t("options.seedHint")}
           style={{
             flex: 1,
             minWidth: 0,
@@ -386,7 +386,7 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
         <button
           data-seed-roll
           onClick={() => set("seed", randomSeed())}
-          title={t("options.seedRoll")}
+          data-tip={t("options.seedRoll")}
           style={{ flexShrink: 0, color: "var(--ink-faint)", display: "grid", padding: "0 2px" }}
         >
           {Icon.dice}
@@ -410,7 +410,7 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
                 key={m}
                 data-seed-pick={m}
                 onClick={() => set("seed_mode", m)}
-                title={t(SEED_HINTS[i])}
+                data-tip={t(SEED_HINTS[i])}
                 style={{
                   padding: "2px var(--sp-3)",
                   fontSize: "var(--text-2xs)",
@@ -430,12 +430,8 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
 
       {genBtn}
 
-      {/* 인페인트인데 칠한 곳이 없으면 왜 잠겼는지 그 자리에서 말한다 */}
-      {needMask && (
-        <span data-gen-need-mask style={{ fontSize: "var(--text-2xs)", color: "var(--accent)" }}>
-          {t("focus.paintFirst")}
-        </span>
-      )}
+      {/* ★「고칠 자리를 칠하세요」 같은 안내는 안 띄운다 (사용자 지시 2026-08-19) —
+          단추가 잠긴 것으로 족하고, 이유는 단추에 올리면 뜬다 */}
       {/* ★막았으면 **왜 막혔는지**를 같은 자리에서 말한다. v2 는 눌렀을 때 토스트였는데,
           버튼이 잠긴 채 이유가 없으면 무엇을 고쳐야 하는지 알 수 없다 */}
       {blocked && (
@@ -465,7 +461,7 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
         )}
         {cost.encoding > 0 && <span>{t("gen.vibeEncode", { a: cost.encoding })}</span>}
         <span style={{ flex: 1 }} />
-        <span data-anlas-balance title={sub ? `tier ${sub.tier}` : undefined}>
+        <span data-anlas-balance data-tip={sub ? `tier ${sub.tier}` : undefined}>
           Anlas{" "}
           <b style={{ fontFamily: "var(--font-mono)", color: "var(--ink-soft)" }}>
             {sub ? sub.anlas.toLocaleString() : "--"}
@@ -475,7 +471,7 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
             없으면 토큰을 넣거나 밖에서 충전해도 화면 값이 영영 안 바뀐다 */}
         <button
           data-anlas-refresh
-          title={t("gen.anlasRefresh")}
+          data-tip={t("gen.anlasRefresh")}
           onClick={() => {
             setTurns((n) => n + 1);
             void useSub.getState().load();

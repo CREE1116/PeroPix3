@@ -121,7 +121,7 @@ export function WildcardModal() {
           <button
             data-wildcard-close
             onClick={() => void close()}
-            title={t("wc.close")}
+            data-tip={t("wc.close")}
             style={{ color: "var(--ink-dim)", display: "grid", padding: "0 var(--sp-2)" }}
           >
             {Icon.close}
@@ -174,7 +174,7 @@ export function WildcardModal() {
                   key={n}
                   data-wc-pool={n}
                   onClick={() => jump(n)}
-                  title={t("wc.jump")}
+                  data-tip={t("wc.jump")}
                   style={{
                     width: "100%",
                     display: "flex",
@@ -405,7 +405,7 @@ export function WildcardButton() {
       data-wildcard-toggle
       data-on={open ? "" : undefined}
       onClick={() => setOpen(!open)}
-      title={t("wc.openHint")}
+      data-tip={t("wc.openHint")}
       style={{ color: open ? "var(--accent)" : "var(--ink-faint)", display: "grid", padding: "0 4px" }}
     >
       {Icon.dice}

@@ -151,7 +151,7 @@ export function GalleryFolders() {
         {/* 보관함은 앱 밖에서도 들여다보는 폴더다 — 지금 보고 있는 폴더를 그대로 연다 */}
         <button
           data-keep-openfolder
-          title={t("files.reveal")}
+          data-tip={t("files.reveal")}
           onClick={() => void reveal(folder).catch((e) => toast(String(e), "warn"))}
           style={{ display: "grid", placeItems: "center", padding: 2, color: "var(--ink-dim)" }}
         >
@@ -189,7 +189,7 @@ function Row({
     >
     <button
       onClick={onClick}
-      title={label}
+      data-tip={label}
       style={{
         display: "flex",
         alignItems: "baseline",
@@ -226,7 +226,7 @@ function Row({
         data-keep-folder-del={label}
         className="keep-folder-del"
         onClick={onDelete}
-        title={t("gallery.folderDelete")}
+        data-tip={t("gallery.folderDelete")}
         style={{ display: "grid", placeItems: "center", padding: "2px 4px", color: "var(--ink-faint)" }}
       >
         {Icon.trash}

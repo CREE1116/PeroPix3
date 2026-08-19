@@ -72,7 +72,7 @@ export function Chip({
         e.preventDefault();
         onRemove();
       }}
-      title={readOnly ? tag.t : t("block.chipHint")}
+      data-tip={readOnly ? tag.t : t("block.chipHint")}
       style={{
         display: "inline-flex",
         alignItems: "center",

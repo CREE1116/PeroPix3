@@ -81,7 +81,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
               });
             }}
             data-tab={t.id}
-            title={tr("tabs.dragToSave")}
+            data-tip={tr("tabs.dragToSave")}
             style={{
               display: "flex",
               alignItems: "center",
@@ -128,7 +128,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                 무슨 뜻인지 알 수 없었고(사용자 지적 2026-08-04), 옛 레코드를 잘못 물어
                 분자가 분모보다 큰 값까지 나왔다. 진행 상황은 생성 푸터의 큐 줄이 말한다. */}
             <span
-              title={tr("slots.count", { n: allCells(t).length })}
+              data-tip={tr("slots.count", { n: allCells(t).length })}
               style={{ fontSize: "0.68rem", opacity: 0.7, fontVariantNumeric: "tabular-nums" }}
             >
               {allCells(t).length}
@@ -140,7 +140,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                   e.stopPropagation();
                   closeTab(t.id);
                 }}
-                title={tr("tabs.closeTab")}
+                data-tip={tr("tabs.closeTab")}
                 data-tab-close
                 style={{ color: "var(--ink-faint)", padding: 0, display: "grid" }}
               >
@@ -155,7 +155,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
         // ★씬 하나로 시작한다 (사용자 지시 2026-08-04) — 필요한 만큼은 `씬 추가`로 는다.
         //   셋으로 시작하면 안 쓸 씬을 먼저 지워야 했다
         onClick={() => addSetTab(tr("tabs.newSet"), [tr("tabs.posePrefix", { n: 1 })])}
-        title={tr("tabs.newSetTab")}
+        data-tip={tr("tabs.newSetTab")}
         data-tab-add="set"
         style={{
           border: "1px solid var(--line)",
@@ -204,7 +204,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                 data-char={c.id}
                 onClick={() => switchChar(c.id)}
                 onDoubleClick={() => setEditingChar(c.id)}
-                title={tr("chars.rename")}
+                data-tip={tr("chars.rename")}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -257,7 +257,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                       e.stopPropagation();
                       removeChar(c.id);
                     }}
-                    title={tr("chars.remove")}
+                    data-tip={tr("chars.remove")}
                     style={{ color: "var(--ink-faint)", padding: 0, display: "grid" }}
                   >
                     {Icon.close12}
@@ -269,7 +269,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
           <button
             data-char-add
             onClick={() => addChar()}
-            title={tr("chars.add")}
+            data-tip={tr("chars.add")}
             style={{
               border: "1px solid var(--line)",
               borderRadius: "var(--r-2)",
@@ -305,7 +305,7 @@ function SaveHint() {
         fontFamily: "var(--font-mono)",
         paddingBottom: 6,
       }}
-      title={tr("canvas.saveLocation")}
+      data-tip={tr("canvas.saveLocation")}
     >
       {/* ★실제 저장 자리를 그대로 보인다 — 옛 `work/` 를 보여 주고 있어 틀렸었다.
           ★폴더 이름 `멀티/` 는 **디스크에 이미 있는 구조**다 (싱글/멀티 구분은 폐기됐지만

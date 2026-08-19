@@ -10,6 +10,7 @@ import { ask } from "../store/ask";
 import { openExternal } from "../lib/openExternal";
 import { toast } from "../store/toast";
 import { Icon } from "../components/Icon";
+import { Help } from "../components/Tip";
 import { AiSettings } from "./AiSettings";
 
 /** 설정 — **앱 안에서 손대는 것들**을 한자리에 (10단계).
@@ -190,7 +191,7 @@ export function Settings({
           >
             {tab === "general" && (
               <>
-                <Group label={t("settings.token")}>
+                <Group label={t("settings.token")} help={t("settings.tokenHint")}>
                   <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
                     <input
                       data-token
@@ -238,14 +239,13 @@ export function Settings({
                       {note}
                     </span>
                   )}
-                  <Hint>{t("settings.tokenHint")}</Hint>
                   {/* ★NAI 계정이 걸린 경고라 눈에 띄어야 한다 (v2 index.html:10558) */}
                   <span style={{ fontSize: "var(--text-2xs)", color: "var(--warn)", lineHeight: 1.6 }}>
                     {t("settings.bulkWarn")}
                   </span>
                 </Group>
 
-                <Group label={t("settings.editing")}>
+                <Group label={t("settings.editing")} help={t("settings.tagSuggestHint")}>
                   <label
                     style={{
                       display: "flex",
@@ -264,10 +264,9 @@ export function Settings({
                     />
                     {t("settings.tagSuggest")}
                   </label>
-                  <Hint>{t("settings.tagSuggestHint")}</Hint>
                 </Group>
 
-                <Group label={t("settings.queue")}>
+                <Group label={t("settings.queue")} help={t("settings.notifyHint")}>
                   <label
                     style={{
                       display: "flex",
@@ -285,7 +284,6 @@ export function Settings({
                     />
                     {t("settings.notifyDone")}
                   </label>
-                  <Hint>{t("settings.notifyHint")}</Hint>
                   {/* ★소리로도 알린다 (v2 `notifySoundOnComplete` 이식 2026-08-16).
                       ★생성 옵션이 아니라 **앱 설정**이라 여기 있다 (사용자 지시). */}
                   <label
@@ -328,7 +326,7 @@ export function Settings({
                       <button
                         data-notify-test
                         onClick={() => void playDoneSound()}
-                        title={t("settings.notifyTest")}
+                        data-tip={t("settings.notifyTest")}
                         style={{ color: "var(--ink-faint)", display: "grid" }}
                       >
                         {Icon.spark}
@@ -355,7 +353,7 @@ export function Settings({
                       <button
                         data-support-link
                         onClick={() => openExternal(support)}
-                        title={support}
+                        data-tip={support}
                         style={{ ...btn, display: "inline-flex", alignItems: "center", gap: "var(--sp-2)" }}
                       >
                         {Icon.external}
@@ -363,7 +361,6 @@ export function Settings({
                       </button>
                     )}
                   </div>
-                  <Hint>{t("settings.supportHint")}</Hint>
                 </Group>
               </>
             )}
@@ -419,9 +416,13 @@ const THEMES = [
   ["dark", "settings.themeDark"],
 ] as const;
 
-export const Group = ({ label, children }: { label: string; children: React.ReactNode }) => (
+/** ★설명은 **라벨 옆 `?`** 로만 나온다 (사용자 지시 2026-08-19) — 화면에 펼쳐 두지 않는다 */
+export const Group = ({ label, help, children }: { label: string; help?: string; children: React.ReactNode }) => (
   <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
-    <span style={{ fontSize: "var(--text-xs)", fontWeight: "var(--w-semi)", color: "var(--ink-soft)" }}>{label}</span>
+    <span style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", fontSize: "var(--text-xs)", fontWeight: "var(--w-semi)", color: "var(--ink-soft)" }}>
+      {label}
+      {help && <Help tip={help} />}
+    </span>
     {children}
   </div>
 );
@@ -458,10 +459,6 @@ const Chip = ({
   >
     {children}
   </button>
-);
-
-const Hint = ({ children }: { children: React.ReactNode }) => (
-  <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>{children}</span>
 );
 
 const btn: React.CSSProperties = {

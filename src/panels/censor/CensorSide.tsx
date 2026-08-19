@@ -21,7 +21,7 @@ export function CensorSide() {
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: "var(--sp-5)", paddingRight: "var(--sp-1)" }}>
         {!editable && (
           <>
-            <Sec label={t("censor.model")}>
+            <Sec label={t("censor.model")} help={t("censor.modelHint")}>
               <select
                 data-censor-model
                 value={c.model ?? ""}
@@ -34,10 +34,9 @@ export function CensorSide() {
                   </option>
                 ))}
               </select>
-              <Hint>{t("censor.modelHint")}</Hint>
             </Sec>
 
-            <Sec label={t("censor.targets")}>
+            <Sec label={t("censor.targets")} help={t("censor.confHint")}>
               {/* ★클래스마다 문턱을 따로 준다 (백엔드 `label_conf`). 젖꼭지는 낮게, 오탐이 잦은
                   것은 높게. 하나의 문턱으로는 둘을 같이 맞출 수 없다 */}
               <div style={{ ...card, padding: "var(--sp-2)", display: "flex", flexDirection: "column", gap: 2 }}>
@@ -80,10 +79,9 @@ export function CensorSide() {
                 ))}
                 {!classes.length && <Hint>{t("censor.noClasses")}</Hint>}
               </div>
-              <Hint>{t("censor.confHint")}</Hint>
             </Sec>
 
-            <Sec label={t("censor.floor")}>
+            <Sec label={t("censor.floor")} help={t("censor.floorHint")}>
               {/* ★보이는 것만 거른다. 실제로 가리는 것은 위의 클래스별 문턱이 정한다 (v2 주석) */}
               <Line label={`${Math.round(c.floor * 100)}%`}>
                 <input
@@ -96,14 +94,13 @@ export function CensorSide() {
                   style={{ flex: 1 }}
                 />
               </Line>
-              <Hint>{t("censor.floorHint")}</Hint>
             </Sec>
           </>
         )}
 
         {editable && (
           <>
-            <Sec label={t("censor.tools")}>
+            <Sec label={t("censor.tools")} help={t("censor.toolHint")}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "var(--sp-2)" }}>
                 {TOOLS.map(([id, key, icon]) => (
                   <button
@@ -125,11 +122,10 @@ export function CensorSide() {
                   </button>
                 ))}
               </div>
-              <Hint>{t("censor.toolHint")}</Hint>
             </Sec>
 
             {sel && (
-              <Sec label={t("censor.boxMethod")}>
+              <Sec label={t("censor.boxMethod")} help={t("censor.boxMethodHint")}>
                 {/* ★박스마다 다른 방식 (B7). 백엔드 `apply_boxes` 가 박스별 `method` 를 읽는다 */}
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sp-2)" }}>
                   {METHODS.map(([m, key]) => (
@@ -143,7 +139,6 @@ export function CensorSide() {
                     </button>
                   ))}
                 </div>
-                <Hint>{t("censor.boxMethodHint")}</Hint>
               </Sec>
             )}
           </>
@@ -207,12 +202,11 @@ export function CensorSide() {
                   onChange={(e) => c.tune({ steamAlpha: Number(e.target.value) }, "draw")} style={{ flex: 1 }} />
                 <span style={num}>{c.steamAlpha}</span>
               </Line>
-              <Line label={t("censor.steamPeek")}>
+              <Line label={t("censor.steamPeek")} help={t("censor.steamPeekHint")}>
                 <input type="range" data-censor-steam-peek min={0} max={100} value={c.steamOpacity}
                   onChange={(e) => c.tune({ steamOpacity: Number(e.target.value) })} style={{ flex: 1 }} />
                 <span style={num}>{c.steamOpacity}</span>
               </Line>
-              <Hint>{t("censor.steamPeekHint")}</Hint>
             </>
           )}
           <Line label={t("censor.expand")}>
@@ -265,7 +259,6 @@ export function CensorSide() {
               {Icon.search}
               {t("censor.runAll")}
             </button>
-            <Hint>{t("censor.runAllHint")}</Hint>
           </>
         )}
         {c.tab === "processing" && (
@@ -277,7 +270,6 @@ export function CensorSide() {
             <button data-censor-cancel onClick={() => c.cancelProcessing()} disabled={c.busy} style={{ ...box, padding: "var(--sp-2)" }}>
               {t("censor.cancel")}
             </button>
-            <Hint>{t("censor.completeHint")}</Hint>
           </>
         )}
         {c.tab === "after" && (
@@ -286,7 +278,6 @@ export function CensorSide() {
               {Icon.save}
               {t("censor.resave")}
             </button>
-            <Hint>{t("censor.resaveHint")}</Hint>
           </>
         )}
       </div>

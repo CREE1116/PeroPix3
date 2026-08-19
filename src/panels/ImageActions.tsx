@@ -198,7 +198,7 @@ export function ImageActions({
               data-act-settings
               onClick={() => void useSettings()}
               disabled={busy}
-              title={t("act.settingsHint")}
+              data-tip={t("act.settingsHint")}
               style={btn}
             >
               {t("act.settings")}
@@ -214,7 +214,7 @@ export function ImageActions({
             data-act-clone
             onClick={() => void runClone()}
             disabled={busy}
-            title={t("act.cloneHint")}
+            data-tip={t("act.cloneHint")}
             style={btn}
           >
             {t("act.clone")}
@@ -240,7 +240,7 @@ export function ImageActions({
             onClick={() => void runUpscale()}
             // ★1024x1024 를 넘으면 **공홈도 막는다.** 눌러야 실패하는 버튼을 두지 않는다
             disabled={busy || cost < 0}
-            title={cost < 0 ? t("upscale.tooLarge") : t("upscale.hint", { a: cost })}
+            data-tip={cost < 0 ? t("upscale.tooLarge") : t("upscale.hint", { a: cost })}
             style={{ ...btn, opacity: cost < 0 ? 0.45 : 1 }}
           >
             {t("upscale.button")}
@@ -260,14 +260,14 @@ export function ImageActions({
                 body: JSON.stringify({ path: revealPath }),
               }).catch((e) => toast(String(e), "warn"))
             }
-            title={t("files.reveal")}
+            data-tip={t("files.reveal")}
             style={btn}
           >
             {t("files.reveal")}
           </button>
         )}
         {onKeep && (
-          <button data-act-keep onClick={() => void onKeep()} title={t("gallery.keepHint")} style={btn}>
+          <button data-act-keep onClick={() => void onKeep()} data-tip={t("gallery.keepHint")} style={btn}>
             {t("gallery.keep")}
           </button>
         )}
@@ -287,7 +287,7 @@ export function ImageActions({
             onClick={() => void navigator.clipboard?.writeText(String(seed)).then(() => toast(t("act.copied")))}
             onPointerEnter={() => setSeedHot(true)}
             onPointerLeave={() => setSeedHot(false)}
-            title={t("act.seedCopy")}
+            data-tip={t("act.seedCopy")}
             style={{
               border: "none",
               background: "none",

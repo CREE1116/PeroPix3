@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { Icon } from "../components/Icon";
+import { Help } from "../components/Tip";
 import {
   MAX_VIBES,
   fileToBase64,
@@ -102,15 +103,15 @@ export function ImageInputPanel() {
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-5)" }}>
       <Section
         label={t("imgIn.vibe")}
+        help={t("imgIn.vibeHint")}
         on={s.vibeOn}
         onToggle={s.setVibeOn}
         data-sec="vibe"
       >
-        <Hint>{t("imgIn.vibeHint")}</Hint>
         {/* ★공홈에도 같은 토글이 있다 (기본 켜짐). 켜져 있고 강도 합이 1을 넘으면 나눠서 보낸다 */}
         <Check
           label={t("imgIn.normalize")}
-          title={t("imgIn.normalizeHint")}
+          data-tip={t("imgIn.normalizeHint")}
           checked={s.normalizeVibe}
           onChange={s.setNormalizeVibe}
           data-vibe-normalize={s.normalizeVibe ? "on" : "off"}
@@ -163,7 +164,7 @@ export function ImageInputPanel() {
           <button
             data-vibe-cache-open
             onClick={() => setCache(true)}
-            title={t("imgIn.cacheTitle")}
+            data-tip={t("imgIn.cacheTitle")}
             style={{ ...box, flexShrink: 0, color: "var(--ink-soft)" }}
           >
             {Icon.duplicate}
@@ -171,8 +172,7 @@ export function ImageInputPanel() {
         </div>
       </Section>
 
-      <Section label={t("imgIn.ref")} on={s.refOn} onToggle={s.setRefOn} data-sec="ref">
-        <Hint>{t("imgIn.refHint")}</Hint>
+      <Section label={t("imgIn.ref")} help={t("imgIn.refHint")} on={s.refOn} onToggle={s.setRefOn} data-sec="ref">
         {s.refs.map((r, i) => (
           <Card
             key={i}
@@ -271,6 +271,7 @@ export function ImageInputPanel() {
                 step={0.01}
                 onChange={(x) => s.patchBase({ baseInpaintStrength: x })}
                 data-base-strength="inpaint"
+                help={t("imgIn.inpaintStrengthHint")}
               />
             ) : (
               // ★범위는 v2 그대로다 (`baseImageStrength`, index.html:9249 · 0~1 step .05).
@@ -299,7 +300,6 @@ export function ImageInputPanel() {
             )}
             {s.baseMode === "inpaint" && (
               <>
-                <Hint>{t("imgIn.inpaintStrengthHint")}</Hint>
                 {/* ★칠하기는 **가운데 화면**에서 한다 (모달이 아니다). 그동안 왼쪽 아래
                     생성 버튼이 「인페인트」가 된다 */}
                 <button
@@ -323,7 +323,8 @@ export function ImageInputPanel() {
           </Card>
         ) : (
           <>
-            <Hint>{t("imgIn.baseHint")}</Hint>
+            {/* ★「그림을 놓거나 골라…」 같은 안내는 없다 — 쓰는 사람이 아는 것이다
+                (사용자 지시 2026-08-19) */}
             <Pick
               label={t("imgIn.basePick")}
               data-add="base"
@@ -399,35 +400,9 @@ function FocusedToggle() {
       <span style={{ minWidth: 0 }}>
         <span style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", fontSize: "var(--text-xs)" }}>
           Focused Inpainting
-          <span
-            data-focused-help
-            title={t("focus.help")}
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              display: "inline-grid",
-              placeItems: "center",
-              width: 14,
-              height: 14,
-              borderRadius: "50%",
-              border: "1px solid var(--ink-faint)",
-              color: "var(--ink-faint)",
-              fontSize: 9,
-              cursor: "help",
-            }}
-          >
-            ?
-          </span>
-        </span>
-        <span
-          style={{
-            display: "block",
-            marginTop: 2,
-            fontSize: "var(--text-2xs)",
-            color: "var(--ink-faint)",
-            lineHeight: 1.5,
-          }}
-        >
-          {!big ? t("focus.notNeeded") : on ? t("focus.onDesc") : t("focus.offDesc")}
+          {/* ★설명 줄을 걷었다 (사용자 지시 2026-08-19) — 켬/끔 상태가 스위치에 이미 보이고,
+              무엇을 하는 기능인지는 이 `?` 하나로 족하다 */}
+          <Help tip={t("focus.help")} />
         </span>
       </span>
     </div>
@@ -442,16 +417,13 @@ const box: React.CSSProperties = {
   fontSize: "var(--text-xs)",
 };
 
-const Hint = ({ children }: { children: React.ReactNode }) => (
-  <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>{children}</span>
-);
-
 /** 켬/끔이 있는 절. `on` 을 안 주면 늘 열려 있는 절이다 (베이스 이미지) */
 function Section({
   label,
   on,
   onToggle,
   flashKey,
+  help,
   children,
   ...rest
 }: {
@@ -460,6 +432,8 @@ function Section({
   onToggle?: (v: boolean) => void;
   /** 방금 이 자리가 바뀌었으면 강조한다 (`useUi.reveal`) */
   flashKey?: string;
+  /** ★설명은 **라벨 옆 `?`** 로만 나온다 (사용자 지시 2026-08-19) — 화면에 펼쳐 두지 않는다 */
+  help?: string;
   children: React.ReactNode;
 } & Record<string, unknown>) {
   const flash = useFlash(flashKey ?? "");
@@ -472,6 +446,7 @@ function Section({
         <span style={{ fontSize: "var(--text-xs)", fontWeight: "var(--w-semi)", color: "var(--ink-soft)" }}>
           {label}
         </span>
+        {help && <Help tip={help} />}
         {onToggle && (
           <label style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: "var(--sp-2)" }}>
             <input
@@ -538,7 +513,7 @@ function Card({
         {badge && (
           <span style={{ fontSize: "var(--text-3xs, 10px)", color: "var(--ok, var(--accent))" }}>{badge}</span>
         )}
-        <button onClick={onRemove} title="×" style={{ color: "var(--ink-faint)", display: "grid" }}>
+        <button onClick={onRemove} data-tip="×" style={{ color: "var(--ink-faint)", display: "grid" }}>
           {Icon.close}
         </button>
       </div>
@@ -562,7 +537,7 @@ function Check({
 } & Record<string, unknown>) {
   return (
     <label
-      title={title}
+      data-tip={title}
       style={{
         display: "flex",
         alignItems: "center",
@@ -592,6 +567,7 @@ function Slide({
   step,
   onChange,
   editable,
+  help,
   ...rest
 }: {
   label: string;
@@ -602,13 +578,18 @@ function Slide({
   onChange: (v: number) => void;
   /** 값을 눌러 **슬라이더 범위 밖의 수**를 직접 넣을 수 있게 한다 (v2 `.clickable-value`) */
   editable?: boolean;
+  /** 그 값이 무엇을 하는지 — 라벨 옆 `?` 에 든다 */
+  help?: string;
 } & Record<string, unknown>) {
   return (
     <label
       {...rest}
       style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", fontSize: "var(--text-2xs)" }}
     >
-      <span style={{ width: 54, color: "var(--ink-faint)" }}>{label}</span>
+      <span style={{ width: 54, color: "var(--ink-faint)", display: "inline-flex", alignItems: "center", gap: 3 }}>
+        {label}
+        {help && <Help tip={help} />}
+      </span>
       <input
         type="range"
         // ★손잡이는 범위 안에 묶는다. 값이 1 을 넘어도 슬라이더는 끝에 선다 (v2 와 같다)

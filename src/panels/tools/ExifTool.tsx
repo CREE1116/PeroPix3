@@ -312,7 +312,7 @@ function Prompt({ label, value, empty }: { label: string; value?: string; empty:
       <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>{label}</span>
       <span
         onClick={() => has && void navigator.clipboard?.writeText(value || "").then(() => toast(label))}
-        title={has ? value : undefined}
+        data-tip={has ? value : undefined}
         style={{
           fontSize: "var(--text-2xs)",
           lineHeight: 1.6,

@@ -86,7 +86,7 @@ export function SectionCard({
         onClick={onBannerPointerDown ? undefined : onFold}
         onMouseEnter={() => hoverLift && setHover(true)}
         onMouseLeave={() => setHover(false)}
-        title={onFold ? t(folded ? "prompt.unfold" : "prompt.fold") : undefined}
+        data-tip={onFold ? t(folded ? "prompt.unfold" : "prompt.fold") : undefined}
         style={{
           position: "relative",
           height: 56,

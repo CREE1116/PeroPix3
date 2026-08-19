@@ -444,7 +444,7 @@ export function SceneLane() {
         <button
           data-star-filter
           onClick={() => useUi.getState().setLaneStarOnly(!starOnly)}
-          title={t(starOnly ? "canvas.starAll" : "canvas.starOnly")}
+          data-tip={t(starOnly ? "canvas.starAll" : "canvas.starOnly")}
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -467,7 +467,7 @@ export function SceneLane() {
         <button
           data-lane-pip={lanePip ? "on" : "off"}
           onClick={() => useUi.getState().setLanePip(!lanePip)}
-          title={t("scenes.pip")}
+          data-tip={t("scenes.pip")}
           style={{
             display: "grid",
             placeItems: "center",
@@ -932,7 +932,7 @@ function LanePip({
         onPointerMove={onMove}
         onPointerUp={onUp}
         onPointerCancel={onUp}
-        title={t("scenes.pipMove")}
+        data-tip={t("scenes.pipMove")}
         style={{
           flexShrink: 0,
           height: 22,
@@ -983,7 +983,7 @@ function LanePip({
         onPointerMove={onMove}
         onPointerUp={onUp}
         onPointerCancel={onUp}
-        title={t("scenes.pipResize")}
+        data-tip={t("scenes.pipResize")}
         style={{ position: "absolute", left: 0, top: 0, width: 14, height: 14, cursor: "nwse-resize" }}
       />
     </div>
@@ -1190,7 +1190,7 @@ function CardGroup(p: GroupProps) {
             <span
               data-card-grip={p.card.id}
               {...cardGrip}
-              title={t("scenes.dragCard")}
+              data-tip={t("scenes.dragCard")}
               style={{ ...cardGrip.style, display: "grid", alignSelf: "center", color: "rgba(255,255,255,0.78)" }}
             >
               {Icon.grip}
@@ -1215,7 +1215,7 @@ function CardGroup(p: GroupProps) {
             <button
               data-card-lock={p.card.id}
               onClick={() => p.onPatch({ locked: !p.card.locked })}
-              title={t("scenes.lockCard")}
+              data-tip={t("scenes.lockCard")}
               style={{ ...bannerBtn, color: p.card.locked ? "var(--warn)" : "rgba(255,255,255,0.72)" }}
             >
               {/* ★블록의 켜기/끄기와 **같은 모양**이다 (사용자 지시 2026-08-16) —
@@ -1226,7 +1226,7 @@ function CardGroup(p: GroupProps) {
             <button
               data-card-remove={p.card.id}
               onClick={p.onRemove}
-              title={t("scenes.removeCard")}
+              data-tip={t("scenes.removeCard")}
               style={bannerBtn}
             >
               {Icon.close12}
@@ -1414,7 +1414,7 @@ function SceneRow(
           if ((e.target as HTMLElement).closest("button, input, textarea, [data-head-action]")) return;
           p.onExpand(expanded ? null : c.id);
         }}
-        title={t(expanded ? "scenes.fold" : "scenes.unfold")}
+        data-tip={t(expanded ? "scenes.fold" : "scenes.unfold")}
         style={{
           cursor: "pointer",
           position: "sticky",
@@ -1435,7 +1435,7 @@ function SceneRow(
           <span
             {...p.grip}
             onClick={(e) => e.stopPropagation()}
-            title={t("scenes.dragScene")}
+            data-tip={t("scenes.dragScene")}
             style={{ color: "var(--ink-faint)", display: "grid", ...p.grip.style }}
           >
             {Icon.grip}
@@ -1462,7 +1462,7 @@ function SceneRow(
               e.stopPropagation();
               patchCell({ locked: !c.locked });
             }}
-            title={t("slots.lock")}
+            data-tip={t("slots.lock")}
             style={{ ...iconBtn, color: c.locked ? "var(--warn)" : "var(--ink-faint)" }}
           >
             {/* 블록의 켜기/끄기와 같은 모양 (카드 잠금 주석 참조) */}
@@ -1476,7 +1476,7 @@ function SceneRow(
               e.stopPropagation();
               p.onDuplicate(c, p.index);
             }}
-            title={t("slots.duplicate")}
+            data-tip={t("slots.duplicate")}
             style={iconBtn}
           >
             {Icon.duplicate}
@@ -1488,7 +1488,7 @@ function SceneRow(
                 e.stopPropagation();
                 p.onPatch({ cells: p.card.cells.filter((x) => x.id !== c.id) });
               }}
-              title={t("slots.remove")}
+              data-tip={t("slots.remove")}
               style={iconBtn}
             >
               {Icon.close12}
@@ -1532,7 +1532,7 @@ function SceneRow(
                 e.preventDefault();
                 p.onStepField(c.id, e.shiftKey ? -1 : 1, "text");
               }}
-              title={t("scenes.tabHint")}
+              data-tip={t("scenes.tabHint")}
               placeholder={t("slots.textPlaceholder")}
               rows={3}
               style={{
@@ -1563,7 +1563,7 @@ function SceneRow(
                   : null;
               p.onExpand(c.id);
             }}
-            title={t("scenes.unfold")}
+            data-tip={t("scenes.unfold")}
             style={{
               flex: 1,
               minHeight: 0,
@@ -1624,7 +1624,7 @@ function SceneRow(
               key={r.file}
               data-take={r.file}
               data-take-unsaved={un ? "" : undefined}
-              title={un ? undefined : t("canvas.takeDragHint", { seed: r.seed })}
+              data-tip={un ? undefined : t("canvas.takeDragHint", { seed: r.seed })}
               // ★★**생성물을 끌면 카드 그림(커버)이 된다** — 덱·손패·프롬프트 배너가 받는다
               //   (`dir: "image"` 드롭존들). 싱글 캔버스를 걷을 때 이 출발점이 함께 사라져
               //   드래그가 통째로 죽어 있었다 (사용자 지적 2026-08-18).
@@ -1764,7 +1764,7 @@ function NameCell({
             onTab(e.shiftKey ? -1 : 1);
           }
         }}
-        title={t("scenes.tabHint")}
+        data-tip={t("scenes.tabHint")}
         style={{
           flex: 1,
           minWidth: 0,
@@ -1782,7 +1782,7 @@ function NameCell({
         e.stopPropagation();
         onEditing(true);
       }}
-      title={t("block.renameHint")}
+      data-tip={t("block.renameHint")}
       style={{
         flex: 1,
         minWidth: 0,

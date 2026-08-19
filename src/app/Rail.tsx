@@ -28,7 +28,7 @@ export function Rail({
         alignItems: "center",
       }}
     >
-      <PanelCollapseButton side={side} collapsed onClick={onExpand} title={t("panel.expand", { name: label })} />
+      <PanelCollapseButton side={side} collapsed onClick={onExpand} data-tip={t("panel.expand", { name: label })} />
       <div
         style={{
           writingMode: "vertical-rl",

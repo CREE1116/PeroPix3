@@ -166,7 +166,7 @@ export function BlockList({
         {allowExtra && (
           <button
             data-block-add-extra
-            title={t("block.extraHint")}
+            data-tip={t("block.extraHint")}
             onClick={() =>
               onChange([
                 ...blocks,

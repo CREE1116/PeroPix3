@@ -185,7 +185,7 @@ export function Censor() {
         </select>
         <button
           data-censor-mkdir
-          title={t("censor.newFolder")}
+          data-tip={t("censor.newFolder")}
           onClick={() => void newFolder(c.dest, t)}
           style={{ ...box, display: "grid", placeItems: "center", padding: "3px var(--sp-2)" }}
         >
@@ -193,7 +193,7 @@ export function Censor() {
         </button>
         <button
           data-censor-open-folder
-          title={t("censor.openFolder")}
+          data-tip={t("censor.openFolder")}
           onClick={() => void useFiles.getState().reveal(c.dest)}
           style={{ ...box, display: "grid", placeItems: "center", padding: "3px var(--sp-2)" }}
         >
@@ -229,7 +229,7 @@ export function Censor() {
               data-censor-thumb={i}
               data-censor-thumb-active={at === i ? "1" : "0"}
               onClick={() => c.select(i)}
-              title={im.name}
+              data-tip={im.name}
               style={{
                 width: 50,
                 height: 50,
@@ -251,7 +251,7 @@ export function Censor() {
             {c.tab === "before" && (
               <button
                 data-censor-thumb-del={i}
-                title={t("censor.removeOne")}
+                data-tip={t("censor.removeOne")}
                 onClick={() => c.removeImage(i)}
                 style={{
                   position: "absolute",
@@ -276,7 +276,7 @@ export function Censor() {
           <button
             data-censor-add
             onClick={() => void pick()}
-            title={t("censor.add")}
+            data-tip={t("censor.add")}
             style={{
               flexShrink: 0,
               width: 50,
@@ -342,7 +342,7 @@ export function Censor() {
                     key={it.file}
                     data-censor-pick={it.file}
                     onClick={() => c.toggleRel(it.file, it.name)}
-                    title={it.name}
+                    data-tip={it.name}
                     style={{
                       position: "relative",
                       aspectRatio: "1 / 1",

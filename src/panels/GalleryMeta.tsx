@@ -120,7 +120,7 @@ export function GalleryMeta() {
         <button
           data-gallery-apply-all
           onClick={() => onApply("all")}
-          title={t("act.settingsHint")}
+          data-tip={t("act.settingsHint")}
           style={{
             ...applyBtn,
             background: flash ? "var(--ok)" : "var(--accent)",
@@ -278,7 +278,7 @@ function Field({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
         }}
-        title={v}
+        data-tip={v}
       >
         {v}
       </div>
