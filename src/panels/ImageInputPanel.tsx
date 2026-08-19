@@ -238,7 +238,7 @@ export function ImageInputPanel() {
           <Card
             src={`data:image/png;base64,${s.baseImage}`}
             name={s.baseName}
-            badge={s.baseMode === "inpaint" && s.baseMask ? t("imgIn.maskDone") : ""}
+            mask={s.baseMode === "inpaint" ? s.baseMask : ""}
             onRemove={s.clearBase}
             data-base
           >
@@ -417,6 +417,58 @@ const box: React.CSSProperties = {
   fontSize: "var(--text-xs)",
 };
 
+/** 썸네일 위의 마스크. **칠한 자리만** 편집기와 같은 빨강으로 얹는다.
+ *
+ *  ★마스크는 순흑백 PNG 라(검정=유지) 그대로 얹으면 그림을 통째로 덮는다. 흰 칸만
+ *    남기고 나머지는 투명으로 바꿔야 하는데, `mask-mode: luminance` 는 브라우저마다
+ *    다르므로 **판에 직접 그려** 확실하게 한다 (38px 짜리라 값싸다).
+ *  ★자르기는 `object-fit: cover` 와 같은 규칙이다 — 아래 그림과 어긋나면 안 된다. */
+function MaskOverlay({ mask }: { mask: string }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const cv = ref.current;
+    if (!cv) return;
+    const cx = cv.getContext("2d");
+    if (!cx) return;
+    cx.clearRect(0, 0, cv.width, cv.height);
+    if (!mask) return;
+    const im = new Image();
+    im.onload = () => {
+      const k = Math.max(cv.width / im.width, cv.height / im.height);
+      const dw = im.width * k;
+      const dh = im.height * k;
+      cx.drawImage(im, (cv.width - dw) / 2, (cv.height - dh) / 2, dw, dh);
+      const d = cx.getImageData(0, 0, cv.width, cv.height);
+      for (let i = 0; i < d.data.length; i += 4) {
+        // 줄여 그리느라 회색이 섞이므로 가운데에서 자른다
+        const on = d.data[i] > 128;
+        d.data[i] = 255;
+        d.data[i + 1] = 64;
+        d.data[i + 2] = 96;
+        d.data[i + 3] = on ? 150 : 0;
+      }
+      cx.putImageData(d, 0, 0);
+    };
+    im.src = "data:image/png;base64," + mask;
+  }, [mask]);
+  return (
+    <canvas
+      ref={ref}
+      data-base-mask
+      width={76}
+      height={76}
+      style={{
+        position: "absolute",
+        inset: 0,
+        width: 38,
+        height: 38,
+        borderRadius: "var(--r-1)",
+        pointerEvents: "none",
+      }}
+    />
+  );
+}
+
 /** 켬/끔이 있는 절. `on` 을 안 주면 늘 열려 있는 절이다 (베이스 이미지) */
 function Section({
   label,
@@ -468,6 +520,7 @@ function Card({
   src,
   name,
   badge,
+  mask,
   onRemove,
   children,
   ...rest
@@ -475,6 +528,9 @@ function Card({
   src: string;
   name: string;
   badge?: string;
+  /** 칠해 둔 마스크 (base64). 있으면 **썸네일 위에 그대로 겹쳐** 보여 준다
+   *  (사용자 지시 2026-08-19) — 「마스크 있음」 같은 글자보다 어디를 칠했는지가 중요하다 */
+  mask?: string;
   onRemove: () => void;
   children: React.ReactNode;
 } & Record<string, unknown>) {
@@ -492,11 +548,14 @@ function Card({
       {...rest}
     >
       <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
-        <img
-          src={src}
-          alt=""
-          style={{ width: 38, height: 38, objectFit: "cover", borderRadius: "var(--r-1)", flexShrink: 0 }}
-        />
+        <span style={{ position: "relative", width: 38, height: 38, flexShrink: 0, display: "block" }}>
+          <img
+            src={src}
+            alt=""
+            style={{ width: 38, height: 38, objectFit: "cover", borderRadius: "var(--r-1)", display: "block" }}
+          />
+          {mask && <MaskOverlay mask={mask} />}
+        </span>
         <span
           style={{
             flex: 1,

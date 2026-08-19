@@ -1632,6 +1632,11 @@ function SceneRow(
               //   `preventDefault` 가 브라우저의 호환 click 을 삼킨다 (CLAUDE.md 「잊기 쉬운 것」).
               // ★미저장은 **못 끈다.** 파일이 없어서 커버로 쓸 수 없다 (받는 쪽이 경로를 쓴다).
               onPointerDown={(e) => {
+                // ★★별표는 **여기서 비켜 간다** (사용자 지적 2026-08-19). 끌기가 pointerdown 에서
+                //   기본 동작을 막아 **호환 click 을 삼키는** 바람에 별표의 onClick 이 통째로
+                //   안 왔다 (CLAUDE.md 「잊기 쉬운 것」의 그 자리다). 블록 머리의 단추들이
+                //   같은 이유로 한 번 죽었던 것과 같은 함정이다.
+                if ((e.target as HTMLElement).closest("[data-take-star]")) return;
                 const tap = () => {
                   // ★미저장은 **여러 장 고르기에서 뺀다.** 고른 것에 걸리는 일(휴지통·강화)이
                   //   전부 파일 경로를 서버로 보내는 것이라, 섞이면 조용히 실패한다.
