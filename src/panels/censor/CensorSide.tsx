@@ -56,27 +56,6 @@ export function CensorSide() {
                 />
                 {t("censor.useMask")}
               </label>
-              {/* ★다듬기는 **윤곽을 쓸 때만** 뜻이 있다 — 켜져 있을 때만 낸다 */}
-              {c.useMask && (
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "var(--sp-2)",
-                    marginLeft: "var(--sp-5)",
-                    fontSize: "var(--text-2xs)",
-                    color: c.refineMask ? "var(--ink-soft)" : "var(--ink-faint)",
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    data-censor-refine
-                    checked={c.refineMask}
-                    onChange={(e) => c.setRefineMask(e.target.checked)}
-                  />
-                  {t("censor.refineMask")}
-                </label>
-              )}
             </Sec>
 
             <Sec label={t("censor.targets")} help={t("censor.confHint")}>

@@ -547,7 +547,6 @@ export const ko: Dict = {
     tabDuring: "검열 중",
     tabAfter: "검열 후",
     model: "모델",
-    refineMask: "그 자리만 다시 보기 (느리지만 곱다)",
     useMask: "찾은 모양대로 가리기 (네모 대신)",
     modelHint: "큰 모델일수록 잘 찾고 느립니다",
     pickImage: "왼쪽에서 그림을 고르거나 여기에 떨구세요",

@@ -192,7 +192,6 @@ def detect(
     default_conf: float = 0.25,
     return_all: bool = False,
     masks: bool = False,
-    refine: bool = False,
 ) -> list[dict]:
     """가릴 곳 찾기 — v2 `detect_nsfw_regions` 와 같은 계약.
 
@@ -282,88 +281,16 @@ def detect(
             png = _mask_png(proto, coef[i], boxes[i], (lb_h, lb_w))
             if png:
                 dets[-1]["mask"] = png
-    if masks and refine:
-        for d in dets[:REFINE_MAX]:
-            if d.get("mask"):
-                better = _refine_mask(im, d, model)
-                if better:
-                    d["mask"] = better
     return dets
 
 
-# ★그 자리만 **다시 보기** — 실측 근거는 `_refine_mask` 주석 (2026-08-21)
-REFINE_PAD = 2.0    # 박스 긴 변의 몇 배를 여백으로 둘지
-REFINE_CONF = 0.10  # 조각에서는 문턱을 낮춘다 (이미 한 번 찾은 자리다)
-REFINE_MAX = 8      # 한 장에서 다시 볼 부위 수 (하나마다 추론이 한 번 더 든다)
-# ★★조각이 **너무 작으면 탐지가 실패한다** (맥락이 없어서다 — 위 실측의 「여백 ×1」).
-#   작은 부위는 여백 ×2 를 줘도 조각이 300px 이 안 되므로, 긴 변에 바닥을 둔다.
-#   실측: 455×430 성공 · 281×315 실패 (29×63 부위) · 273×248 실패.
-REFINE_MIN = 448
-
-
-def _refine_mask(im: Image.Image, det: dict, model: str | None) -> str | None:
-    """그 부위만 **잘라서 한 번 더 보고** 더 고운 윤곽을 얻는다 (사용자 결정 2026-08-21).
-
-    ★★왜 되는가: 마스크 해상도는 **그림이 모델 입력으로 줄어든 배율 × 1/4** 이다.
-      1608px 그림이면 마스크 1픽셀이 원본 6.3픽셀이라, 91px 부위의 윤곽이 16픽셀뿐이다.
-      잘라서 주면 그 부위가 입력을 더 많이 차지해 배율이 덜 깎인다.
-
-      실측 (1608×1248 · 91×66 부위 · 기본 모델):
-          통째로 → 16×11 · 여백 ×8 → 20×14 · 여백 ×4 → 29×21
-          **여백 ×2 (455×430) → 48×33**  ← 3배
-          여백 ×1 (273×248) → **못 찾음** (맥락이 없어 탐지가 실패한다)
-      그래서 여백은 ×2 다. 더 바짝 자르면 좋아지는 게 아니라 아예 안 나온다.
-
-    ★**박스는 그대로 둔다.** 통째로 본 박스가 더 믿을 만하고, 화면·저장이 이미 그 박스를
-      기준으로 돈다 (마스크 PNG 는 **박스 위에 얹히는** 규약이다). 여기서는 마스크만 간다.
-    ★못 찾으면 **원래 마스크를 지킨다** — 다듬으려다 있던 것을 잃지 않는다.
-    """
-    x1, y1, x2, y2 = det["box"]
-    bw, bh = x2 - x1, y2 - y1
-    if bw <= 0 or bh <= 0:
-        return None
-    pad = int(max(bw, bh) * REFINE_PAD)
-    # 조각의 긴 변이 최소치를 넘도록 여백을 더 준다 (`REFINE_MIN` 주석)
-    pad = max(pad, (REFINE_MIN - max(bw, bh)) // 2)
-    cx1, cy1 = max(0, x1 - pad), max(0, y1 - pad)
-    cx2, cy2 = min(im.width, x2 + pad), min(im.height, y2 + pad)
-    # ★그림 거의 전체를 자르는 꼴이면 확대가 안 된다 — 추론만 한 번 더 들고 얻는 게 없다
-    if (cx2 - cx1) >= im.width * 0.9 and (cy2 - cy1) >= im.height * 0.9:
-        return None
-    crop = im.crop((cx1, cy1, cx2, cy2))
-    subs = detect(crop, model, [det["label"]], None, REFINE_CONF, False, True, False)
-    if not subs:
-        return None
-
-    # 원 박스를 조각 좌표로 옮겨 **같은 자리**의 것을 고른다 (겹침이 가장 큰 것)
-    ox = (x1 - cx1, y1 - cy1, x2 - cx1, y2 - cy1)
-    best, best_iou = None, 0.0
-    for sdet in subs:
-        if not sdet.get("mask"):
-            continue
-        b = sdet["box"]
-        ix = max(0, min(ox[2], b[2]) - max(ox[0], b[0]))
-        iy = max(0, min(ox[3], b[3]) - max(ox[1], b[1]))
-        inter = ix * iy
-        union = bw * bh + (b[2] - b[0]) * (b[3] - b[1]) - inter
-        iou = inter / union if union > 0 else 0.0
-        if iou > best_iou:
-            best, best_iou = sdet, iou
-    if best is None or best_iou < 0.1:
-        return None
-
-    try:
-        sm = Image.open(io.BytesIO(base64.b64decode(best["mask"]))).convert("L")
-    except Exception:
-        return None
-    b = best["box"]
-    ow, oh = max(1, b[2] - b[0]), max(1, b[3] - b[1])
-    # ★원 박스 크기의 판에 얹는다 — 「마스크는 박스 위에 얹힌다」는 규약을 지킨다
-    canvas = Image.new("L", (max(1, bw), max(1, bh)), 0)
-    canvas.paste(sm.resize((ow, oh), Image.BICUBIC), (cx1 + b[0] - x1, cy1 + b[1] - y1))
-    buf = io.BytesIO()
-    canvas.save(buf, format="PNG", optimize=True)
-    return base64.b64encode(buf.getvalue()).decode()
+# ★★**「그 자리만 다시 보기」는 폐기했다** (사용자 결정 2026-08-21).
+#   찾은 박스 둘레를 잘라 한 번 더 돌려 윤곽을 다듬는 방법이었다. 실측으로는 맞히면
+#   3배 고와졌지만(16×11 → 48×33), **절반은 조각에서 재탐지가 실패**했고(`pussy` 는 조각을
+#   448→1158 로 키워도 전부 실패), 그러고도 *"제대로된 sam 모델보다 훨씬 거칠음"* 이었다.
+#   부위마다 추론이 한 번 더 드는 값(+0.8초)에 비해 얻는 것이 없다.
+#   ★다시 넣지 말 것 — 해상도의 바닥은 **마스크 프로토타입이 입력의 1/4** 이라는 데 있고,
+#     그것은 잘라 보는 것으로 못 넘는다. 넘으려면 프롬프트로 도는 모델(SAM 계열)이어야 한다.
 
 
 def _mask_png(proto: np.ndarray, coef: np.ndarray, box_lb, lb: tuple[int, int]) -> str | None:

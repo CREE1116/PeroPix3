@@ -69,9 +69,6 @@ type Saved = {
    *  ★마스크는 모델의 **프로토타입 해상도**(입력의 1/4)라, 작은 부위는 십수 픽셀뿐이다 —
    *    큰 자리(얼굴 등)에서는 윤곽이 살고 작은 자리에서는 둥근 덩어리에 가깝다. */
   useMask: boolean;
-  /** ★윤곽을 **다듬을지** — 찾은 자리만 잘라 한 번 더 본다 (`censor._refine_mask`).
-   *  실측: 맞히면 3배 고와지고(16×11 → 48×33), 부위마다 +0.8초. 못 찾으면 원래 것을 지킨다. */
-  refineMask: boolean;
   method: string;
   color: string;
   expand: number;
@@ -92,7 +89,6 @@ const DEFAULTS: Saved = {
   conf: 0.3,
   floor: 0.1,
   useMask: false,
-  refineMask: true,
   // ★기본은 **스팀**이다 (v2 의 기본값). 폐기 결정이 없어 그대로 옮겼다
   method: "steam",
   color: "#000000",
@@ -180,7 +176,6 @@ type S = Saved & {
   /** 설정 하나를 바꾼다. 저장하고, 필요하면 다시 찾거나 다시 그린다 */
   tune: (patch: Partial<Saved>, redo?: "scan" | "draw") => void;
   setUseMask: (v: boolean) => void;
-  setRefineMask: (v: boolean) => void;
   toggleTarget: (label: string) => void;
   setLabelConf: (label: string, v: number) => void;
 
@@ -298,12 +293,6 @@ export const useCensor = create<S>((set, get) => ({
   setUseMask(v) {
     set({ boxes: {} });
     get().tune({ useMask: v }, "scan");
-  },
-
-  /** 다듬기도 **찾을 때** 정해지는 것이라, 켜고 끄면 찾아 둔 것을 버린다 (`setUseMask` 와 같다) */
-  setRefineMask(v) {
-    set({ boxes: {} });
-    get().tune({ refineMask: v }, "scan");
   },
 
   toggleTarget(label) {
@@ -427,7 +416,6 @@ export const useCensor = create<S>((set, get) => ({
             //   문턱을 올렸다 내릴 때마다 다시 찾지 않아도 된다
             return_all: true,
             masks: s.useMask,
-            refine: s.useMask && s.refineMask,
           });
           if (mine !== scanSeq) return;
           set({
@@ -467,7 +455,6 @@ export const useCensor = create<S>((set, get) => ({
             default_conf: s.conf,
             return_all: true,
             masks: s.useMask,
-            refine: s.useMask && s.refineMask,
           });
           boxes[im.id] = r.detections;
           sizes[im.id] = { w: r.width, h: r.height };
