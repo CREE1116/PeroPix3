@@ -26,6 +26,16 @@ jobs:
         with:
           python-version: "3.11"
 
+      # ★★조작 하네스(`qa-drive`)는 **별개의 앱**이라 이 저장소에 들어오면 안 된다
+      #   (사용자 지시 2026-08-21). `file:../QaDrive` 는 저장소 밖을 가리켜, 매니페스트에
+      #   남으면 **클론한 사람도 CI 도 `npm ci` 부터 실패한다.** 한 번 겪었으므로 막아 둔다.
+      - name: 하네스가 매니페스트에 없다
+        run: |
+          if grep -qi "qa-drive\|QaDrive" package.json package-lock.json; then
+            echo "::error::qa-drive 가 package.json/lock 에 들어왔습니다 - 별개 앱이라 여기 있으면 안 됩니다"
+            exit 1
+          fi
+
       - run: npm ci
 
       - name: 타입 검사 + 프런트 빌드
