@@ -1955,6 +1955,9 @@ class CensorDetect(CensorSource):
     # ★모델이 낸 **윤곽**까지 받을지 (사용자 지시 2026-08-21). 켜면 박스마다 `mask` 가 붙고,
     #   가리기가 네모 대신 그 모양으로 덮는다. 끄면 지금까지와 똑같다.
     masks: bool = False
+    # ★찾은 자리만 **잘라서 한 번 더** 보고 윤곽을 다듬을지 (`censor._refine_mask`).
+    #   부위마다 추론이 한 번 더 든다 — 실측 +0.8초/부위.
+    refine: bool = False
 
 
 class CensorApply(CensorSource):
@@ -2025,7 +2028,7 @@ def censor_detect(body: CensorDetect):
     try:
         dets = censor.detect(
             im, body.model, body.targets, body.label_conf, body.default_conf, body.return_all,
-            body.masks,
+            body.masks, body.refine,
         )
     except FileNotFoundError as e:
         raise HTTPException(503, str(e))
