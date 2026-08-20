@@ -6,8 +6,13 @@
   ONNX 로 내보내면 실행기가 `onnxruntime` 하나로 줄어, 모델 39MB 를 앱에 넣어도 부담이 없다.
   → 다운로드 경로·설치 실패 지점·HF 파일 크기 하드코딩이 **통째로 사라진다.**
 
-★**박스만 쓴다.** 모델은 세그멘테이션(`-segm`)이지만 v2 도 마스크를 한 번도 안 봤다
-  (`result.masks` 참조 0회). 그래서 mask 계수 32개는 그냥 버린다.
+★**박스가 기본이고, 마스크는 골라 쓴다** (사용자 지시 2026-08-21 — 그전까지는 v2 를 따라
+  마스크 계수 32개를 그냥 버렸다. v2 는 `result.masks` 를 한 번도 안 봤다).
+  모델은 세그멘테이션이라 **윤곽을 낼 재료를 이미 갖고 있다** — `output1` 의 프로토타입
+  (입력의 1/4 해상도)에 계수를 곱하면 그 부위의 형태가 나온다. `detect(masks=True)` 로 켠다.
+  ★마스크는 **프로토타입 해상도 그대로** 실어 보낸다 (박스 크기로 늘리지 않는다) —
+    모델이 아는 것이 그 해상도뿐이라, 키워 보내면 없는 정밀도를 있는 척하게 되고
+    화면·저장이 주고받는 양만 는다.
 
 ★**cv2 를 쓰지 않는다** (109MB). numpy + Pillow 로 같은 그림을 만든다.
 
@@ -36,6 +41,8 @@
 from __future__ import annotations
 
 import ast
+import base64
+import io
 import math
 from functools import lru_cache
 from pathlib import Path
@@ -184,6 +191,7 @@ def detect(
     label_conf: dict[str, float] | None = None,
     default_conf: float = 0.25,
     return_all: bool = False,
+    masks: bool = False,
 ) -> list[dict]:
     """가릴 곳 찾기 — v2 `detect_nsfw_regions` 와 같은 계약.
 
@@ -198,15 +206,20 @@ def detect(
     im = img.convert("RGB")
     canvas, r, (padx, pady) = _letterbox(im, size, rect)
     x = canvas.transpose(2, 0, 1)[None] / 255.0
-    out = sess.run(None, {sess.get_inputs()[0].name: np.ascontiguousarray(x, dtype=np.float32)})[0]
+    raw = sess.run(None, {sess.get_inputs()[0].name: np.ascontiguousarray(x, dtype=np.float32)})
+    out = raw[0]
+    # ★마스크 프로토타입은 **두 번째 출력**이다 (32, mh, mw). 세그 모델이 아니면 없다
+    proto = raw[1][0] if masks and len(raw) > 1 and raw[1].ndim == 4 else None
+    lb_h, lb_w = canvas.shape[0], canvas.shape[1]
 
     if e2e:
         # ★YOLO26 은 **이미 걸러진 결과**를 낸다: (1, 300, 4+1+1+32) = xyxy · conf · cls · 마스크.
         #   여기서 NMS 를 또 돌리면 안 된다 (ultralytics 도 end2end 면 문턱만 건다).
         pred = out[0]  # (300, 4+1+1+32) — 배치 축은 위에서 이미 벗겼다
         boxes, conf, cls = pred[:, :4].copy(), pred[:, 4], pred[:, 5].astype(np.int32)
+        coef = pred[:, 6:]  # 마스크 계수 32개 (`masks=True` 일 때만 쓴다)
         m = conf > min_conf
-        boxes, conf, cls = boxes[m], conf[m], cls[m]
+        boxes, conf, cls, coef = boxes[m], conf[m], cls[m], coef[m]
         if not len(boxes):
             return []
         keep = list(range(min(len(boxes), MAX_DET)))
@@ -215,15 +228,16 @@ def detect(
         pred = out[0].T
         nc = len(names)
         xywh, scores = pred[:, :4], pred[:, 4 : 4 + nc]
+        coef = pred[:, 4 + nc :]  # 마스크 계수 32개 (`masks=True` 일 때만 쓴다)
         cls = scores.argmax(1)
         conf = scores.max(1)
         m = conf > min_conf
-        xywh, cls, conf = xywh[m], cls[m], conf[m]
+        xywh, cls, conf, coef = xywh[m], cls[m], conf[m], coef[m]
         if not len(xywh):
             return []
         if len(xywh) > MAX_NMS:
             top = conf.argsort()[::-1][:MAX_NMS]
-            xywh, cls, conf = xywh[top], cls[top], conf[top]
+            xywh, cls, conf, coef = xywh[top], cls[top], conf[top], coef[top]
 
         boxes = np.empty_like(xywh)
         boxes[:, 0] = xywh[:, 0] - xywh[:, 2] / 2
@@ -263,7 +277,46 @@ def detect(
                 "passes_threshold": ok,
             }
         )
+        if proto is not None:
+            png = _mask_png(proto, coef[i], boxes[i], (lb_h, lb_w))
+            if png:
+                dets[-1]["mask"] = png
     return dets
+
+
+def _mask_png(proto: np.ndarray, coef: np.ndarray, box_lb, lb: tuple[int, int]) -> str | None:
+    """그 부위의 **윤곽**을 프로토타입에서 뽑아 PNG(base64)로 (2026-08-21).
+
+    ultralytics 와 같은 순서다: 계수 32개 × 프로토타입 32장 → 시그모이드 → **박스로 자른다**.
+    ★자르는 것이 핵심이다. 프로토타입은 그림 전체에 걸쳐 있어서, 안 자르면 같은 부위가
+      다른 자리에도 옅게 묻어난다 (ultralytics `crop_mask` 와 같은 이유).
+    ★**프로토타입 해상도 그대로** 낸다 (입력의 1/4). 박스 크기로 늘려 보내면 없는 정밀도를
+      있는 척하게 되고, 주고받는 양만 는다 — 늘리는 것은 그리는 쪽에서 한 번에 한다.
+    ★좌표는 **레터박스 기준**이다. 박스도 같은 기준이라 둘의 대응이 정확하고,
+      되돌리는 계산(여백·배율)을 여기서 또 하지 않아도 된다.
+    """
+    ch, mh, mw = proto.shape
+    if coef.shape[0] != ch:
+        return None
+    m = 1.0 / (1.0 + np.exp(-(coef.astype(np.float32) @ proto.reshape(ch, -1))))
+    m = m.reshape(mh, mw)
+    sx, sy = mw / lb[1], mh / lb[0]
+    x1 = int(max(0, math.floor(box_lb[0] * sx)))
+    y1 = int(max(0, math.floor(box_lb[1] * sy)))
+    x2 = int(min(mw, math.ceil(box_lb[2] * sx)))
+    y2 = int(min(mh, math.ceil(box_lb[3] * sy)))
+    if x2 <= x1 or y2 <= y1:
+        return None
+    # ★★**확률 그대로** 담는다 (0/1 로 자르지 않는다). 프로토타입은 입력의 1/4 라
+    #   작은 부위는 마스크가 십수 픽셀밖에 안 된다 (실측: 91×66 박스 → 16×11).
+    #   여기서 잘라 버리면 그 계단이 박스 크기로 확대돼 **울퉁불퉁한 덩어리**가 된다.
+    #   확률로 보내면 그리는 쪽이 부드럽게 늘린 **뒤에** 자를 수 있고, 가장자리가 곧 깃털이 된다.
+    crop = np.clip(m[y1:y2, x1:x2] * 255.0, 0, 255).astype(np.uint8)
+    if not (crop > 127).any():
+        return None
+    buf = io.BytesIO()
+    Image.fromarray(crop, mode="L").save(buf, format="PNG", optimize=True)
+    return base64.b64encode(buf.getvalue()).decode()
 
 
 # ── 가리기 ────────────────────────────────────────────────────
@@ -480,7 +533,14 @@ def apply_boxes(
             continue
 
         region = im.crop((bx1, by1, bx2, by2))
-        m = _mask(region.size, [(x - bx1, y - by1) for x, y in pts], feather)
+        # ★★박스가 **윤곽**을 들고 있으면 그것으로 가린다 (사용자 지시 2026-08-21).
+        #   없으면 지금까지처럼 네모(회전·확장한 네 꼭짓점)다 — 손으로 그린 박스가 그렇다.
+        png = b.get("mask")
+        m = None
+        if png:
+            m = _alpha_from_mask(png, (x1, y1, x2, y2), (bx1, by1), region.size, int(expand), feather)
+        if m is None:
+            m = _mask(region.size, [(x - bx1, y - by1) for x, y in pts], feather)
 
         if how == "mosaic":
             layer = _mosaic(region, mosaic_strength)
@@ -501,6 +561,34 @@ def apply_boxes(
 
         im.paste(Image.composite(layer, region, m), (bx1, by1))
     return im
+
+
+def _alpha_from_mask(png: str, box, origin, size, expand: int, feather: int) -> Image.Image | None:
+    """모델이 낸 윤곽(base64 PNG) → 이 조각에 쓸 알파 (2026-08-21).
+
+    ★마스크는 **프로토타입 해상도**로 온다 (입력의 1/4, `_mask_png`). 늘리는 것은 여기 한 번뿐이다.
+    ★`expand` 는 늘여서 만드는 것이 아니라 **불려서**(MaxFilter) 만든다 — 배율로 키우면
+      모양이 함께 왜곡되지만, 불리면 윤곽이 그대로 두꺼워진다.
+    ★`feather` 는 네모 때와 **같은 규칙**이다: 먼저 넓히고 흐린다 (안쪽이 옅어지지 않게).
+    ★회전(`rotation`)은 안 먹인다 — 윤곽은 이미 그 부위의 모양이라 돌릴 이유가 없다.
+    """
+    try:
+        raw = base64.b64decode(png)
+        small = Image.open(io.BytesIO(raw)).convert("L")
+    except Exception:
+        return None  # ★고치지 않고 네모로 되돌아간다 (화면이 보낸 것을 코드가 추측하지 않는다)
+    x1, y1, x2, y2 = (int(v) for v in box)
+    bw, bh = max(1, x2 - x1), max(1, y2 - y1)
+    m = Image.new("L", size, 0)
+    # ★부드럽게 늘린 **뒤에** 자른다 — 작은 부위(마스크 십수 픽셀)의 계단을 그대로 키우지 않는다.
+    #   자르는 자리는 0.5 다 (모델의 판정선). 가장자리 한 겹은 `feather` 가 다시 흐린다.
+    big = small.resize((bw, bh), Image.BICUBIC).point(lambda v: 255 if v >= 128 else 0)
+    m.paste(big, (x1 - origin[0], y1 - origin[1]))
+    if expand > 0:
+        m = m.filter(ImageFilter.MaxFilter(_odd(expand)))
+    if feather > 0:
+        m = m.filter(ImageFilter.MaxFilter(_odd(feather))).filter(ImageFilter.GaussianBlur(feather / 2))
+    return m
 
 
 def _paste_steam(im: Image.Image, x1, y1, x2, y2, rot: float, expand: int, feather: int,

@@ -34,6 +34,28 @@ export function CensorSide() {
                   </option>
                 ))}
               </select>
+              {/* ★★모델이 낸 **윤곽**으로 가릴지 (사용자 지시 2026-08-21). 이 모델들은
+                  세그멘테이션이라 부위의 형태를 이미 알고 있는데, 그동안 박스만 썼다.
+                  ★켜면 다시 찾는다(`scan`) — 윤곽은 **찾을 때** 함께 나오는 것이라
+                    이미 찾아 둔 박스에는 없다. */}
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--sp-2)",
+                  marginTop: "var(--sp-2)",
+                  fontSize: "var(--text-2xs)",
+                  color: c.useMask ? "var(--ink-soft)" : "var(--ink-faint)",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  data-censor-usemask
+                  checked={c.useMask}
+                  onChange={(e) => c.setUseMask(e.target.checked)}
+                />
+                {t("censor.useMask")}
+              </label>
             </Sec>
 
             <Sec label={t("censor.targets")} help={t("censor.confHint")}>

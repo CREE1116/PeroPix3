@@ -535,6 +535,7 @@ export const ja: Dict = {
     tabDuring: "検閲中",
     tabAfter: "検閲後",
     model: "モデル",
+    useMask: "検出した形どおりに隠す（四角ではなく）",
     modelHint: "大きいモデルほどよく見つかり、遅くなります",
     pickImage: "左から画像を選ぶか、ここにドロップしてください",
     found: "{n}箇所",
