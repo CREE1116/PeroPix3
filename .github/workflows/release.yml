@@ -1,0 +1,126 @@
+# PeroPix 3.0 — 릴리즈 빌드
+#
+# ★★산출물은 **포터블 zip 하나**다 (설치 프로그램이 아니라).
+#   앱이 `data/`·`workspaces/`·`logs/` 를 **실행 파일 옆에** 쓰기 때문이다
+#   (`src-tauri/src/backend.rs` 의 `find_repo_root`). Program Files 에 설치하면
+#   그 자리가 쓰기 금지라 첫 실행부터 막힌다. v2 도 같은 이유로 zip 이었다.
+#
+# ★파이썬은 **임베드본을 받아 넣는다** (v2 `build-and-release.yml` 과 같은 방식) —
+#   앱은 `python/python.exe` 가 옆에 있으면 그것을 쓰고, 없으면 PATH 의 python 을 찾는다.
+#
+# 여는 방법: 태그를 밀거나(`v3.0.1`) Actions 에서 손으로 돌린다.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # ★v2 와 같은 3.11 계열. 올릴 때는 `_pth` 파일 이름(`python311._pth`)도 함께 본다
+  PY_VERSION: "3.11.9"
+  PY_PTH: "python311._pth"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Rust 툴체인
+        uses: dtolnay/rust-toolchain@stable
+
+      # ★Rust 빌드는 오래 걸린다 — 캐시가 없으면 릴리즈마다 10분씩 더 든다
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: 의존성 설치
+        run: npm ci
+
+      # ★버전은 **태그가 정본**이다. `tauri.conf.json`·`package.json` 과 어긋나면
+      #   받은 사람이 어느 것이 맞는지 알 수 없으므로 빌드 전에 태그 값으로 맞춘다.
+      - name: 버전을 태그에 맞춘다
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ($tag -notmatch '^v\d') { $tag = "v0.0.0" }
+          $ver = $tag -replace '^v', ''
+          $conf = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $conf.version = $ver
+          $conf | ConvertTo-Json -Depth 32 | Set-Content src-tauri/tauri.conf.json -Encoding UTF8
+          npm version $ver --no-git-tag-version --allow-same-version
+          "VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "version = $ver"
+
+      - name: 앱 빌드 (프런트 + Tauri)
+        run: npm run tauri build -- --no-bundle
+
+      # ── 배포 꾸러미 ────────────────────────────────────────────
+      - name: 임베드 파이썬 받기
+        shell: pwsh
+        run: |
+          $url = "https://www.python.org/ftp/python/${{ env.PY_VERSION }}/python-${{ env.PY_VERSION }}-embed-amd64.zip"
+          Invoke-WebRequest -Uri $url -OutFile python-embed.zip
+          New-Item -ItemType Directory -Force -Path "pack/PeroPix/python" | Out-Null
+          Expand-Archive -Path python-embed.zip -DestinationPath "pack/PeroPix/python"
+          # ★`import site` 를 켜야 pip 로 넣은 site-packages 를 본다 (임베드본 기본값은 꺼짐)
+          $pth = "pack/PeroPix/python/${{ env.PY_PTH }}"
+          (Get-Content $pth) -replace '#import site', 'import site' | Set-Content $pth
+          Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "get-pip.py"
+          & "pack/PeroPix/python/python.exe" get-pip.py --no-warn-script-location
+
+      - name: 백엔드 의존성 설치
+        shell: pwsh
+        run: |
+          & "pack/PeroPix/python/python.exe" -m pip install --no-warn-script-location -r backend/requirements.txt
+
+      - name: 꾸러미 만들기
+        shell: pwsh
+        run: |
+          $dst = "pack/PeroPix"
+          Copy-Item "src-tauri/target/release/PeroPix.exe" -Destination $dst
+          # ★백엔드는 **실행 파일 옆**에 그대로 둔다 — 앱이 `backend/server.py` 를 찾아 올라간다
+          New-Item -ItemType Directory -Force -Path "$dst/backend" | Out-Null
+          Copy-Item "backend/*.py" -Destination "$dst/backend"
+          Copy-Item "backend/requirements.txt" -Destination "$dst/backend"
+          # ★테스트는 빼고 담는다 (배포물이 아니다 — `.gitignore` 와 같은 기준)
+          Remove-Item "$dst/backend/test_*.py" -ErrorAction SilentlyContinue
+          # 검열 모델 — 저장소에 든 것만 담는다 (큰 모델은 깃에 없다, `.gitignore` 참조)
+          if (Test-Path "models/censor") {
+            New-Item -ItemType Directory -Force -Path "$dst/models/censor" | Out-Null
+            Copy-Item "models/censor/*.onnx" -Destination "$dst/models/censor" -ErrorAction SilentlyContinue
+          }
+          Copy-Item "README.md" -Destination $dst -ErrorAction SilentlyContinue
+          Copy-Item "LICENSE" -Destination $dst -ErrorAction SilentlyContinue
+          @{ version = "${{ env.VERSION }}"; build_date = (Get-Date -Format "yyyy-MM-dd") } |
+            ConvertTo-Json | Set-Content "$dst/version.json" -Encoding UTF8
+          Compress-Archive -Path "$dst/*" -DestinationPath "PeroPix-3.0-Windows.zip"
+          "$((Get-Item 'PeroPix-3.0-Windows.zip').Length / 1MB) MB"
+
+      - name: 손으로 돌린 것은 아티팩트로만
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: PeroPix-Windows
+          path: PeroPix-3.0-Windows.zip
+
+      # ★태그를 민 것만 릴리즈가 된다 — 손으로 돌린 빌드가 릴리즈를 만들면
+      #   확인용으로 한 번 돌릴 때마다 받은 사람에게 알림이 간다
+      - name: 릴리즈에 올린다
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: PeroPix-3.0-Windows.zip
+          draft: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
