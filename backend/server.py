@@ -1952,9 +1952,6 @@ class CensorDetect(CensorSource):
     label_conf: dict[str, float] = {}
     default_conf: float = 0.25
     return_all: bool = False
-    # ★모델이 낸 **윤곽**까지 받을지 (사용자 지시 2026-08-21). 켜면 박스마다 `mask` 가 붙고,
-    #   가리기가 네모 대신 그 모양으로 덮는다. 끄면 지금까지와 똑같다.
-    masks: bool = False
 
 
 class CensorApply(CensorSource):
@@ -2024,8 +2021,7 @@ def censor_detect(body: CensorDetect):
     im, _ = _censor_open(body)
     try:
         dets = censor.detect(
-            im, body.model, body.targets, body.label_conf, body.default_conf, body.return_all,
-            body.masks,
+            im, body.model, body.targets, body.label_conf, body.default_conf, body.return_all
         )
     except FileNotFoundError as e:
         raise HTTPException(503, str(e))

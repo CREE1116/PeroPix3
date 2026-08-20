@@ -536,7 +536,6 @@ export const en = {
     tabDuring: "Editing",
     tabAfter: "After",
     model: "Model",
-    useMask: "Cover the detected shape (not a box)",
     modelHint: "Bigger models find more and run slower",
     pickImage: "Pick an image on the left, or drop one here",
     found: "{n} spots",

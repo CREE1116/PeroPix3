@@ -30,9 +30,6 @@ export type Box = {
   off?: boolean;
   /** 사람이 그린 것 */
   manual?: boolean;
-  /** ★모델이 낸 윤곽 (base64 PNG, **프로토타입 해상도**). 백엔드 `_mask_png` 가 붙인다.
-   *  손으로 그린 박스에는 없다 — 그때는 네모로 가린다. */
-  mask?: string;
 };
 
 export type CensorModel = { id: string; file: string; classes: string[]; bytes: number; imgsz: number };
@@ -65,10 +62,6 @@ type Saved = {
   labelConf: Record<string, number>;
   conf: number;
   floor: number;
-  /** ★모델이 낸 **윤곽**으로 가릴지 (사용자 지시 2026-08-21). 끄면 지금까지처럼 네모다.
-   *  ★마스크는 모델의 **프로토타입 해상도**(입력의 1/4)라, 작은 부위는 십수 픽셀뿐이다 —
-   *    큰 자리(얼굴 등)에서는 윤곽이 살고 작은 자리에서는 둥근 덩어리에 가깝다. */
-  useMask: boolean;
   method: string;
   color: string;
   expand: number;
@@ -88,7 +81,6 @@ const DEFAULTS: Saved = {
   labelConf: {},
   conf: 0.3,
   floor: 0.1,
-  useMask: false,
   // ★기본은 **스팀**이다 (v2 의 기본값). 폐기 결정이 없어 그대로 옮겼다
   method: "steam",
   color: "#000000",
@@ -175,7 +167,6 @@ type S = Saved & {
   set: (patch: Partial<S>) => void;
   /** 설정 하나를 바꾼다. 저장하고, 필요하면 다시 찾거나 다시 그린다 */
   tune: (patch: Partial<Saved>, redo?: "scan" | "draw") => void;
-  setUseMask: (v: boolean) => void;
   toggleTarget: (label: string) => void;
   setLabelConf: (label: string, v: number) => void;
 
@@ -286,13 +277,6 @@ export const useCensor = create<S>((set, get) => ({
     save(get());
     if (redo === "scan" && get().tab === "before") void get().scan();
     if (redo === "draw") get().drawPreview();
-  },
-
-  /** ★윤곽으로 가릴지 — 켜고 끄면 **찾아 둔 것을 버린다.** 윤곽은 찾을 때 함께 나오는
-   *  것이라, 이미 담긴 박스에는 없다 (끌 때도 버려야 무거운 마스크를 계속 들고 있지 않는다). */
-  setUseMask(v) {
-    set({ boxes: {} });
-    get().tune({ useMask: v }, "scan");
   },
 
   toggleTarget(label) {
@@ -415,7 +399,6 @@ export const useCensor = create<S>((set, get) => ({
             // ★문턱 미달도 받아 온다. 화면의 「낮은 신뢰도 숨김」이 다시 거른다.
             //   문턱을 올렸다 내릴 때마다 다시 찾지 않아도 된다
             return_all: true,
-            masks: s.useMask,
           });
           if (mine !== scanSeq) return;
           set({
@@ -454,7 +437,6 @@ export const useCensor = create<S>((set, get) => ({
             label_conf: s.labelConf,
             default_conf: s.conf,
             return_all: true,
-            masks: s.useMask,
           });
           boxes[im.id] = r.detections;
           sizes[im.id] = { w: r.width, h: r.height };
@@ -608,12 +590,6 @@ function save(s: Saved) {
 }
 
 /** 실제로 가릴 박스만. 끈 것은 뺀다 */
-/** 서버로 보낼 박스만 추린다.
- *
- *  ★★**여기서 새로 만든 객체가 곧 서버가 보는 전부**다. 필드를 늘렸으면 이 자리에도
- *    더해야 한다 — 안 그러면 화면에는 있는데 **가리기에는 없다.**
- *    실측 2026-08-21: 윤곽(`mask`)을 붙여 놓고 여기를 안 고쳐서, 「찾은 모양대로 가리기」를
- *    켜도 계속 네모가 나왔다. 사용자가 그것을 보고 알려 주기 전까지 안 보였다. */
 export const liveBoxes = (b: Box[]) =>
   b
     .filter((x) => !x.off)
@@ -621,8 +597,6 @@ export const liveBoxes = (b: Box[]) =>
       box: x.box.map((v) => Math.round(v)) as [number, number, number, number],
       method: x.method,
       rotation: x.rotation ?? 0,
-      // 손으로 그린 박스에는 없다 — 그때는 서버가 네모로 그린다
-      ...(x.mask ? { mask: x.mask } : {}),
     }));
 
 /** 가리는 방법 한 벌. 미리보기와 저장이 **같은 값**을 보낸다 */
