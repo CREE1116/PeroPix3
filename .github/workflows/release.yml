@@ -87,7 +87,14 @@ jobs:
         shell: pwsh
         run: |
           $dst = "pack/PeroPix"
-          Copy-Item "src-tauri/target/release/PeroPix.exe" -Destination $dst
+          # ★`--no-bundle` 로 나오는 것은 **Cargo 이름**(`peropix.exe`)이다 — 설치 프로그램을
+          #   구울 때만 `productName` 으로 바뀐다. 받는 사람이 보는 이름은 PeroPix 여야 하므로
+          #   여기서 바꿔 담는다. 못 찾으면 **소리 내고 멈춘다** (조용히 빈 zip 이 올라가면
+          #   받은 사람이 먼저 알게 된다).
+          $exe = Get-ChildItem "src-tauri/target/release/*.exe" |
+            Where-Object { $_.Name -match '^(peropix|PeroPix)\.exe$' } | Select-Object -First 1
+          if (-not $exe) { throw "빌드된 실행 파일을 못 찾았습니다 (src-tauri/target/release)" }
+          Copy-Item $exe.FullName -Destination "$dst/PeroPix.exe"
           # ★백엔드는 **실행 파일 옆**에 그대로 둔다 — 앱이 `backend/server.py` 를 찾아 올라간다
           New-Item -ItemType Directory -Force -Path "$dst/backend" | Out-Null
           Copy-Item "backend/*.py" -Destination "$dst/backend"
