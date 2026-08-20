@@ -166,16 +166,40 @@ class Store:
         p.mkdir(parents=True, exist_ok=True)
         return p
 
-    def next_name(self, d: Path, prefix: str, fmt: str) -> Path:
+    def next_name(self, d: Path, prefix: str, fmt: str, ws: str | None = None) -> Path:
         """그 폴더에서 **다음 순번**. 시각이 아니라 순번이라 만든 차례가 그대로 보인다.
         ★번호는 **접두마다 따로** 센다 — 멀티에서 슬롯 1의 3장과 슬롯 2의 3장이
-        각각 001~003 이 되어야 슬롯 안에서 몇 번째인지 읽힌다."""
+        각각 001~003 이 되어야 슬롯 안에서 몇 번째인지 읽힌다.
+
+        ★★**휴지통에 든 것도 센다** (`ws` 를 준 경우, 사용자 지적 2026-08-20).
+          지우면 파일이 `.trash/<시각>/<원래 경로>` 로 **옮겨져** 그 이름이 폴더에서 비고,
+          다음 생성이 **같은 경로**를 다시 쓴다. 그런데 앱은 여러 곳에서 **경로를 그림의
+          신원**으로 쓴다 — 레코드 중복 판정 · 「지운 것」·「별표」 목록. 그래서 새 그림이
+          옛 그림의 표식을 물려받아, 방금 만든 것이 **화면에 아예 안 뜬다.**
+          (실측: 씬 삭제 → 이미지 삭제 → 씬 다시 생성 → 1장 생성 → 파일은 생겼는데 안 보임.
+           레코드 두 줄의 `file` 이 똑같았다.)
+          번호를 건너뛰는 편이 낫다 — 되돌리기(`restore`)로 옛 파일이 제자리에 돌아와도
+          이름이 겹치지 않는다."""
         head = f"{prefix}_" if prefix else ""
         used = 0
-        for f in d.glob(f"{head}*"):
-            part = f.stem[len(head):].split("_")[0]
-            if part.isdigit():
-                used = max(used, int(part))
+        spots = [d]
+        if ws:
+            base = self.dir_of(ws)
+            try:
+                rel = d.relative_to(base)
+            except ValueError:
+                rel = None
+            if rel is not None:
+                troot = trash.trash_root(base)
+                if troot.is_dir():
+                    spots += [b / rel for b in troot.iterdir() if b.is_dir()]
+        for spot in spots:
+            if not spot.is_dir():
+                continue
+            for f in spot.glob(f"{head}*"):
+                part = f.stem[len(head):].split("_")[0]
+                if part.isdigit():
+                    used = max(used, int(part))
         return d / f"{head}{used + 1:03d}.{fmt}"
 
     def rel(self, ws: str, path: Path) -> str:
@@ -204,7 +228,7 @@ class Store:
         is_set = cell is not None
         d = self.out_dir(ws, tab, is_set, char)
         lead = file_lead(cell_no, cell, exclude_no) if is_set else ""
-        path = self.next_name(d, lead, fmt)
+        path = self.next_name(d, lead, fmt, ws)
         path.write_bytes(data)
         return self.rel(ws, path)
 
@@ -257,6 +281,8 @@ class Store:
         cell_no: int | None,
         char: str | None,
         exclude_no: bool,
+        src_path: Path | None = None,
+        seed: int | None = None,
     ) -> dict:
         """그림 한 장을 **같은 워크스페이스의 다른 탭**으로 복사한다 (원본은 그대로).
 
@@ -268,9 +294,14 @@ class Store:
         ★이름·자리는 `store_output` 하나가 정한다 — 보통 생성과 같은 규칙이라야 받는 씬의
           번호열이 어긋나지 않는다.
         ★레코드에 `tab_id`·`cell_id` 를 함께 쓴다 — 받는 탭이 `idOnly` 라 그것이 없으면
-          복사해 놓고 화면 어디에도 안 뜬다 (`lib/takes.ts`)."""
-        src = self.file_path(ws, file)
-        if not src:
+          복사해 놓고 화면 어디에도 안 뜬다 (`lib/takes.ts`).
+
+        ★`src_path` 는 **워크스페이스 밖의 원본**이다 (보관함 그림). 갤러리의
+          「새 탭으로 복제」도 그림이 슬롯에 앉아야 해서 같은 자리를 쓴다 (사용자 지시
+          2026-08-19: *"슬롯에서 복제할때랑 동일한 로직 사용해"*). 그때는 이 워크스페이스에
+          그 파일의 레코드가 없으므로 **시드도 밖에서 받는다**(`seed`, 메타데이터에서 읽은 값)."""
+        src = src_path or self.file_path(ws, file)
+        if not src or not src.is_file():
             raise ValueError("복제할 그림을 찾지 못했습니다")
         old = next(
             (r for r in reversed(self.records(ws, limit=100000)) if r.get("file") == file),
@@ -289,7 +320,7 @@ class Store:
             "tab_id": tab_id,
             "cell_id": cell_id,
             "enhance_of": None,
-            "seed": int(old.get("seed") or 0),
+            "seed": int(seed if seed is not None else (old.get("seed") or 0)),
         }
         self.append_record(ws, rec)
         return {"ok": True, "file": rel, "record": rec}

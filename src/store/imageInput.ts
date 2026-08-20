@@ -65,10 +65,6 @@ type S = {
   baseInpaintStrength: number;
   baseNoise: number;
   baseMask: string;
-  /** ★Focused Inpainting. 이 베이스 그림이 **워크스페이스 파일**이면 그 경로.
-   *  있으면 서버가 그 파일을 열어 **사각형 안만** 잘라 보내고 결과를 그 자리에 되붙인다.
-   *  밖에서 떨군 그림에는 없다 (그때는 지금까지의 인페인트 그대로다). */
-  baseFrom: { ws: string; file: string } | null;
   /** 베이스 그림의 실제 크기. 사각형·최종 해상도가 전부 이 값을 기준으로 잡힌다 */
   baseSize: { w: number; h: number } | null;
   /** ★Focused Inpainting 을 켰나 (`lib/focused.ts`).
@@ -105,7 +101,7 @@ type S = {
   patchRef: (i: number, p: Partial<PreciseRef>) => void;
   removeRef: (i: number) => void;
 
-  setBase: (image: string, name: string, from?: { ws: string; file: string } | null) => void;
+  setBase: (image: string, name: string) => void;
   setTileRect: (r: { x: number; y: number; w: number; h: number } | null) => void;
   setFocused: (v: boolean) => void;
   /** 마스크 칠하기로 들어간다. 큰 그림이면 Focused 를 켜 주고 알린다 */
@@ -137,9 +133,12 @@ const maskRides = (s: S) =>
   s.baseMode === "inpaint" && !!s.baseImage && (!!s.baseMask || (s.focused && !!s.tileRect));
 
 /** ★조각만 잘라 보내는가 (Focused Inpainting). **서버가 자르는 조건과 같은 식**이어야 한다
- *  (`server.py`: `if body.inpaint_from and body.inpaint_rect`). 워크스페이스 파일이 아니면
- *  경로가 없어(`baseFrom`) 잘라 보낼 수 없다 — 그때는 지금까지의 인페인트 그대로다. */
-const focusingNow = (s: S) => s.baseMode === "inpaint" && s.focused && !!s.tileRect && !!s.baseFrom;
+ *  (`server.py`: `if body.inpaint_rect and req.base_image`).
+ *  ★★**그림의 출처를 따지지 않는다** (사용자 지적 2026-08-20). 예전에는 워크스페이스
+ *    파일 경로(`baseFrom`)가 있어야만 켰는데, 서버가 그 파일을 다시 열어 잘랐기 때문이다 —
+ *    그래서 갤러리·드롭으로 넣은 그림에는 기능이 아예 없었다. 지금은 **보낸 그림에서**
+ *    자르므로 경로가 필요 없다. */
+const focusingNow = (s: S) => s.baseMode === "inpaint" && s.focused && !!s.tileRect;
 
 export const useImageInput = create<S>((set, get) => ({
   vibeOn: false,
@@ -154,7 +153,6 @@ export const useImageInput = create<S>((set, get) => ({
   baseInpaintStrength: 1,
   baseNoise: 0,
   baseMask: "",
-  baseFrom: null,
   baseSize: null,
   focused: false,
   tileRect: null,
@@ -263,8 +261,8 @@ export const useImageInput = create<S>((set, get) => ({
   patchRef: (i, p) => set((s) => ({ refs: s.refs.map((r, k) => (k === i ? { ...r, ...p } : r)) })),
   removeRef: (i) => set((s) => ({ refs: s.refs.filter((_, k) => k !== i) })),
 
-  setBase: (image, name, from = null) => {
-    set({ baseImage: image, baseName: name, baseMask: "", baseFrom: from,
+  setBase: (image, name) => {
+    set({ baseImage: image, baseName: name, baseMask: "",
           baseSize: null, tileRect: null, focused: false, editing: false });
     // ★크기는 **여기서 한 번만** 잰다. 사각형·최종 해상도·자동 켜기가 전부 이 값을 본다.
     //   부르는 쪽마다 따로 재게 하면 어느 값이 진짜인지 갈린다.
@@ -279,7 +277,7 @@ export const useImageInput = create<S>((set, get) => ({
     });
   },
   clearBase: () =>
-    set({ baseImage: "", baseName: "", baseMask: "", baseMode: "img2img", baseFrom: null,
+    set({ baseImage: "", baseName: "", baseMask: "", baseMode: "img2img",
           baseSize: null, tileRect: null, focused: false, editing: false }),
   setTileRect: (r) => set({ tileRect: r }),
 
@@ -310,7 +308,7 @@ export const useImageInput = create<S>((set, get) => ({
     //   크기를 아직 재는 중일 수 있어 그 뒤에 판단한다 (`measuring`)
     void (measuring ?? Promise.resolve()).then(() => {
       const s = get();
-      if (!s.editing || s.focused || !s.baseFrom || !s.baseSize) return;
+      if (!s.editing || s.focused || !s.baseSize) return;
       if (!canFocus(s.baseSize.w, s.baseSize.h)) return;
       s.setFocused(true);
       toast(t("focus.auto"));
@@ -353,7 +351,6 @@ export const useImageInput = create<S>((set, get) => ({
       // ★마스크는 인페인트일 때만 보낸다 — i2i 로 되돌려 놓고 마스크가 남아 있으면 엉뚱하게 인페인트가 된다
       base_mask: s.baseMode === "inpaint" ? mask : "",
       // ★Focused 를 **켰을 때만** 잘라 보낸다. 끄면 공홈과 같은 기본 인페인트다
-      inpaint_from: focusing ? (s.baseFrom?.file ?? "") : "",
       inpaint_rect: focusing ? s.tileRect : null,
     };
   },

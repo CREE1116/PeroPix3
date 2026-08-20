@@ -7,11 +7,17 @@ import { BlockLibButton } from "../blocks/BlockDrawer";
 import { WildcardButton } from "./WildcardModal";
 import { OptionsPanel } from "./OptionsPanel";
 import { Category } from "./Category";
+import { useDrag } from "../cards/dragStore";
 
 /** 좌측 패널 — 카드형 섹션 안에 블록 시퀀스.
  *  스타일 섹션(= NAI 의 공통 prompt/uc) 하나 + 캐릭터 섹션 여럿(= characterPrompts[]). */
 export function PromptPanel({ onThumb }: SectionProps) {
   const { base, baseUc, chars, addChar } = usePrompt();
+  /** ★★끌고 있는 동안 **그 묶음 전체**가 어둠 위로 올라온다 (사용자 지적 2026-08-20).
+   *  카드마다 올리면 카드 사이 여백이 어두운 채라 「영역」으로 안 읽힌다.
+   *  ★그림 끌기(`image`)는 두 묶음 다 받는다 — 카드 배너에 꽂는 그림이라 어느 쪽이든 될 수 있다. */
+  const dragKind = useDrag((s) => (s.drag?.dir === "apply" ? s.drag.kind : null));
+  const dragImg = useDrag((s) => s.drag?.dir === "image");
   const t = useI18n((s) => s.t);
   const [preview, setPreview] = useState(false);
 
@@ -28,6 +34,7 @@ export function PromptPanel({ onThumb }: SectionProps) {
             와일드카드(랜덤 풀) · 블록 저장소. 카테고리마다 흩뿌리지 않는다 */}
         <Category
           id="p-base"
+          spot={dragKind === "styles" || dragImg}
           /* ★★설정을 불러오면 **카드도 통째로 갈린다** — 그 자리도 펴고 강조한다
              (사용자 지적 2026-08-19: 카드가 바뀌는데 강조가 없었다).
              `applyMeta`·설정 불러오기가 `reveal("left", "prompt")` 를 부른다. */
@@ -43,7 +50,7 @@ export function PromptPanel({ onThumb }: SectionProps) {
           <StyleSection onThumb={onThumb} />
         </Category>
 
-        <Category id="p-char" label={t("prompt.charBox")} flashKey="prompt">
+        <Category id="p-char" label={t("prompt.charBox")} flashKey="prompt" spot={dragKind === "characters" || dragImg}>
           {chars.map((ch, i) => (
             <CharSection key={ch.id} ch={ch} index={i} onThumb={onThumb} />
           ))}

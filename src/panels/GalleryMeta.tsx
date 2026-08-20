@@ -3,10 +3,12 @@ import { useState } from "react";
 import { makeBlock, parseSegs } from "../lib/blocks";
 import { useGen } from "../store/gen";
 import { useGallery, type ImageMeta } from "../store/gallery";
-import { CHAR_COLORS, usePrompt, type Char } from "../store/prompt";
+import { CHAR_COLOR, usePrompt, type Char } from "../store/prompt";
 import { useImageInput } from "../store/imageInput";
 import { useUi } from "../store/ui";
+import { useSceneFocus } from "../store/sceneFocus";
 import { useWs } from "../store/workspace";
+import { api } from "../lib/backend";
 import { toast } from "../store/toast";
 import { metaParams } from "../lib/metaApply";
 
@@ -53,7 +55,8 @@ export function GalleryMeta() {
    *  ★다른 점 하나: 갤러리 그림에는 생성 시점 스냅샷(`env`)이 없다. 그래서 되돌릴 수 있는
    *    것은 **그림에 남은 것 전부**다 — 프롬프트·캐릭터·생성 옵션·해상도·시드·바이브. */
   const onClone = async () => {
-    await cloneMetaToNewTab(meta);
+    if (!focus) return;
+    await cloneMetaToNewTab(meta, focus);
     setFlash(true);
     setTimeout(() => setFlash(false), 1600);
   };
@@ -141,18 +144,53 @@ export function GalleryMeta() {
 
 /** 그 그림의 설정으로 **새 탭을 만든다** (갤러리의 유일한 되돌리기 창구).
  *
- *  ★워크스페이스 그림의 「새 탭으로 복제」(`workspace.cloneToNewTab`)와 같은 뜻이다.
- *    다른 점은 **생성 시점 스냅샷(`env`)이 없다**는 것뿐 — 보관함 그림은 그때 탭 구조를
- *    모르므로, 그림에 남은 것(프롬프트·캐릭터·생성 옵션·해상도·시드·바이브)을 되돌린다.
+ *  ★★**워크스페이스 그림의 복제와 같은 자리를 쓴다** (`workspace.cloneToNewTab`) —
+ *    사용자 지시 2026-08-19: *"슬롯에서 복제할때랑 동일한 로직 사용해"*. 갈래를 두 벌 두면
+ *    한쪽만 고쳐져 갤러리에서만 조용히 빠지는 것이 생긴다 (실제로 그렇게 됐다:
+ *    **슬롯 프롬프트가 통째로 사라지고, 그림이 슬롯에 안 앉았다**).
+ *
+ *  다른 것은 셋뿐이다:
+ *    · 파일이 **보관함**에 있다 — 서버가 거기서 집어 새 슬롯에 앉힌다 (`from: "keep"`)
+ *    · 구조를 찾아볼 자리가 **그 그림의 출처**다 (`/api/keep/origin` → 그 워크스페이스의 `env`).
+ *      ★구조는 PNG 에 안 남는다 — 출처를 못 찾으면 되돌릴 것이 합쳐진 문자열뿐이다.
+ *    · 그때는 **씬을 메타데이터에서** 받는다 (`slot_prompt`, v2 가 PNG 에 남긴 슬롯 프롬프트)
+ *
  *  ★예전 이름 「설정 불러오기」는 **어디에 불러오는지**를 말하지 않아, 보고 있던 탭이
- *    통째로 갈리는 줄 모르고 누르게 됐다 (사용자 지적 2026-08-19). */
-export async function cloneMetaToNewTab(m: ImageMeta) {
+ *    통째로 갈리는 줄 모르고 누르게 됐다 (사용자 지적 2026-08-19).
+ *
+ *  @param file 보관함 안에서의 경로 (갤러리가 다루는 그 파일) */
+export async function cloneMetaToNewTab(m: ImageMeta, file: string) {
   const ws = useWs.getState();
   if (!ws.current || !ws.spec) return;
-  ws.addChar(t("chars.cloneName"));
-  applyMeta(m, "all");
-  await ws.save();
+  const origin = await api<{ origin: { workspace: string; file: string } | null }>(
+    `/api/keep/origin?file=${encodeURIComponent(file)}`,
+  )
+    .then((r) => r.origin)
+    .catch(() => null);
+
+  const landed = await ws.cloneToNewTab(file, {
+    excludeNo: useGen.getState().params.exclude_slot_number,
+    from: "keep",
+    origin: origin && { ws: origin.workspace, file: origin.file },
+    seed: m.seed,
+    // 출처를 못 찾았을 때만 쓰인다 — 그때 슬롯을 비우면 씬 프롬프트가 사라진다
+    scene: m.slot_prompt
+      ? { blocks: [makeBlock(t("slots.blockTags"), [], { tags: parseSegs(m.slot_prompt), open: true })] }
+      : undefined,
+    // ★구조를 되살렸으면 **값만** 얹는다 (워크스페이스 복제와 같다). 못 되살렸을 때만
+    //   메타데이터로 프롬프트까지 세운다 — 안 그러면 되살린 블록·카드를 한 뭉텅이가 덮는다.
+    apply: ({ structure }) => {
+      if (structure) {
+        applyMetaParams(m);
+        applyMetaVibes(m);
+      } else {
+        applyMeta(m, "all");
+      }
+    },
+  });
   useUi.getState().setMode("generate");
+  // ★새 탭의 씬 줄은 탭이 바뀔 때 고른 것을 놓는다 — 그 뒤에 세워야 남는다 (Canvas 와 같다)
+  if (landed) useSceneFocus.getState().focus(landed.cell, landed.file);
   toast(t("act.cloned"));
 }
 
@@ -243,7 +281,7 @@ export function applyMeta(m: ImageMeta, what: "prompt" | "all" = "all") {
     id: `c${Date.now().toString(36)}${i}`,
     ref: null,
     name: `#${i + 1}`,
-    color: CHAR_COLORS[i % CHAR_COLORS.length],
+    color: CHAR_COLOR,
     thumb: null,
     prompt: block("Character", c.prompt),
     uc: block("UC", c.negative),

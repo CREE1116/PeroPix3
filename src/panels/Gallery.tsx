@@ -1,4 +1,5 @@
 import { useI18n } from "../i18n";
+import { useRename } from "../components/useRename";
 import { ask } from "../store/ask";
 import { toast } from "../store/toast";
 import { useEffect, useRef, useState } from "react";
@@ -420,16 +421,13 @@ function Big({
   /** 보관함 그림의 메타데이터 — 「프롬프트 보기」와 「새 탭으로 복제」가 같은 것을 쓴다 */
   const loadMeta = async () =>
     (await api<{ meta: ImageMeta | null }>(`/api/keep/meta?file=${encodeURIComponent(file)}`)).meta;
-  /** 이름 고치기 — 그 자리에서 입력칸으로 바뀐다 (v2 도 같은 방식이었다) */
-  const [editing, setEditing] = useState<string | null>(null);
-  /** ★적고 있는 글자를 **ref 로도** 든다. Esc 로 물린 직후 `blur` 가 오면 그 순간의
-   *  렌더가 들고 있던 옛 값으로 이름이 바뀐다 — ref 는 즉시 비울 수 있다. */
-  const draft = useRef("");
-  const commit = async () => {
-    const next = draft.current.trim();
-    draft.current = "";
-    setEditing(null);
-    if (!next || next === name) return;
+  /** 이름 고치기 — ★규칙은 **앱에 하나**다 (`useRename`): 단추를 다시 누르면 저장하고 끝.
+   *  ★예전에는 여기만 손으로 만들었고, Esc 로 물린 직후의 `blur` 가 옛 값으로 이름을
+   *    되돌리는 것을 `ref` 로 막고 있었다. 훅에서는 `Esc` 가 입력칸을 **접어 버리므로**
+   *    (언마운트에는 `blur` 이 오지 않는다) 그 장치가 필요 없다. */
+  const rename = useRename(name, (v) => void save(v));
+  const save = async (next: string) => {
+    if (next === name) return;
     try {
       await onRename(next);
       toast(t("gallery.renamed"));
@@ -484,7 +482,7 @@ function Big({
             hideSettings
             onClone={async () => {
               const m = await loadMeta();
-              if (m) await cloneMetaToNewTab(m);
+              if (m) await cloneMetaToNewTab(m, file);
             }}
             /* ★같은 줄에 「탐색기에서 열기」를 둔다 — 뿌리만 보관함으로 갈아 끼운다.
                자리마다 다른 버튼을 만들면 어디서는 되고 어디서는 안 되는 상태가 생긴다. */
@@ -505,13 +503,12 @@ function Big({
           바닥에 겹쳐 두면 시드·프롬프트 버튼이 배지 뒤로 숨는다 (실측 2026-08-05). */}
       {/* ★이름은 **더블클릭으로 그 자리 편집**이다 (앱 공통 규칙). 클릭 한 번은 배경 클릭과
           겹치므로 쓰지 않는다. Enter 로 확정, Esc 로 되돌린다. */}
-      {editing === null ? (
+      {!rename.editing ? (
         <span
           data-keep-name
           onDoubleClick={(e) => {
             e.stopPropagation();
-            draft.current = name;
-            setEditing(name);
+            rename.toggle();
           }}
           style={nameBadge}
         >
@@ -520,20 +517,10 @@ function Big({
       ) : (
         <input
           data-keep-rename
-          autoFocus
-          value={editing}
-          onClick={(e) => e.stopPropagation()}
-          onChange={(e) => {
-            draft.current = e.target.value;
-            setEditing(e.target.value);
-          }}
-          onBlur={() => void commit()}
+          {...rename.inputProps}
+          // ★키 입력이 큰 그림의 단축키(휠·화살표·S)로 새지 않게 — 여기만의 사정이다
           onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur();
-            else if (e.key === "Escape") {
-              draft.current = "";
-              setEditing(null);
-            }
+            rename.inputProps.onKeyDown(e);
             e.stopPropagation();
           }}
           style={{ ...nameBadge, border: "1px solid var(--accent)", background: "rgba(10,14,20,0.92)", width: 260 }}

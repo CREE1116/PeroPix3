@@ -22,15 +22,53 @@ export const BANNER_BG = "#05070a";
 const CUT_A = "63%"; // 중간 단이 시작하는 곳
 const CUT_B = "84%"; // 잘리는 곳
 const ANGLE = "112deg";
+/** ★★자른 자리를 **머리카락 한 올만큼** 눕힌다 (사용자 지적 2026-08-20: 경계선이 자글거린다).
+ *  0 길이로 끊으면 마스크가 픽셀 격자에 그대로 찍혀 **계단이 보인다.** 이건 「감쇠로 녹이는 것」
+ *  (머리 주석이 말리는 그것)이 아니라 **안티에일리어싱**이다 — 폭이 1px 안팎이라 선으로
+ *  읽히지 않는다. 값은 여기 하나뿐이라 배너·커버가 함께 매끈해진다. */
+const EDGE = "0.7%";
 
 /** 그림을 자르는 마스크 */
-export const BANNER_CUT = `linear-gradient(${ANGLE}, #000 0 ${CUT_B}, transparent ${CUT_B})`;
+export const BANNER_CUT =
+  `linear-gradient(${ANGLE}, #000 0 ${CUT_B}, transparent calc(${CUT_B} + ${EDGE}))`;
 
 /** 잘리기 전 구간을 한 번 어둡게 눕혀 '단'을 만든다 */
 export const BANNER_STEP =
   `linear-gradient(${ANGLE}, transparent 0 ${CUT_A},` +
-  ` rgba(5,7,10,0.55) ${CUT_A} ${CUT_B}, transparent ${CUT_B})`;
+  ` rgba(5,7,10,0.55) calc(${CUT_A} + ${EDGE}) ${CUT_B},` +
+  ` transparent calc(${CUT_B} + ${EDGE}))`;
 
 /** 그림이 없을 때 — 같은 실루엣에 카드 색만. 두 상태가 이어져 보이게 한다. */
 export const bannerEmptyFill = (gradient: [string, string]) =>
   `linear-gradient(118deg, ${gradient[1]}59, ${gradient[0]}33 78%)`;
+
+/* ── 카드 커버(세로 3:4) ── 같은 3단, 다만 **수직** ────────────────
+ *
+ *  ★★**맥락은 배너 그대로다** (사용자 지적 2026-08-20): 왼쪽이 그림(밝음)이고 **이름이
+ *    거기 앉으며**, 오른쪽이 단색 패널이고 그 위에 단추가 뜬다. 한때 세로로 각도를 돌렸다가
+ *    이름이 검은 패널 위로 가는 반대 구성이 됐다 — 그것을 되돌린 자리다.
+ *  ★★**경계는 수직이다** (사용자 지시 2026-08-20: *"대각선으로 하지 말고 수직으로.
+ *    오른쪽에 세로로 수직"*). 폭이 110px 남짓한 카드에서는 비스듬한 선이 자리를 많이 먹고
+ *    자글거린다. 수직선은 픽셀 격자에 그대로 떨어져 **애초에 매끈하다.**
+ *  ★★**완전히 검은 띠는 얇게** (같은 지시). 카드 앞면은 그림을 보는 자리라, 단색은
+ *    단추가 앉을 만큼만 있으면 된다. 눕히는 일은 그 앞의 중간 단이 맡는다.
+ *  ★단의 색·자르는 방식·가장자리 눕힘은 **배너와 같은 값**이다 — 두 자리가 한 식구로 보이게. */
+const COVER_ANGLE = "90deg";
+/** 중간 단이 시작하는 곳 */
+const COVER_A = "80%";
+/** 잘리는 곳 — 여기부터 오른쪽이 완전한 단색이다 (얇게) */
+const COVER_B = "92%";
+
+/** 그림을 자르는 마스크 */
+export const COVER_CUT =
+  `linear-gradient(${COVER_ANGLE}, #000 0 ${COVER_B}, transparent calc(${COVER_B} + ${EDGE}))`;
+
+/** 중간 단 */
+export const COVER_STEP =
+  `linear-gradient(${COVER_ANGLE}, transparent 0 ${COVER_A},` +
+  ` rgba(5,7,10,0.55) calc(${COVER_A} + ${EDGE}) ${COVER_B},` +
+  ` transparent calc(${COVER_B} + ${EDGE}))`;
+
+/** 이름이 그림 위에서도 읽히게 하는 아래쪽 스크림 (배너와 같은 값) */
+export const BANNER_SCRIM =
+  "linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(0,0,0,0.58) 100%)";

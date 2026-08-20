@@ -28,7 +28,8 @@ export function Rail({
         alignItems: "center",
       }}
     >
-      <PanelCollapseButton side={side} collapsed onClick={onExpand} data-tip={t("panel.expand", { name: label })} />
+      {/* ★`title` 이다 — `data-tip` 으로 넘기면 버려진다 (`PanelCollapseButton` 의 프롭) */}
+      <PanelCollapseButton side={side} collapsed onClick={onExpand} title={t("panel.expand", { name: label })} />
       <div
         style={{
           writingMode: "vertical-rl",

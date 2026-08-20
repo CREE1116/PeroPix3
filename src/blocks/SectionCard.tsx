@@ -1,8 +1,57 @@
 import { useState, type ReactNode, type PointerEvent } from "react";
+import { useRename } from "../components/useRename";
 import { Icon } from "../components/Icon";
 import { dragSourceStyle } from "../cards/dragStore";
 import { FittedImg } from "../cards/FittedImg";
-import { BANNER_BG, BANNER_CUT, BANNER_IMG_W, BANNER_STEP, bannerEmptyFill } from "../cards/banner";
+import { BANNER_BG, BANNER_CUT, BANNER_IMG_W, BANNER_SCRIM, BANNER_STEP, bannerEmptyFill } from "../cards/banner";
+
+/** 배너 위의 작은 단추 — **앱 전체에서 이 하나를 쓴다** (사용자 지적 2026-08-20:
+ *  스택 쪽 단추가 카드 단추와 달라 보였다). 크기·모서리·바탕·아이콘 정렬이 여기서 정해진다.
+ *
+ *  ★★**클릭을 여기서 멈춘다.** 배너·스택 카드는 **누르면 접히거나 펼쳐지는** 자리라,
+ *    멈추지 않으면 단추를 눌렀는데 그 동작까지 같이 돈다 (사용자 지적 2026-08-20:
+ *    「앞으로 가져오기」를 누르면 펼치기/접기가 함께 일어났다).
+ *  ★`pointerdown` 도 멈춘다 — 배너의 역드래그(덱으로 저장)가 걸리지 않게.
+ *  ★`mousedown` 의 기본 동작만 막는다 — 이름 입력칸이 흐려지지 않게 하려는 것이고,
+ *    `pointerdown` 에서 막으면 호환 click 이 통째로 사라진다 (CLAUDE.md 「잊기 쉬운 것」). */
+export function BannerBtn({
+  title,
+  onClick,
+  mark,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  /** 조작 테스트가 잡는 손잡이 */
+  mark?: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      {...(mark ? { [mark]: "" } : {})}
+      data-tip={title}
+      onPointerDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      style={{
+        display: "grid",
+        placeItems: "center",
+        width: 20,
+        height: 20,
+        borderRadius: 5,
+        background: "rgba(0,0,0,0.42)",
+        color: "#fff",
+        fontSize: 11,
+        lineHeight: 1,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
 
 /** 카드형 섹션 — **가로 배너가 곧 영역 구분선**이다 (목업 구조 그대로).
  *
@@ -17,6 +66,7 @@ export function SectionCard({
   outline,
   overlay,
   onRename,
+  renameTip = "",
   bannerActions,
   hoverLift,
   thumb,
@@ -34,12 +84,16 @@ export function SectionCard({
   /** 꺼진 섹션 — 컴파일에서 빠진다는 것을 흐림으로 보인다 */
   dim?: boolean;
   /** 드롭 강조: 1단계 = 점선(놓을 수 있다), 2단계 = 실선(지금 떼면 여기) */
+  /** 놓을 수 있는 자리인가 — `dashed` = 받을 수 있다 · `solid` = 지금 그 위다.
+   *  ★이름은 남았지만 **선을 그리지 않는다**: 어둠 위로 올려 밝기로 알린다 (아래 ★주) */
   outline?: "none" | "dashed" | "solid";
   /** **카드 전체**를 덮는 겹침 층 (드롭 존). 배너가 아니라 섹션 높이 전부를 받는다 */
   overlay?: ReactNode;
   /** ★이름을 **카드 안에서** 고친다 (사용자 지시 2026-08-19) — 시스템 `prompt()` 창을 쓰지
    *  않는다. 주면 이름을 두 번 눌러 그 자리에서 고칠 수 있고, 배너에 연필 단추가 선다. */
   onRename?: (v: string) => void;
+  /** 연필 단추의 안내 문구 — i18n 은 부르는 쪽이 든다 */
+  renameTip?: string;
   /** 배너 우측 버튼 (켜기·삭제 등) */
   bannerActions?: ReactNode;
   /** 배너를 끌 수 있음을 알리는 살짝 떠오름 */
@@ -56,9 +110,8 @@ export function SectionCard({
   children: ReactNode;
 }) {
   const [hover, setHover] = useState(false);
-  /** 이름을 그 자리에서 고치는 중 — `null` 이면 아니다 */
-  const [editing, setEditing] = useState<string | null>(null);
-  const lifted = outline && outline !== "none";
+  /** 이름 고치기 — ★규칙은 **앱에 하나**다 (`useRename`): 단추를 다시 누르면 저장하고 끝 */
+  const rename = useRename(name, onRename);
   return (
     <div
       ref={innerRef}
@@ -71,15 +124,12 @@ export function SectionCard({
         background: "var(--surface)",
         overflow: "hidden",
         opacity: dim ? 0.45 : 1,
-        ...(lifted
-          ? {
-              zIndex: 31,
-              outline: `3px ${outline} #fff`,
-              outlineOffset: 2,
-              boxShadow: "0 0 0 8px rgba(0,0,0,0.78)",
-              filter: outline === "solid" ? "brightness(1.15)" : undefined,
-            }
-          : {}),
+        /* ★★받을 수 있는 자리는 **테두리가 아니라 밝기로** 알린다 (사용자 지시 2026-08-20).
+           ★★**어둠 위로 올리는 것은 카드가 아니라 묶음 전체**다 (`Category` 의 `spot`) —
+             카드마다 올리면 카드 사이 여백이 어두운 채라 자리가 조각조각 보인다
+             (사용자 지적: "드롭영역 전체가 밝아져야하는데, 개별 카드만 밝아져").
+           여기서는 **지금 그 위에 있는 카드**만 한 겹 더 밝힌다. */
+        ...(outline === "solid" ? { filter: "brightness(1.18)" } : {}),
       }}
     >
       {/* 배너 */}
@@ -135,7 +185,7 @@ export function SectionCard({
             position: "absolute",
             inset: 0,
             pointerEvents: "none",
-            background: "linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(0,0,0,0.58) 100%)",
+            background: BANNER_SCRIM,
           }}
         />
         <div
@@ -151,22 +201,10 @@ export function SectionCard({
             textShadow: "0 1px 5px rgba(0,0,0,0.55)",
           }}
         >
-          {editing !== null ? (
+          {rename.editing ? (
             <input
-              autoFocus
               data-card-rename
-              value={editing}
-              onChange={(e) => setEditing(e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              onPointerDown={(e) => e.stopPropagation()}
-              onBlur={() => {
-                if (editing.trim()) onRename?.(editing.trim());
-                setEditing(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                if (e.key === "Escape") setEditing(null);
-              }}
+              {...rename.inputProps}
               style={{
                 width: 130,
                 background: "rgba(0,0,0,0.45)",
@@ -180,7 +218,7 @@ export function SectionCard({
             />
           ) : (
             <b
-              onDoubleClick={onRename && ((e) => { e.stopPropagation(); setEditing(name); })}
+              onDoubleClick={onRename && ((e) => { e.stopPropagation(); rename.toggle(); })}
               style={{ fontSize: "0.86rem", fontWeight: "var(--w-bold)", cursor: onRename ? "text" : undefined }}
             >
               {name}
@@ -207,33 +245,16 @@ export function SectionCard({
                 ★이름 고치기는 **카드가 스스로** 단다 — 섹션마다 따로 만들면 어디는 있고
                   어디는 없는 상태가 된다 (스타일 카드에는 아예 없었다) */}
             {onRename && (
-              <button
-                data-card-rename-btn
-                onPointerDown={(e) => e.stopPropagation()}
-                /* ★입력칸이 **안 흐려지게** 막는다 — blur 가 먼저 오면 저장하고 닫힌 뒤에
-                   이 단추가 다시 열어 버린다. `mousedown` 의 기본 동작만 막으면 click 은 온다
-                   (pointerdown 에서 막으면 호환 click 이 통째로 사라진다 — CLAUDE.md) */
-                onMouseDown={(e) => e.preventDefault()}
-                /* ★고치는 중에 다시 누르면 **저장하고 끝낸다** (사용자 지시 2026-08-19) —
-                   여는 단추로만 두면 눌러도 아무 일이 없어 고장 난 것처럼 보인다 */
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (editing === null) return setEditing(name);
-                  if (editing.trim()) onRename(editing.trim());
-                  setEditing(null);
-                }}
-                style={{
-                  display: "grid",
-                  placeItems: "center",
-                  width: 20,
-                  height: 20,
-                  borderRadius: 5,
-                  background: "rgba(0,0,0,0.4)",
-                  color: "#fff",
-                }}
+              <BannerBtn
+                mark="data-card-rename-btn"
+                title={renameTip}
+                /* ★고치는 중에 다시 누르면 **저장하고 끝낸다** — 규칙은 `useRename` 한 곳에 있다.
+                   ★`btnProps` 를 안 펴 넣는 이유: 이 단추는 이미 `mousedown` 기본 동작을 막고
+                     click 을 멈춘다 (배너의 역드래그 때문에) — 같은 일을 두 번 하지 않는다 */
+                onClick={rename.toggle}
               >
                 {Icon.pencil}
-              </button>
+              </BannerBtn>
             )}
             {bannerActions}
           </div>

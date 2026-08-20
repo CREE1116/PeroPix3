@@ -227,8 +227,8 @@ export function ExifTool() {
                 label={t("tools.exifVibe")}
                 rows={[
                   ["Model", meta.vibe.model],
-                  ["Strength", meta.vibe.strength],
-                  ["Info extracted", meta.vibe.info_extracted],
+                  ["Reference Strength", meta.vibe.strength],
+                  ["Information Extracted", meta.vibe.info_extracted],
                 ]}
               />
             )}
@@ -256,19 +256,22 @@ export function ExifTool() {
 }
 
 /** 설정 열의 줄 — ★없는 값은 아예 안 낸다 (v2 `activeSettings` 와 같은 판정) */
+/** ★★이름은 **NAI 웹 클라이언트 표기 그대로**다 (사용자 지시 2026-08-20:
+ *  "NAI 공홈에 있는 값들은 번역하지마"). 우리 줄임말(`CFG`·`Scheduler`)도 쓰지 않는다 —
+ *  한국어 정식 번역이 없어서 옮기면 무엇을 가리키는지 알 수 없게 된다. */
 function settingRows(m: Meta): [string, unknown][] {
   return [
     ["Seed", m.seed],
     ["Size", m.width && m.height ? `${m.width} × ${m.height}` : ""],
     ["Steps", m.steps],
-    ["CFG", m.cfg],
+    ["Prompt Guidance (CFG)", m.cfg],
     ["Sampler", m.sampler],
-    ["Scheduler", m.scheduler],
+    ["Noise Schedule", m.scheduler],
     ["Model", m.nai_model],
-    ["CFG rescale", m.cfg_rescale],
+    ["Prompt Guidance Rescale", m.cfg_rescale],
     ["SMEA", m.smea === "none" ? "" : m.smea],
-    ["UC preset", m.uc_preset],
-    ["Quality tags", m.quality_tags],
+    ["UC Preset", m.uc_preset],
+    ["Quality Tags", m.quality_tags],
     ["Variety+", m.variety_plus],
     ["Furry", m.furry_mode],
   ];

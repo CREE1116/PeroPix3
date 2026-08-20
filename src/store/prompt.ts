@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { compileBlocks, makeBlock, type Block } from "../lib/blocks";
 import { t } from "../i18n";
+import { kindColor } from "../cards/kindColor";
 
 /** 프롬프트 영역 — NAI 요청 구조 그대로.
  *  ★소유는 워크스페이스다. 여기는 편집 중인 사본이고, 저장은 workspace 스토어가 한다. */
@@ -93,7 +94,6 @@ type S = {
   /** 생성물을 배너에 꽂는다. section 은 "base" 또는 캐릭터 id */
   setThumb: (section: string, thumb: Thumb | null) => void;
   addChar: (c: Partial<Char>) => string;
-  swapChar: (id: string, c: Partial<Char>) => void;
   stackChar: (id: string, c: { ref: string | null; name: string; color: [string, string] }) => void;
   /** 스택에서 한 장 빼기 · 한 장을 맨 앞으로 (사용자 지시 2026-08-19) */
   dropStack: (id: string, at: number) => void;
@@ -123,19 +123,18 @@ type S = {
   };
 };
 
-export const DEFAULT_STYLE_COLOR: [string, string] = ["#b57a2a", "#d8a34f"];
-export const CHAR_COLORS: [string, string][] = [
-  ["#5b3d87", "#9b6dd6"],
-  ["#14655e", "#2aa198"],
-  ["#7a2f4a", "#c96a8a"],
-  ["#2a4f8f", "#6a97d8"],
-];
+/** ★★색은 **종류마다 하나**다 (`cards/kindColor`, 사용자 결정 2026-08-20).
+ *  ~~캐릭터마다 다른 색을 돌려 주던 것~~은 걷었다 — 카드끼리 가르는 것은 **그림**이 한다
+ *  (*"바꾸고싶으면 유저가 직접 다른 이미지를 넣으면 됨"*). */
+export const DEFAULT_STYLE_COLOR = kindColor("styles");
+export const CHAR_COLOR = kindColor("characters");
 
-export const defaultBase = (): Block[] => [
-  makeBlock(t("block.defaults.count"), ["1girl", "solo"]),
-  makeBlock(t("block.defaults.scene"), ["outdoors", "sunny day"], { open: true }),
-  makeBlock(t("block.defaults.quality"), ["best quality", "very aesthetic"], { color: "amber" }),
-];
+/** ★★**새 탭의 베이스 프롬프트는 비어 있다** (사용자 지시 2026-08-20).
+ *
+ *  쓸 것은 **덱에서 끌어다 쓴다** — 탭마다 지우고 시작하지 않아도 된다. 예전에는
+ *  `1girl, solo` · 퀄리티 태그가 박힌 채 시작해서, 쓰는 사람이 **먼저 지우는 일**부터 했다.
+ *  ★~~「장면」 블록~~은 그 앞에 걷었다 (2026-08-19) — 장면은 씬 줄이 적는 자리다. */
+export const defaultBase = (): Block[] => [];
 
 export const defaultUc = (): Block[] => [
   makeBlock(t("block.defaults.base"), ["lowres", "bad anatomy"], { color: "red" }),
@@ -178,7 +177,11 @@ export const usePrompt = create<S>((set, get) => ({
 
   setStyle: (s) => {
     // 스타일 카드는 **Base 블록까지** 교체한다 — 그림체가 곧 공통 프롬프트다
+    // ★★카드가 들어오면 **카드가 서 있는 상태가 된다** (사용자 지적 2026-08-20:
+    //   카드를 빼 둔 자리에는 스타일 카드를 떨굴 수가 없었다). 내용만 들어오고 카드는
+    //   빠져 있는 상태는 뜻이 없다 — 그 내용이 곧 그 카드다.
     set({
+      styleOn: true,
       style: { ref: s.ref, name: s.name, color: s.color, thumb: s.thumb ?? null },
       ...(s.base ? { base: s.base } : {}),
       ...(s.uc ? { baseUc: s.uc } : {}),
@@ -201,8 +204,12 @@ export const usePrompt = create<S>((set, get) => ({
         {
           id,
           ref: c.ref ?? null,
-          name: c.name ?? "",
-          color: c.color ?? CHAR_COLORS[chars.length % CHAR_COLORS.length],
+          /* ★★**이름을 실제로 준다** (사용자 지적 2026-08-20: 스택에 넣었더니 「캐릭터 1」의
+             이름이 사라졌다). 「캐릭터 N」은 화면이 빈 이름에 붙여 주던 **표시용 폴백**이라,
+             그 인물이 스택으로 들어가는 순간(`frontStack`) 빈 문자열만 남았다.
+             이름은 **저장되는 값**이어야 어디로 옮겨도 따라간다. */
+          name: c.name || t("cards.charN", { n: chars.length + 1 }),
+          color: CHAR_COLOR,
           thumb: c.thumb ?? null,
           prompt: c.prompt ?? [],
           uc: c.uc ?? [],
@@ -215,24 +222,6 @@ export const usePrompt = create<S>((set, get) => ({
     return id;
   },
 
-  swapChar(id, c) {
-    set({
-      chars: get().chars.map((x) =>
-        x.id === id
-          ? {
-              ...x,
-              ref: c.ref ?? null,
-              name: c.name ?? x.name,
-              color: c.color ?? x.color,
-              thumb: c.thumb ?? null,
-              prompt: c.prompt ?? x.prompt,
-              uc: c.uc ?? x.uc,
-            }
-          : x,
-      ),
-    });
-    onEdit();
-  },
 
   stackChar(id, c) {
     set({
@@ -273,7 +262,7 @@ export const usePrompt = create<S>((set, get) => ({
    *    아니라 「한 바퀴 돌리기」가 된다. */
   frontStack(id, at) {
     set({
-      chars: get().chars.map((c) => {
+      chars: get().chars.map((c, i) => {
         const pick = c.id === id ? c.stack[at] : undefined;
         if (!pick) return c;
         return {
@@ -281,8 +270,12 @@ export const usePrompt = create<S>((set, get) => ({
           ref: pick.ref,
           name: pick.name,
           color: pick.color,
+          /* ★빈 이름(옛 인물)은 **표시 이름으로 굳혀서** 넣는다 — 그대로 넣으면 스택에서
+             이름 없는 카드가 된다 (`addChar` 의 ★주) */
           stack: c.stack.map((x, k) =>
-            k === at ? { ref: c.ref, name: c.name, color: c.color } : x,
+            k === at
+              ? { ref: c.ref, name: c.name || t("cards.charN", { n: i + 1 }), color: c.color }
+              : x,
           ),
         };
       }),
@@ -292,7 +285,7 @@ export const usePrompt = create<S>((set, get) => ({
 
   rotateStack(id) {
     set({
-      chars: get().chars.map((c) => {
+      chars: get().chars.map((c, i) => {
         if (c.id !== id || !c.stack.length) return c;
         const [next, ...rest] = c.stack;
         // 지금 인물은 맨 뒤로 — 블록은 스택에 담지 않으므로 이름·색만 순환한다
@@ -301,7 +294,7 @@ export const usePrompt = create<S>((set, get) => ({
           ref: next.ref,
           name: next.name,
           color: next.color,
-          stack: [...rest, { ref: c.ref, name: c.name, color: c.color }],
+          stack: [...rest, { ref: c.ref, name: c.name || t("cards.charN", { n: i + 1 }), color: c.color }],
         };
       }),
     });
@@ -315,11 +308,18 @@ export const usePrompt = create<S>((set, get) => ({
       base: p.base ?? defaultBase(),
       baseUc: p.baseUc ?? defaultUc(),
       style: p.style
-        ? { ...p.style, thumb: normThumb(p.style.thumb) }
+        ? { ...p.style, color: DEFAULT_STYLE_COLOR, thumb: normThumb(p.style.thumb) }
         : { ref: null, name: t("prompt.defaultStyleName"), color: DEFAULT_STYLE_COLOR, thumb: null },
       // ★값이 없으면 켜진 것이다 — 옛 워크스페이스가 스타일 카드를 잃으면 안 된다
       styleOn: p.styleOn !== false,
-      chars: (p.chars ?? []).map((c) => ({ ...c, thumb: normThumb(c.thumb) })),
+      /* ★옛 인물·스택에는 **이름 해시로 뽑힌 색**이 박혀 있다 — 읽을 때 종류 색으로
+         맞춘다. 안 맞추면 같은 종류인데 카드마다 색이 다른 화면이 남는다 */
+      chars: (p.chars ?? []).map((c) => ({
+        ...c,
+        color: CHAR_COLOR,
+        thumb: normThumb(c.thumb),
+        stack: (c.stack ?? []).map((x) => ({ ...x, color: CHAR_COLOR })),
+      })),
       tabs: {},
       folded: {},
     }),

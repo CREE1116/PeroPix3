@@ -298,21 +298,8 @@ export function AiSettings() {
             </select>
           </Line>
           <AskForModel url={cfg?.support ?? ""} />
-          <div
-            style={{
-              padding: "var(--sp-3)",
-              background: "var(--code-bg)",
-              border: "1px solid var(--line-soft)",
-              borderRadius: "var(--r-2)",
-              fontSize: "var(--text-2xs)",
-              color: "var(--ink-dim)",
-              lineHeight: 1.65,
-            }}
-          >
-            {t("settings.cliGuide")}
-            <br />
-            <span style={{ fontFamily: "var(--font-mono)", color: "var(--ink-soft)" }}>claude login</span>
-          </div>
+          {/* ★CLI 안내 상자를 걷었다 (사용자 지시 2026-08-20) — 무엇이 열리고 어떻게
+              인증하는지는 그 CLI 를 쓰는 사람이 이미 아는 것이라 자리만 먹었다. */}
         </>
       ) : (
         <>

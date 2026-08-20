@@ -31,7 +31,10 @@ export function OptionsPanel() {
       {/* ★★묶음은 **페로픽스 v2 의 절 그대로**다 (`index.html` 통째로 대조 2026-08-16):
             NAI Settings · Generation · Vibe / Character Ref · Base Image · Save Options.
           ★접는 층은 **카테고리 하나뿐**이다 — 항목마다 접으면 훑을 수가 없다. */}
-      <Category id="opt-nai" label={t("options.catNai")} flashKey="params">
+      {/* ★★처음에는 **다 접혀 있다** (사용자 지시 2026-08-20) — 첫 화면에 펴 두는 것은
+          베이스·캐릭터 프롬프트 둘뿐이다. 옵션은 한 번 정하면 잘 안 건드리는데, 다 펴 두면
+          프롬프트가 화면 밖으로 밀린다. 접힘은 사람이 편 대로 기억된다(`Category` 의 `foldState`). */}
+      <Category id="opt-nai" label={t("options.catNai")} defaultFolded flashKey="params">
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}>
               <Group label={t("options.model")}>
                 {/* ★옛 워크스페이스가 없어진 모델(V4.0)을 들고 있으면 목록에 없어 빈칸으로 보인다 —
@@ -64,7 +67,7 @@ export function OptionsPanel() {
       {/* ★★해상도는 **따로 선 카테고리**다 (사용자 지시 2026-08-19). 생성 옵션 안에 있으면
           설정을 얹을 때 강조 테두리가 **겹쳐 그려진다** (묶음 하나와 카테고리 하나가 서로
           안쪽·바깥쪽으로). 강조 자리가 겹치지 않으려면 층이 하나여야 한다. */}
-      <Category id="opt-size" label={t("options.resolution")} flashKey="size">
+      <Category id="opt-size" label={t("options.resolution")} defaultFolded flashKey="size">
         {/* ★★모양이 곧 목록이다 (페로픽스파이 `.res-item` 이식). 전부 늘어놓으면 열넷이라
             훑을 수가 없어서 **가로·세로·정방 탭**으로 가르고, 줄마다 그 비율의 사각형을
             함께 그린다 — 숫자보다 모양이 먼저 읽힌다. */}
@@ -80,7 +83,7 @@ export function OptionsPanel() {
         </div>
       </Category>
 
-      <Category id="opt-gen" label={t("options.catGeneration")} flashKey="params">
+      <Category id="opt-gen" label={t("options.catGeneration")} defaultFolded flashKey="params">
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}>
               <Group label={t("options.steps")} help={t("options.stepsHint")}>
                 <Num value={p.steps} min={1} max={NAI_MAX.steps} onChange={(v) => set("steps", v)} />

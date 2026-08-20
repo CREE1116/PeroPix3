@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useI18n } from "../i18n";
 import { Icon } from "../components/Icon";
-import { Chip, colorHex } from "./Chip";
+import { BlockRow } from "./BlockRow";
 import type { Block } from "../lib/blocks";
 import { grouped, useBlockLib, type LibItem } from "../store/blockLib";
 import { useDragSource, useDropZone, dragSourceStyle } from "../cards/dragStore";
@@ -204,115 +204,77 @@ function Category({
   );
 }
 
-/** 저장소 항목 한 줄 — **끌어서** 블록 목록에 놓는다. 누르면 **내용이 펼쳐진다.** */
+/** 저장소 항목 한 줄 — **끌어서** 블록 목록에 놓는다. 누르면 **내용이 펼쳐진다.**
+ *
+ *  ★★**블록 한 줄은 앱에 하나다** (`BlockRow`, 사용자 지시 2026-08-20:
+ *    *"블록 저장소의 블록도 마찬가지임. 다 같은걸 쓰는데 필요없는 기능만 off 하는 식으로"*).
+ *    예전에는 여기서 머리(▸·이름·삭제)와 칩 줄을 **따로 그렸다** — 그래서 프롬프트 쪽이
+ *    좋아져도 저장소는 그대로였고, 조작도 미묘하게 달랐다.
+ *  ★여기서 꺼 두는 것은 `readOnly` 하나다: 칩·글 상자·색·켜고끄기가 죽는다.
+ *    **이름 바꾸기와 지우기는 살아 있다** — 저장소에서 하는 일이 그 둘이다.
+ *  ★머리를 끌면 **꺼내 쓰는 것**이다(`dir: "apply"`). 프롬프트 쪽에서는 같은 자리가
+ *    **넣는 것**(`dir: "save"`)이라, 그 payload 만 부르는 쪽이 정한다. */
 function Row({ it, onRemove }: { it: LibItem; onRemove: () => void }) {
-  const t = useI18n((s) => s.t);
   const start = useDragSource();
   const justAdded = useBlockLib((s) => s.justAdded);
   const save = useBlockLib((s) => s.save);
   const [open, setOpen] = useState(false);
-  const [renaming, setRenaming] = useState(false);
 
   // 방금 넣은 것은 펼친 채로 뜬다 (무엇이 어디로 들어갔는지 눈으로 확인)
   useEffect(() => {
     if (justAdded === it.id) setOpen(true);
   }, [justAdded, it.id]);
 
+  /** 저장소 항목을 블록의 모양으로 — ★사본이 아니라 **그 항목을 그대로 비춘 것**이다.
+   *  고치는 길이 `readOnly` 로 막혀 있으므로 되돌아오는 변화는 이름과 접기뿐이다. */
+  const block: Block = {
+    id: it.id,
+    label: it.label,
+    color: it.color ?? null,
+    on: true,
+    open,
+    tags: it.tags,
+  };
+
   return (
     <div
       data-lib-item={it.id}
-      // ★끌기와 펼치기가 **같은 자리**다 — 4px 문턱을 넘으면 끌기, 아니면 펼치기
-      //   (`useDragSource` 의 onTap). 카드 배너와 같은 규칙이다.
-      // ★손잡이는 **항목 전체**다. 머리줄에만 걸었더니 펼친 뒤 태그 쪽을 잡으면 안 끌렸다
-      //   (실측 2026-08-13) — 펼쳐 놓고 끄는 것이 오히려 자연스러운 순서다.
-      onPointerDown={(e) =>
-        start(e, { dir: "apply", kind: "blocklib", item: it }, undefined, () => setOpen((v) => !v))
-      }
+      /* ★★손잡이는 **항목 전체**다. 머리줄에만 걸었더니 펼친 뒤 태그 쪽을 잡으면 안 끌렸다
+         (실측 2026-08-13) — 펼쳐 놓고 끄는 것이 오히려 자연스러운 순서다. 그래서
+         `BlockRow` 의 머리 손잡이(`onSave`)를 안 쓰고 여기서 받는다.
+         ★끌기와 펼치기가 **같은 자리**다 — 4px 문턱을 넘으면 끌기, 아니면 펼치기
+           (`useDragSource` 의 onTap). 카드 배너·프롬프트 블록과 같은 규칙이다.
+         ★★**누르는 것들**(이름 바꾸기·지우기·이름 칸)은 비켜 간다. 안 비키면 `pointerdown`
+           의 기본 동작 막기가 **호환 click 을 삼켜** 그 단추들이 통째로 죽는다
+           (`BlockRow` 머리에 적힌 실측 2026-08-16 과 같은 자리다). */
+      onPointerDown={(e) => {
+        if ((e.target as HTMLElement).closest("button, input, [data-head-action]")) return;
+        start(e, { dir: "apply", kind: "blocklib", item: it }, undefined, () => setOpen((v) => !v));
+      }}
       style={{
         marginBottom: 2,
-        borderRadius: "var(--r-1)",
-        borderLeft: `3px solid ${it.color ? colorHex(it.color) : "var(--line)"}`,
-        background: "var(--surface)",
         cursor: "grab",
         ...dragSourceStyle,
-        ...(justAdded === it.id ? { outline: "1px solid var(--accent)" } : null),
+        ...(justAdded === it.id ? { outline: "1px solid var(--accent)", borderRadius: "var(--r-3)" } : null),
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 4,
-          padding: "3px 4px 3px 6px",
-          fontSize: "var(--text-2xs)",
+      <BlockRow
+        block={block}
+        readOnly
+        dup={NO_DUP}
+        onChange={(b) => {
+          if (b.open !== open) setOpen(b.open);
+          const v = b.label.trim();
+          if (v && v !== it.label) void save({ ...it, label: v });
         }}
-      >
-        <span style={{ color: "var(--ink-faint)" }}>{open ? "▾" : "▸"}</span>
-        {renaming ? (
-          <input
-            data-lib-rename
-            autoFocus
-            defaultValue={it.label}
-            onPointerDown={(e) => e.stopPropagation()}
-            onBlur={(e) => {
-              const v = e.target.value.trim();
-              if (v && v !== it.label) void save({ ...it, label: v });
-              setRenaming(false);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-              if (e.key === "Escape") setRenaming(false);
-            }}
-            style={{
-              flex: 1,
-              minWidth: 0,
-              background: "var(--surface2)",
-              border: "1px solid var(--accent)",
-              borderRadius: "var(--r-1)",
-              padding: "0 3px",
-              fontSize: "var(--text-2xs)",
-            }}
-          />
-        ) : (
-          <span
-            onDoubleClick={(e) => {
-              e.stopPropagation();
-              setRenaming(true);
-            }}
-            style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-          >
-            {it.label}
-          </span>
-        )}
-        <button
-          data-lib-del={it.id}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={onRemove}
-          data-tip={t("lib.remove")}
-          style={{ color: "var(--ink-faint)", display: "grid" }}
-        >
-          {Icon.close12}
-        </button>
-      </div>
-
-      {/* ★펼치면 **든 것이 그대로 보인다** (사용자 지시 2026-08-13) — 이름만으로는
-          무엇이 든 항목인지 알 수 없어 꺼내 봐야만 확인이 됐다.
-          칩은 **읽기 전용**이다: 고치는 자리는 프롬프트 쪽 하나뿐이다 */}
-      {open && (
-        <div style={{ padding: "0 6px 6px 8px", display: "flex", flexWrap: "wrap", gap: 3 }}>
-          {it.tags.map((tag, i) => (
-            <Chip key={i} tag={tag} onWeight={() => {}} onRemove={() => {}} readOnly />
-          ))}
-          {!it.tags.length && (
-            <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
-              {t("block.emptySummary")}
-            </span>
-          )}
-        </div>
-      )}
+        onRemove={onRemove}
+      />
     </div>
   );
 }
+
+/** 저장소 항목에는 중복 표시가 없다 — 겹침은 **프롬프트에 놓았을 때** 따지는 것이다 */
+const NO_DUP: Set<string> = new Set();
 
 /** 저장소 열기 단추 — 패널 머리에 붙는다 */
 export function BlockLibButton() {

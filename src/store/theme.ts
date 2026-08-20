@@ -4,12 +4,14 @@ export type Theme = "light" | "dark" | "system";
 
 const KEY = "peropix.theme";
 
+/** ★★**처음 켜면 어둡다** (사용자 지시 2026-08-20). 고른 적이 없을 때만 이 값이 쓰이고,
+ *  설정에서 「시스템」을 고르면 그때부터 OS 를 따른다 (그 선택도 여기 저장된다). */
 function load(): Theme {
   try {
     const v = localStorage.getItem(KEY);
     if (v === "light" || v === "dark" || v === "system") return v;
   } catch {}
-  return "system";
+  return "dark";
 }
 
 /** `system` 이면 data-theme 을 지워 OS 설정(prefers-color-scheme)을 따르게 한다. */

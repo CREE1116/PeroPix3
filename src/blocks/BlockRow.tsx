@@ -1,8 +1,8 @@
 import { useI18n } from "../i18n";
-import { useEffect, useRef, useState } from "react";
-import { caretAfterTag, COLORS, EXTRA_COLOR, parseSegs, serializeBlock, type Block } from "../lib/blocks";
-import { Chip, colorHex } from "./Chip";
-import { useTagSuggest } from "./TagSuggest";
+import { useRename } from "../components/useRename";
+import { COLORS, type Block } from "../lib/blocks";
+import { colorHex } from "./Chip";
+import { BlockBody, type TagDrag } from "./BlockBody";
 import { Icon } from "../components/Icon";
 
 /** 블록 한 줄.
@@ -22,11 +22,16 @@ import { Icon } from "../components/Icon";
  *  ★가중치는 태그에만 있다. 블록 가중치는 걷어냈다 (2026-08-01). */
 export function BlockRow({
   block,
+  bare,
+  readOnly,
   dup,
   onChange,
   onRemove,
   onEnter,
   onCancel,
+  onDone,
+  onOpen,
+  onTab,
   onSave,
   autoEdit,
   gripProps,
@@ -34,6 +39,13 @@ export function BlockRow({
   dragging,
 }: {
   block: Block;
+  /** ★**머리를 안 그린다** — 칸이 곧 블록인 자리(씬 칸)다. 몸통만 남는다.
+   *  하나뿐인 블록에 켜고끄기·색은 뜻이 없고, 이름은 줄 머리에 이미 있다. */
+  bare?: boolean;
+  /** ★**내용을 못 고치는 자리** (블록 저장소). 칩·글 상자·색·켜고끄기가 죽는다 —
+   *  이름 바꾸기와 지우기는 그대로다 (저장소에서 하는 일이 그 둘이다).
+   *  ★고치는 창구는 **프롬프트 쪽 하나**다. 저장소에서도 고치게 하면 어디서 고쳤나가 된다. */
+  readOnly?: boolean;
   dup: Set<string>;
   onChange: (b: Block) => void;
   onRemove: () => void;
@@ -44,88 +56,57 @@ export function BlockRow({
   onEnter?: (b: Block) => void;
   /** Esc — 고치던 것을 버리고 나간다 */
   onCancel?: () => void;
+  /** Enter 로 편집을 끝냈다 (씬 줄은 도로 접는다) */
+  onDone?: () => void;
+  /** 글 상자가 열렸다 — 잘라 보여 주던 부모가 자리를 내준다 */
+  onOpen?: () => void;
+  /** Tab — 옆 칸으로 */
+  onTab?: (dir: 1 | -1) => void;
   /** 방금 만들어진 블록 — 뜨자마자 편집 상태로 */
   autoEdit?: boolean;
   gripProps?: React.HTMLAttributes<HTMLSpanElement>;
   /** 칩 끌기 (`useTagDrag`) — 목록이 들고 있는 것을 이 블록 몫만 받는다 */
-  tagDrag?: {
-    handle: (chipIndex: number, label: string) => React.HTMLAttributes<HTMLSpanElement>;
-    draggingIndex: number | null;
-    justDragged: () => boolean;
-  };
+  tagDrag?: TagDrag;
   dragging?: boolean;
 }) {
   const t = useI18n((s) => s.t);
-  const [editing, setEditing] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [text, setText] = useState("");
-  const ta = useRef<HTMLTextAreaElement>(null);
-  /** Enter 로 넘어갈 때 뒤따르는 blur 이 한 번 더 반영하지 않게 */
-  const skipBlur = useRef(false);
-  const ac = useTagSuggest(text, setText, ta);
-
-  /** 편집을 열 때 커서를 놓을 자리. `null` 이면 맨 뒤 */
-  const caretAt = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (!editing) return;
-    const el = ta.current;
-    if (!el) return;
-    el.focus();
-    // ★★**전체 선택을 하지 않는다** (사용자 지시 2026-08-18). 예전에는 `select()` 라
-    //   열자마자 다 잡혀서, 뭐든 한 글자 치면 **블록이 통째로 지워졌다.**
-    //   누른 칩이 있으면 그 태그의 쉼표 뒤에, 없으면 맨 뒤에 커서만 놓는다.
-    const at = caretAt.current ?? el.value.length;
-    el.setSelectionRange(at, at);
-    caretAt.current = null;
-  }, [editing]);
-
-  /** @param at 커서를 놓을 글자 자리 (안 주면 맨 뒤)
-   *  @param txt 열면서 넣을 글 (안 주면 블록을 그대로 편다) */
-  const openText = (at?: number, txt?: string) => {
-    caretAt.current = at ?? null;
-    setText(txt ?? serializeBlock(block));
-    setEditing(true);
-  };
-
-  // 갓 만들어진 블록은 뜨자마자 입력 상태 — Enter 로 이어 적을 수 있어야 한다
-  useEffect(() => {
-    if (autoEdit) openText();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoEdit]);
-
-  const commitText = () => {
-    if (skipBlur.current) {
-      skipBlur.current = false;
-      return;
-    }
-    onChange({ ...block, tags: parseSegs(text) });
-    setEditing(false);
-  };
+  /** 이름 고치기 — ★규칙은 **앱에 하나**다 (`useRename`): 단추를 다시 누르면 저장하고 끝 */
+  const rename = useRename(block.label, (v) => onChange({ ...block, label: v }));
 
   const summary = block.tags.map((x) => x.t).join(", ") || t("block.emptySummary");
+
+  const body = (
+    <BlockBody
+      block={block}
+      readOnly={readOnly}
+      onChange={onChange}
+      dup={dup}
+      tagDrag={tagDrag}
+      autoEdit={autoEdit}
+      mark={block.id}
+      onEnter={onEnter}
+      onCancel={onCancel}
+      onDone={onDone}
+      onOpen={onOpen}
+      onTab={onTab}
+    />
+  );
+  // ★머리가 없는 자리는 **몸통 그대로**다 — 테두리도 접기도 없다 (칸이 곧 블록이다)
+  if (bare) return body;
 
   return (
     <div
       data-block={block.id}
-      data-extra={block.extra ? "" : undefined}
+      /* ★★테두리는 **낱개 표기로만** 적는다 (조작 테스트에서 잡은 React 경고 2026-08-19):
+         `border` 줄임 표기와 `borderLeft*` 를 한 상자에 섞으면, 다시 그릴 때 어느 쪽이
+         나중에 적용되는지가 흔들려 왼쪽 색 띠가 사라지는 식으로 조용히 어긋난다. */
       style={{
-        border: "1px solid var(--line)",
-        borderLeftWidth: block.extra ? 4 : 3,
-        borderLeftColor: block.extra ? EXTRA_COLOR : colorHex(block.color),
+        borderWidth: "1px 1px 1px 3px",
+        borderStyle: "solid",
+        borderColor: `var(--line) var(--line) var(--line) ${colorHex(block.color)}`,
         borderRadius: "var(--r-3)",
         background: "var(--surface)",
         opacity: dragging ? 0.35 : block.on ? 1 : 0.45,
-        // ★「추가」는 **한눈에 다르게** 보여야 한다 — 점선 테두리 + 옅게 물들인 바탕.
-        //   카드에 안 담기는 블록이라는 것을 겉모습이 알린다 (사용자 지시 2026-08-07)
-        ...(block.extra
-          ? {
-              borderStyle: "dashed",
-              borderColor: `color-mix(in srgb, ${EXTRA_COLOR} 55%, var(--line))`,
-              borderLeftStyle: "solid",
-              background: `color-mix(in srgb, ${EXTRA_COLOR} 7%, var(--surface))`,
-            }
-          : null),
       }}
     >
       {/* 머리 */}
@@ -155,6 +136,8 @@ export function BlockRow({
           cursor: "pointer",
         }}
       >
+        {/* ★손잡이는 **줄 순서를 바꿀 수 있는 자리에만** 뜬다 (저장소에는 없다) */}
+        {gripProps && (
         <span
           {...gripProps}
           onClick={(e) => e.stopPropagation()}
@@ -170,68 +153,34 @@ export function BlockRow({
         >
           {Icon.grip}
         </span>
-
-        {/* ★「추가」는 **색을 못 고른다** — 네모난 고정 표식이라 동그란 색점과 구별된다 */}
-        {block.extra ? (
-          <span
-            data-tip={t("block.extraHint")}
-            style={{
-              width: 10,
-              height: 10,
-              flexShrink: 0,
-              borderRadius: 2,
-              background: EXTRA_COLOR,
-            }}
-          />
-        ) : (
-          <span
-            data-head-action
-            data-block-color
-            onClick={(e) => {
-              e.stopPropagation();
-              const i = COLORS.indexOf(block.color);
-              onChange({ ...block, color: COLORS[(i + 1) % COLORS.length] });
-            }}
-            data-tip={t("block.color")}
-            style={{
-              width: 10,
-              height: 10,
-              flexShrink: 0,
-              borderRadius: "50%",
-              border: "1px solid var(--line)",
-              background: block.color ? colorHex(block.color) : "transparent",
-            }}
-          />
         )}
 
-        {block.extra ? (
-          // ★이름 고정 — 더블클릭해도 안 바뀐다. 대문자 라벨로 "칸의 종류"임을 알린다
-          <b
-            data-tip={t("block.extraHint")}
-            style={{
-              fontSize: "var(--text-2xs)",
-              fontWeight: "var(--w-bold)",
-              color: EXTRA_COLOR,
-              letterSpacing: "0.06em",
-              whiteSpace: "nowrap",
-              userSelect: "none",
-            }}
-          >
-            {t("slots.extra")}
-          </b>
-        ) : renaming ? (
+        {/* ★보기 전용은 색을 **못 고친다** — 왼쪽 띠가 이미 그 색을 말한다 */}
+        {!readOnly && (
+        <span
+          data-head-action
+          data-block-color
+          onClick={(e) => {
+            e.stopPropagation();
+            const i = COLORS.indexOf(block.color);
+            onChange({ ...block, color: COLORS[(i + 1) % COLORS.length] });
+          }}
+          data-tip={t("block.color")}
+          style={{
+            width: 10,
+            height: 10,
+            flexShrink: 0,
+            borderRadius: "50%",
+            border: "1px solid var(--line)",
+            background: block.color ? colorHex(block.color) : "transparent",
+          }}
+        />
+        )}
+
+        {rename.editing ? (
           <input
-            autoFocus
-            defaultValue={block.label}
-            onBlur={(e) => {
-              onChange({ ...block, label: e.target.value.trim() || block.label });
-              setRenaming(false);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-              if (e.key === "Escape") setRenaming(false);
-            }}
-            onClick={(e) => e.stopPropagation()}
+            data-block-rename-input
+            {...rename.inputProps}
             style={{
               fontSize: "var(--text-xs)",
               fontWeight: "var(--w-bold)",
@@ -246,7 +195,7 @@ export function BlockRow({
           <b
             onDoubleClick={(e) => {
               e.stopPropagation();
-              setRenaming(true);
+              rename.toggle();
             }}
             style={{ fontSize: "var(--text-xs)", whiteSpace: "nowrap", userSelect: "none" }}
           >
@@ -275,22 +224,20 @@ export function BlockRow({
 
         {/* ★태그 개수를 적지 않는다 (사용자 지시 2026-08-13) — 접혀 있으면 요약이 이미
             보이고 펼치면 칩이 다 보인다. 한 줄에 정보가 너무 많았다 */}
-        {/* ★★차례는 앱 전체에서 하나다: **이름변경 · 온오프 · 삭제** (사용자 지시 2026-08-19).
-            ★「추가」 블록은 이름을 못 바꾼다 (칸의 종류라 이름이 고정이다) */}
-        {!block.extra && (
-          <button
-            data-block-rename={block.id}
-            onClick={(e) => {
-              e.stopPropagation();
-              setRenaming(true);
-            }}
-            data-tip={t("cards.rename")}
-            style={{ color: "var(--ink-faint)", padding: "0 2px", display: "grid" }}
-          >
-            {Icon.pencil}
-          </button>
-        )}
+        {/* ★★차례는 앱 전체에서 하나다: **이름변경 · 온오프 · 삭제** (사용자 지시 2026-08-19) */}
         <button
+          data-block-rename={block.id}
+          {...rename.btnProps}
+          data-tip={t("cards.rename")}
+          style={{ color: "var(--ink-faint)", padding: "0 2px", display: "grid" }}
+        >
+          {Icon.pencil}
+        </button>
+        {/* ★보기 전용에는 켜고끄기가 없다 — 저장소의 블록은 프롬프트에 안 들어가 있다 */}
+        {!readOnly && (
+        <button
+          /* ★표식은 조작 테스트가 잡는 자리다 (아이콘뿐이라 글자로는 못 찾는다) */
+          data-block-on={block.id}
           onClick={(e) => {
             e.stopPropagation();
             onChange({ ...block, on: !block.on });
@@ -300,7 +247,9 @@ export function BlockRow({
         >
           {block.on ? Icon.dotOn : Icon.dotOff}
         </button>
+        )}
         <button
+          data-block-del={block.id}
           onClick={(e) => {
             e.stopPropagation();
             onRemove();
@@ -312,112 +261,8 @@ export function BlockRow({
         </button>
       </div>
 
-      {/* 본문 */}
-      {block.open && (
-        <div style={{ padding: "0 8px 7px" }}>
-          {editing ? (
-            <textarea
-              ref={ta}
-              value={text}
-              onChange={ac.onChange}
-              onBlur={commitText}
-              onKeyDown={(e) => {
-                // ★자동완성이 떠 있으면 Enter·Esc·방향키는 **그쪽 것**이다
-                if (ac.onKeyDown(e)) return;
-                // ★★`Enter` = **저장하고 끝낸다**, `Shift+Enter` = 저장하고 **다음 블록**
-                //   (사용자 지시 2026-08-19). 예전에는 맨 Enter 가 새 블록을 만들어서,
-                //   한 블록만 고치려던 사람이 빈 블록을 계속 만들게 됐다.
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  // ★고친 내용과 "새 블록"을 **한 번에** 넘긴다 — 따로 부르면 뒤 호출이
-                  //   앞 호출의 결과를 못 보고 덮어쓴다 (둘 다 같은 목록을 들고 있다)
-                  if (e.shiftKey && onEnter) {
-                    skipBlur.current = true;
-                    setEditing(false);
-                    onEnter({ ...block, tags: parseSegs(text) });
-                  } else (e.target as HTMLTextAreaElement).blur();
-                }
-                if (e.key === "Escape") {
-                  skipBlur.current = true;
-                  setEditing(false);
-                  onCancel?.();
-                }
-              }}
-              rows={Math.min(8, Math.max(2, Math.ceil(text.length / 46)))}
-              style={{
-                width: "100%",
-                background: "var(--code-bg)",
-                border: "1px solid var(--accent)",
-                borderRadius: "var(--r-1)",
-                padding: "var(--sp-2)",
-                fontFamily: "var(--font-mono)",
-                fontSize: "var(--text-2xs)",
-                lineHeight: 1.5,
-                resize: "vertical",
-              }}
-            />
-          ) : null}
-          {/* ★목록은 편집 중에만 — textarea 가 사라져도 떠 있으면 화면에 남는다 */}
-          {editing && ac.node}
-          {!editing && (
-            <div
-              data-chips
-              onClick={(e) => {
-                // 칩을 끌고 난 직후의 클릭은 편집을 열지 않는다
-                if (tagDrag?.justDragged()) return;
-                // ★누른 칩이 있으면 커서를 **그 태그의 쉼표 뒤**에 놓는다 (사용자 지시 2026-08-19).
-                //   칩과 글 상자는 배치가 달라 클릭 좌표를 글자 자리로 옮기는 것은 어긋나므로,
-                //   "몇 번째 태그를 눌렀나"로 잡는다 — 그 편이 어긋날 일이 없다.
-                //   ★태그 **끝**에 놓으면 치는 글자가 그 태그에 달라붙는다. 칩을 누르는 것은
-                //     거기서부터 이어 적으려는 것이라, 자리는 다음 태그가 시작하는 곳이다.
-                const box = e.currentTarget;
-                const hit = (e.target as HTMLElement).closest("[data-chip]");
-                const i = hit ? [...box.querySelectorAll("[data-chip]")].indexOf(hit) : -1;
-                // ★빈 자리를 눌러도 **이어 적는 자리**로 연다 (사용자 지시 2026-08-19) —
-                //   마지막 칩을 누른 것과 같은 뜻이라, 쉼표까지 같이 만들어 준다
-                if (i < 0) {
-                  if (!block.tags.length) return openText();
-                  const last = caretAfterTag(block, block.tags.length - 1);
-                  return openText(last.at, last.text);
-                }
-                const { at, text } = caretAfterTag(block, i);
-                openText(at, text);
-              }}
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 4,
-                minHeight: "1.5em",
-                cursor: "text",
-                minWidth: 0,
-              }}
-            >
-              {block.tags.length === 0 && (
-                <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
-                  {t("block.clickToInput")}
-                </span>
-              )}
-              {block.tags.map((tag, i) => (
-                <Chip
-                  key={i}
-                  tag={tag}
-                  dup={dup.has(tag.t.trim().toLowerCase())}
-                  dragProps={tagDrag?.handle(i, tag.t)}
-                  dragging={tagDrag?.draggingIndex === i}
-                  onWeight={(w) => {
-                    const tags = block.tags.slice();
-                    tags[i] = { ...tag, w };
-                    onChange({ ...block, tags });
-                  }}
-                  onRemove={() =>
-                    onChange({ ...block, tags: block.tags.filter((_, j) => j !== i) })
-                  }
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {/* 본문 — ★머리가 있든 없든 **같은 부품**이다 (`BlockBody`) */}
+      {block.open && <div style={{ padding: "0 8px 7px" }}>{body}</div>}
     </div>
   );
 }

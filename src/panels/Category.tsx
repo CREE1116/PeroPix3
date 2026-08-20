@@ -30,6 +30,7 @@ export function Category({
   right,
   defaultFolded,
   flashKey,
+  spot,
   children,
 }: {
   /** 접힘을 기억하는 열쇠 */
@@ -41,6 +42,10 @@ export function Category({
   /** ★★밖에서 값이 바뀌면 **펴고 강조한다** (사용자 지시 2026-08-19) — 「설정 불러오기」로
    *  옵션이 통째로 갈리는데 접혀 있으면 무엇이 바뀌었는지 알 수가 없다. */
   flashKey?: string;
+  /** ★★**지금 여기로 카드를 끌고 있다** — 묶음 **전체**를 어둠 위로 올린다
+   *  (사용자 지적 2026-08-20: *"드롭영역 전체가 밝아져야하는데, 개별 카드만 밝아져"*).
+   *  카드마다 올리면 카드 사이 여백이 어두운 채라 자리가 조각조각 보인다. */
+  spot?: boolean;
   children: React.ReactNode;
 }) {
   const [folded, setFolded] = useState(foldState[id] ?? !!defaultFolded);
@@ -66,7 +71,12 @@ export function Category({
       ref={box}
       data-category={id}
       data-folded={folded ? "" : undefined}
-      style={{ marginBottom: "var(--sp-5)", ...flashStyle(!!flashKey && flash) }}
+      data-spot={spot ? "" : undefined}
+      style={{
+        marginBottom: "var(--sp-5)",
+        ...(spot ? { position: "relative" as const, zIndex: 31 } : {}),
+        ...flashStyle(!!flashKey && flash),
+      }}
     >
       <div
         style={{

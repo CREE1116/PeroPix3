@@ -65,6 +65,9 @@ type S = {
   drag: Dragging | null;
   pos: { x: number; y: number };
   over: string | null;
+  /** 방금 끝난 끌기가 **실제로 놓였나**. 끌기가 끝난 뒤(`drag === null`)에 읽는다 —
+   *  덱을 잠깐 펴 줬던 쪽이 「열어 둘지 도로 닫을지」를 이것으로 가른다 (`useDeckPeek`) */
+  dropped: boolean;
   zones: Zone[];
 
   begin: (d: Dragging, x: number, y: number) => void;
@@ -78,10 +81,11 @@ export const useDrag = create<S>((set, get) => ({
   drag: null,
   pos: { x: 0, y: 0 },
   over: null,
+  dropped: false,
   zones: [],
 
   begin(d, x, y) {
-    set({ drag: d, pos: { x, y }, over: null });
+    set({ drag: d, pos: { x, y }, over: null, dropped: false });
   },
 
   move(x, y) {
@@ -102,14 +106,14 @@ export const useDrag = create<S>((set, get) => ({
   /** 손을 뗐다. 드롭이 실제로 일어났으면 true — 덱을 닫을지 판단에 쓴다. */
   end() {
     const { drag, over, zones } = get();
-    set({ drag: null, over: null });
+    set({ drag: null, over: null, dropped: !!(drag && over) });
     if (!drag || !over) return false;
     zones.find((z) => z.id === over)?.onDrop(drag);
     return true;
   },
 
   cancel() {
-    set({ drag: null, over: null });
+    set({ drag: null, over: null, dropped: false });
   },
 
   addZone(z) {

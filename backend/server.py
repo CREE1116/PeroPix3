@@ -283,9 +283,9 @@ class GenBody(BaseModel):
     enhance_from: str | None = None
     # 1.0 이면 그대로, 1.5 면 그 배로 키워서 (64 배수로 맞춘다)
     enhance_scale: float = 1.0
-    # ★타일 인페인트 — 고칠 그림의 **파일 경로**와 원본 좌표계의 **크롭 사각형**.
-    #   둘 다 있어야 타일 경로를 탄다. 없으면 지금까지의 인페인트 그대로다.
-    inpaint_from: str | None = None
+    # ★타일 인페인트(Focused) — 원본 좌표계의 **크롭 사각형**. 있으면 그 자리만 잘라 보낸다.
+    #   자를 그림은 `base_image` 다 — **파일 경로를 받지 않는다** (사용자 지적 2026-08-20:
+    #   갤러리·드롭 그림에는 워크스페이스 경로가 없어 기능이 통째로 막혀 있었다).
     inpaint_rect: dict | None = None
     # ★화면이 결과를 묶는 **진짜 키**. 폴더는 사람이 읽을 수 있게 이름을 그대로 쓰지만,
     #   이름은 바뀌므로 이름으로 묶으면 이름을 고치는 순간 결과가 화면에서 사라진다.
@@ -843,6 +843,10 @@ class CopyBody(BaseModel):
     cell_no: int | None = None
     char: str | None = None
     exclude_slot_number: bool = False
+    #: ★원본이 **보관함**에 있다 (갤러리에서 복제). 그때는 워크스페이스에 레코드가 없어
+    #  시드도 화면이 메타데이터에서 읽어 실어 준다.
+    from_keep: bool = False
+    seed: int | None = None
 
 
 @app.get("/api/workspaces/{ws}/env")
@@ -860,11 +864,15 @@ async def gallery_env(ws: str, file: str):
 
 @app.post("/api/workspaces/{ws}/copy")
 async def copy_to_tab(ws: str, body: CopyBody):
-    """그림 한 장을 **같은 워크스페이스의 다른 탭**으로 복사한다 (원본은 그대로)."""
+    """그림 한 장을 **탭 하나에** 복사한다 (원본은 그대로).
+
+    ★원본은 이 워크스페이스의 그림이거나 **보관함 그림**이다(`from_keep`) — 갤러리의
+      「새 탭으로 복제」도 그림이 슬롯에 앉아야 하므로 같은 자리를 쓴다."""
     try:
+        src = keep.safe_folder(KEEP_DIR, body.file) if body.from_keep else None
         return store.copy_to_tab(ws, body.file, body.tab, body.tab_id, body.cell,
                                  body.cell_id, body.cell_no, body.char,
-                                 body.exclude_slot_number)
+                                 body.exclude_slot_number, src, body.seed)
     except ValueError as e:
         raise HTTPException(404, str(e))
 
@@ -1079,12 +1087,15 @@ async def _generate_one(body: GenBody) -> dict:
     #   ★사각형이 없으면 **지금 동작 그대로** 간다 — 옛 세션의 「부분 수정」이 안 바뀐다.
     tile_src: Image.Image | None = None
     tile_rect: tuple[int, int, int, int] | None = None
-    if body.inpaint_from and body.inpaint_rect:
-        p = store.file_path(body.workspace, body.inpaint_from)
-        if not p:
-            raise HTTPException(404, "고칠 그림을 찾지 못했습니다")
-        tile_src = Image.open(p)
-        tile_src.load()
+    if body.inpaint_rect and req.base_image:
+        # ★★**화면이 보낸 그림에서 자른다** (사용자 지적 2026-08-20: *"드롭했으면 경로가
+        #   확실한 거 아니야? 갤러리는 더 확실하고"*). 예전에는 워크스페이스 파일을 다시
+        #   열어 잘랐고, 그래서 **갤러리·드롭으로 넣은 그림에는 기능이 아예 없었다.**
+        #   베이스 이미지는 어차피 매 요청에 실려 오므로(`base_image`) 파일을 열 이유가 없다 —
+        #   보내는 양도 그대로고, 경로가 없는 그림도 똑같이 된다.
+        with Image.open(io.BytesIO(base64.b64decode(req.base_image))) as _b:
+            _b.load()
+            tile_src = _b.copy()
         x, y, w, h = imgutil.fit_tile_rect(body.inpaint_rect, *tile_src.size)
         if not req.base_mask:
             raise HTTPException(400, "마스크가 없습니다 — 고칠 자리를 칠해 주세요")
@@ -1827,6 +1838,13 @@ async def keep_meta(file: str):
     if not p.is_file():
         raise HTTPException(404, "not found")
     return {"meta": meta.read(p) or {}}
+
+
+@app.get("/api/keep/origin")
+async def keep_origin(file: str):
+    """이 보관 그림이 **어디서 왔나** — 갤러리의 「새 탭으로 복제」가 그때 구조를 찾는 실마리
+    (`keep.origin_of` 주석). 모르면 `null`."""
+    return {"origin": keep.origin_of(KEEP_DIR, file)}
 
 
 # ── 보조 도구 ─────────────────────────────────────────────────

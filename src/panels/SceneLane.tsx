@@ -9,13 +9,15 @@ import { newestFirst } from "../lib/takes";
 import { imgUrl, thumbUrlOf } from "../lib/imgUrl";
 import { EnhanceDialog } from "./EnhanceDialog";
 import { Icon } from "../components/Icon";
-import { colorOf } from "../store/cards";
-import { cardBlocks, compileBlocks, makeBlock, parseSegs } from "../lib/blocks";
-import { useTagSuggest } from "../blocks/TagSuggest";
+import { kindColor } from "../cards/kindColor";
+import { slotBlock, slotBlocksOf } from "../lib/blocks";
+import { BlockList } from "../blocks/BlockList";
+import { DropVeil } from "../cards/DropVeil";
 import { useDragSource, useDropZone } from "../cards/dragStore";
 import { DragGhost } from "../cards/DragGhost";
 import { useLaneReorder, type LaneDrop } from "../lib/useReorder";
 import { useSceneFocus } from "../store/sceneFocus";
+import { useRename } from "../components/useRename";
 import { ask } from "../store/ask";
 import { usePreviews, withPreviews } from "../store/previews";
 import { BANNER_BG, bannerEmptyFill } from "../cards/banner";
@@ -79,13 +81,25 @@ export function SceneLane() {
    *  씬만 고르고 그림이 안 골라지면 큰 자리가 비어, 한 번 더 눌러야 뭔가 보였다.
    *  ★파일을 **딱 집어** 넘긴 경우(썸네일 클릭)는 그대로 둔다. */
   const setFocus = (f: { cell: string; file: string | null }) => {
-    if (f.file) return focus.focus(f.cell, f.file);
     const cell = tab?.kind === "set" ? allCells(tab).find((c) => c.id === f.cell) : undefined;
-    const first = cell ? [...takesOfCell(cell)].sort(newestFirst)[0] : undefined;
-    focus.focus(f.cell, first?.file ?? null);
+    const takes = cell ? [...takesOfCell(cell)].sort(newestFirst) : [];
+    // ★★**그 씬에 없는 파일은 고른 것이 아니다** (조작 테스트에서 잡았다 2026-08-19).
+    //   씬 id 는 탭·워크스페이스마다 다시 `c0` 부터 나가므로, 앞 화면에서 고른 파일이
+    //   같은 id 의 다른 씬에 그대로 얹혀 **아무것도 안 골라진 상태**가 됐다 —
+    //   그러면 「씬을 고르면 맨 앞 장이 함께 골라진다」가 그 씬에서만 조용히 안 돌았다.
+    if (f.file && takes.some((r) => r.file === f.file)) return focus.focus(f.cell, f.file);
+    focus.focus(f.cell, takes[0]?.file ?? null);
   };
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  /** ★★펼치면서 **곧장 치려는** 것인가 (사용자 지시 2026-08-19: 한 번 눌러 바로 친다).
+   *  씬 칸은 이제 블록이라 펼치면 **칩**이 보인다 — 그런데 요약 글자를 누른 것은 거기서부터
+   *  적으려는 것이라, 그때만 글 상자를 열어 커서를 넣는다. 머리를 눌러 편 것은 보려는 것이다. */
+  const [typingId, setTypingId] = useState<string | null>(null);
+  const expand = (id: string | null, typing = false) => {
+    setExpandedId(id);
+    setTypingId(typing ? id : null);
+  };
 
   /** ★★**글 상자 밖을 누르면 편집이 끝난다** (사용자 지시 2026-08-18).
    *  예전에는 닫는 길이 그 씬의 머리를 다시 누르는 것뿐이라 어디를 눌러도 펼친 채였다.
@@ -100,8 +114,13 @@ export function SceneLane() {
     if (!expandedId) return;
     const onDown = (e: PointerEvent) => {
       const t = e.target as HTMLElement | null;
-      if (t?.closest("[data-scene-text]")) return;
-      setExpandedId(null);
+      /* ★★**열려 있는 그 칸**일 때만 비켜 간다. 접힌 줄에도 같은 블록이 있으므로
+         (`clamp`) 그냥 `[data-slot-block]` 으로 보면 **다른 씬을 눌러도 안 닫힌다.** */
+      if (t?.closest("[data-slot-block]")?.getAttribute("data-slot-block") === expandedId) return;
+      /* ★★서랍에서 블록을 끌어오는 중이면 닫지 않는다. 닫으면 받는 자리가 그 자리에서
+         **사라져** 아예 놓을 수 없다 — 끌기는 서랍 쪽 `pointerdown` 으로 시작한다. */
+      if (t?.closest("[data-block-drawer]")) return;
+      expand(null);
     };
     document.addEventListener("pointerdown", onDown, true);
     return () => document.removeEventListener("pointerdown", onDown, true);
@@ -398,9 +417,9 @@ export function SceneLane() {
       setEditingName(next.id);
       return;
     }
-    // ★커서는 **그 줄이 스스로** 넣는다 (펼쳐진 뒤에 도는 효과) — 여기서 한 번 더
-    //   찾아 넣으면 같은 일을 두 곳에서 하게 되고, 전체 선택이 되살아난다.
-    setExpandedId(next.id);
+    // ★건너뛴 자리는 **곧장 치는** 자리다 — 태그를 이어 적어 나가는 흐름이라
+    //   거기서 칩을 한 번 더 눌러야 하면 조작이 끊긴다.
+    expand(next.id, true);
   };
 
   return (
@@ -498,7 +517,16 @@ export function SceneLane() {
 
       <div
         ref={boxRef}
-        style={{ flex: 1, minHeight: 0, minWidth: 0, position: "relative", display: "flex" }}
+        style={{
+          flex: 1,
+          minHeight: 0,
+          minWidth: 0,
+          position: "relative",
+          display: "flex",
+          /* ★★씬 세트를 끌고 있으면 **줄 전체**가 어둠 위로 올라온다 (사용자 지적 2026-08-20).
+             스크롤 칸만 올리면 머리 손잡이·여백이 어두운 채라 영역으로 안 읽힌다. */
+          ...(setDrop.active ? { zIndex: 31, background: "var(--bg)" } : {}),
+        }}
       >
       {/* ★줄 머리 폭 손잡이. 머리는 왼쪽에 붙어 있으므로(sticky left:0) 손잡이는
           스크롤과 무관하게 늘 같은 자리에 선다 */}
@@ -537,11 +565,9 @@ export function SceneLane() {
           minHeight: 0,
           minWidth: 0,
           overflow: "auto",
+          /* ★올리는 것은 **줄 전체**다 (위 `boxRef`) — 물들이는 것은 카드 위에 뜨는
+             겹이 한다 (`data-set-drop-hint`), 바탕을 칠하면 카드에 가린다 */
           background: "var(--bg)",
-          outline: setDrop.active
-            ? `2px dashed ${setDrop.over ? "var(--accent)" : "var(--line-strong)"}`
-            : undefined,
-          outlineOffset: -3,
         }}
       >
         {!tab.cards.length ? (
@@ -593,7 +619,8 @@ export function SceneLane() {
                 onSeq={(n) => setTab(tab.id, { cellSeq: n })}
                 nextSeq={tab.cellSeq ?? 1}
                 expandedId={expandedId}
-                onExpand={setExpandedId}
+                typingId={typingId}
+                onExpand={expand}
                 editingName={editingName}
                 onEditName={onEditName}
                 onStepField={stepField}
@@ -604,8 +631,8 @@ export function SceneLane() {
                     card: {
                       id: "",
                       name: card.name,
-                      color: card.color ?? colorOf(card.name),
-                      cells: card.cells.map((c) => ({ name: c.name, blocks: cardBlocks(c.blocks) })),
+                      color: kindColor("posesets"),
+                      cells: card.cells.map((c) => ({ name: c.name, blocks: c.blocks })),
                     },
                   }, undefined, () => setCard(tab.id, card.id, { folded: !card.folded }))
                 }
@@ -639,6 +666,9 @@ export function SceneLane() {
           </div>
         )}
       </div>
+      {/* ★★표시는 **공통**이다 (`DropVeil`) — 영역이 밝아지고, 그 위에 오면 물들면서
+          무슨 일이 일어나는지 알약으로 적는다 (사용자 지시 2026-08-20: 강조 방식 통일). */}
+      {setDrop.active && <DropVeil over={setDrop.over} label={t("scenes.addCard")} name="set" />}
       </div>
 
       {/* 고른 것이 있을 때만 뜨는 줄 (멀티 무대의 선택 막대와 같은 자리) */}
@@ -711,7 +741,7 @@ export function SceneLane() {
                 style={{
                   position: "absolute",
                   inset: 0,
-                  background: bannerEmptyFill(dragCard.color ?? colorOf(dragCard.name)),
+                  background: bannerEmptyFill(kindColor("posesets")),
                 }}
               />
               <div
@@ -745,8 +775,7 @@ export function SceneLane() {
                 alignItems: "center",
                 gap: "var(--sp-3)",
                 maxWidth: 240,
-                padding: 4,
-                paddingRight: "var(--sp-4)",
+                padding: "4px var(--sp-4) 4px 4px",
                 borderRadius: "var(--r-2)",
                 border: "1px solid var(--accent)",
                 background: "var(--panel)",
@@ -906,7 +935,9 @@ type GroupProps = {
   nextSeq: number;
   /** 펼쳐 둔 씬 id — ★한 번에 하나만 펼친다. 여럿 펼치면 다시 줄 높이가 제각각이 된다 */
   expandedId: string | null;
-  onExpand: (id: string | null) => void;
+  /** 그 칸을 **치려고** 편 것인가 (요약 클릭·Tab 이동). 머리를 눌러 편 것은 아니다 */
+  typingId: string | null;
+  onExpand: (id: string | null, typing?: boolean) => void;
   /** 이름을 고치는 중인 씬 — ★줄이 아니라 **그릇**이 든다 (Tab 으로 건너뛰기 때문에) */
   editingName: string | null;
   onEditName: (id: string, v: boolean) => void;
@@ -929,9 +960,13 @@ const HEAD_FADE = "linear-gradient(90deg, #000 0 72%, transparent 100%)";
  *    `position: sticky; left: 0` 이 씬 칸이 아니라 **이 카드**에 붙는다. */
 function CardGroup(p: GroupProps) {
   const t = useI18n((s) => s.t);
-  const grad = p.card.color ?? colorOf(p.card.name);
+  /* ★★색은 **종류가 정한다** (사용자 결정 2026-08-20) — 카드에 박힌 옛 색도 안 본다.
+     예전에는 이름을 해시해서 뽑았고, 새 세트는 이름이 늘 「새 세트」라 언제나 같은 색인데
+     기본 씬 세트만 다른 색이 되어 있었다. 카드끼리 가르는 것은 **그림**이 한다. */
+  const grad = kindColor("posesets");
   /** 이름을 그 자리에서 고치는 중 — `null` 이면 아니다 (프롬프트 카드와 같은 방식) */
-  const [naming, setNaming] = useState<string | null>(null);
+  /** 이름 고치기 — ★규칙은 **앱에 하나**다 (`useRename`): 단추를 다시 누르면 저장하고 끝 */
+  const rename = useRename(p.card.name, (v) => p.onPatch({ name: v }));
   /** ★블록과 **같은 포인터 드래그**로 순서를 바꾼다 — HTML5 드래그를 쓰면 안의 칩을
    *  끄는 순간 씬이 딸려 끌리고, WebView2 가 그걸 파일 드롭으로 가로챈다.
    *  ★판은 **줄 전체**다 (`useLaneReorder`) — 카드를 넘어 씬을 옮길 수 있어야 하고,
@@ -945,7 +980,10 @@ function CardGroup(p: GroupProps) {
       data-scene-card={p.card.id}
       style={{
         minWidth: "100%",
-        marginBottom: "var(--sp-4)",
+        /* ★위아래로 **숨 쉴 자리**를 둔다 (사용자 지시 2026-08-20: 씬 머리줄과 카드가
+           딱 붙어 있었다). 카드는 둥근 상자라, 붙어 있으면 머리줄의 선과 모서리가
+           한 덩어리로 읽힌다. */
+        margin: "var(--sp-2) 0 var(--sp-4)",
         border: "1px solid var(--line)",
         borderRadius: "var(--r-4)",
         background: "var(--surface)",
@@ -953,7 +991,7 @@ function CardGroup(p: GroupProps) {
     >
       {/* 배너 — ★그림 자리다. 값 넣는 칸을 얹지 않는다 (`cards/banner.ts` 규격 그대로).
           ★배너를 우하단 핸드로 끌면 **씬 세트 카드로 덱에 저장**된다 (역드래그).
-            「추가」 블록은 담기지 않는다 — 그건 이 탭 것이다 (`cardBlocks`). */}
+            칸 하나가 곧 블록 하나라 그대로 담긴다 (`slotBlock`). */}
       <div
         // ★머리를 누르면 **카드째 접힌다** (사용자 지적 2026-08-16: 씬 세트가 안 접혔다).
         //   끌면 덱에 저장하는 역드래그다 — 4px 문턱으로 가른다 (`useDragSource` 의 `onTap`).
@@ -1036,11 +1074,11 @@ function CardGroup(p: GroupProps) {
             </span>
             {/* ★★이름을 **카드 안에서** 고친다 (사용자 지시 2026-08-19) — 프롬프트 카드·덱 카드와
                 같은 방식이다 (두 번 누르거나 연필 단추, 다시 누르면 저장하고 끝난다). */}
-            {naming === null ? (
+            {!rename.editing ? (
               <b
                 onDoubleClick={(e) => {
                   e.stopPropagation();
-                  setNaming(p.card.name);
+                  rename.toggle();
                 }}
                 style={{ fontSize: "0.8rem", fontWeight: "var(--w-bold)", cursor: "text" }}
               >
@@ -1048,20 +1086,8 @@ function CardGroup(p: GroupProps) {
               </b>
             ) : (
               <input
-                autoFocus
                 data-card-name={p.card.id}
-                value={naming}
-                onChange={(e) => setNaming(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                onPointerDown={(e) => e.stopPropagation()}
-                onBlur={() => {
-                  if (naming.trim()) p.onPatch({ name: naming.trim() });
-                  setNaming(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                  if (e.key === "Escape") setNaming(null);
-                }}
+                {...rename.inputProps}
                 style={{
                   width: 130,
                   background: "rgba(0,0,0,0.45)",
@@ -1091,14 +1117,7 @@ function CardGroup(p: GroupProps) {
               data-card-rename={p.card.id}
               data-tip={t("cards.rename")}
               onPointerDown={(e) => e.stopPropagation()}
-              /* 입력칸이 안 흐려지게 — blur 가 먼저 오면 저장하고 닫힌 뒤 다시 열린다 */
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (naming === null) return setNaming(p.card.name);
-                if (naming.trim()) p.onPatch({ name: naming.trim() });
-                setNaming(null);
-              }}
+              {...rename.btnProps}
               style={bannerBtn}
             >
               {Icon.pencil}
@@ -1116,7 +1135,25 @@ function CardGroup(p: GroupProps) {
             </button>
             <button
               data-card-remove={p.card.id}
-              onClick={p.onRemove}
+              /* ★★**생성물이 화면에서 사라지는 삭제는 전부 묻는다** (사용자 지시 2026-08-19).
+                 카드를 빼면 그 안의 씬이 통째로 빠지므로, 씬 하나를 지우는 것보다 범위가 넓다.
+                 ★`Ctrl+Z` 로 되돌아가는 자리여도 묻는다 — 되돌릴 수 있다는 것이 안 묻는 이유가
+                 되면, 사라진 줄 모르고 지나가는 일이 그대로 남는다. */
+              onClick={() => {
+                const n = p.card.cells.reduce((sum, c) => sum + p.takes(c).length, 0);
+                if (!n) return p.onRemove();
+                void (async () => {
+                  if (
+                    await ask({
+                      title: t("scenes.removeCardConfirm", { name: p.card.name, c: p.card.cells.length, n }),
+                      body: t("scenes.removeConfirmBody"),
+                      ok: t("common.delete"),
+                      cancel: t("common.cancel"),
+                    })
+                  )
+                    p.onRemove();
+                })();
+              }}
               data-tip={t("scenes.removeCard")}
               style={bannerBtn}
             >
@@ -1196,25 +1233,6 @@ function CardGroup(p: GroupProps) {
   );
 }
 
-/** 누른 지점이 그 요소의 글에서 **몇 번째 글자**인지. 못 구하면 `null`.
- *
- *  ★한 줄 요약을 눌러 글 상자를 열 때, 누른 자리를 그대로 잇기 위한 것이다.
- *    브라우저마다 이름이 달라 둘 다 본다 (`caretRangeFromPoint` 는 Chromium 계열).
- *    글자 마디가 아닌 곳(여백·다른 마디)을 눌렀으면 `null` 을 돌려 맨 뒤로 보낸다. */
-function textOffsetAt(el: HTMLElement, x: number, y: number): number | null {
-  const node = el.firstChild;
-  if (!node || node.nodeType !== Node.TEXT_NODE) return null;
-  const d = document as Document & {
-    caretRangeFromPoint?: (x: number, y: number) => Range | null;
-    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
-  };
-  const r = d.caretRangeFromPoint?.(x, y);
-  if (r && r.startContainer === node) return r.startOffset;
-  const pos = d.caretPositionFromPoint?.(x, y);
-  if (pos && pos.offsetNode === node) return pos.offset;
-  return null;
-}
-
 /** 씬 한 줄 — 머리에 **그 씬의 프롬프트**(블록 편집기), 오른쪽에 그 씬의 장들 */
 function SceneRow(
   p: GroupProps & {
@@ -1227,44 +1245,11 @@ function SceneRow(
   /** 생성물을 카드 커버로 끄는 출발점 (`dir: "image"`). 덱·손패·프롬프트 배너가 받는다 */
   const startTakeDrag = useDragSource();
   const c = p.cell;
-  /** ★★글 상자의 **초안**. 화면에 뜨는 것은 언제나 이 문자열이다.
-   *
-   *  예전에는 `value={compileBlocks(c.blocks)}` 로 매 글자마다 **블록을 거쳐 돌아왔다.**
-   *  `parseSegs` 가 쉼표로 자르고 `trim`·`filter(Boolean)` 을 하므로, 치는 즉시
-   *  **띄어쓰기·쉼표·줄바꿈이 사라졌다** (사용자 지적 2026-08-18). 커서도 튀었다.
-   *  이제 보이는 것은 친 그대로고, 블록은 그 옆에서 따라 만들어진다. */
-  const [draft, setDraft] = useState<string | null>(null);
-  const ta = useRef<HTMLTextAreaElement>(null);
-  /** 글이 바뀌는 **유일한 창구** — 초안과 블록을 함께 고친다 (자동완성도 이리로 온다) */
-  const setText = (v: string) => {
-    setDraft(v);
-    patchCell({ blocks: [makeBlock(c.name, [], { on: true, open: true, tags: parseSegs(v) })] });
-  };
-  /** 태그 자동완성 — **블록 편집기와 같은 훅**이다 (`blocks/TagSuggest`) */
-  const ac = useTagSuggest(draft ?? compileBlocks(c.blocks), setText, ta);
-  /** 펼치면서 커서를 놓을 글자 자리. `null` 이면 맨 뒤 */
-  const caretAt = useRef<number | null>(null);
   const on = p.focus.cell === c.id;
   const expanded = p.expandedId === c.id;
-  // 접히면 초안을 놓는다 — 다시 펼쳤을 때 옛 초안이 남아 있으면 안 된다
-  //   (그 사이 카드를 얹거나 AI 가 고쳤을 수 있다)
-  useEffect(() => {
-    if (!expanded) setDraft(null);
-  }, [expanded]);
-  /** ★★한 번 눌러 **바로 친다** (사용자 지시 2026-08-19).
-   *
-   *  글 상자는 펼쳐야 생기므로, 펴는 것과 커서를 넣는 것을 따로 두면 두 번 눌러야 했다.
-   *  펼쳐진 **다음 그림**에서 커서를 넣는다.
-   *  ★아무것도 고르지 않는다 — 열자마자 다 잡혀 있으면 한 글자에 통째로 지워진다
-   *    (프롬프트 블록과 같은 규칙, `BlockRow`). */
-  useEffect(() => {
-    const el = ta.current;
-    if (!expanded || !el) return;
-    el.focus();
-    const at = caretAt.current ?? el.value.length;
-    caretAt.current = null;
-    el.setSelectionRange(at, at);
-  }, [expanded]);
+  /** ★★이 칸의 블록 — **하나뿐**이다 (`slotBlock`). 여럿이 든 옛 카드를 얹었으면
+   *  켜진 것들을 이어 붙여 보여 준다. */
+  const blk = slotBlock(c.blocks, c.id);
   /** ★줄은 **최신이 왼쪽**이다 (사용자 지시 2026-08-14, 싱글 히스토리 줄과 같은 규칙).
    *  방금 나온 것을 찾아 눈이 끝까지 갈 이유가 없다. 대기 칸도 같은 규칙이라
    *  **새로 넣은 큐가 맨 왼쪽**이고, 지금 만드는 중인 것은 결과 바로 옆에 선다.
@@ -1286,11 +1271,6 @@ function SceneRow(
   const tail = total - to > 0 ? (total - to) * STEP - GAP : 0;
   const patchCell = (patch: Partial<Slot>) =>
     p.onPatch({ cells: p.card.cells.map((x) => (x.id === c.id ? { ...x, ...patch } : x)) });
-  /** 접혀 있을 때 보이는 한 줄 — ★켜진 블록의 태그만 (컴파일에서 빠지는 것을 보여 주면 헷갈린다) */
-  const summary = c.blocks
-    .filter((b) => b.on)
-    .flatMap((b) => b.tags.map((x) => x.t))
-    .join(", ");
 
   return (
     <div
@@ -1346,6 +1326,7 @@ function SceneRow(
             {String(p.offset + p.index + 1).padStart(3, "0")}
           </span>
           <NameCell
+            id={c.id}
             name={c.name}
             editing={p.editingName === c.id}
             onEditing={(v) => p.onEditName(c.id, v)}
@@ -1407,100 +1388,48 @@ function SceneRow(
             </button>
           )}
         </span>
-        {/* ★펼쳤을 때만 편집기가 뜬다 — 접혀 있으면 한 줄 요약이라 줄 높이가 안 흔들린다.
-            펼치면 프롬프트와 **같은 편집기**다 (칩 드래그·휠 가중치·Enter·자동완성 그대로). */}
-        {expanded ? (
-          <div onClick={(e) => e.stopPropagation()} style={{ minWidth: 0 }}>
-            {/* ★블록 편집기가 아니라 **글 상자**다 (사용자 지시 2026-08-16) — 줄 안은 좁아서
-                칩을 놓을 자리가 안 나온다. 저장은 그대로 블록이라 컴파일·카드 저장은 그대로.
-                ★고치는 순간 켜진 블록이 **한 줄로 합쳐진다** (꺼진 것은 버린다). */}
-            <textarea
-              ref={ta}
-              data-scene-text={c.id}
-              value={draft ?? compileBlocks(c.blocks)}
-              /* ★★자동완성은 **블록 편집기와 같은 것**이다 (사용자 지시 2026-08-19:
-                  조작을 통일하라). `useTagSuggest` 가 값을 고쳐 주면 그 값으로 블록을 만든다 —
-                  두 편집기가 다른 규칙으로 돌면 같은 일을 두 가지로 배우게 된다. */
-              onChange={ac.onChange}
-              // ★편집을 끝내면 초안을 놓아 준다 — 그때부터 다시 블록이 정본이다
-              //   (카드를 얹거나 AI 가 고치면 그 값이 바로 보여야 한다)
-              onBlur={() => setDraft(null)}
-              /* ★`Tab` 으로 **옆 씬의 같은 칸**으로 (v2 index.html:11821-11832).
-                  기본 동작(다음 단추로 이동)을 막고 씬 사이를 오간다 — 여러 씬의 태그를
-                  이어서 적어 나가는 것이 이 칸의 쓰임이다 */
-              onKeyDown={(e) => {
-                // ★자동완성이 떠 있으면 Enter·Esc·방향키는 **그쪽 것**이다 (블록과 같다)
-                if (ac.onKeyDown(e)) return;
-                // ★`Esc` 로 편집을 끝낸다 (사용자 지시 2026-08-18)
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  setDraft(null);
-                  p.onExpand(null);
-                  return;
-                }
-                /* ★★`Enter` = 저장하고 끝, `Shift+Enter` = 저장하고 **다음 씬** —
-                    블록 편집기의 「Enter = 끝 · Shift+Enter = 다음 블록」과 같은 규칙이다
-                    (사용자 지시 2026-08-19). 예전에는 여기서 Enter 가 줄바꿈이었다. */
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  setDraft(null);
-                  if (e.shiftKey) p.onStepField(c.id, 1, "text");
-                  else p.onExpand(null);
-                  return;
-                }
-                /* ★`Tab` 으로 **옆 씬의 같은 칸**으로 (v2 index.html:11821-11832) */
-                if (e.key !== "Tab") return;
-                e.preventDefault();
-                p.onStepField(c.id, e.shiftKey ? -1 : 1, "text");
-              }}
-              placeholder={t("slots.textPlaceholder")}
-              rows={3}
-              style={{
-                width: "100%",
-                minWidth: 0,
-                resize: "vertical",
-                background: "var(--panel)",
-                border: "1px solid var(--line)",
-                borderRadius: "var(--r-2)",
-                padding: "5px var(--sp-3)",
-                fontSize: "var(--text-2xs)",
-                lineHeight: 1.5,
-                color: "var(--ink)",
-              }}
-            />
-            {/* 목록은 **편집 중에만** — 상자가 사라져도 떠 있으면 화면에 남는다 (블록과 같다) */}
-            {ac.node}
-          </div>
-        ) : (
-          <span
-            data-scene-summary={c.id}
-            onClick={(e) => {
-              e.stopPropagation();
-              // ★누른 글자 자리에 커서를 놓는다 — 요약과 글 상자의 글이 **같을 때만**.
-              //   요약은 무게(`1.2::…::`)를 빼고 그리므로, 무게가 섞여 있으면 자리가
-              //   어긋난다. 그럴 땐 맨 뒤다 (`caretAt` 이 null).
-              caretAt.current =
-                summary === compileBlocks(c.blocks)
-                  ? textOffsetAt(e.currentTarget, e.clientX, e.clientY)
-                  : null;
-              p.onExpand(c.id);
-            }}
-            style={{
-              flex: 1,
-              minHeight: 0,
-              fontSize: "var(--text-2xs)",
-              color: "var(--ink-dim)",
-              overflow: "hidden",
-              display: "-webkit-box",
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: "vertical",
-              lineHeight: 1.5,
-              cursor: "text",
-            }}
-          >
-            {summary || t("block.emptySummary")}
-          </span>
-        )}
+        {/* ★★프롬프트 쪽과 **같은 블록**이다 (사용자 결정 2026-08-20) — 칸 하나가 블록
+            하나라(`slotBlock`) 머리는 안 그리고 칩만 남긴다. 칩 클릭으로 글 상자, 칩 휠로
+            가중치, 칩 끌기로 자리 옮기기, 서랍에서 끌어다 놓으면 태그가 뒤에 붙는다.
+            ★★**접혀 있어도 이것 하나다.** 다른 것은 **높이뿐**이다(`clamp`) — 넘치는 만큼
+              자르고 `+n` 으로 알린다. 한 판 앞에서는 접힌 줄에 모양만 같은 칩을 따로 그렸는데,
+              끌 수도 서랍에서 받지도 못하는 **다른 물건**이었다 (사용자 지적 2026-08-20:
+              *"그냥 비슷하게 생긴건 최악임"*). 통일은 생김새가 아니라 **조작**이다.
+            ★글 상자가 열리면 줄이 **스스로 자리를 낸다**(`onOpen`) — 잘린 채로 치면 안 보인다. */}
+        <div
+          /* ★★여기서 클릭을 멈춘다 — 안 멈추면 줄 머리의 「눌러 접기」가 뒤이어 돈다.
+             ★대신 줄이 하던 **「씬을 고르면 맨 앞 장도 고른다」를 여기서 직접 한다.**
+               안 하면 프롬프트 자리를 눌러 씬을 골랐을 때 큰 자리가 빈 채다
+               (조작 테스트에서 잡았다 2026-08-19). */
+          onClick={(e) => {
+            e.stopPropagation();
+            p.onFocus({ cell: c.id, file: p.focus.cell === c.id ? p.focus.file : null });
+          }}
+          style={{ display: "contents" }}
+        >
+          <BlockList
+            /* ★★블록을 고치는 자리는 앱에 **이것 하나**다 (사용자 지적 2026-08-20:
+               *"동일한 컴포넌트를 쓰는게 아니고 복제해서 만드니까 불일치가 계속 생김"*).
+               씬 칸은 그 목록의 `single` 모드일 뿐이라, 칩 끌기·서랍 드롭·중복 표시가
+               프롬프트 쪽과 **같은 배선**을 지난다. */
+            single
+            id={c.id}
+            blocks={[blk]}
+            onChange={(b) => patchCell({ blocks: slotBlocksOf(b[0] ?? blk) })}
+            libZone={`scene-${c.id}`}
+            clamp={!expanded}
+            bg={on ? "var(--accent-bg)" : "var(--surface)"}
+            autoEdit={p.typingId === c.id}
+            /* 칩을 눌러 글 상자가 열렸다 — 그 자리를 내준다 (`clamp` 해제) */
+            onOpen={() => p.onExpand(c.id)}
+            // `+n` 은 치려는 게 아니라 **다 보려는** 것이다 — 펴기만 한다
+            onMore={() => p.onExpand(c.id)}
+            // ★`Enter` 로 끝내면 도로 접는다 · `Shift+Enter`·`Tab` 은 **옆 씬**으로
+            onDone={() => p.onExpand(null)}
+            onNext={() => p.onStepField(c.id, 1, "text")}
+            onTab={(dir) => p.onStepField(c.id, dir, "text")}
+          />
+        </div>
       </div>
 
       <div style={{ flex: 1, display: "flex", alignItems: "center", gap: GAP, padding: "6px 0 6px 8px" }}>
@@ -1659,74 +1588,81 @@ function SceneRow(
  *  ★열려 있는 것이 누구인지는 **그릇이 든다** (`editingName`) — `Tab` 으로 옆 씬의 이름 칸으로
  *    건너뛰려면 한 곳이 알아야 하기 때문이다. 여기서 들고 있으면 자기 것만 열고 닫을 수 있다. */
 function NameCell({
+  id,
   name,
   editing,
   onEditing,
   onRename,
   onTab,
 }: {
+  /** 조작 테스트가 잡는 손잡이 */
+  id: string;
   name: string;
   editing: boolean;
   onEditing: (v: boolean) => void;
   onRename: (v: string) => void;
   onTab: (dir: 1 | -1) => void;
 }) {
-  if (editing)
-    return (
-      <input
-        autoFocus
-        // ★씬이 바뀌면 **입력칸도 새로 만든다** — 같은 요소를 물려주면 Tab 으로 옮겼을 때
-        //   옛 씬의 글자가 그대로 남는다 (`defaultValue` 는 처음 한 번만 먹는다)
-        key={name}
-        defaultValue={name}
-        onClick={(e) => e.stopPropagation()}
-        onBlur={(e) => {
-          const v = e.target.value.trim();
-          if (v) onRename(v);
-          onEditing(false);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-          if (e.key === "Escape") onEditing(false);
-          if (e.key === "Tab") {
+  const t = useI18n((s) => s.t);
+  /** ★규칙은 **앱에 하나**다 (`useRename`): 단추를 다시 누르면 저장하고 끝난다.
+   *  ★다만 여닫는 상태는 **줄이 들고 있다** — `Tab` 으로 옆 씬의 이름 칸으로 건너뛰려면
+   *    누가 열려 있는지를 한 곳이 알아야 한다.
+   *  ★★연필 단추를 **여기서** 단다. 줄 쪽에 따로 두면 그 단추가 훅을 못 봐서 「다시 누르면
+   *    끝」을 흉내 내게 되고, 그게 곧 자리마다 다른 동작이 된다 (사용자 지적 2026-08-20). */
+  const rename = useRename(name, onRename, { editing, setEditing: onEditing });
+
+  return (
+    <>
+      {rename.editing ? (
+        <input
+          data-scene-name={id}
+          {...rename.inputProps}
+          onKeyDown={(e) => {
             // ★고친 값을 **먼저 넣고** 옮긴다 (v2 index.html:11809-11820 과 같은 이동).
             //   뒤따라 오는 blur 는 이미 연 다음 칸을 닫지 않는다 (`onEditName` 주석)
-            e.preventDefault();
-            const v = (e.target as HTMLInputElement).value.trim();
-            if (v) onRename(v);
-            onTab(e.shiftKey ? -1 : 1);
-          }
-        }}
-        style={{
-          flex: 1,
-          minWidth: 0,
-          background: "var(--panel)",
-          border: "1px solid var(--accent)",
-          borderRadius: "var(--r-1)",
-          padding: "0 4px",
-          fontSize: "var(--text-xs)",
-        }}
-      />
-    );
-  return (
-    <span
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        onEditing(true);
-      }}
-      style={{
-        flex: 1,
-        minWidth: 0,
-        fontSize: "var(--text-xs)",
-        color: "var(--ink)",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-        userSelect: "none",
-      }}
-    >
-      {name}
-    </span>
+            if (e.key === "Tab") {
+              e.preventDefault();
+              rename.commit();
+              onTab(e.shiftKey ? -1 : 1);
+              return;
+            }
+            rename.inputProps.onKeyDown(e);
+          }}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            background: "var(--panel)",
+            border: "1px solid var(--accent)",
+            borderRadius: "var(--r-1)",
+            padding: "0 4px",
+            fontSize: "var(--text-xs)",
+          }}
+        />
+      ) : (
+        <span
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            rename.toggle();
+          }}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            fontSize: "var(--text-xs)",
+            color: "var(--ink)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            userSelect: "none",
+          }}
+        >
+          {name}
+        </span>
+      )}
+      {/* ★★단추 차례는 앱 전체에서 하나다: **이름변경 · 온오프(잠금) · 삭제** */}
+      <button data-scene-rename={id} {...rename.btnProps} data-tip={t("cards.rename")} style={iconBtn}>
+        {Icon.pencil}
+      </button>
+    </>
   );
 }
 

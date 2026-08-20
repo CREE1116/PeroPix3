@@ -19,20 +19,7 @@ export type Block = {
   on: boolean;
   open: boolean;
   tags: Tag[];
-  /** ★**이 탭에서만 사는 블록** (사용자 지시 2026-08-07).
-   *
-   *  포즈세트 카드는 여럿이 나눠 쓰는 것이라, 이 캐릭터에만 붙일 것을 거기 담으면 안 된다.
-   *  그래서 이 블록은 **카드로 저장할 때 빠진다**(`cardBlocks`). 색·이름을 못 바꾸고
-   *  생김새도 다른 것은 전부 그 한 가지를 눈으로 알리기 위해서다 — 고쳐서 평범한 블록처럼
-   *  보이게 만들면 "왜 이건 카드에 안 담겼지"가 된다. */
-  extra?: boolean;
 };
-
-/** 「추가」 블록의 **고정 색** — 고를 수 없다. 어느 화면에서나 같은 뜻으로 읽히게. */
-export const EXTRA_COLOR = "var(--warn)";
-
-/** 카드에 담을 블록만 — ★`extra` 는 이 탭 것이라 뺀다 */
-export const cardBlocks = (blocks: Block[]): Block[] => blocks.filter((b) => !b.extra);
 
 export const COLORS: BlockColor[] = [null, "blue", "teal", "purple", "amber", "red", "green"];
 
@@ -112,6 +99,33 @@ export function compileBlocks(blocks: Block[]): string {
     .filter(Boolean)
     .join(", ");
 }
+
+/** 씬 칸 하나 = **블록 하나** (사용자 결정 2026-08-20).
+ *
+ *  ★★씬 칸은 예전에 목록이었다. 그러다 줄 안이 좁아 글 상자로 바꾸면서
+ *    **저장은 목록, 편집은 한 줄**로 갈라졌다 — 그래서 씬 칸은 칩도 가중치 휠도
+ *    못 썼고, 블록이 둘 이상인 카드를 얹으면 첫 편집에 이름·색·온오프가 조용히 뭉개졌다.
+ *    이제 **칸에 블록은 하나뿐**이다 — 그래서 머리(이름·색·켜고끄기)를 그리지 않고
+ *    칩만 남긴다. 칸 이름은 줄 머리에 이미 있어 블록 라벨은 **빈다**
+ *    (같은 이름을 두 곳에 두면 어느 쪽이 진짜인지 모른다).
+ *  ★여러 개가 오면 **켜진 것만 이어 붙인다** — 꺼진 블록은 화면에 안 보이던 것이라
+ *    살려 내면 안 적은 태그가 갑자기 나타난다 (지금까지 `compileBlocks` 가 보여 주던 것과 같다).
+ *  ★id 는 **칸이 준다** — 매번 새로 발급하면 다시 그릴 때마다 블록이 바뀐 것으로 읽힌다. */
+export function slotBlock(blocks: Block[] | undefined, id: string): Block {
+  const on = (blocks ?? []).filter((b) => b.on);
+  if (on.length === 1) return { ...on[0], label: "", open: true };
+  return {
+    id: on[0]?.id ?? id,
+    label: "",
+    color: null,
+    on: true,
+    open: true,
+    tags: on.flatMap((b) => b.tags),
+  };
+}
+
+/** 칸에 다시 담는다 — ★저장본은 언제나 **하나짜리 목록**이다 */
+export const slotBlocksOf = (b: Block): Block[] => [{ ...b, label: "", on: true, open: true }];
 
 /** 텍스트를 태그 목록으로. `1.8::a, b::, plain, -2::c::` 를 이해한다. */
 export function parseSegs(str: string): Tag[] {

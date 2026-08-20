@@ -1,13 +1,13 @@
 import { useI18n } from "../i18n";
+import { EditableName } from "../components/EditableName";
 import { api } from "../lib/backend";
 import { toast } from "../store/toast";
-import { cardBlocks } from "../lib/blocks";
 import { useState } from "react";
 import { allCells, takesOf, useWs, type CanvasTab } from "../store/workspace";
 import { ask } from "../store/ask";
 import { useGen } from "../store/gen";
 import { useDragSource } from "../cards/dragStore";
-import { colorOf } from "../store/cards";
+import { kindColor } from "../cards/kindColor";
 import { Icon } from "../components/Icon";
 
 /** 캔버스 탭 — **두 층이고, 두 층의 생김새가 다르다** (페로픽스파이 규칙 이식 2026-08-04).
@@ -77,9 +77,9 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                 card: {
                   id: "",
                   name: t.name,
-                  color: colorOf(t.name),
+                  color: kindColor("posesets"),
                   // ★「추가」 블록은 카드에 안 담긴다 (이 탭 것이다)
-                  cells: allCells(t).map((c) => ({ name: c.name, blocks: cardBlocks(c.blocks) })),
+                  cells: allCells(t).map((c) => ({ name: c.name, blocks: c.blocks })),
                 },
               });
             }}
@@ -99,33 +99,24 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
               cursor: "pointer",
             }}
           >
-            {editing === t.id ? (
-              <input
-                autoFocus
-                defaultValue={t.name}
-                onClick={(e) => e.stopPropagation()}
-                onBlur={(e) => {
-                  renameTab(t.id, e.target.value.trim());
-                  setEditing(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                  if (e.key === "Escape") setEditing(null);
-                }}
-                style={{
-                  width: 90,
-                  fontSize: "var(--text-xs)",
-                  background: "var(--surface2)",
-                  border: "1px solid var(--accent)",
-                  borderRadius: "var(--r-1)",
-                  padding: "0 4px",
-                }}
-              />
-            ) : (
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {t.name}
-              </span>
-            )}
+            {/* ★이름 고치기는 **앱에 하나**다 (`EditableName` → `useRename`).
+                ★탭은 좁아서 연필 단추를 안 단다 — 더블클릭 규칙은 그대로다 */}
+            <EditableName
+              mark="tab"
+              btn={false}
+              name={t.name}
+              onRename={(v) => renameTab(t.id, v)}
+              ctrl={{ editing: editing === t.id, setEditing: (v) => setEditing(v ? t.id : null) }}
+              style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+              inputStyle={{
+                width: 90,
+                fontSize: "var(--text-xs)",
+                background: "var(--surface2)",
+                border: "1px solid var(--accent)",
+                borderRadius: "var(--r-1)",
+                padding: "0 4px",
+              }}
+            />
             {/* ★씬 수만 적는다. 예전엔 `결과가 있는 씬/전체` 를 `6/3` 처럼 적었는데
                 무슨 뜻인지 알 수 없었고(사용자 지적 2026-08-04), 옛 레코드를 잘못 물어
                 분자가 분모보다 큰 값까지 나왔다. 진행 상황은 생성 푸터의 큐 줄이 말한다. */}
@@ -170,7 +161,8 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
       <button
         // ★씬 하나로 시작한다 (사용자 지시 2026-08-04) — 필요한 만큼은 `씬 추가`로 는다.
         //   셋으로 시작하면 안 쓸 씬을 먼저 지워야 했다
-        onClick={() => addSetTab(tr("tabs.newSet"), [tr("tabs.posePrefix", { n: 1 })])}
+        /* ★씬 없이 만든다 — 씬 줄에서 `+` 로 시작한다 (새 워크스페이스와 같다) */
+        onClick={() => addSetTab(tr("tabs.newSet"), [])}
         data-tip={tr("tabs.newSetTab")}
         data-tab-add="set"
         style={{
@@ -227,8 +219,11 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                   gap: "var(--sp-2)",
                   padding: "5px var(--sp-5)",
                   borderRadius: "7px 7px 0 0",
-                  border: `1px solid ${on ? "var(--accent)" : "var(--line)"}`,
-                  borderBottom: "none",
+                  /* ★낱개 표기로만 적는다 — `border` 줄임 표기와 `borderBottom` 을 섞으면
+                     탭을 바꿀 때 아래 선이 되살아날 수 있다 (React 경고, 2026-08-19) */
+                  borderWidth: "1px 1px 0",
+                  borderStyle: "solid",
+                  borderColor: on ? "var(--accent)" : "var(--line)",
                   position: "relative",
                   top: 1,
                   maxWidth: 200,
@@ -239,39 +234,48 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                   cursor: "pointer",
                 }}
               >
-                {editingChar === c.id ? (
-                  <input
-                    autoFocus
-                    defaultValue={c.name}
-                    onClick={(e) => e.stopPropagation()}
-                    onBlur={(e) => {
-                      renameChar(c.id, e.target.value);
-                      setEditingChar(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                      if (e.key === "Escape") setEditingChar(null);
-                    }}
-                    style={{
-                      width: 96,
-                      fontSize: "var(--text-xs)",
-                      background: "var(--panel)",
-                      border: "1px solid var(--accent)",
-                      borderRadius: "var(--r-1)",
-                      padding: "0 4px",
-                    }}
-                  />
-                ) : (
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {c.name}
-                  </span>
-                )}
+                <EditableName
+                  mark="char"
+                  btn={false}
+                  name={c.name}
+                  onRename={(v) => renameChar(c.id, v)}
+                  ctrl={{ editing: editingChar === c.id, setEditing: (v) => setEditingChar(v ? c.id : null) }}
+                  style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                  inputStyle={{
+                    width: 96,
+                    fontSize: "var(--text-xs)",
+                    background: "var(--panel)",
+                    border: "1px solid var(--accent)",
+                    borderRadius: "var(--r-1)",
+                    padding: "0 4px",
+                  }}
+                />
                 {(spec.chars?.length ?? 0) > 1 && (
                   <button
                     data-char-close={c.id}
+                    /* ★★**생성물이 화면에서 사라지는 삭제는 전부 묻는다** (사용자 지시 2026-08-19:
+                       "무슨 탭이든 상관없어. 생성된게 지워지는 상황이면 다 확인 팝업 띄워").
+                       탭 하나에 세트가 여럿 달리므로 여기서 사라지는 범위가 세트 닫기보다 넓다 —
+                       그런데 예전에는 이쪽만 아무것도 안 묻고 지웠다 (조작 테스트에서 잡았다). */
                     onClick={(e) => {
                       e.stopPropagation();
-                      removeChar(c.id);
+                      const sets = spec.tabs.filter((x) => x.kind === "set" && x.charId === c.id);
+                      const n = sets.reduce(
+                        (sum, t) => sum + takesOf(records, t, undefined).filter((r) => !isDeleted(r.file)).length,
+                        0,
+                      );
+                      if (!n) return removeChar(c.id);
+                      void (async () => {
+                        if (
+                          await ask({
+                            title: tr("chars.removeConfirm", { name: c.name, t: sets.length, n }),
+                            body: tr("tabs.closeConfirmBody"),
+                            ok: tr("common.delete"),
+                            cancel: tr("common.cancel"),
+                          })
+                        )
+                          removeChar(c.id);
+                      })();
                     }}
                     data-tip={tr("chars.remove")}
                     style={{ color: "var(--ink-faint)", padding: 0, display: "grid" }}

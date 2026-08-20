@@ -203,7 +203,7 @@ export function VibeCache({ onClose }: { onClose: () => void }) {
                       {it.model.replace("nai-diffusion-", "")}
                     </div>
                     <div style={{ color: "var(--ink-faint)", fontFamily: "var(--font-mono)" }}>
-                      {t("imgIn.strength")} {it.strength} · {t("imgIn.info")} {it.info_extracted}
+                      {t("imgIn.refStrength")} {it.strength} · {t("imgIn.info")} {it.info_extracted}
                     </div>
                   </div>
                 </button>

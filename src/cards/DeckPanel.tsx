@@ -2,9 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { useCards, type AnyCard, type CardKind } from "../store/cards";
 import { useDrag, useDragSource, useDropZone, dragSourceStyle, type DragImage, type SectionThumb } from "./dragStore";
+import { DropVeil } from "./DropVeil";
+import { CardEditor } from "./CardEditor";
 import { saveCardWithThumb } from "./saveCard";
 import { normThumb, thumbUrl } from "../store/prompt";
 import { artBackground } from "./CardArt";
+import { BANNER_BG, BANNER_SCRIM, COVER_CUT, COVER_STEP } from "./banner";
 import { FittedImg } from "./FittedImg";
 import { Icon } from "../components/Icon";
 import { ask } from "../store/ask";
@@ -26,6 +29,7 @@ const KINDS: CardKind[] = ["styles", "characters", "posesets"];
 export function DeckPanel({
   onAsk,
   onImageDrop,
+  onEditThumb,
 }: {
   /** 같은 id 의 카드가 이미 있을 때 — 덮을지 새로 추가할지 묻는다 */
   onAsk: (a: {
@@ -37,6 +41,8 @@ export function DeckPanel({
   /** 생성물을 덱에 놓으면 어느 카드의 그림으로 쓸지 고른다 */
   /** 생성물을 카드에 놓으면 **그 카드의 그림**이 된다 */
   onImageDrop: (kind: CardKind, card: AnyCard, img: DragImage) => void;
+  /** 카드 편집기에서 **그림 자리를 다시 잡는다** — 위치 잡는 창은 `App` 이 든다 */
+  onEditThumb: (kind: CardKind, card: AnyCard) => void;
 }) {
   // ★스크롤로 밀려 안 보이는 카드는 그림을 못 받는다 — 각 카드 존을 이 칸으로 자른다
   //   (사용자 지시 2026-08-19: "해당 카드가 받을 수 있게 노출된 상태일 때만")
@@ -51,14 +57,30 @@ export function DeckPanel({
   /** ★★종류마다 **탭**이다 (사용자 지시 2026-08-19) — 셋을 한 줄에 쌓아 두면 카드가 늘수록
    *  아래 것이 안 보이고, 접었다 폈다로 관리하게 된다. 한 번에 한 종류만 본다. */
   const [tab, setTab] = useState<CardKind>("styles");
+  /** 편집기가 열려 있는 카드의 id (없으면 닫힘). ★카드 **사본이 아니라 id** 를 든다 —
+   *  그림 위치를 잡고 돌아왔을 때 옛 값이 화면에 남지 않게 (아래 ★주) */
+  const [editing, setEditing] = useState<string | null>(null);
+  const editList = useCards((s) => s[tab]) as AnyCard[];
   /** 카드를 끌기 시작하면 **그 종류의 탭으로 옮긴다** — 안 보이는 탭에는 놓을 수가 없다
    *  (캐릭터 섹션이 접혀 있으면 못 넣던 것과 같은 문제, `PromptSections`) */
   const dragKind = useDrag((s) => (s.drag?.dir === "save" ? (s.drag.kind as CardKind) : null));
   useEffect(() => {
     if (dragKind && KINDS.includes(dragKind)) setTab(dragKind);
   }, [dragKind]);
+  /** ★★끌고 있는 동안 **덱 전체**가 어둠 위로 올라온다 (사용자 지적 2026-08-20:
+   *  "드롭영역 전체가 밝아져야하는데, 개별 카드만 밝아져"). 안쪽 줄만 올리면 탭 줄·폴더 칩이
+   *  어두운 채라 「여기가 받는 자리」로 안 읽힌다. 그림 끌기(`image`)도 이 패널이 받는다. */
+  const spot = useDrag((s) => s.drag?.dir === "save" || s.drag?.dir === "image");
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        minHeight: 0,
+        ...(spot ? { position: "relative" as const, zIndex: 31, background: "var(--bg)" } : {}),
+      }}
+    >
       <div style={{ display: "flex", gap: 2, padding: "var(--sp-2) var(--sp-3) 0", flexShrink: 0 }}>
         {KINDS.map((k) => {
           const on = tab === k;
@@ -93,8 +115,29 @@ export function DeckPanel({
         {/* ★★`key` 로 **종류마다 새로 만든다** (사용자 지적 2026-08-19: 서브탭이 공용이었다) —
             React 는 같은 자리의 같은 컴포넌트를 **재활용**해서, 종류를 바꿔도 폴더 선택이
             그대로 따라왔다. */}
-        <Section key={tab} kind={tab} onAsk={onAsk} onImageDrop={onImageDrop} view={view} />
+        <Section
+          key={tab}
+          kind={tab}
+          onAsk={onAsk}
+          onImageDrop={onImageDrop}
+          onEdit={(c) => setEditing(c.id)}
+          view={view}
+        />
       </div>
+      {/* ★★**배치했을 때의 모습 그대로** 열어 고친다 (사용자 지시 2026-08-20).
+          ★목록에서 **id 로 다시 찾는다** — 편집기가 카드 사본을 들고 있으면, 그림 위치를
+            잡고 돌아왔을 때 옛 값이 화면에 남는다. */}
+      {editing && (() => {
+        const card = (useCards.getState()[tab] as AnyCard[]).find((c) => c.id === editing);
+        return card ? (
+          <CardEditor
+            kind={tab}
+            card={editList.find((c) => c.id === editing) ?? card}
+            onClose={() => setEditing(null)}
+            onEditThumb={onEditThumb}
+          />
+        ) : null;
+      })()}
     </div>
   );
 }
@@ -103,10 +146,13 @@ function Section({
   kind,
   onAsk,
   onImageDrop,
+  onEdit,
   view,
 }: {
   kind: CardKind;
   view: React.RefObject<HTMLDivElement | null>;
+  /** 연필 — 카드 편집기를 연다 */
+  onEdit: (card: AnyCard) => void;
   onAsk: (a: {
     kind: CardKind;
     card: AnyCard;
@@ -128,6 +174,21 @@ function Section({
   const [folder, setFolder] = useState("");
   const here = folders.includes(folder) ? folder : "";
   const cards = all.filter((c) => (c.folder ?? "") === here);
+
+  /** 빈 카드를 만들고 **바로 편집기를 연다** — 만들어 놓고 어디로 갔는지 찾게 하지 않는다.
+   *  ★씬 세트는 **칸 하나를 얹어** 만든다. 빈 채로 두면 갓 만든 카드가 「씬이 없는 카드」로
+   *    떠서 고장처럼 보인다 (칸을 더 넣고 빼는 것은 편집기가 한다). */
+  const addCard = async () => {
+    const name = kind === "styles" ? t("cards.newStyle") : kind === "characters" ? t("cards.newChar") : t("cards.newSet");
+    const blank =
+      kind === "styles"
+        ? { name, base: [], uc: [] }
+        : kind === "characters"
+          ? { name, prompt: [], uc: [] }
+          : { name, cells: [{ name: t("slots.newName", { n: 1 }), blocks: [] }] };
+    const saved = await useCards.getState().save(kind, { ...blank, folder: here }).catch(() => null);
+    if (saved) onEdit(saved);
+  };
   // ★저장 — 손패가 하던 것을 그대로 옮겼다 (그쪽 주석): 같은 id 가 이미 있으면 **묻는다**.
   //   조용히 덮으면 그 카드를 쓰는 다른 워크스페이스까지 바뀌고, 언제나 새로 추가만 하면
   //   같은 이름이 끝없이 쌓인다.
@@ -153,20 +214,17 @@ function Section({
   //   화면에서 빠진 뒤로 보여 주는 곳이 없어 **성공하고도 눈에는 아무 일도 없었다.**
   //   그 계통은 2026-08-19 에 통째로 걷었다 (사용자 지시: 죽은 것은 그때그때 정리).
   const over = save.over;
-  const active = save.active;
 
   return (
     <div
       ref={save.ref}
       data-deck-section={kind}
       data-over={over ? "1" : "0"}
-      style={{
-        minHeight: "100%",
-        background: over ? "var(--accent-bg)" : undefined,
-        outline: active ? `1px dashed ${over ? "var(--accent)" : "var(--line-strong)"}` : undefined,
-        outlineOffset: -3,
-      }}
+      style={{ position: "relative", minHeight: "100%" }}
     >
+      {/* ★표시는 앱 공통이다 (`DropVeil`) — 물들이고 무슨 일이 일어나는지 적는다.
+          올리는 것은 **덱 전체**이고(위 `spot`), 여기서는 겹만 얹는다 */}
+      {save.active && <DropVeil over={over} label={t("cards.dropDeck")} name="deck" />}
         {/* ★서브탭 — 폴더처럼 쓴다. 카드를 여기 끌어다 놓으면 **그 폴더로 옮겨진다** */}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 3, padding: "var(--sp-2) var(--sp-3) 0" }}>
           {folders.map((f) => (
@@ -244,21 +302,7 @@ function Section({
             padding: "var(--sp-3) var(--sp-4) var(--sp-4)",
           }}
         >
-          {cards.length === 0 ? (
-            <div
-              style={{
-                gridColumn: "1 / -1",
-                padding: "var(--sp-4) 0",
-                textAlign: "center",
-                fontSize: "var(--text-2xs)",
-                color: "var(--ink-ghost)",
-                lineHeight: 1.6,
-              }}
-            >
-              {t("cards.dropToSave")}
-            </div>
-          ) : (
-            cards.map((c) => (
+          {cards.map((c) => (
               <PanelCard
               key={c.id}
               kind={kind}
@@ -266,9 +310,31 @@ function Section({
               view={view}
               onDelete={() => remove(kind, c.id)}
               onImageDrop={onImageDrop}
+              onEdit={onEdit}
             />
-            ))
-          )}
+          ))}
+          {/* ★★**빈 카드를 만들어 편집기를 연다** (사용자 지시 2026-08-20). 지금까지는
+              끌어다 놓아야만 카드가 생겨서, 처음부터 손으로 쓰는 길이 없었다.
+              ★만드는 자리는 **지금 보고 있는 폴더**다 — 만들고 나서 옮기게 하지 않는다.
+              ★이름이 겹치면 저장이 `(1)` 을 붙여 새 카드로 넣는다 (`cards.save`). */}
+          <button
+            data-deck-newcard={kind}
+            onClick={() => void addCard()}
+            data-tip={t("cards.newCard")}
+            style={{
+              display: "grid",
+              placeItems: "center",
+              gap: 2,
+              aspectRatio: "3 / 4",
+              borderRadius: "var(--r-3)",
+              border: "1px dashed var(--line)",
+              color: "var(--ink-faint)",
+              fontSize: "var(--text-2xs)",
+            }}
+          >
+            {Icon.plus}
+            {t("cards.newCard")}
+          </button>
         </div>
     </div>
   );
@@ -356,6 +422,7 @@ function FolderTab({
 
 /** 덱의 카드 한 장 — 끌면 프롬프트·씬에 적용된다 */
 function PanelCard({
+  onEdit,
   kind,
   card,
   view,
@@ -367,13 +434,13 @@ function PanelCard({
   view: React.RefObject<HTMLDivElement | null>;
   onDelete: () => void;
   onImageDrop: (kind: CardKind, card: AnyCard, img: DragImage) => void;
+  /** 연필 — **카드 편집기**를 연다 (`CardEditor`) */
+  onEdit: (card: AnyCard) => void;
 }) {
   const t = useI18n((s) => s.t);
   const startDrag = useDragSource();
   const me = useDrag((s) => s.drag?.card?.id === card.id);
   const [hover, setHover] = useState(false);
-  /** 이름을 그 자리에서 고치는 중 (사용자 지시 2026-08-19: 카드마다 수정 단추) */
-  const [renaming, setRenaming] = useState<string | null>(null);
   const fv = normThumb(card.thumb);
   /** ★생성물을 이 카드에 떨구면 **이 카드의 그림**이 된다 (사용자 결정 2026-08-19).
    *  ★`clip` 으로 **덱 칸에 보이는 만큼만** 받는다 — 스크롤로 밀려 안 보이는 카드가
@@ -405,9 +472,9 @@ function PanelCard({
         aspectRatio: "3 / 4",
         borderRadius: "var(--r-3)",
         overflow: "hidden",
+        /* ★잘린 자리에 드러나는 **단색** — 배너 오른쪽과 같은 색이다 (`BANNER_BG`) */
+        background: BANNER_BG,
         border: `1px solid ${drop.over ? "var(--accent)" : "var(--line)"}`,
-        outline: drop.active ? `2px dashed ${drop.over ? "var(--accent)" : "var(--line-strong)"}` : undefined,
-        outlineOffset: -2,
         cursor: "grab",
         opacity: me ? 0.35 : 1,
         transform: hover ? "translateY(-2px)" : undefined,
@@ -416,17 +483,35 @@ function PanelCard({
         ...dragSourceStyle,
       }}
     >
-      <div style={{ position: "absolute", inset: 0, background: artBackground(card.color) }} />
-      {/* 덱 오버레이와 **같은 그림**이다 — 배너·커버가 공유하는 고정 썸네일(tid) */}
-      {fv && <FittedImg url={thumbUrl(useGen.getState().base, fv)} w={110} h={146} view={fv.face} />}
+      {/* ★★배너와 **같은 3단**이다 — 그림 → 중간 단 → 오른쪽 단색.
+          다만 경계는 **수직**이고 단색 띠는 **얇다** (사용자 지시 2026-08-20).
+          이름은 배너처럼 **밝은 쪽**에 앉고, 오른쪽 단색 위에 단추가 뜬다. */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          maskImage: COVER_CUT,
+          WebkitMaskImage: COVER_CUT,
+          background: artBackground(card.color),
+        }}
+      >
+        {/* 덱 오버레이와 **같은 그림**이다 — 배너·커버가 공유하는 고정 썸네일(tid) */}
+        {fv && <FittedImg url={thumbUrl(useGen.getState().base, fv)} w={110} h={146} view={fv.face} />}
+        {/* 중간 단 — 잘리기 전 구간을 한 번 어둡게 눕힌다 (배너와 같은 값) */}
+        <div style={{ position: "absolute", inset: 0, background: COVER_STEP }} />
+      </div>
+      {/* 이름이 그림 위에서도 읽히게 — 배너와 같은 스크림 */}
+      <div style={{ position: "absolute", inset: 0, pointerEvents: "none", background: BANNER_SCRIM }} />
+      {/* ★그림을 받는 자리도 **같은 표시**다 (`DropVeil`) */}
+      {drop.active && <DropVeil over={drop.over} label={t("cards.dropThumb")} name="thumb" />}
       <div
         style={{
           position: "absolute",
           left: 0,
           right: 0,
           bottom: 0,
+          /* ★이름은 배너와 같이 **왼쪽 아래·밝은 쪽**에 앉는다. 바탕은 위의 스크림이 깐다 */
           padding: "10px 5px 4px",
-          background: "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.72) 60%)",
           color: "#fff",
           fontSize: "0.62rem",
           fontWeight: "var(--w-semi)",
@@ -436,36 +521,9 @@ function PanelCard({
           whiteSpace: "nowrap",
         }}
       >
-        {renaming === null ? (
-          card.name
-        ) : (
-          <input
-            autoFocus
-            data-deck-rename={card.id}
-            value={renaming}
-            onChange={(e) => setRenaming(e.target.value)}
-            onClick={(e) => e.stopPropagation()}
-            onPointerDown={(e) => e.stopPropagation()}
-            onBlur={() => {
-              const v = renaming.trim();
-              if (v && v !== card.name) void useCards.getState().save(kind, { ...card, name: v });
-              setRenaming(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-              if (e.key === "Escape") setRenaming(null);
-            }}
-            style={{
-              width: "100%",
-              background: "rgba(0,0,0,0.5)",
-              border: "1px solid rgba(255,255,255,0.5)",
-              borderRadius: 3,
-              color: "#fff",
-              fontSize: "0.62rem",
-              padding: "0 2px",
-            }}
-          />
-        )}
+        {/* ★이름을 **칸 안에서** 고치던 입력칸은 걷었다 (사용자 지시 2026-08-20) —
+            이름도 내용도 **편집기 하나**에서 고친다. 창구가 둘이면 어디서 고쳤는지가 흐려진다. */}
+        {card.name}
       </div>
       {/* ★★끌기 손잡이 아이콘을 걷고 그 자리에 **지우기**를 뒀다 (사용자 지시 2026-08-19).
           카드는 통째로 잡아 끄는 것이라 손잡이가 없어도 끌리는 줄 알고, 지우는 길은
@@ -473,17 +531,14 @@ function PanelCard({
       {hover && (
         <button
           data-card-rename={card.id}
-          data-tip={t("cards.rename")}
+          data-tip={t("cards.edit")}
           onPointerDown={(e) => e.stopPropagation()}
-          /* ★입력칸이 안 흐려지게 (SectionCard 의 같은 주석) */
-          onMouseDown={(e) => e.preventDefault()}
+          /* ★★**편집기를 연다** (사용자 지시 2026-08-20) — 예전에는 이름만 그 자리에서
+             고쳤다. 카드에 무엇이 들었는지 볼 길이 없어, 꺼내 놓아 보고 되돌리는 수밖에
+             없었다. 지금은 **배치했을 때의 모습 그대로** 열려 내용까지 고친다 (`CardEditor`). */
           onClick={(e) => {
             e.stopPropagation();
-            // 고치는 중이면 **저장하고 끝낸다** (사용자 지시 2026-08-19)
-            if (renaming === null) return setRenaming(card.name);
-            const v = renaming.trim();
-            if (v && v !== card.name) void useCards.getState().save(kind, { ...card, name: v });
-            setRenaming(null);
+            onEdit(card);
           }}
           style={{
             position: "absolute",

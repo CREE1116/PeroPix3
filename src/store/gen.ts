@@ -259,10 +259,13 @@ export const useGen = create<S>((set, get) => ({
     const all = allScenes(tab);
     const live = all.filter((x) => !x.cell.locked && !x.card.locked);
     if (!live.length) {
-      // ★씬이 있는데 전부 잠겨 있으면 **말해 준다** — 예전에는 눌러도 조용히 아무 일도
-      //   안 일어나 고장으로 보였다 (v2 `index.html:15905`).
-      //   씬이 아예 없을 때는 안 띄운다 — 그건 잠금 문제가 아니라 비어 있는 것이다.
-      if (all.length) toast(t("gen.allLocked"), "warn");
+      /* ★눌렀는데 **조용히 아무 일도 안 일어나면** 고장으로 보인다 (v2 `index.html:15905`).
+         까닭이 둘이라 말도 둘이다:
+           · 씬은 있는데 **전부 잠김** — 잠금을 풀라고 한다.
+           · 씬이 **아예 없음** — 새 탭·새 워크스페이스의 기본값이 그렇다(2026-08-20).
+             예전에는 기본으로 씬 하나가 박혀 있어 이 경우가 드물었지만, 이제는 **처음 화면**
+             이라 아무 말도 없으면 생성 단추가 죽은 것으로 읽힌다. */
+      toast(t(all.length ? "gen.allLocked" : "gen.noScenes"), "warn");
       return;
     }
 

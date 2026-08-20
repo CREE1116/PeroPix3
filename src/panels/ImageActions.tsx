@@ -104,9 +104,9 @@ export function ImageActions({
     try {
       const b64 = await asBase64();
       const s = useImageInput.getState();
-      // ★워크스페이스 파일이면 **경로도 함께** 넘긴다 — 타일 인페인트가 그 파일을 서버에서
-      //   열어 사각형 안만 잘라 보낸다 (밖에서 떨군 그림에는 경로가 없다)
-      s.setBase(b64, name, upscale ?? null);
+      // ★경로는 안 넘긴다 — Focused 는 **보낸 그림에서** 자른다 (사용자 지적 2026-08-20:
+      //   경로를 요구하니 갤러리·드롭 그림에서 기능이 통째로 사라졌다)
+      s.setBase(b64, name);
       // ★공홈처럼 **해상도를 그림에 맞춘다** — 안 맞추면 전송 직전 리샘플이 그림을 늘린다
       await fitSizeToBase(b64);
       // ★그림이 들어간 자리도 보여 준다 — 우측 패널이 접혀 있으면 펴진다

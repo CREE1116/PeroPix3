@@ -267,6 +267,22 @@ def save(root: Path, src: Path, folder: str, meta: dict | None, key: str = "") -
     return {"file": rel, "removed": False}
 
 
+def origin_of(root: Path, rel: str) -> dict | None:
+    """보관한 그림이 **어느 워크스페이스의 어느 파일**에서 왔나 (`sources` 의 거꾸로 보기).
+
+    ★★갤러리의 「새 탭으로 복제」가 이것으로 **그때 화면 구조**를 찾아간다
+      (사용자 지시 2026-08-19: *"슬롯에서 복제할때랑 동일한 로직 사용해"*). 구조는 PNG 에
+      안 남는다 — 남는 자리는 그 워크스페이스의 레코드(`env`)뿐이라, 출처를 모르면
+      합쳐진 문자열 한 덩어리밖에 되돌릴 것이 없다.
+    ★밖에서 넣은 그림·출처 표가 지워진 그림은 `None` 이다 (그때는 화면이 메타데이터로 떨어진다)."""
+    st = _state(root)
+    for key, v in st["sources"].items():
+        if v == rel and "/" in key:
+            ws, _, f = key.partition("/")
+            return {"workspace": ws, "file": f}
+    return None
+
+
 def kept_of(root: Path, keys: list[str]) -> dict[str, str]:
     """"이 그림들이 지금 보관돼 있나" — 화면의 보관 버튼이 켜짐/꺼짐을 그리는 근거."""
     st = _state(root)

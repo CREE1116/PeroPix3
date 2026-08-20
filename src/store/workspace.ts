@@ -61,27 +61,20 @@ export type Slot = {
   fromSingle?: boolean;
 };
 
-/** 옛 슬롯을 블록으로 — 문자열 태그 한 줄이 블록 하나가 된다.
- *  ★`extra` 는 색을 달리한 블록으로 살린다. 아무것도 잃지 않는다. */
+/** 옛 슬롯을 블록으로 — ★칸 하나는 **블록 하나**다 (`slotBlock`, 2026-08-20).
+ *
+ *  ★옛 「공통(tags) / 추가(extra)」 두 칸은 **이어 붙여 한 블록**으로 옮긴다. 예전에는
+ *    `extra` 를 "카드에 안 담기는 블록"으로 살려 두었는데, 그 갈래를 걷어냈으므로
+ *    (칸에 블록이 하나뿐이라 담고 말고를 가를 자리가 없다) 그대로 이어 적는다.
+ *    ★아무것도 잃지 않는다 — 태그는 전부 넘어오고, 카드에 담기는 범위만 넓어진다. */
 export function slotBlocks(c: {
   blocks?: Block[];
   tags?: string;
   extra?: string;
 }): Block[] {
   if (Array.isArray(c.blocks)) return c.blocks;
-  const out: Block[] = [];
-  if (c.tags?.trim()) out.push(makeBlock(t("slots.blockTags"), [], { open: true, tags: parseSegs(c.tags) }));
-  if (c.extra?.trim())
-    out.push(
-      // ★옛 「추가」 칸은 **같은 뜻의 블록**으로 옮긴다 (카드에 안 담기는 자리)
-      makeBlock(t("slots.extra"), [], {
-        open: true,
-        extra: true,
-        color: "amber",
-        tags: parseSegs(c.extra),
-      }),
-    );
-  return out;
+  const tags = [...parseSegs(c.tags ?? ""), ...parseSegs(c.extra ?? "")];
+  return tags.length ? [makeBlock("", [], { open: true, tags })] : [];
 }
 
 /** 씬 세트 카드 — **탭에 얹는 단위** (사용자 결정 2026-08-11).
@@ -97,7 +90,7 @@ export type SceneCard = {
   name: string;
   /** 덱의 씬 세트 카드에서 왔으면 그 id (없으면 이 탭에서 만든 것) */
   srcId?: string;
-  /** 배너 그라데이션 — 없으면 이름에서 뽑는다(`colorOf`) */
+  /** 배너 그라데이션. ★지금은 **종류가 정한다** (`cards/kindColor`) — 저장된 값은 옛 자국이다 */
   color?: [string, string];
   /** 이 카드의 모든 씬 앞에 붙는 공통 접두 (v2 프리셋의 prefix) */
   prefix?: string;
@@ -226,11 +219,28 @@ type S = {
   /** 「새 탭으로 복제」 — 그림 한 장을 **씬 하나짜리 새 탭**으로 옮긴다 (원본은 그대로).
    *  돌려주는 것은 그림이 앉은 자리(새 파일 · 그 씬의 id). 만들 수 없으면 null.
    *
+   *  ★★**갤러리 그림도 이 자리를 쓴다** (사용자 지시 2026-08-19:
+   *    *"슬롯에서 복제할때랑 동일한 로직 사용해"*). 다른 것은 셋뿐이다 —
+   *    파일이 보관함에 있고(`from`), 구조를 찾아볼 자리가 **그 그림의 출처**이며(`origin`),
+   *    출처를 모르면 씬을 메타데이터에서 받는다(`scene`).
+   *
    *  @param o.excludeNo 「파일 이름에서 씬 번호 빼기」 — 보통 생성과 **같은 규칙**으로 짓는다
-   *  @param o.apply 새 탭으로 옮겨 **간 뒤에** 부른다 (그 그림의 설정을 편집기에 얹는 자리) */
+   *  @param o.apply 새 탭으로 옮겨 **간 뒤에** 부른다 (그 그림의 설정을 편집기에 얹는 자리).
+   *    `structure` 는 **구조를 되살렸는가** — 거짓이면 부르는 쪽이 메타데이터로 세워야 한다
+   *  @param o.from `keep` 이면 원본이 보관함에 있다 (서버가 거기서 집어 온다)
+   *  @param o.origin 구조(`env`)를 찾아볼 자리. 보관함 그림은 출처가 다른 워크스페이스일 수 있다
+   *  @param o.scene 구조를 못 찾았을 때 쓸 씬 (메타데이터의 `slot_prompt`)
+   *  @param o.seed 레코드가 없는 그림의 시드 (메타데이터에서 읽은 값) */
   cloneToNewTab: (
     file: string,
-    o: { excludeNo: boolean; apply?: () => void },
+    o: {
+      excludeNo: boolean;
+      apply?: (found: { structure: boolean }) => void;
+      from?: "keep";
+      origin?: { ws: string; file: string } | null;
+      scene?: { name?: string; blocks: Block[] };
+      seed?: number;
+    },
   ) => Promise<{ file: string; cell: string } | null>;
   /** ★지우기 = **휴지통으로 이동**. 파일이 실제로 자리에서 없어지고, `Ctrl+Z` 로 되돌아온다.
    *  비우는 것은 앱을 켤 때 (24시간 지난 것) — `backend/trash.py` 머리 주석. */
@@ -287,9 +297,16 @@ type S = {
  *    `migrate` 의 `convertSingleTab` 이 그것을 옮겼다 — 그러면 새 워크스페이스가 옛 싱글
  *    탭의 자국을 그대로 물려받는다: 씬에 `fromSingle` 표식이 박히고(셀 없는 레코드를
  *    끌어오는 길이다), 탭·카드·캐릭터 이름이 전부 「컷」이 된다.
- *  ★모양은 `addSetTab` 과 같다 — 카드 하나·씬 하나·`c0` 부터·`idOnly`.
+ *  ★모양은 `addSetTab` 과 같다 — **카드도 씬도 없이**·`idOnly`.
  *  ★캐릭터도 여기서 만든다. 안 만들면 `migrate` 의 고아 처리가 **탭 이름으로** 하나를
  *    지어내서, 캐릭터 탭에 「새 세트」라고 뜬다. */
+/** ★★새로 만드는 탭·워크스페이스의 프롬프트 — **카드가 하나도 없다** (사용자 지시 2026-08-20:
+ *  *"그냥 아예 카드도 없어야된다는 뜻. 유저가 +를 눌러야 생김"*).
+ *  쓸 것이 있으면 **덱에서 끌어다 쓴다**.
+ *  ★`styleOn: false` 를 **명시**한다 — 값이 없으면 「켜짐」으로 읽히는데(옛 워크스페이스가
+ *    카드를 잃지 않게 한 규칙, `prompt.load`), 새 것은 꺼진 채로 시작해야 한다. */
+const freshPrompt = (): TabPrompt => ({ base: [], baseUc: [], styleOn: false });
+
 const newSpec = (name: string): Spec => ({
   version: 1,
   id: "ws_" + Date.now().toString(36),
@@ -303,19 +320,19 @@ const newSpec = (name: string): Spec => ({
       name: t("tabs.newSet"),
       idOnly: true,
       charId: "ch_1",
-      cards: [
-        {
-          id: "k1",
-          name: t("tabs.newSet"),
-          cells: [{ id: "c0", name: t("tabs.posePrefix", { n: 1 }), blocks: [] }],
-        },
-      ],
-      cellSeq: 1,
-      cardSeq: 1,
+      /* ★★**씬도 비어 있다** (사용자 지시 2026-08-20). 카드가 없으면 씬 줄이 「씬 세트를
+         만들어 시작」 자리를 띄우고, 거기서 `+` 를 눌러야 생긴다 — 프롬프트 카드·덱과
+         같은 규칙이다 (*"유저가 +를 눌러야 생김"*). 예전에는 이름 없는 씬 하나가 박힌 채
+         시작해서, 쓰는 사람이 **먼저 지우거나 이름부터 고치는 일**을 했다. */
+      cards: [],
+      cellSeq: 0,
+      cardSeq: 0,
     },
   ],
   activeTab: "tab_1",
-  chars: [{ id: "ch_1", name: t("chars.first"), prompt: { base: defaultBase(), baseUc: defaultUc() } }],
+  // ★첫 탭도 **「새 탭」**이다 (사용자 지시 2026-08-20) — 새로 만드는 탭과 이름 규칙이
+  //   달라서 첫 탭만 「탭 1」이었다. 이름을 짓는 말은 하나면 된다 (`chars.newName`).
+  chars: [{ id: "ch_1", name: t("chars.newName"), prompt: freshPrompt() }],
   activeChar: "ch_1",
   selection: { deleted: [], starred: [] },
 });
@@ -348,34 +365,17 @@ function migrate(spec: Spec): Spec {
   };
   // ★슬롯을 블록으로 (2026-08-07). 옛 세션은 문자열 태그를 들고 있다 — 열 때 한 번 옮긴다.
   //   ★카드 층이 생기면서 **카드마다** 돈다 (`cells` 는 이제 카드 안에 있다).
-  const label = t("slots.extra");
   spec = {
     ...spec,
     tabs: spec.tabs.map((tb) => {
       if (tb.kind !== "set") return tb;
       let touched = false;
       const cards = tb.cards.map((k) => {
-        if (!k.cells.every((c) => Array.isArray(c.blocks))) {
-          touched = true;
-          return {
-            ...k,
-            cells: k.cells.map((c) => ({ ...c, blocks: slotBlocks(c), tags: undefined, extra: undefined })),
-          };
-        }
-        // ★같은 날 한 판 앞의 이관이 「추가」를 **평범한 블록으로** 옮겨 놓았다
-        //   (`extra` 표식을 만들기 전에 내보냈다). 그대로 두면 카드에 딸려 들어간다.
-        //   이름으로 한 번만 되살린다 — 지나고 나면 표식이 박혀 다시 걸리지 않는다.
-        if (!k.cells.some((c) => c.blocks.some((b) => b.label === label && b.extra === undefined)))
-          return k;
+        if (k.cells.every((c) => Array.isArray(c.blocks))) return k;
         touched = true;
         return {
           ...k,
-          cells: k.cells.map((c) => ({
-            ...c,
-            blocks: c.blocks.map((b) =>
-              b.label === label && b.extra === undefined ? { ...b, extra: true } : b,
-            ),
-          })),
+          cells: k.cells.map((c) => ({ ...c, blocks: slotBlocks(c), tags: undefined, extra: undefined })),
         };
       });
       if (!touched) return tb;
@@ -414,7 +414,7 @@ function migrate(spec: Spec): Spec {
     }
   }
   if (!chars.length) {
-    chars = [{ id: "ch_1", name: t("chars.first"), prompt: { base: defaultBase(), baseUc: defaultUc() } }];
+    chars = [{ id: "ch_1", name: t("chars.newName"), prompt: { base: defaultBase(), baseUc: defaultUc() } }];
     changed = true;
   }
   const activeChar = spec.activeChar && chars.some((c) => c.id === spec.activeChar)
@@ -613,8 +613,8 @@ export const useWs = create<S>((set, get) => ({
     let name = base;
     for (let i = 2; names.has(name); i++) name = `${base} ${i}`;
     const spec = newSpec(name);
-    // 새 워크스페이스는 기본 블록으로 시작한다 — 이전 작업을 물고 오지 않는다
-    spec.prompt = { base: defaultBase(), baseUc: defaultUc() };
+    // 새 워크스페이스는 **빈 채로** 시작한다 — 이전 작업을 물고 오지 않는다
+    spec.prompt = freshPrompt();
     await api(`/api/workspaces/${encodeURIComponent(name)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -700,13 +700,39 @@ export const useWs = create<S>((set, get) => ({
   },
 
   addRecord(r) {
-    // ★파일 경로가 곧 신원이다 — 같은 파일을 두 번 담지 않는다.
-    //   두 갈래로 같은 그림이 들어온다: (a) 워크스페이스를 열 때 서버가 돌려주는 저장된 기록,
+    // ★같은 그림이 두 갈래로 들어온다: (a) 워크스페이스를 열 때 서버가 돌려주는 저장된 기록,
     //   (b) WebSocket `sync` 복원. 큐 스토어의 `seen` 은 **메모리에만** 있어서 새로고침하면
     //   비고, 그러면 서버 기록 위에 복원분이 통째로 겹쳐 쌓였다.
     //   실측(2026-08-03): 6장짜리 탭에서 React 가 `key` 중복을 6건 뱉었다.
-    if (get().records.some((x) => x.file === r.file)) return;
-    set({ records: [...get().records, r] });
+    const cur = get().records;
+    const at = cur.findIndex((x) => x.file === r.file);
+    if (at < 0) return set({ records: [...cur, r] });
+    const old = cur[at];
+    if (old.ts === r.ts && old.seed === r.seed) return; // 같은 그림 — 그대로 둔다
+
+    /* ★★같은 경로인데 **다른 그림**이다 (사용자 지적 2026-08-20).
+       지운 그림은 휴지통으로 **옮겨지므로** 그 이름이 폴더에서 비고, 이름을 다시 쓸 수 있다.
+       생성 쪽은 휴지통까지 세어 이름을 안 겹치게 하지만(`Store.next_name`), 휴지통이
+       비워진 뒤(24시간)에는 다시 겹칠 수 있다. 그때:
+         · 새 레코드를 **버리면** 방금 만든 그림이 화면에 아예 안 뜨고,
+         · 옛 그림의 「지움」·「별표」 표식이 **새 그림에 그대로 붙는다.**
+       그 자리에 있는 것은 새 그림이므로 레코드를 갈아 끼우고 표식을 뗀다. */
+    set({ records: cur.map((x, i) => (i === at ? r : x)) });
+    const spec = get().spec;
+    if (!spec) return;
+    const { deleted, starred } = spec.selection;
+    if (!deleted.includes(r.file) && !starred.includes(r.file)) return;
+    set({
+      spec: {
+        ...spec,
+        selection: {
+          ...spec.selection,
+          deleted: deleted.filter((f) => f !== r.file),
+          starred: starred.filter((f) => f !== r.file),
+        },
+      },
+    });
+    queueSave(get);
   },
 
   /** 여러 장을 한 번에 켜고 끈다 — `이것만 남기기`·범위 선택이 쓴다.
@@ -778,26 +804,45 @@ export const useWs = create<S>((set, get) => ({
     //     그것이 있으면 그것이 정본이다 — 그 뒤에 탭을 고치거나 **지웠어도** 그때 환경이 온다.
     //   ★없는 그림(이 기능 전에 만든 것)만 **그 그림이 나온 탭**에서 가져온다.
     //     그때도 지금 보고 있는 탭이 아니라 **레코드가 가리키는 탭**이다 (`tab_id`·`cell_id`).
-    const rec = records.find((r) => r.file === file);
-    const saved = await api<{ env: ShotEnv | null }>(
-      `/api/workspaces/${encodeURIComponent(current)}/env?file=${encodeURIComponent(file)}`,
-    ).catch(() => ({ env: null }));
+    // ★구조를 찾아볼 자리 — 워크스페이스 그림은 자기 자신, 보관함 그림은 **그 그림의 출처**다
+    //   (`/api/keep/origin`). 출처를 모르는 보관함 그림은 찾아볼 자리가 아예 없다.
+    const origin = o.from === "keep" ? (o.origin ?? null) : { ws: current, file };
+    const local = origin?.ws === current;
+    const rec = local ? records.find((r) => r.file === origin!.file) : undefined;
+    const saved = origin
+      ? await api<{ env: ShotEnv | null }>(
+          `/api/workspaces/${encodeURIComponent(origin.ws)}/env?file=${encodeURIComponent(origin.file)}`,
+        ).catch(() => ({ env: null }))
+      : { env: null };
     // 편집기 내용을 spec 에 먼저 담는다 — 원본 탭이 지금 보고 있는 탭이면 이게 최신이다
     const cur = stash(spec, spec.activeTab);
-    const srcTab =
-      cur.tabs.find((x) => x.kind === "set" && x.id === rec?.tab_id) ??
-      cur.tabs.find((x) => x.id === cur.activeTab);
+    // ★출처가 **다른 워크스페이스**면 그 탭이 여기 없다 — 지금 보고 있는 탭으로 대신하지 않는다
+    //   (그러면 그 그림과 무관한 프롬프트가 「복제」로 온다). 그때는 메타데이터가 세운다.
+    const srcTab = local
+      ? (cur.tabs.find((x) => x.kind === "set" && x.id === rec?.tab_id) ??
+        cur.tabs.find((x) => x.id === cur.activeTab))
+      : undefined;
     // 스타일·베이스·네거티브·**캐릭터 카드**가 통째로 여기 있다 (`promptOf` — 멀티는 캐릭터 소유)
-    const srcPrompt = structuredClone(saved.env?.prompt ?? promptOf(cur, srcTab));
+    const srcPrompt = saved.env?.prompt
+      ? structuredClone(saved.env.prompt)
+      : srcTab
+        ? structuredClone(promptOf(cur, srcTab))
+        : null;
     // 그 그림이 나온 **씬과 그 씬이 든 카드**. 못 찾으면 그 탭의 첫 씬
     const fallbackScene =
       srcTab?.kind === "set"
         ? (allScenes(srcTab).find((x) => x.cell.id === rec?.cell_id) ?? allScenes(srcTab)[0])
         : undefined;
-    /** 남겨 둔 스냅샷이 있으면 그것이, 없으면 그 탭의 씬이 정본이다 */
+    /** 남겨 둔 스냅샷이 있으면 그것이, 없으면 그 탭의 씬이 정본이다.
+     *  ★둘 다 없는 보관함 그림은 **메타데이터의 씬**을 쓴다 (v2 가 PNG 에 남긴 `slot_prompt`) —
+     *    사용자 지적 2026-08-19: 갤러리에서 복제하면 슬롯 프롬프트가 통째로 사라졌다. */
     const srcScene = saved.env
       ? { prefix: saved.env.prefix, color: fallbackScene?.card.color, cell: saved.env.cell }
-      : fallbackScene && { prefix: fallbackScene.card.prefix, color: fallbackScene.card.color, cell: fallbackScene.cell };
+      : fallbackScene
+        ? { prefix: fallbackScene.card.prefix, color: fallbackScene.card.color, cell: fallbackScene.cell }
+        : o.scene
+          ? { prefix: undefined, color: undefined, cell: o.scene }
+          : undefined;
     const srcDest = saved.env ? saved.env.sceneDest : srcTab?.kind === "set" ? srcTab.sceneDest : undefined;
 
     set({ spec: cur });
@@ -808,7 +853,8 @@ export const useWs = create<S>((set, get) => ({
     if (!sp || !tab || tab.kind !== "set" || !cell) return null;
 
     // 1) 프롬프트 구조 — 스타일·블록·캐릭터 카드 그대로 (새 탭으로 옮긴 **뒤**라 원본이 안 덮인다)
-    usePrompt.getState().load(srcPrompt);
+    //    ★구조를 못 찾았으면 **안 건드린다** — 그때는 `apply` 가 메타데이터로 세운다
+    if (srcPrompt) usePrompt.getState().load(srcPrompt);
     // 2) 슬롯 구조 — 그 씬과 **그 씬이 든 카드의 공통 접두**까지.
     //    ★접두를 빼면 안 된다: `generateAll` 이 `카드 접두 + 베이스 + 씬` 으로 이어 붙이므로
     //      (`gen.ts`), 접두가 없으면 같은 씬이라도 다른 프롬프트가 나간다.
@@ -820,11 +866,11 @@ export const useWs = create<S>((set, get) => ({
           k.id === tab.cards[0]?.id
             ? {
                 ...k,
-                prefix: srcScene.prefix,
-                color: srcScene.color,
+                prefix: srcScene.prefix ?? k.prefix,
+                color: srcScene.color ?? k.color,
                 cells: k.cells.map((c) =>
                   c.id === cell.id
-                    ? { ...c, name: srcScene.cell.name, blocks: structuredClone(srcScene.cell.blocks ?? []) }
+                    ? { ...c, name: srcScene.cell.name ?? c.name, blocks: structuredClone(srcScene.cell.blocks ?? []) }
                     : c,
                 ),
               }
@@ -833,7 +879,7 @@ export const useWs = create<S>((set, get) => ({
       });
     }
     // 3) 생성 설정·해상도·시드 — **그 그림의 메타데이터**에서 (구조가 아니라 값이다)
-    o.apply?.();
+    o.apply?.({ structure: !!srcPrompt });
     // ★`load` 는 저장을 예약하지 않는다 (`prompt.ts` 의 `onEdit` 는 편집에만 붙는다) —
     //   여기서 한 번 흘려보내야 새 탭의 프롬프트가 파일에 남는다
     await get().save();
@@ -853,6 +899,10 @@ export const useWs = create<S>((set, get) => ({
           cell_no: 1,
           char: (sp.chars ?? []).find((c) => c.id === sp.activeChar)?.name ?? null,
           exclude_slot_number: o.excludeNo,
+          // ★보관함 그림은 서버가 **보관함에서** 집어 온다. 이 워크스페이스에 레코드가 없으니
+          //   시드도 실어 준다 (없으면 0 이 박혀 「같은 시드로 다시」가 헛돈다)
+          from_keep: o.from === "keep",
+          seed: o.seed,
         }),
       },
     );
@@ -910,19 +960,23 @@ export const useWs = create<S>((set, get) => ({
       charId: spec.activeChar,
       // ★씬은 **카드 한 장**에 담겨 얹힌다 (2026-08-11). 카드 이름은 탭 이름을 물려받는다 —
       //   덱에서 떨군 씬 세트라면 그 카드 이름이 곧 이 탭 이름이라 같은 값이다.
-      cards: [
-        {
-          id: "k1",
-          name: nm,
-          cells: cells.map((c, i) =>
-            typeof c === "string"
-              ? { id: `c${i}`, name: c, blocks: [] }
-              : { id: `c${i}`, name: c.name, blocks: slotBlocks(c) },
-          ),
-        },
-      ],
+      // ★★씬을 안 주면 **카드도 안 만든다** — 빈 탭은 씬 줄의 「씬 세트 만들기」에서 시작한다
+      //   (새 워크스페이스와 같은 모양이다).
+      cards: cells.length
+        ? [
+            {
+              id: "k1",
+              name: nm,
+              cells: cells.map((c, i) =>
+                typeof c === "string"
+                  ? { id: `c${i}`, name: c, blocks: [] }
+                  : { id: `c${i}`, name: c.name, blocks: slotBlocks(c) },
+              ),
+            },
+          ]
+        : [],
       cellSeq: cells.length,
-      cardSeq: 1,
+      cardSeq: cells.length ? 1 : 0,
       // 새 탭은 **지금 편집기 내용을 물려받는다** — 카드를 떨궈 만든 탭이 빈 프롬프트로
       // 시작하면 바로 생성이 안 돼 한 번 더 손이 간다
       prompt: usePrompt.getState().snapshot(),
@@ -960,15 +1014,14 @@ export const useWs = create<S>((set, get) => ({
             name: t("tabs.newSet"),
             charId: id,
             idOnly: true,
-            cards: [
-              {
-                id: "k1",
-                name: t("tabs.newSet"),
-                cells: [{ id: "c0", name: t("tabs.posePrefix", { n: 1 }), blocks: [] }],
-              },
-            ],
-            cellSeq: 1,
-            cardSeq: 1,
+            /* ★★**씬 세트 카드 없이 시작한다** (사용자 지적 2026-08-20: *"기본값이 세트카드
+               없어야하는데 새탭 만들면 있음"*). 새 워크스페이스(`newSpec`)·새 세트 탭
+               (`addSetTab([])`)과 **같은 모양**이어야 한다 — 여기만 카드를 얹고 있었다.
+               ★탭이 생기는 길이 셋이다(워크스페이스 만들기 · 세트 탭 「+」 · **캐릭터 탭 「+」**).
+                 기본값을 바꿀 때는 셋을 함께 본다. */
+            cards: [],
+            cellSeq: 0,
+            cardSeq: 0,
           },
         ],
         activeTab: tid,
@@ -992,7 +1045,7 @@ export const useWs = create<S>((set, get) => ({
     set({
       spec: {
         ...stashed,
-        chars: [...(stashed.chars ?? []), { id, name: nm, prompt: { base: defaultBase(), baseUc: defaultUc() } }],
+        chars: [...(stashed.chars ?? []), { id, name: nm, prompt: freshPrompt() }],
       },
     });
     get().switchChar(id);

@@ -1,4 +1,5 @@
 import type { CardKind } from "../store/cards";
+import { BANNER_BG, bannerEmptyFill } from "./banner";
 
 /** 카드 아이콘 — 탭·핸드·덱이 같은 것을 쓴다 (목업 ICONS 그대로). */
 const svg = (d: React.ReactNode, size: number) => (
@@ -46,36 +47,24 @@ export const cardIcon = (kind: CardKind, size = 20) =>
     ),
   })[kind];
 
-/** 드롭 존 아이콘 — 존이 무엇을 하는지 **글자 대신 그림**으로 말한다 (사용자 요청).
- *  글자는 세 로케일로 길이가 제각각이라 좁은 존에서 줄바꿈이 나고, 훑을 때 읽어야 한다. */
+/** 드롭 존 아이콘.
+ *  ★★글자 대신 그림만 쓰던 시절의 것이다 — 지금은 **놓으면 무슨 일이 일어나는지**를
+ *    알약으로 적는다 (`cards/DropVeil`, 사용자 지시 2026-08-20). 남은 것은 「빈 자리」의
+ *    `+` 하나뿐이고, 그 자리도 그 위에 오면 알약과 같은 문구를 함께 보여 준다. */
 export const zoneIcon = {
-  /** 스택: 카드가 겹쳐 쌓인 모양 */
-  stack: (size = 22) =>
-    svg(
-      <>
-        <rect x="7" y="9.5" width="13" height="11" rx="2" />
-        <path d="M5.5 16.5V7a2 2 0 0 1 2-2h9" />
-        <path d="M4 13.5V4.5" opacity="0.55" />
-      </>,
-      size,
-    ),
-  /** 교체: 화살표 둘이 앞뒤로 도는 모양 */
-  swap: (size = 22) =>
-    svg(
-      <>
-        <path d="M4 9h13l-3-3" />
-        <path d="M20 15H7l3 3" />
-      </>,
-      size,
-    ),
   /** 추가 */
   add: (size = 22) => svg(<path d="M12 5v14M5 12h14" />, size),
 };
 
-/** 카드 일러스트 면 — 그라데이션 + 우상단 하이라이트.
+/** 카드 일러스트 면 — **배너와 같은 칠**이다 (아래 ★주).
  *  ★실제 앱에서는 이 자리에 사용자의 생성물 썸네일이 들어간다 (thumb). */
 export const artBackground = (color: [string, string], thumb?: string | null) =>
   thumb
     ? `linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.4)), url("${thumb}") center/cover`
-    : `radial-gradient(90px 70px at 70% 30%, rgba(255,255,255,0.35), transparent 70%),` +
-      ` linear-gradient(140deg, ${color[0]}, ${color[1]})`;
+    /* ★★**배너와 같은 것을 쓴다** (사용자 지적 2026-08-20: *"헤더는 좌상단 끝이 밝은
+       스타일임"* → *"커버가 훨씬 밝은거 같아"*). 각도·밝은 쪽·끊는 자리뿐 아니라
+       **진하기까지** 같아야 한 식구로 보인다 — 배너의 칠은 어두운 바탕(`BANNER_BG`) 위에
+       얹히는 **반투명**이라, 같은 색을 불투명으로 칠하면 커버만 훨씬 밝아진다.
+       ★그래서 **어두운 바탕을 함께 깐다** — 부모가 무엇이든 배너와 같은 톤이 나온다
+       (덱 카드·드래그 고스트가 같은 이 함수를 쓴다). */
+    : `${bannerEmptyFill(color)}, ${BANNER_BG}`;

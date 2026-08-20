@@ -126,7 +126,7 @@ export function ImageInputPanel() {
             data-vibe={i}
           >
             <Slide
-              label={t("imgIn.strength")}
+              label={t("imgIn.refStrength")}
               value={v.strength}
               min={0}
               max={1}
@@ -195,7 +195,7 @@ export function ImageInputPanel() {
                 (v2 `.clickable-value`, index.html:18833-18866). 그쪽도 슬라이더만 클램프하고
                 실제 값은 그대로 두었다 */}
             <Slide
-              label={t("imgIn.strength")}
+              label={t("imgIn.refStrength")}
               value={r.strength}
               min={0}
               max={1}
@@ -348,14 +348,18 @@ export function ImageInputPanel() {
  *
  *  ★**끌 수 있게 둔다.** 큰 그림에서는 켜진 채로 시작하지만, 사각형보다 넓게 고치고 싶으면
  *    끄고 해상도를 올리는 길이 있어야 한다 (사용자 지시 2026-08-13).
- *  ★워크스페이스 파일에만 뜬다. 서버가 그 파일을 열어 잘라야 한다. 밖에서 떨군 그림은
- *    경로가 없어 못 쓴다. */
+ *  ★★**감추지 않는다** (사용자 지시 2026-08-20: *"기능을 아예 감추면 버그같음.
+ *    보이는데 비활성화하고 이유를 보여줘야지"*). 예전에는 워크스페이스 파일이 아니면
+ *    통째로 안 그렸는데, 그림을 갤러리에서 넣었는지 파일에서 넣었는지로 **UI 가 사라지니**
+ *    고장으로 보였다. 출처 조건은 아예 없어졌다 (서버가 보낸 그림에서 자른다) —
+ *    이제 못 켜는 경우는 **1MP 이하** 하나뿐이고, 그때는 흐리게 두고 이유를 적는다. */
 function FocusedToggle() {
   const t = useI18n((s) => s.t);
   const s = useImageInput();
-  if (!s.baseFrom || !s.baseSize) return null;
-  const big = canFocus(s.baseSize.w, s.baseSize.h);
+  const big = !!s.baseSize && canFocus(s.baseSize.w, s.baseSize.h);
   const on = s.focused && big;
+  // 크기를 아직 재는 중이면 이유를 못 적는다 (곧 값이 온다) — 그 순간만 흐리게 둔다
+  const why = s.baseSize && !big ? t("focus.tooSmall") : "";
   return (
     <div
       data-focused={on ? "on" : "off"}
@@ -404,6 +408,15 @@ function FocusedToggle() {
               무엇을 하는 기능인지는 이 `?` 하나로 족하다 */}
           <Help tip={t("focus.help")} />
         </span>
+        {/* ★★**못 켜는 이유는 그 자리에 적는다** — 흐리기만 하면 고장으로 읽힌다 */}
+        {why && (
+          <span
+            data-focused-why
+            style={{ display: "block", marginTop: 2, fontSize: "var(--text-2xs)", color: "var(--ink-faint)", lineHeight: 1.45 }}
+          >
+            {why}
+          </span>
+        )}
       </span>
     </div>
   );

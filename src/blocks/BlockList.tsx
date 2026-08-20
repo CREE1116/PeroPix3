@@ -1,8 +1,9 @@
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { dupSet, makeBlock, type Block } from "../lib/blocks";
 import { useReorder } from "../lib/useReorder";
 import { useTagDrag, type Spot } from "./useTagDrag";
+import { TagDragLayer } from "./TagDragLayer";
 import { BlockRow } from "./BlockRow";
 import { itemToBlock, useBlockLib } from "../store/blockLib";
 import { useDragSource, useDropZone } from "../cards/dragStore";
@@ -16,20 +17,59 @@ import { DragGhost } from "../cards/DragGhost";
  *  포인터 이벤트 기반이라 WebView2 의 파일 드롭 핸들러와 충돌하지 않는다 (useReorder.ts).
  *
  *  ★**태그 칩도 같은 방식으로 끈다** (useTagDrag) — 블록 안에서도, 블록 사이로도.
- *    칩 하나하나를 블록 모양으로 만든 까닭이 이것이다 (사용자 2026-08-07). */
+ *    칩 하나하나를 블록 모양으로 만든 까닭이 이것이다 (사용자 2026-08-07).
+ *
+ *  ★★**블록을 고치는 자리는 앱에 이것 하나다** (사용자 지적 2026-08-20:
+ *    *"네가 실제로 동일한 컴포넌트를 쓰는게 아니고 복제해서 만드니까 불일치가 계속 생김"*).
+ *    씬 칸은 예전에 `SlotBlock` 이라는 **따로 만든 부품**이었는데, 칩 끌기·서랍 드롭존·
+ *    드래그 표시·중복 검사를 각자 한 벌씩 들고 있어 조작이 계속 어긋났다.
+ *    이제 씬 칸은 **이 목록의 `single` 모드**다 — 배선이 한 벌뿐이라 어긋날 자리가 없다.
+ *
+ *  `single` 이 바꾸는 것은 넷뿐이다:
+ *    1. 블록이 **하나뿐**이다 — 「+ 블록」도, 블록 사이 끼우기도 없다.
+ *    2. 머리(이름·색·켜고끄기·삭제)를 안 그린다 (`BlockRow bare`) — 칸 이름은 줄 머리에 있다.
+ *    3. 서랍에서 받으면 **태그가 뒤에 붙는다** (블록을 더하는 게 아니라).
+ *    4. `clamp` 를 주면 넘치는 만큼 자르고 `+n` 으로 알린다 (씬 줄이 접혀 있을 때). */
 export function BlockList({
   blocks,
   onChange,
-  allowExtra,
   libZone,
+  single,
+  id,
+  clamp,
+  bg,
+  autoEdit,
+  onMore,
+  onOpen,
+  onDone,
+  onNext,
+  onTab,
 }: {
   blocks: Block[];
   onChange: (b: Block[]) => void;
-  /** ★「추가」 블록을 만들 수 있는 자리인가 — 카드로 저장되는 곳(포즈)에서만 뜻이 있다 */
-  allowExtra?: boolean;
   /** 저장소에서 끌어온 블록을 받을 자리인가 — **화면에서 유일한 id** 를 준다.
    *  ★목록이 여럿이라(베이스·UC·캐릭터마다·씬 칸마다) id 가 겹치면 엉뚱한 곳에 떨어진다 */
   libZone?: string;
+  /** 블록이 **하나뿐인** 자리인가 (씬 칸). 위 머리 주석의 넷이 달라진다 */
+  single?: boolean;
+  /** `single` 일 때 이 자리를 가리키는 이름 — `data-slot-block` 으로 나간다 */
+  id?: string;
+  /** 자리가 좁아 **잘라 보여 주는** 상태인가. 넘치는 칩 수를 `+n` 으로 낸다 */
+  clamp?: boolean;
+  /** `+n` 뒤에 깔 바탕 — 잘린 칩 위에 뜨므로 줄 바탕과 같아야 글자가 읽힌다 */
+  bg?: string;
+  /** 떠오르자마자 글 상자를 연다 (`Tab` 으로 건너온 씬 칸) */
+  autoEdit?: boolean;
+  /** `+n` 을 눌렀다 — 치려는 게 아니라 **다 보려는** 것이다 */
+  onMore?: () => void;
+  /** 글 상자가 열렸다 — 잘라 보여 주던 부모가 **자리를 내준다** */
+  onOpen?: () => void;
+  /** Enter 로 편집을 끝냈다 (씬 줄은 도로 접는다) */
+  onDone?: () => void;
+  /** Shift+Enter — `single` 에서는 새 블록 대신 **다음 칸**으로 간다 */
+  onNext?: () => void;
+  /** Tab — 옆 칸으로 */
+  onTab?: (dir: 1 | -1) => void;
 }) {
   const t = useI18n((s) => s.t);
   const startDrag = useDragSource();
@@ -40,7 +80,11 @@ export function BlockList({
     kind: "blocklib",
     onDrop: (d) => {
       if (!libZone || !d.item) return;
-      onChange([...blocks, itemToBlock(d.item)]);
+      const got = itemToBlock(d.item);
+      // ★`single` 은 블록을 더할 수 없다 — 태그를 **뒤에 붙인다**
+      if (!single) return onChange([...blocks, got]);
+      const b = blocks[0];
+      if (b) onChange([{ ...b, tags: [...b.tags, ...got.tags] }]);
     },
   });
   const dup = dupSet(blocks);
@@ -73,12 +117,14 @@ export function BlockList({
   const replace = (i: number, b: Block) => onChange(blocks.map((x, j) => (j === i ? b : x)));
 
   /** Enter — 이 블록을 반영하면서 **바로 뒤에** 새 블록을 만들고 거기로 넘어간다.
-   *  ★「추가」에서 Enter 하면 **다음 것도 「추가」**다 (사용자 지시 2026-08-07) —
-   *    이 탭 것을 이어 적는 흐름이 한 번에 끊기면 안 된다. */
+   *  ★`single` 에서는 만들 자리가 없다 — 반영만 하고 **옆 칸**으로 넘긴다 (`onNext`). */
   const enterAt = (i: number, b: Block) => {
-    const nb = b.extra
-      ? makeBlock(t("slots.extra"), [], { open: true, color: b.color, extra: true })
-      : makeBlock(t("block.newBlock"), [], { open: true, color: b.color });
+    if (single) {
+      replace(i, b);
+      onNext?.();
+      return;
+    }
+    const nb = makeBlock(t("block.newBlock"), [], { open: true, color: b.color });
     auto.current.add(nb.id);
     const n = blocks.slice();
     n[i] = b;
@@ -89,16 +135,45 @@ export function BlockList({
 
   /** Esc — Enter 로 딸려 나온 빈 블록이면 도로 거둔다 (안 그러면 꼬리에 빈 칸이 남는다) */
   const cancelAt = (i: number) => {
+    if (single) return onDone?.();
     const b = blocks[i];
     if (!auto.current.has(b.id) || b.tags.length) return;
     auto.current.delete(b.id);
     onChange(blocks.filter((_, j) => j !== i));
   };
 
+  /** 잘려 안 보이는 칩이 몇 개인가 — ★칩은 **다 그려 두고** 넘치는 것만 잘린다
+   *  (`overflow: hidden`). 자리를 실제로 차지해 봐야 셀 수 있으므로 지우지 않고 재기만
+   *  한다. 그래서 잘린 칩도 **끌 수 있고 서랍 드롭도 받는다** — 진짜 블록 그대로다. */
+  const box = useRef<HTMLDivElement>(null);
+  const [over, setOver] = useState(0);
+  const tagKey = blocks.map((b) => b.tags.map((x) => `${x.t}${x.w ?? ""}`).join("|")).join("//");
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el || !clamp) return setOver(0);
+    const measure = () => {
+      const h = el.clientHeight;
+      const kids = [...el.querySelectorAll<HTMLElement>("[data-chip]")];
+      // ★1px 은 봐준다 — 소수점 높이에서 마지막 줄이 통째로 잘린 것처럼 세어진다
+      setOver(kids.filter((k) => k.offsetTop + k.offsetHeight > h + 1).length);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+    // ★태그를 **글로 굳혀** 의존한다 — 배열은 다시 그릴 때마다 새것이라, 그대로 걸면
+    //   측정을 붙였다 뗐다 한다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clamp, tagKey]);
+
   return (
     <div
-      ref={zone.ref}
+      ref={(el) => {
+        box.current = el;
+        (zone.ref as React.MutableRefObject<HTMLDivElement | null>).current = el;
+      }}
       data-block-list={libZone}
+      data-slot-block={single ? id : undefined}
       style={{
         display: "flex",
         flexDirection: "column",
@@ -111,11 +186,16 @@ export function BlockList({
               background: zone.over ? "var(--accent-bg)" : "transparent",
             }
           : null),
+        /* ★자리가 좁으면 **자른다** — 줄 높이는 오른쪽 썸네일이 정하는 것이라 늘릴 수 없다.
+           `+n` 이 그 위에 뜨고, 누르면 부모가 자리를 내준다 */
+        ...(clamp ? { position: "relative", flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden" } : null),
       }}
     >
       {blocks.map((b, i) => (
         <div key={b.id}>
-          <DropLine active={dragIdx != null && overIdx === i && i !== dragIdx && i !== dragIdx + 1} />
+          {!single && (
+            <DropLine active={dragIdx != null && overIdx === i && i !== dragIdx && i !== dragIdx + 1} />
+          )}
           <div
             ref={(el) => {
               register(i)(el);
@@ -124,13 +204,17 @@ export function BlockList({
           >
             <BlockRow
               block={b}
+              bare={single}
               dup={dup}
               dragging={dragIdx === i}
-              autoEdit={editId === b.id}
+              autoEdit={editId === b.id || (!!single && !!autoEdit)}
               onChange={(nb) => replace(i, nb)}
               onRemove={() => onChange(blocks.filter((_, j) => j !== i))}
               onEnter={(nb) => enterAt(i, nb)}
               onCancel={() => cancelAt(i)}
+              onDone={onDone}
+              onOpen={onOpen}
+              onTab={onTab}
               // ★서랍이 닫혀 있으면 끌 곳이 없다 — 그때는 머리 클릭이 접기 그대로다
               onSave={
                 libOpen
@@ -151,34 +235,44 @@ export function BlockList({
         </div>
       ))}
 
-      <DropLine active={dragIdx != null && overIdx === blocks.length && dragIdx !== blocks.length - 1} />
+      {!single && (
+        <>
+          <DropLine active={dragIdx != null && overIdx === blocks.length && dragIdx !== blocks.length - 1} />
+          <div style={{ display: "flex", gap: "var(--sp-2)", marginLeft: 16, marginTop: 6 }}>
+            <button
+              data-block-add
+              onClick={() => onChange([...blocks, makeBlock(t("block.newBlock"), [], { open: true })])}
+              style={addBtn}
+            >
+              {t("block.add")}
+            </button>
+          </div>
+        </>
+      )}
 
-      <div style={{ display: "flex", gap: "var(--sp-2)", marginLeft: 16, marginTop: 6 }}>
+      {clamp && over > 0 && (
         <button
-          data-block-add
-          onClick={() => onChange([...blocks, makeBlock(t("block.newBlock"), [], { open: true })])}
-          style={addBtn}
+          data-slot-more={id}
+          onClick={(e) => {
+            e.stopPropagation();
+            onMore?.();
+          }}
+          style={{
+            position: "absolute",
+            right: 0,
+            bottom: 0,
+            padding: "1px 6px 1px 12px",
+            borderRadius: "var(--r-1)",
+            /* 잘린 칩 위에 뜨므로 왼쪽을 흐리게 빼서 글자가 겹쳐 읽히지 않게 한다 */
+            background: `linear-gradient(90deg, transparent, ${bg ?? "var(--surface)"} 45%)`,
+            color: "var(--ink-faint)",
+            fontSize: "var(--text-2xs)",
+            fontFamily: "var(--font-mono)",
+          }}
         >
-          {t("block.add")}
+          +{over}
         </button>
-        {/* ★여러 개여도 된다 — 「추가」에서 Enter 로 이어 만들 수 있어야 하므로(사용자 지시
-            2026-08-07) "하나뿐" 규칙과 어긋난다. 카드 저장은 **전부** 뺀다(cardBlocks) */}
-        {allowExtra && (
-          <button
-            data-block-add-extra
-            data-tip={t("block.extraHint")}
-            onClick={() =>
-              onChange([
-                ...blocks,
-                makeBlock(t("slots.extra"), [], { open: true, extra: true, color: "amber" }),
-              ])
-            }
-            style={{ ...addBtn, color: "var(--warn)", borderColor: "var(--warn)" }}
-          >
-            {t("block.addExtra")}
-          </button>
-        )}
-      </div>
+      )}
 
       {/* 커서를 따라오는 고스트 — 포인터 방식은 브라우저가 잔상을 만들어 주지 않는다 */}
       {ghost && dragIdx != null && blocks[dragIdx] && (
@@ -197,59 +291,7 @@ export function BlockList({
         </DragGhost>
       )}
 
-      {/* ── 칩 끌기의 표시들 — ★레이아웃을 밀지 않도록 전부 화면 좌표에 띄운다 ── */}
-      {tag.from && tag.bar && (
-        <div
-          style={{
-            position: "fixed",
-            left: tag.bar.x,
-            top: tag.bar.y,
-            width: 3,
-            height: tag.bar.h,
-            borderRadius: 2,
-            background: "var(--accent)",
-            boxShadow: "0 0 0 2px var(--accent-bg)",
-            zIndex: 901,
-            pointerEvents: "none",
-          }}
-        />
-      )}
-      {tag.from && tag.box && (
-        <div
-          style={{
-            position: "fixed",
-            left: tag.box.x,
-            top: tag.box.y,
-            width: tag.box.w,
-            height: tag.box.h,
-            borderRadius: "var(--r-3)",
-            border: "2px solid var(--accent)",
-            zIndex: 901,
-            pointerEvents: "none",
-          }}
-        />
-      )}
-      {tag.from && tag.ghost && (
-        <div
-          style={{
-            position: "fixed",
-            left: tag.ghost.x,
-            top: tag.ghost.y,
-            zIndex: 902,
-            pointerEvents: "none",
-            padding: "1px 7px",
-            borderRadius: "var(--r-1)",
-            background: "var(--chip-bg)",
-            border: "1px solid var(--accent)",
-            color: "var(--ink)",
-            fontSize: "var(--text-2xs)",
-            boxShadow: "var(--shadow-3)",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {tag.label}
-        </div>
-      )}
+      <TagDragLayer tag={tag} />
     </div>
   );
 }

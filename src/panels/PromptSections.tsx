@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useI18n } from "../i18n";
 import { Icon } from "../components/Icon";
 import { BlockList } from "../blocks/BlockList";
-import { SectionCard } from "../blocks/SectionCard";
+import { BannerBtn, SectionCard } from "../blocks/SectionCard";
 import {
   usePrompt,
   ucHasContent,
@@ -15,6 +15,8 @@ import type { DragImage } from "../cards/dragStore";
 import { useGen } from "../store/gen";
 import { useDropZone, useDragSource, useDrag } from "../cards/dragStore";
 import { zoneIcon } from "../cards/CardArt";
+import { DropVeil } from "../cards/DropVeil";
+import { BANNER_BG, BANNER_CUT, BANNER_IMG_W, BANNER_STEP, bannerEmptyFill } from "../cards/banner";
 import type { Block } from "../lib/blocks";
 import type { CharCard, StyleCard } from "../store/cards";
 
@@ -27,7 +29,7 @@ import type { CharCard, StyleCard } from "../store/cards";
 export type SectionProps = { onThumb: (section: string, img: DragImage) => void };
 
 /** 저장된 Thumb 을 배너에 그릴 형태로 — 배너용 보는 방식(banner)을 쓴다 */
-function useThumbView(thumb: Thumb | null) {
+export function useThumbView(thumb: Thumb | null) {
   const base = useGen((s) => s.base);
   if (!thumb) return null;
   return { url: thumbUrl(base, thumb), ...thumb.banner };
@@ -81,24 +83,40 @@ export function StyleSection({ onThumb }: SectionProps) {
   }, [active]);
 
   // ★뺀 상태 — 캐릭터가 없을 때와 **같은 모양의 추가 단추**다 (`PromptPanel` 의 「캐릭터 추가」)
+  // ★★**이 자리도 카드를 받는다** (사용자 지적 2026-08-20: 카드가 없으면 스타일 카드를
+  //   떨굴 수가 없었다). 드롭존의 ref 는 카드에만 붙어 있어서, 카드를 뺀 화면에는 받는
+  //   요소가 아예 없었다 — 끌어와도 아무 일이 없다. 단추를 감싼 칸이 그 자리를 대신한다.
   if (!styleOn)
     return (
-      <button
-        data-add-style
-        onClick={() => setStyleOn(true)}
+      <div
+        ref={ref}
         style={{
-          width: "100%",
           marginBottom: "var(--sp-5)",
-          padding: "var(--sp-3)",
-          border: "1px dashed var(--line)",
           borderRadius: "var(--r-3)",
-          fontSize: "var(--text-2xs)",
-          color: "var(--ink-faint)",
-          background: "transparent",
+          /* ★어둠 위로 올리는 것은 **묶음 전체**다 (`Category` 의 `spot`) — 여기서는
+             빈 자리를 **밝은 판**으로 바꾸기만 한다 (밝힐 내용이 없는 자리라서) */
         }}
       >
-        {t("cards.addStyle")}
-      </button>
+        <button
+          data-add-style
+          onClick={() => setStyleOn(true)}
+          style={{
+            width: "100%",
+            padding: "var(--sp-3)",
+            border: "1px dashed var(--line)",
+            borderRadius: "var(--r-3)",
+            fontSize: "var(--text-2xs)",
+            /* ★여기는 **밝힐 내용이 없는 빈 자리**라 판 자체가 밝아진다. 그 위에 오면
+               다른 자리와 **같은 알약**이 뜬다 (`DropVeil` 과 같은 말투) */
+            color: over ? "var(--accent-on)" : "var(--ink-faint)",
+            fontWeight: over ? "var(--w-semi)" : 400,
+            background: active ? (over ? "var(--accent)" : "var(--surface)") : "transparent",
+            boxShadow: active ? "0 2px 10px rgba(0,0,0,0.35)" : undefined,
+          }}
+        >
+          {over ? t("cards.dropStyleNew") : t("cards.addStyle")}
+        </button>
+      </div>
     );
 
   return (
@@ -110,6 +128,7 @@ export function StyleSection({ onThumb }: SectionProps) {
       name={style.name}
       /* ★스타일 카드에는 이름 바꾸기가 아예 없었다 (사용자 지적 2026-08-19) */
       onRename={(v) => setStyle({ ...style, name: v })}
+      renameTip={t("cards.rename")}
       /* ★★스타일 카드도 **뺄 수 있다** (사용자 지시 2026-08-19) — 캐릭터 카드와 같은 자리에
          같은 단추다. 빼면 베이스 프롬프트·UC 가 안 나가고, 그 자리에 「추가」가 선다.
          ★적어 둔 블록은 **안 지운다** — 되돌리면 그대로 있어야 한다 (`setStyleOn` 주석). */
@@ -120,6 +139,13 @@ export function StyleSection({ onThumb }: SectionProps) {
       }
       gradient={style.color}
       thumb={thumbView}
+      overlay={
+        active ? (
+          <DropVeil over={over} label={t("cards.dropStyle")} name="style" />
+        ) : img.active ? (
+          <DropVeil over={img.over} label={t("cards.dropThumb")} name="thumb" />
+        ) : null
+      }
       zone="thumb-base"
       folded={!!folded["base"]}
       onFold={() => toggleFold("base")}
@@ -150,28 +176,15 @@ export function StyleSection({ onThumb }: SectionProps) {
 /* ── 캐릭터 섹션 ──────────────────────────────────────────────── */
 export function CharSection({ ch, index, onThumb }: { ch: Char; index: number } & SectionProps) {
   const t = useI18n((s) => s.t);
-  const { updateChar, swapChar, stackChar, removeChar, toggleChar, renameChar, folded, toggleFold } =
+  const { updateChar, stackChar, removeChar, toggleChar, renameChar, folded, toggleFold } =
     usePrompt();
   const startDrag = useDragSource();
   const active = useDrag((s) => s.drag?.kind === "characters" && s.drag.dir === "apply");
 
-  // ★위 = 스택(순차 생성), 아래 = 교체. 스택 카드가 배너 **위쪽**으로 겹치는 모양과 방향을 맞춘다
-  const swap = useDropZone({
-    id: `sec-char-${ch.id}-swap`,
-    kind: "characters",
-    prio: 2,
-    onDrop: (d) => {
-      const c = d.card as CharCard;
-      swapChar(ch.id, {
-        ref: c.id,
-        name: c.name,
-        color: c.color,
-        prompt: c.prompt,
-        uc: c.uc,
-        thumb: thumbFromCard(c.thumb),
-      });
-    },
-  });
+  /* ★★**받는 자리는 둘뿐이다: 스택 · 새로 추가** (사용자 지시 2026-08-20).
+     ~~교체~~ 를 걷었다 — 카드 하나를 위아래로 갈라 셋을 구별하게 하니 너무 복잡했고,
+     교체는 **새로 추가하고 옛 카드를 지우는 것**과 결과가 같다. 그래서 이제 카드 위는
+     통째로 「스택」이고, 새 인원은 아래의 「+」 자리(`JoinZone`)가 받는다. */
   const stack = useDropZone({
     id: `sec-char-${ch.id}-stack`,
     kind: "characters",
@@ -221,6 +234,7 @@ export function CharSection({ ch, index, onThumb }: { ch: Char; index: number } 
         /* ★이름은 **카드 안에서** 고친다 (사용자 지시 2026-08-19) — 시스템 `prompt()` 창을
            띄우던 자리다. 연필 단추는 `SectionCard` 가 스스로 단다. */
         onRename={(v) => renameChar(ch.id, v)}
+        renameTip={t("cards.rename")}
         bannerActions={
           <>
             {/* ★아이콘은 언제나 SVG (CLAUDE.md) — 여기는 `● ○ × ✎` 글자를 쓰고 있었다 */}
@@ -237,33 +251,13 @@ export function CharSection({ ch, index, onThumb }: { ch: Char; index: number } 
         }
         hoverLift
         overlay={
-          active && (
-            // ★카드 **전체**를 위아래 반으로 나눈다 (사용자 지적).
-            //   위 = 스택 — 스택 카드가 배너 위쪽으로 겹치는 모양과 방향을 맞춘 것이다.
-            <>
-              <Zone
-                innerRef={stack.ref}
-                over={stack.over}
-                top="0"
-                height="50%"
-                noBottom
-                name="stack"
-                label={t("cards.zoneStack")}
-              >
-                {zoneIcon.stack()}
-              </Zone>
-              <Zone
-                innerRef={swap.ref}
-                over={swap.over}
-                top="50%"
-                height="50%"
-                name="swap"
-                label={t("cards.zoneSwap")}
-              >
-                {zoneIcon.swap()}
-              </Zone>
-            </>
-          )
+          // ★카드 **전체**가 스택 자리다 — 반으로 가르던 「교체」를 걷었다 (위 ★주).
+          //   표시는 앱 전체 공통이다 (`DropVeil`)
+          active ? (
+            <DropVeil innerRef={stack.ref} over={stack.over} label={t("cards.dropStack")} name="stack" />
+          ) : img.active ? (
+            <DropVeil over={img.over} label={t("cards.dropThumb")} name="thumb" />
+          ) : null
         }
       >
         <SectionBody
@@ -317,26 +311,31 @@ function StackPeek({ ch }: { ch: Char }) {
               gap: 8,
               padding: open ? "0 12px" : `0 12px ${CARD_H - PEEK}px`,
               boxShadow: "0 -3px 12px rgba(0,0,0,0.4)",
-              background: `radial-gradient(120px 45px at 82% 20%, rgba(255,255,255,0.3), transparent 70%), linear-gradient(100deg, ${c.color[0]}, ${c.color[1]} 60%)`,
+              overflow: "hidden",
+              /* ★★**앞 카드 배너와 같은 재료로 그린다** (사용자 지적 2026-08-20: 스택 카드에
+                 우측 계단식 검은 패널이 없다). 바탕은 그림 오른쪽으로 이어지는 단색,
+                 왼쪽 240px 은 계단으로 잘린 색 면 — `cards/banner` 의 값 하나를 셋이 함께
+                 쓴다. 같은 카드인데 앞에 있느냐 뒤에 있느냐로 생김새가 달라지면 안 된다. */
+              background: BANNER_BG,
             }}
           >
-            {/* ★★뒤 카드도 **앞 카드와 같은 밝기**여야 한다 (사용자 지적 2026-08-19).
-                앞 카드(배너)는 **아래쪽**이 0.5 로 눕는데, 스택 카드는 보이는 것이 **위쪽 띠**라
-                같은 그라데이션을 깔면 그 자리가 투명한 쪽이라 훨씬 밝게 보였다.
-                접혀 있을 때는 **고르게 0.5**(= 앞 카드의 글자 자리와 같은 값), 펼쳐서 카드가
-                통째로 보일 때만 앞 카드와 같은 아래쪽 그라데이션을 쓴다. */}
+            {/* 그림 자리 — 스택에는 그림이 없으므로 **같은 실루엣에 카드 색만** */}
             <span
               style={{
                 position: "absolute",
-                inset: 0,
-                borderRadius: 12,
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: BANNER_IMG_W,
                 pointerEvents: "none",
-                /* ★펼쳐도 보이는 것은 **겹쳐 있는 띠**라(카드끼리 −18px 로 물린다), 아래쪽만
-                   눕히는 앞 카드식 그라데이션은 그 자리가 투명한 쪽이라 훨씬 밝게 보인다.
-                   접히든 펴지든 **고르게 0.5** 다 (사용자 지적 2026-08-19, 두 번째). */
-                background: "rgba(0,0,0,0.5)",
+                maskImage: BANNER_CUT,
+                WebkitMaskImage: BANNER_CUT,
+                background: bannerEmptyFill(c.color),
               }}
-            />
+            >
+              {/* 중간 단 — 잘리기 전 구간을 한 번 어둡게 눕혀 계단을 만든다 */}
+              <span style={{ position: "absolute", inset: 0, background: BANNER_STEP }} />
+            </span>
             <b style={{ position: "relative", fontSize: "0.86rem", fontWeight: "var(--w-bold)" }}>
               {c.name}
             </b>
@@ -353,30 +352,32 @@ function StackPeek({ ch }: { ch: Char }) {
                 {t("cards.nextUp")}
               </span>
             )}
-            {/* ★펼쳤을 때만 단추가 선다 (사용자 지시 2026-08-19) — 접혀 있으면 카드가
-                몇 px 만 보여서 누를 자리가 없다. 앞으로 가져오기 · 빼기 둘이다. */}
-            {/* ★★단추는 **앞 카드와 같은 것**이다 (사용자 지적 2026-08-19: 오버레이만 깔지
-                말고 오른쪽 디자인도 통일하라). 크기·모서리·바탕·자리를 앞 카드 배너와 맞춘다 —
-                같은 카드인데 앞에 있느냐 뒤에 있느냐로 생김새가 달라지면 안 된다.
+            {/* ★★**펼쳤을 때만 선다** (사용자 지시 2026-08-20) — 접혀 있으면 카드가 몇 px 만
+                보여서 누를 자리가 없고, 겹친 띠 위에 단추만 늘어서 무엇이 무엇의 것인지 모른다.
+                ★단추는 앞 카드 배너와 **같은 것**이다 (`BannerBtn` 하나를 쓴다).
+                ★자리도 **이름과 같은 줄**이다 (사용자 지시 2026-08-20) — 카드가 통째로
+                  보이는 상태라 앞 카드처럼 이름 오른편에 서야 짝이 맞는다.
                 ★아래 방향 화살표다 — 스택은 **아래에 있는 앞 카드**로 내려보내는 것이다. */}
-            <span
-              style={{
-                position: "absolute",
-                right: 8,
-                top: 0,
-                height: PEEK,
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
-              }}
-            >
-              <BannerBtn title={t("cards.stackFront")} onClick={() => frontStack(ch.id, cards.length - 1 - i)}>
-                {Icon.chevronDown}
-              </BannerBtn>
-              <BannerBtn title={t("cards.stackDrop")} onClick={() => dropStack(ch.id, cards.length - 1 - i)}>
-                {Icon.close12}
-              </BannerBtn>
-            </span>
+            {open && (
+              <span
+                style={{
+                  position: "absolute",
+                  right: 8,
+                  top: 0,
+                  bottom: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+              >
+                <BannerBtn title={t("cards.stackFront")} onClick={() => frontStack(ch.id, cards.length - 1 - i)}>
+                  {Icon.chevronDown}
+                </BannerBtn>
+                <BannerBtn title={t("cards.stackDrop")} onClick={() => dropStack(ch.id, cards.length - 1 - i)}>
+                  {Icon.close12}
+                </BannerBtn>
+              </span>
+            )}
           </div>
         );
       })}
@@ -410,120 +411,39 @@ export function JoinZone() {
     <div
       ref={ref}
       data-zone="join"
-      data-tip={t("cards.zoneJoin")}
       style={{
         position: "relative",
-        zIndex: 31,
         margin: "0 0 var(--sp-5)",
         height: 46,
-        borderWidth: 2,
-        borderStyle: over ? "solid" : "dashed",
-        borderColor: "#fff",
         borderRadius: 12,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         fontSize: "0.74rem",
         fontWeight: "var(--w-bold)",
-        color: "#fff",
         boxSizing: "border-box",
-        background: over ? "rgba(0,0,0,0.78)" : "rgba(0,0,0,0.45)",
+        /* ★★여기는 **아직 아무것도 없는 자리**라 밝힐 내용이 없다 — 그래서 판 자체가
+           밝다 (사용자 지시 2026-08-20: 어둡게 덮는 방식을 쓰지 않는다).
+           어둠 위에 뜬 밝은 칸이 곧 「여기에 새로 넣는다」다. */
+        gap: "var(--sp-2)",
+        color: over ? "var(--accent-on)" : "var(--ink)",
+        background: over ? "var(--accent)" : "var(--surface)",
+        boxShadow: "0 2px 10px rgba(0,0,0,0.35)",
       }}
     >
       {zoneIcon.add(20)}
+      {/* ★그 위에 오면 **무슨 일이 일어나는지** 적는다 — 다른 자리와 같은 말투다 */}
+      {over && <span style={{ fontSize: "var(--text-xs)" }}>{t("cards.dropJoin")}</span>}
     </div>
   );
 }
 
 /* ── 조각 ─────────────────────────────────────────────────────── */
-function Zone({
-  innerRef,
-  over,
-  top,
-  height,
-  noBottom,
-  name,
-  label,
-  children,
-}: {
-  innerRef: React.MutableRefObject<HTMLDivElement | null>;
-  over: boolean;
-  top: string;
-  height: string;
-  noBottom?: boolean;
-  /** 테스트가 존을 찾는 손잡이 — 그림만 있어서 글자로는 못 찾는다 */
-  name: string;
-  /** 그림이 무슨 뜻인지는 툴팁에 남긴다 */
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      ref={innerRef}
-      data-zone={name}
-      data-tip={label}
-      style={{
-        position: "absolute",
-        left: 0,
-        right: 0,
-        top,
-        height,
-        zIndex: 12,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 6,
-        fontSize: "0.72rem",
-        fontWeight: "var(--w-bold)",
-        color: "#fff",
-        letterSpacing: "0.04em",
-        boxSizing: "border-box",
-        background: over ? "rgba(0,0,0,0.78)" : "rgba(0,0,0,0.45)",
-        // ★축약형(border)과 개별 속성(borderBottom)을 섞으면 React 가 재렌더에서
-        //   어느 쪽이 이길지 보장하지 않는다고 경고한다. 네 변을 따로 쓴다.
-        borderWidth: 2,
-        borderStyle: over ? "solid" : "dashed",
-        borderColor: "rgba(255,255,255,0.85)",
-        borderBottomWidth: noBottom ? 0 : 2,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
 
-function BannerBtn({
-  title,
-  onClick,
-  children,
-}: {
-  title: string;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      data-tip={title}
-      onPointerDown={(e) => e.stopPropagation()} // 배너의 역드래그가 걸리지 않게
-      onClick={onClick}
-      style={{
-        width: 20,
-        height: 20,
-        borderRadius: 5,
-        background: "rgba(0,0,0,0.42)",
-        color: "#fff",
-        fontSize: 11,
-        lineHeight: 1,
-      }}
-    >
-      {children}
-    </button>
-  );
-}
 
 /** 섹션 본문 — Prompt / Undesired Content 탭 짝 + 블록 목록.
  *  ★UC 에 내용이 있으면 탭 이름이 빨개진다 (v2.x 동작 계승). */
-function SectionBody({
+export function SectionBody({
   id,
   prompt,
   uc,

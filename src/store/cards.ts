@@ -4,6 +4,7 @@ import type { Block } from "../lib/blocks";
 import { slotBlocks } from "./workspace";
 import { t } from "../i18n";
 import { toast, undoToast } from "./toast";
+import { kindColor } from "../cards/kindColor";
 
 /** 카드 = 재사용하는 프롬프트 묶음. **워크스페이스 밖의 공용 저장소**다 (schema.md 1절).
  *  워크스페이스가 가르는 것은 작업 상태와 생성 이미지뿐이라, 어느 워크스페이스에서
@@ -47,26 +48,13 @@ type S = {
   remove: (kind: CardKind, id: string) => Promise<void>;
 };
 
-/** 카드 배경색 — 저장된 색이 없으면 이름에서 안정적으로 뽑는다.
- *  ★무작위로 하지 않는다: 같은 카드가 열 때마다 다른 색이면 카드로 기억할 수 없다. */
-const PALETTE: [string, string][] = [
-  ["#b57a2a", "#d8a34f"],
-  ["#5b3d87", "#9b6dd6"],
-  ["#14655e", "#2aa198"],
-  ["#7a2f4a", "#c96a8a"],
-  ["#2a4f8f", "#6a97d8"],
-  ["#1d7a5e", "#58a86c"],
-];
 
-export function colorOf(name: string): [string, string] {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return PALETTE[h % PALETTE.length];
-}
-
-const hydrate = <T extends { name: string; color?: [string, string] }>(c: T) => ({
+/** ★★색은 **종류가 정한다** (`cards/kindColor`, 사용자 결정 2026-08-20) — 저장된 색이
+ *  있어도 덮는다. 옛 카드에는 이름 해시로 뽑힌 색이 박혀 있어서, 그대로 두면 같은 종류인데
+ *  카드마다 색이 다른 화면이 남는다. 카드 하나하나를 가르는 것은 **그림**이 한다. */
+const hydrate = <T extends { name: string; color?: [string, string] }>(c: T, kind: CardKind) => ({
   ...c,
-  color: c.color ?? colorOf(c.name),
+  color: kindColor(kind),
 });
 
 export const useCards = create<S>((set, get) => ({
@@ -80,15 +68,20 @@ export const useCards = create<S>((set, get) => ({
       Record<CardKind, AnyCard[]>
     >("/api/cards");
     set({
-      styles: (r.styles ?? []).map(hydrate) as StyleCard[],
-      characters: (r.characters ?? []).map(hydrate) as CharCard[],
+      styles: (r.styles ?? []).map((c) => hydrate(c, "styles")) as StyleCard[],
+      characters: (r.characters ?? []).map((c) => hydrate(c, "characters")) as CharCard[],
       // ★옛 포즈세트 카드(문자열 태그)를 블록으로 — 읽을 때 한 번만
       posesets: (r.posesets ?? []).map((c) => {
-        const p = hydrate(c) as PoseCard;
+        const p = hydrate(c, "posesets") as PoseCard;
         return { ...p, cells: (p.cells ?? []).map((x) => ({ name: x.name, blocks: slotBlocks(x) })) };
       }) as PoseCard[],
       loaded: true,
     });
+    /* ★★**코드는 카드를 만들지 않는다** (사용자 지시 2026-08-20). 한동안 첫 실행에
+       견본 카드 셋을 넣었지만, 덱에 「새 카드」 단추가 생기면서 그 자리가 없어졌다 —
+       빈 덱에는 그 단추가 서 있고, 카드는 **사용자가 만들거나 끌어다 놓아야** 생긴다.
+       ★씨앗을 다시 도입하지 말 것: 지운 견본이 되살아나지 않게 하는 표식이 필요해지고,
+         그 표식이 곧 "코드가 사용자 데이터를 만든다"는 경로가 된다. */
   },
 
   /** ★★카드의 **신원은 이름**이다 (사용자 지시 2026-08-19).
@@ -116,9 +109,9 @@ export const useCards = create<S>((set, get) => ({
     const r = await api<{ card: AnyCard }>(`/api/cards/${kind}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ card: { ...card, folder, color: card.color ?? colorOf(card.name) } }),
+      body: JSON.stringify({ card: { ...card, folder, color: kindColor(kind) } }),
     });
-    const saved = hydrate(r.card) as AnyCard;
+    const saved = hydrate(r.card, kind) as AnyCard;
     // 같은 id 가 있으면 갈아 끼우고 없으면 맨 앞에 (목록은 최근 갱신 순)
     const cur = get()[kind] as AnyCard[];
     const next = cur.some((x) => x.id === saved.id)

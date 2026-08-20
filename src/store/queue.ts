@@ -112,6 +112,10 @@ function startHeartbeat() {
   }, 20000);
 }
 
+/** 지금 붙는 중인가 — `connect()` 가 `await` 를 만나기 **전에** 세우는 표식.
+ *  ★소켓이 생기기 전 구간을 이것이 지킨다 (`connect` 의 ★주) */
+let connecting = false;
+
 export const useQueue = create<S>((set, get) => ({
   connected: false,
   progress: EMPTY,
@@ -122,13 +126,35 @@ export const useQueue = create<S>((set, get) => ({
   error: "",
 
   async connect() {
+    /* ★★**자리를 먼저 잡고 기다린다** (사용자 지적 2026-08-20: 워크스페이스를 만들다
+       `Failed to fetch`). 예전에는 아래 `await` 를 건너 **소켓을 만든 뒤에야** `sock` 이
+       채워졌다. 그 사이에 `connect()` 가 한 번 더 불리면(개발 모드의 StrictMode 이중 마운트가
+       그렇다) **둘 다 문을 통과해 소켓이 두 개** 생긴다.
+       서버는 같은 `clientId` 로 새로 붙으면 옛 소켓을 닫으므로(`server.py` 의 `/ws`),
+       닫힌 쪽이 다시 붙고 → 그게 다른 쪽을 닫고 → …가 **끝없이 돈다.**
+       실측(2026-08-20 로그): 90분 동안 재연결 **58,120번**, 오류 로그 7.5MB.
+       그 소음 속에서 평범한 요청이 간헐적으로 거절돼 `Failed to fetch` 로 보였다. */
+    if (connecting) return;
     if (sock && (sock.readyState === WebSocket.OPEN || sock.readyState === WebSocket.CONNECTING)) return;
-    const base = await backendUrl();
+    connecting = true;
+    const base = await backendUrl().catch(() => {
+      connecting = false;
+      return "";
+    });
+    if (!base) return;
     const id = localStorage.getItem(KEY) || "";
     const url = base.replace(/^http/, "ws") + "/ws" + (id ? `?clientId=${encodeURIComponent(id)}` : "");
 
-    const ws = new WebSocket(url);
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(url);
+    } catch {
+      // ★표식을 반드시 내린다 — 여기서 새면 앱이 사는 동안 **다시는 안 붙는다**
+      connecting = false;
+      return;
+    }
     sock = ws;
+    connecting = false;
 
     ws.onopen = () => {
       retry = 0;
@@ -140,8 +166,11 @@ export const useQueue = create<S>((set, get) => ({
       ws.send(JSON.stringify({ type: "sync", last_seq: get().lastSeq, ...cliCursor() }));
     };
     ws.onclose = () => {
+      // ★**지금 것이 아니면 아무것도 안 한다** — 옛 소켓이 닫힌 것으로 「끊겼다」를 켜거나
+      //   재연결을 걸면, 살아 있는 연결을 두고 다시 붙는 고리가 생긴다 (위 ★주)
+      if (sock !== ws) return;
+      sock = null;
       set({ connected: false });
-      if (sock === ws) sock = null;
       // 지수 백오프 재연결 (최대 10초)
       retry = Math.min(retry + 1, 10);
       setTimeout(() => void get().connect(), Math.min(500 * retry, 10000));

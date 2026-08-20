@@ -192,6 +192,8 @@ export function Shell({
                 display: "flex",
                 flexDirection: "column",
                 background: "var(--bg)",
+                /* ★끌고 있을 때의 강조는 **덱 줄 자신**이 한다 (`DeckPanel` 의 ★주) —
+                   어둠 위로 올라와 밝게 남는 방식이라 여기서 테두리를 그리지 않는다 */
                 borderLeft: "1px solid var(--line)",
               }}
             >
@@ -230,7 +232,10 @@ function PanelHeader({
       side={side}
       collapsed={false}
       onClick={onCollapse}
-      data-tip={t("panel.collapse", { name: title })}
+      /* ★★`data-tip` 으로 넘기면 **그 값이 버려진다** (2026-08-19 조작 테스트에서 잡았다) —
+         이 컴포넌트가 받는 것은 `title` 이고, 하이픈이 든 프롭은 타입 검사도 안 걸린다.
+         그래서 툴팁이 이름 없는 「 접기」(앞에 빈칸)로 떴다. */
+      title={t("panel.collapse", { name: title })}
     />
   );
   return (

@@ -5,8 +5,9 @@ import { Shell } from "./app/Shell";
 import { TitleBar } from "./app/TitleBar";
 import { WindowFrame } from "./app/WindowFrame";
 import { Icon } from "./components/Icon";
-import { useTheme } from "./store/theme";
 import { useUi, applyFont } from "./store/ui";
+import { useTheme } from "./store/theme";
+import { useDeckPeek } from "./cards/deckPeek";
 import { useGen } from "./store/gen";
 import { useQueue } from "./store/queue";
 import { scheduleSave, useWs } from "./store/workspace";
@@ -38,7 +39,7 @@ import { useWildcards } from "./store/wildcards";
 import { ThumbDialog } from "./cards/ThumbDialog";
 import { saveCardWithThumb } from "./cards/saveCard";
 import { pinImage, setCardThumb } from "./cards/thumbUpload";
-import { usePrompt, defaultView } from "./store/prompt";
+import { usePrompt, defaultView, normThumb, thumbUrl, type Thumb } from "./store/prompt";
 import { useCards, type AnyCard, type CardKind } from "./store/cards";
 import type { DragImage } from "./cards/dragStore";
 
@@ -52,11 +53,17 @@ import type { DragImage } from "./cards/dragStore";
  *  ★종류당 하나였던 **덱 커버**는 그리던 손패와 함께 통째로 걷었다 (2026-08-19). */
 type ThumbTarget =
   | { type: "section"; section: string; img: DragImage }
-  | { type: "card"; kind: CardKind; card: AnyCard; img: DragImage };
+  | { type: "card"; kind: CardKind; card: AnyCard; img: DragImage }
+  /** ★이미 붙어 있는 그림의 **자리만 다시 잡는다** (카드 편집기에서 연다) —
+   *  새로 굽지 않으므로 `tid` 를 그대로 쓴다 (사용자 지시 2026-08-20) */
+  | { type: "card-thumb"; kind: CardKind; card: AnyCard; tid: string; view: Thumb };
 
 export function App() {
   // ★백엔드 상태는 **스토어 하나**가 든다 — 보는 자리가 넷이다 (타이틀바 점 · 설정의 앱
   //   정보 · 부팅 화면 · 생성 푸터의 토큰 검사). 여기 지역 상태로 두면 못 내려간다.
+  // ★카드를 덱으로 끌기 시작하면 **접힌 덱을 잠깐 펴 준다** (`useDeckPeek`).
+  //   강조는 덱 줄이 스스로 한다 (어둠 위로 올라와 밝게 남는다)
+  useDeckPeek();
   const health = useHealth((s) => s.health);
   const dead = useHealth((s) => s.dead);
   const mode = useUi((s) => s.mode);
@@ -78,6 +85,19 @@ export function App() {
   const closeSettings = useUi((s) => s.closeSettings);
   // ★탭 줄의 「+」 — 게이트를 그 자리에서 띄운다 (워크스페이스를 닫지 않고 하나 더 연다)
   const [gate, setGate] = useState(false);
+
+  /** ★★초기 화면으로 떨어지면 **그 표식을 놓는다** (사용자 지적 2026-08-20:
+   *  *"마지막 워크스페이스를 지워서 초기화면으로 간 상태에서 새로 워크스페이스를 만들면,
+   *  이전에 켰던 워크스페이스 선택 모달이 안꺼지고 그대로 켜져있음"*).
+   *
+   *  초기 화면(`!wsCurrent`)은 **스스로 못 닫는 게이트**를 따로 띄운다. 그때 「+」로 켜 둔
+   *  표식이 `true` 인 채 남아 있으면, 워크스페이스가 생겨 본 화면으로 돌아가는 순간
+   *  **닫히는 게이트가 한 번 더** 뜬다 — 방금 쓴 그 모달이 그대로 떠 있는 것처럼 보인다.
+   *  ★모달 상태를 **화면이 바뀔 때 놓는** 것이 규칙이다: 초기 화면은 그리는 것이 정해져
+   *    있어서, 거기 없는 창의 상태는 얼어붙었다가 되살아난다. */
+  useEffect(() => {
+    if (!wsCurrent) setGate(false);
+  }, [wsCurrent]);
 
   // ★저장된 글꼴 선택을 부팅 때 한 번 꽂는다. `--font-sans` 는 CSS 기본값이 Pretendard 라,
   //   이걸 안 하면 다른 글꼴을 골라 뒀어도 새로 켤 때 Pretendard 로 돌아간다.
@@ -158,7 +178,10 @@ export function App() {
         titleRight={
           <>
             <Status />
-            {/* ★언어·글꼴·테마는 **설정 안**으로 모았다 — 자주 안 쓰는 것이 타이틀바를 채우고 있었다 */}
+            {/* ★★해/달 단추는 **되살렸다** (사용자 지시 2026-08-20). 한 번 걷었다가
+                되돌린 자리다 — 밝게/어둡게를 오가는 것은 자주 하는 일이라 타이틀바에
+                있어야 하고, 설정의 「시스템·밝게·어둡게」는 **무엇을 따를지 정하는** 자리라
+                하는 일이 다르다. */}
             <ThemeButton />
             <button
               data-settings-open
@@ -228,6 +251,11 @@ export function App() {
             <DeckPanel
               onAsk={setAsk}
               onImageDrop={(kind, card, img) => setThumbAsk({ type: "card", kind, card, img })}
+              /* ★이미 붙어 있는 그림의 **자리만** 다시 잡는다 — 다시 굽지 않는다 */
+              onEditThumb={(kind, card) => {
+                const view = normThumb(card.thumb);
+                if (view?.tid) setThumbAsk({ type: "card-thumb", kind, card, tid: view.tid, view });
+              }}
             />
           )
         }
@@ -263,10 +291,31 @@ export function App() {
       {/* ★key 로 목적지·그림마다 창을 새로 만든다 — 안에서 잡아 둔 위치가
           부모 재렌더에 초기화되지 않게 하는 유일한 안전한 방법이다 */}
       <ThumbDialog
-        key={thumbAsk ? `${thumbAsk.type}:${"section" in thumbAsk ? thumbAsk.section : thumbAsk.card.id}:${thumbAsk.img.file}` : "none"}
+        key={
+          thumbAsk
+            ? `${thumbAsk.type}:${"section" in thumbAsk ? thumbAsk.section : thumbAsk.card.id}:${
+                "img" in thumbAsk ? thumbAsk.img.file : thumbAsk.tid
+              }`
+            : "none"
+        }
         ask={
           thumbAsk
-            ? thumbAsk.type === "section"
+            ? thumbAsk.type === "card-thumb"
+              ? {
+                  // ★이미 굽힌 그림이다 — 주소는 `tid` 로 만들고, 지금 잡혀 있는 자리로 연다
+                  url: thumbUrl(useGen.getState().base, thumbAsk.view),
+                  banner: thumbAsk.view.banner ?? defaultView(),
+                  boxes: [
+                    {
+                      key: "face",
+                      label: tGlobal("thumb.inCard"),
+                      w: 110,
+                      h: 146,
+                      view: thumbAsk.view.face ?? defaultView(),
+                    },
+                  ],
+                }
+            : thumbAsk.type === "section"
               ? {
                   url: thumbAsk.img.url,
                   banner: defaultView(),
@@ -287,6 +336,18 @@ export function App() {
           setThumbAsk(null);
           if (!t) return;
           void (async () => {
+            // ★★**이미 붙어 있는 그림**은 다시 굽지 않는다 — 자리만 갈아 끼운다
+            if (t.type === "card-thumb") {
+              const view = { banner: r.banner ?? defaultView(), face: r.boxes.face ?? defaultView() };
+              const next = await setCardThumb(t.kind, t.card.id, t.tid, view);
+              if (next) {
+                const cur = useCards.getState()[t.kind];
+                useCards.setState({
+                  [t.kind]: cur.map((c) => (c.id === next.id ? { ...c, ...next } : c)),
+                } as never);
+              }
+              return;
+            }
             // ★어디에 걸든 먼저 **고정 썸네일 하나**로 굳힌다 — 배너·카드 앞면·덱 커버가
             //   전부 이 tid 를 가리킨다. 목적지마다 따로 굽지 않는다 (사용자 결정 2026-08-02).
             const tid = await pinImage(t.img.ws, t.img.file);
@@ -388,6 +449,9 @@ const navBtn: React.CSSProperties = {
 
 
 
+
+/** 밝게/어둡게 토글 — 지금 보이는 상태의 **반대로** 넘긴다.
+ *  ★「시스템을 따른다」로 되돌리는 것은 설정에서 한다 (여기는 두 상태만 오간다). */
 function ThemeButton() {
   const theme = useTheme((s) => s.theme);
   const toggle = useTheme((s) => s.toggle);
