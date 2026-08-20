@@ -7,6 +7,10 @@ httpx>=0.27.0
 Pillow>=10.0.0
 piexif>=1.1.3
 aiofiles>=23.0.0
+# ★파일 업로드(`/api/tools/meta` 의 `UploadFile`)에 필요하다. FastAPI 가 **부를 때가 아니라
+#   임포트할 때** 없으면 죽으므로, 빠지면 백엔드가 아예 안 켜진다.
+#   (2026-08-20 CI 가 잡았다 — 개발 기계에는 딸려 들어와 있어 안 보였다)
+python-multipart>=0.0.9
 websockets>=12.0
 
 # 검열 — ★ONNX 로 번들한다 (사용자 결정 2026-08-05). ultralytics·torch 를 넣지 말 것:
