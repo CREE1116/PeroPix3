@@ -608,6 +608,12 @@ function save(s: Saved) {
 }
 
 /** 실제로 가릴 박스만. 끈 것은 뺀다 */
+/** 서버로 보낼 박스만 추린다.
+ *
+ *  ★★**여기서 새로 만든 객체가 곧 서버가 보는 전부**다. 필드를 늘렸으면 이 자리에도
+ *    더해야 한다 — 안 그러면 화면에는 있는데 **가리기에는 없다.**
+ *    실측 2026-08-21: 윤곽(`mask`)을 붙여 놓고 여기를 안 고쳐서, 「찾은 모양대로 가리기」를
+ *    켜도 계속 네모가 나왔다. 사용자가 그것을 보고 알려 주기 전까지 안 보였다. */
 export const liveBoxes = (b: Box[]) =>
   b
     .filter((x) => !x.off)
@@ -615,6 +621,8 @@ export const liveBoxes = (b: Box[]) =>
       box: x.box.map((v) => Math.round(v)) as [number, number, number, number],
       method: x.method,
       rotation: x.rotation ?? 0,
+      // 손으로 그린 박스에는 없다 — 그때는 서버가 네모로 그린다
+      ...(x.mask ? { mask: x.mask } : {}),
     }));
 
 /** 가리는 방법 한 벌. 미리보기와 저장이 **같은 값**을 보낸다 */
