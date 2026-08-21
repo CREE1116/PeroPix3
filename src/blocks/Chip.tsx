@@ -108,20 +108,18 @@ export function Chip({
    *    (실측 2026-08-22: 최대 22px → 2px). 놓으면 곧바로 원래 표기로 돌아온다.
    *  ★★배지에 `minWidth` 로 **자리를 미리 비워 두지 말 것** (사용자 지적 2026-08-22) —
    *    숫자 왼쪽에 빈칸이 남고, 그것이 고정 풀릴 때에야 사라져 **반응이 느린 것처럼** 보였다.
-   *  ★푸는 때는 **커서가 칩을 벗어날 때**다 (사용자 지시). 안 벗어난 채로 손을 떼는 경우가
-   *    있어 마지막 휠에서 조금 지나면 스스로도 푼다.
+   *  ★★푸는 때는 **커서가 칩을 벗어날 때뿐**이다 (사용자 지시 2026-08-21·22).
+   *    ~~마지막 휠에서 얼마 지나면 스스로 푸는 안전장치~~를 뒀다가 걷었다 — 손만 멈추면
+   *    커서가 그대로 위에 있는데도 몇 초 뒤 줄이 바뀌어 버렸다. 다시 넣지 말 것.
+   *    안 풀린 채로 남아도 손해는 칩이 몇 px 넓은 것뿐이고, 다음에 커서가 지나가면 풀린다.
    *  ★긴 태그는 이 동안 말줄임으로 잘릴 수 있다 — 폭이 고정되고 배지가 자리를 차지해서다.
    *    놓으면 곧바로 돌아온다. 줄이 튀는 것보다 낫다고 봤다. */
   const [pin, setPin] = useState<number | null>(null);
   const pinning = useRef(false);
-  const idle = useRef<ReturnType<typeof setTimeout> | null>(null);
   const release = () => {
-    if (idle.current) clearTimeout(idle.current);
-    idle.current = null;
     pinning.current = false;
     setPin(null);
   };
-  useEffect(() => () => { if (idle.current) clearTimeout(idle.current); }, []);
 
   useEffect(() => {
     const el = ref.current;
@@ -133,8 +131,6 @@ export function Chip({
         pinning.current = true;
         setPin(pinWidth(el, wRef.current));   // ★바꾸기 **전에** 얼린다 (위 ★★주)
       }
-      if (idle.current) clearTimeout(idle.current);
-      idle.current = setTimeout(release, 900);
       const step = e.shiftKey ? 0.1 : 0.05;
       const cur = wRef.current ?? 1;
       const next = Math.round((cur + (e.deltaY < 0 ? step : -step)) * 100) / 100;
