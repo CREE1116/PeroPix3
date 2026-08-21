@@ -352,15 +352,13 @@ export function SceneLane() {
     const waiting = pending.filter((p) => p.tabId === tab?.id && p.cellId === focusCell).length;
     const cw = Math.min(LANE_MAX, Math.max(LANE_MIN, laneSize));
     const step = cw + GAP;
-    // ★세로 모드에서는 머리가 **옆**이라 장 앞을 안 막는다 (`SceneRow` 의 `PAD` 와 같은 값)
-    const pad = vert ? 8 : headw + 8;
-    const lead = pad + (waiting + at) * step;
+    const lead = headw + 8 + (waiting + at) * step;
 
     // ★장이 늘어서는 축 — 줄 머리에 가리지도, 끝으로 넘치지도 않게
     const pos = vert ? el.scrollTop : el.scrollLeft;
     const size = vert ? el.clientHeight : el.clientWidth;
     let next = pos;
-    if (lead < pos + pad) next = lead - pad;
+    if (lead < pos + headw) next = lead - headw - 8;
     else if (lead + cw > pos + size) next = lead + cw - size + 8;
     if (next !== pos) {
       if (vert) el.scrollTop = next;
@@ -1459,10 +1457,12 @@ function SceneRow(
   // ★세로 모드에서는 장이 **아래로** 쌓이므로 걸음도 높이다
   const STEP = (p.vert ? p.h : p.w) + GAP;
   const total = waits.length + takes.length;
-  /** 장이 시작하는 자리까지의 여백 — ★세로 모드에서는 머리가 **옆**이라 앞을 안 막는다 */
-  const PAD = p.vert ? 8 : p.headw + 8;
-  const from = p.view.w ? Math.max(0, Math.floor((p.view.x - PAD) / STEP) - 2) : 0;
-  const to = p.view.w ? Math.min(total, Math.ceil((p.view.x + p.view.w - PAD) / STEP) + 2) : total;
+  const from = p.view.w
+    ? Math.max(0, Math.floor((p.view.x - p.headw - 8) / STEP) - 2)
+    : 0;
+  const to = p.view.w
+    ? Math.min(total, Math.ceil((p.view.x + p.view.w - p.headw - 8) / STEP) + 2)
+    : total;
   const lead = from > 0 ? from * STEP - GAP : 0;
   const tail = total - to > 0 ? (total - to) * STEP - GAP : 0;
   const patchCell = (patch: Partial<Slot>) =>
@@ -1479,15 +1479,11 @@ function SceneRow(
            늘어나면 줄마다 두께가 달라져 눈이 훑을 기준을 잃는다. 그래서 블록은
            **펼쳤을 때만** 자리를 차지한다 — 접혀 있을 때는 한 줄 요약이다.
            ★세로 모드에서는 그 두께가 **폭**이고, 기둥은 세로로 꽉 찬다. */
-        /* ★★세로 모드에서도 머리는 **왼쪽**이다 (사용자 지시 2026-08-22) — 아래 모드와 같은
-           자리다. 다른 것은 그 안의 **글이 세로로 서고**, 장이 오른쪽에 **아래로 쌓인다**는 것뿐.
-           그래서 씬 하나의 폭은 `머리 띠 + 칸`이다. */
         ...(p.vert
           ? {
+              flexDirection: "column" as const,
               flexShrink: 0,
-              ...(expanded
-                ? { minWidth: p.headw + p.w + 12 }
-                : { width: p.headw + p.w + 12 }),
+              ...(expanded ? { minWidth: p.w + 12 } : { width: p.w + 12 }),
               borderRight: "1px solid var(--line-soft)",
             }
           : {
@@ -1507,17 +1503,13 @@ function SceneRow(
         }}
         style={{
           cursor: "pointer",
+          position: "sticky",
           zIndex: 2,
           flexShrink: 0,
-          // ★머리는 **두 모드 다 왼쪽**이다. 세로 모드에서는 띠가 좁고 글이 세로로 선다
-          width: p.headw,
-          borderRight: "1px solid var(--line)",
-          /* ★★아래 모드에서는 줄이 **가로로** 굴러가므로 머리를 왼쪽에 붙들어 둔다.
-             세로 모드에서는 굴러가는 것이 **씬 자체**라, 붙들면 머리들이 왼쪽 끝에 겹쳐 쌓인다 —
-             제 기둥과 함께 움직여야 한다. 대신 안쪽 손잡이를 위해 기준만 남긴다. */
+          // ★머리는 시작 쪽에 붙는다 — 아래 모드면 왼쪽, 세로 모드면 위. 크기는 같은 값이다
           ...(p.vert
-            ? { position: "relative" as const, writingMode: "vertical-rl" as const }
-            : { position: "sticky" as const, left: 0 }),
+            ? { top: 0, height: p.headw, borderBottom: "1px solid var(--line)" }
+            : { left: 0, width: p.headw, borderRight: "1px solid var(--line)" }),
           background: on ? "var(--accent-bg)" : "var(--surface)",
           display: "flex",
           flexDirection: "column",
@@ -1531,25 +1523,24 @@ function SceneRow(
             굴러가므로 어떤 값으로도 안 맞는다. 머리에 붙여 두면 어긋날 수가 없다. */}
         {p.vert && (
           <div
-            data-head-grip="col"
+            data-head-grip="row"
             onPointerDown={(e) => {
               (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-              headGrip.current = { y: e.clientX, h: p.headw };
+              headGrip.current = { y: e.clientY, h: p.headw };
             }}
             onPointerMove={(e) => {
               const g = headGrip.current;
               if (!g) return;
-              useUi.getState().setLaneHeadH(g.h + (e.clientX - g.y));
+              useUi.getState().setLaneHeadH(g.h + (e.clientY - g.y));
             }}
             onPointerUp={() => { headGrip.current = null; useUi.getState().commitLayout(); }}
             onPointerCancel={() => { headGrip.current = null; }}
             onClick={(e) => e.stopPropagation()}
-            style={{ position: "absolute", top: 0, bottom: 0, right: -3, width: 7, zIndex: 3, cursor: "col-resize" }}
+            style={{ position: "absolute", left: 0, right: 0, bottom: -3, height: 7, zIndex: 3, cursor: "row-resize" }}
           />
         )}
-        {/* ★★세로 모드의 머리는 **세로쓰기 띠**라 좁다 — 넘치면 접는다
-            (사용자 지적 2026-08-22: 글자가 머리 밖으로 튀어나갔다).
-            ★`writing-mode` 안에서는 flex 축도 함께 돌아간다 — `wrap` 이 곧 「옆 칸으로」다. */}
+        {/* ★★세로 모드에서는 머리가 좁다 — **줄바꿈을 허용**하고 이름은 줄여서 넣는다
+            (사용자 지적 2026-08-22: 글자가 머리 밖으로 튀어나갔다). */}
         <span
           style={{
             display: "flex",
