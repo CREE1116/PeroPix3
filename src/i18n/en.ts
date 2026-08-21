@@ -391,6 +391,8 @@ export const en = {
   canvas: {
     hideHint: "Moves to trash (Ctrl+Z undoes; emptied after 24h)",
     starOnly: "Starred only",
+    laneToRight: "Move scenes to the right — split beside the image (better for tall images)",
+    laneToBottom: "Move scenes back to the bottom",
     starAll: "Show all",
     generate: "Generate",
     generateShortcut: "Generate (Ctrl+Enter)",

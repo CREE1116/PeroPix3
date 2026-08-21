@@ -848,10 +848,24 @@ export const useWs = create<S>((set, get) => ({
 
     set({ spec: cur });
     get().addChar(t("chars.cloneName"));
-    const sp = get().spec;
-    const tab = sp?.tabs.find((x) => x.id === sp.activeTab);
+    /* ★★새 탭은 **씬 카드 없이** 시작한다 (`switchChar` 의 ★★주, 2026-08-20). 복제는 그 그림이
+       설 씬이 하나 필요하므로 **여기서 만든다.**
+       ★없다고 조용히 `return null` 하던 자리다 — 탭만 생기고 프롬프트도 그림도 안 오는
+         빈 껍데기가 남았다 (사용자 지적 2026-08-22: *"새 탭으로 복제 안되고 있음"*).
+         오류도 토스트도 없어서 무엇이 잘못됐는지 알 수가 없었다. */
+    let sp = get().spec;
+    let tab = sp?.tabs.find((x) => x.id === sp!.activeTab);
+    if (tab?.kind === "set" && !tab.cards.length) {
+      get().addCard(tab.id);
+      sp = get().spec;
+      tab = sp?.tabs.find((x) => x.id === sp!.activeTab);
+    }
     const cell = tab?.kind === "set" ? tab.cards[0]?.cells[0] : undefined;
-    if (!sp || !tab || tab.kind !== "set" || !cell) return null;
+    if (!sp || !tab || tab.kind !== "set" || !cell) {
+      // ★조용히 돌아가지 않는다 — 여기까지 왔는데 못 만들면 그것이 결함이다
+      console.warn("[clone] 새 탭에 씬을 못 만들었다", { tab: tab?.id, kind: tab?.kind });
+      return null;
+    }
 
     // 1) 프롬프트 구조 — 스타일·블록·캐릭터 카드 그대로 (새 탭으로 옮긴 **뒤**라 원본이 안 덮인다)
     //    ★구조를 못 찾았으면 **안 건드린다** — 그때는 `apply` 가 메타데이터로 세운다

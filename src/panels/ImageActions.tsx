@@ -110,9 +110,11 @@ export function ImageActions({
       // ★공홈처럼 **해상도를 그림에 맞춘다** — 안 맞추면 전송 직전 리샘플이 그림을 늘린다
       await fitSizeToBase(b64);
       // ★그림이 들어간 자리도 보여 준다 — 우측 패널이 접혀 있으면 펴진다
-      // ★그림이 들어간 자리를 **펴고 강조하고 그리로 스크롤**한다 (사용자 지시 2026-08-19).
-      //   이미지 입력은 **왼쪽 기둥**에 산다 (`OptionsPanel` 안) — 예전 `right` 는 옛 자리다
-      useUi.getState().reveal("left", "base");
+      /* ★그림이 들어간 자리를 **펴고 강조하고 그리로 데려간다** (사용자 지시 2026-08-19).
+         이미지 입력은 **왼쪽 기둥**에 산다 (`OptionsPanel` 안) — 예전 `right` 는 옛 자리다.
+         ★★데려가는 것은 **앱을 통틀어 여기 하나뿐**이다 (사용자 지시 2026-08-22) —
+           `reveal` 의 기본이 「안 데려감」이라 여기서만 참을 준다. 늘리지 말 것. */
+      useUi.getState().reveal("left", "base", true);
       s.patchBase({ baseMode: mode });
       useUi.getState().setMode("generate");
       onLeave?.();

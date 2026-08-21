@@ -58,56 +58,100 @@ export function Canvas() {
   );
 }
 
-/** 씬 무대 — 위는 **고른 한 장**, 아래는 씬 칸. 사이를 손잡이로 끈다.
+/** 씬 무대 — **고른 한 장**과 **씬 칸**을 함께 놓는다.
+ *
+ *  ★★놓는 방향이 둘이다 (사용자 지시 2026-08-22, `useUi.laneSide`):
+ *      `bottom`  위에 큰 그림, 아래에 씬 줄 — 지금까지의 모습
+ *      `right`   **세로 모드** — 가운데를 좌우로 양분해 씬을 오른쪽으로 보낸다.
+ *                세로로 긴 그림은 아래에 줄이 누우면 그만큼 작아지는데, 옆으로 보내면
+ *                높이를 다 쓴다. 「우측 패널처럼」이라는 말이 그 뜻이다.
+ *    ★가르는 손잡이도 방향을 따라간다 (아래는 `row-resize`, 옆은 `col-resize`).
+ *    ★두 모습이 **같은 컴포넌트를 그대로 쓴다** — 씬 줄을 세로용으로 따로 만들지 않는다.
+ *      만들면 고칠 때마다 두 벌을 맞춰야 한다.
  *
  *  ★씬 칸은 **빈 자리를 남기지 않는다** — 내용이 짧으면 그만큼으로 줄어든다. 다만 카드가
  *    하나도 없을 때는 안 줄인다: 그릇이 있다는 것과 「씬 카드 추가하기」가 설 자리가 필요하다. */
 function SceneStage() {
-  const { laneHeight, setLaneHeight } = useUi();
+  const { laneHeight, setLaneHeight, laneWidth, setLaneWidth, laneSide } = useUi();
   const grip = useRef<HTMLDivElement>(null);
+  const side = laneSide === "right";
+
+  /** 손잡이를 끄는 동안 크기를 따라 바꾼다 — 놓을 때 한 번만 저장한다(`commitLayout`) */
+  const drag = (e: React.PointerEvent) => {
+    grip.current?.setPointerCapture(e.pointerId);
+    const p0 = side ? e.clientX : e.clientY;
+    const s0 = side ? laneWidth : laneHeight;
+    // 씬은 오른쪽·아래에 있으므로 **거슬러 끌면 커진다**
+    const move = (ev: PointerEvent) =>
+      side ? setLaneWidth(s0 + (p0 - ev.clientX)) : setLaneHeight(s0 + (p0 - ev.clientY));
+    const up = () => {
+      grip.current?.removeEventListener("pointermove", move);
+      grip.current?.removeEventListener("pointerup", up);
+      useUi.getState().commitLayout();
+    };
+    grip.current?.addEventListener("pointermove", move);
+    grip.current?.addEventListener("pointerup", up);
+  };
+
+  const handle = (
+    <div
+      ref={grip}
+      data-lane-grip={side ? "col" : "row"}
+      onPointerDown={drag}
+      style={{
+        flexShrink: 0,
+        ...(side
+          ? { width: 11, margin: "var(--sp-3) 0 0", cursor: "col-resize" }
+          : { height: 11, margin: "var(--sp-3) var(--sp-4) 0", cursor: "row-resize" }),
+        display: "grid",
+        placeItems: "center",
+        position: "relative",
+      }}
+    >
+      <span
+        style={{
+          ...(side ? { width: 5, height: 44 } : { width: 44, height: 5 }),
+          borderRadius: 3,
+          background: "var(--line-strong)",
+          opacity: 0.85,
+        }}
+      />
+    </div>
+  );
+
+  const lane = (
+    <div
+      style={{
+        flexShrink: 0,
+        display: "flex",
+        minHeight: 0,
+        minWidth: 0,
+        ...(side ? { width: laneWidth } : { height: laneHeight }),
+      }}
+    >
+      <SceneLane />
+    </div>
+  );
+
+  if (side)
+    return (
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "row" }}>
+        {/* 왼쪽 — 큰 그림과 그 아래 한 줄 */}
+        <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
+          <ScenePreview />
+          <SceneActions />
+        </div>
+        {handle}
+        {lane}
+      </div>
+    );
+
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <ScenePreview />
       <SceneActions />
-      <div
-        ref={grip}
-        data-lane-grip
-        onPointerDown={(e) => {
-          grip.current?.setPointerCapture(e.pointerId);
-          const y0 = e.clientY;
-          const h0 = laneHeight;
-          const move = (ev: PointerEvent) => setLaneHeight(h0 + (y0 - ev.clientY));
-          const up = () => {
-            grip.current?.removeEventListener("pointermove", move);
-            grip.current?.removeEventListener("pointerup", up);
-            useUi.getState().commitLayout();
-          };
-          grip.current?.addEventListener("pointermove", move);
-          grip.current?.addEventListener("pointerup", up);
-        }}
-        style={{
-          flexShrink: 0,
-          height: 11,
-          margin: "var(--sp-3) var(--sp-4) 0",
-          cursor: "row-resize",
-          display: "grid",
-          placeItems: "center",
-          position: "relative",
-        }}
-      >
-        <span
-          style={{
-            width: 44,
-            height: 5,
-            borderRadius: 3,
-            background: "var(--line-strong)",
-            opacity: 0.85,
-          }}
-        />
-      </div>
-      <div style={{ flexShrink: 0, height: laneHeight, display: "flex", minHeight: 0, minWidth: 0 }}>
-        <SceneLane />
-      </div>
+      {handle}
+      {lane}
     </div>
   );
 }

@@ -389,6 +389,8 @@ export const ja: Dict = {
   canvas: {
     hideHint: "ゴミ箱へ移動します (Ctrl+Z で戻せます・24時間後に空に)",
     starOnly: "星のみ表示",
+    laneToRight: "シーンを右へ — 画像と左右に分けて表示します（縦長の画像を大きく見るとき）",
+    laneToBottom: "シーンを下に戻します",
     starAll: "すべて表示",
     generate: "生成",
     generateShortcut: "生成 (Ctrl+Enter)",

@@ -5,7 +5,7 @@ import { DEFAULT_MODEL, MODELS, NAI_MAX, SIZE_PRESETS, alignTo64, modelCaps, use
 import { Icon } from "../components/Icon";
 import { Help } from "../components/Tip";
 import { ImageInputPanel } from "./ImageInputPanel";
-import { flashStyle, useFlash } from "../store/ui";
+import { flashStyle, useFlash, useUi } from "../store/ui";
 
 const SAMPLERS = ["k_euler_ancestral", "k_euler", "k_dpmpp_2m", "k_dpmpp_2m_sde", "k_dpmpp_2s_ancestral", "k_dpmpp_sde"];
 const SCHEDULERS = ["karras", "native", "exponential", "polyexponential"];
@@ -189,29 +189,49 @@ export function OptionsPanel() {
 /** 해상도 고르기 — **가로·세로·정방 탭** + 그 비율을 그린 목록 (사용자 지시 2026-08-19).
  *
  *  ★페로픽스파이의 `.res-item` 을 옮긴 것이다: [비율 사각형][W × H][묶음 이름].
- *  ★탭은 **지금 값이 있는 쪽**이 열린 채로 시작한다 — 고른 것이 안 보이는 채로 열리면
- *    무엇이 골라져 있는지 알 수 없다. 다른 탭에 있으면 그 탭에 점을 찍어 알린다.
+ *  ★★**탭을 누르면 그 방향이 바로 걸린다** (사용자 지시 2026-08-22). 방향마다 마지막에
+ *    고른 크기를 기억해 두고(`useUi.sizeLast`) 그것을 건다 — 세로로 뽑다가 가로로 옮길 때
+ *    목록에서 한 번 더 고르지 않아도 된다.
+ *    ★그래서 **지금 탭은 지금 값이 곧 알려 준다** (`dirOf(w, h)`) — 따로 들고 있지 않는다.
+ *      들고 있으면 밖에서 해상도가 바뀔 때(설정 불러오기·베이스 그림 맞춤) 둘이 어긋난다.
+ *  ★★탭에도 **비율 사각형**을 그린다 (사용자 지시 2026-08-22) — 이름만으로는 가로·세로가
+ *    한눈에 안 들어온다. 목록의 사각형과 **같은 방식**으로 그린다 (긴 변을 맞춘다).
  *  ★묶음(Small·Large·Wallpaper)은 지우지 않고 **줄 오른쪽에 이름으로** 남긴다 — 가르는
  *    축은 방향 하나뿐이어야 훑을 수 있다. */
 function SizePicker({ w, h, onPick }: { w: number; h: number; onPick: (w: number, h: number) => void }) {
   const t = useI18n((s) => s.t);
-  const dirOf = (a: number, b: number) => (a > b ? "landscape" : a === b ? "square" : "portrait");
-  const cur = dirOf(w, h);
-  const [tab, setTab] = useState(cur);
+  const sizeLast = useUi((u) => u.sizeLast);
+  const setSizeLast = useUi((u) => u.setSizeLast);
+  const dirOf = (a: number, b: number): SizeDir => (a > b ? "landscape" : a === b ? "square" : "portrait");
+  const tab = dirOf(w, h);
+
+  /** 고르면 그 방향의 마지막 값으로 적어 둔다 — 탭을 오갈 때 이것이 돌아온다 */
+  const pick = (pw: number, ph: number) => {
+    setSizeLast(dirOf(pw, ph), [pw, ph]);
+    onPick(pw, ph);
+  };
+
   const shown = SIZE_PRESETS.flatMap((g) => g.items.map((it) => ({ group: g.group, item: it })))
     .filter((x) => dirOf(x.item[0], x.item[1]) === tab);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
       <div style={{ display: "flex", gap: "var(--sp-2)" }}>
         {(["landscape", "portrait", "square"] as const).map((d) => {
           const on = tab === d;
+          const [lw, lh] = sizeLast[d] ?? DIR_FALLBACK[d];
           return (
             <button
               key={d}
               data-size-tab={d}
-              onClick={() => setTab(d)}
+              // ★누르는 순간 그 방향이 걸린다 — 목록은 그 결과로 따라 바뀐다
+              onClick={() => pick(lw, lh)}
               style={{
                 flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 5,
                 padding: "3px var(--sp-2)",
                 borderRadius: "var(--r-2)",
                 border: `1px solid ${on ? "var(--accent)" : "var(--line)"}`,
@@ -221,8 +241,8 @@ function SizePicker({ w, h, onPick }: { w: number; h: number; onPick: (w: number
                 fontWeight: on ? "var(--w-semi)" : 400,
               }}
             >
+              <Ratio w={lw} h={lh} max={13} on={on} />
               {t(`options.${d}`)}
-              {cur === d && !on && <span style={{ marginLeft: 4, color: "var(--accent)" }}>·</span>}
             </button>
           );
         })}
@@ -230,13 +250,11 @@ function SizePicker({ w, h, onPick }: { w: number; h: number; onPick: (w: number
       <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
         {shown.map(({ group, item: [pw, ph, star] }) => {
           const on = w === pw && h === ph;
-          // 긴 변을 26px 로 맞춘 사각형 — 비율이 한눈에 들어온다
-          const k = 26 / Math.max(pw, ph);
           return (
             <button
               key={`${pw}x${ph}`}
               data-size-preset={`${pw}x${ph}`}
-              onClick={() => onPick(pw, ph)}
+              onClick={() => pick(pw, ph)}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -251,14 +269,7 @@ function SizePicker({ w, h, onPick }: { w: number; h: number; onPick: (w: number
               }}
             >
               <span style={{ width: 28, height: 28, display: "grid", placeItems: "center", flexShrink: 0 }}>
-                <span
-                  style={{
-                    width: Math.round(pw * k),
-                    height: Math.round(ph * k),
-                    borderRadius: 2,
-                    background: on ? "var(--accent)" : "var(--ink-ghost)",
-                  }}
-                />
+                <Ratio w={pw} h={ph} max={26} on={on} />
               </span>
               <span style={{ flex: 1, fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums" }}>
                 {pw}×{ph}
@@ -276,6 +287,32 @@ function SizePicker({ w, h, onPick }: { w: number; h: number; onPick: (w: number
         })}
       </div>
     </div>
+  );
+}
+
+type SizeDir = "landscape" | "portrait" | "square";
+
+/** 저장된 값이 없을 때의 방향별 기본 — `store/ui` 의 초기값과 같아야 한다 */
+const DIR_FALLBACK: Record<SizeDir, [number, number]> = {
+  landscape: [1216, 832],
+  portrait: [832, 1216],
+  square: [1024, 1024],
+};
+
+/** 비율 사각형 — **긴 변을 `max` 로 맞춘다.** 탭과 목록이 같은 것을 쓴다 */
+function Ratio({ w, h, max, on }: { w: number; h: number; max: number; on: boolean }) {
+  const k = max / Math.max(w, h);
+  return (
+    <span
+      aria-hidden
+      style={{
+        width: Math.round(w * k),
+        height: Math.round(h * k),
+        borderRadius: 2,
+        flexShrink: 0,
+        background: on ? "var(--accent)" : "var(--ink-ghost)",
+      }}
+    />
   );
 }
 

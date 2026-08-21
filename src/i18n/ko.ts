@@ -402,6 +402,8 @@ export const ko: Dict = {
   canvas: {
     hideHint: "휴지통으로 보냅니다 (Ctrl+Z 로 되돌립니다 · 24시간 뒤 비워집니다)",
     starOnly: "별표만 보기",
+    laneToRight: "씬을 오른쪽으로 — 큰 그림과 좌우로 나눠 봅니다 (세로 그림을 크게 볼 때)",
+    laneToBottom: "씬을 아래로 되돌립니다",
     starAll: "전체 보기",
     generate: "생성",
     generateShortcut: "생성 (Ctrl+Enter)",

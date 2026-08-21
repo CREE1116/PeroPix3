@@ -60,6 +60,8 @@ export function SceneLane() {
   /** ★「별표만 보기」 — 옛 싱글 캔버스에 있던 보기 전환이 여기로 왔다 (사용자 지시 2026-08-18).
    *  탭 전체를 거르는 것이라 씬마다 두지 않고 줄 머리에 하나만 둔다. */
   const starOnly = useUi((u) => u.laneStarOnly);
+  /** 씬을 아래에 두나 오른쪽에 두나 — 무대를 그리는 것은 `Canvas`, 켜고 끄는 것은 여기다 */
+  const laneSide = useUi((u) => u.laneSide);
   /** 미저장 그림 — ★저장된 것과 **같은 목록**에 얹는다 (`store/previews.ts`) */
   const previews = usePreviews((s) => s.items);
   const startDrag = useDragSource();
@@ -560,6 +562,25 @@ export function SceneLane() {
         {/* ★「별표만 보기」 — **탭 전체를 거르는 보기 전환**이다 (옛 싱글 캔버스에서 옮겨 왔다).
             별표를 켜는 자리는 그대로 썸네일 우상단이고, 여기는 **거르는 창구**다.
             별표 수를 버튼 안 괄호에 적는 것도 그때와 같다 (줄에는 글자를 두지 않는다). */}
+        {/* ★★씬을 **오른쪽으로 보내는** 모드 (사용자 지시 2026-08-22) — 큰 그림과 씬을
+            가운데에서 좌우로 양분한다. 세로로 긴 그림을 크게 보며 뽑기 위한 것이라,
+            켜고 끄는 자리는 씬 줄 머리다 (`Canvas` 의 `SceneStage` 가 그린다). */}
+        <button
+          data-lane-side={laneSide}
+          onClick={() => useUi.getState().setLaneSide(laneSide === "right" ? "bottom" : "right")}
+          data-tip={t(laneSide === "right" ? "canvas.laneToBottom" : "canvas.laneToRight")}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            height: 22,
+            padding: "0 var(--sp-2)",
+            borderRadius: "var(--r-1)",
+            border: `1px solid ${laneSide === "right" ? "var(--accent)" : "transparent"}`,
+            color: laneSide === "right" ? "var(--accent)" : "var(--ink-faint)",
+          }}
+        >
+          {Icon.sliders}
+        </button>
         <button
           data-star-filter
           onClick={() => useUi.getState().setLaneStarOnly(!starOnly)}

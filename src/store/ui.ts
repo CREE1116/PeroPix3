@@ -83,6 +83,18 @@ type Persisted = {
    *  열 때마다 3 으로 되돌아가면 같은 값을 매번 다시 맞춰야 한다. 배율은 여기 없다 —
    *  그것은 원본 크기가 정한다 (`lib/enhance.ts`). */
   enhanceLast: { mag: number; adv: boolean; strength: number; noise: number };
+  /** 해상도 탭(가로·세로·정방)마다 **마지막에 고른 크기** (사용자 지시 2026-08-22).
+   *  탭을 누르면 목록만 갈리는 게 아니라 **그 크기가 바로 걸린다** — 세로로 뽑다가
+   *  가로로 옮길 때 목록에서 한 번 더 고르지 않아도 된다. */
+  sizeLast: Record<"landscape" | "portrait" | "square", [number, number]>;
+  /** ★★씬 줄을 **어디에 두나** (사용자 지시 2026-08-22).
+   *
+   *  `bottom` 은 지금까지의 모습 — 큰 그림 아래에 가로로 눕는다.
+   *  `right` 는 **세로 모드** — 큰 그림과 씬을 가운데에서 좌우로 양분한다. 세로로 긴 그림을
+   *  뽑을 때 아래에 줄이 누우면 그림이 그만큼 작아지는데, 옆으로 보내면 높이를 다 쓴다. */
+  laneSide: "bottom" | "right";
+  /** 세로 모드일 때 씬 쪽의 폭 (`bottom` 일 때의 `laneHeight` 에 해당) */
+  laneWidth: number;
 };
 
 const DEFAULTS: Persisted = {
@@ -108,6 +120,10 @@ const DEFAULTS: Persisted = {
   convertOpenFolder: true,
   // v2 `enhanceLast` 의 초기값 그대로 (magnitude 3 = strength 0.5 · noise 0)
   enhanceLast: { mag: 3, adv: false, strength: 0.5, noise: 0 },
+  // 기본은 각 방향의 기본 해상도 (`SIZE_PRESETS` 의 ✦ 표시)
+  sizeLast: { landscape: [1216, 832], portrait: [832, 1216], square: [1024, 1024] },
+  laneSide: "bottom",
+  laneWidth: 420,
 };
 
 export const COLS_MIN = 1;
@@ -158,6 +174,10 @@ type S = Persisted & {
   setFmView: (v: "grid" | "list") => void;
   setConvertOpenFolder: (v: boolean) => void;
   setEnhanceLast: (v: { mag: number; adv: boolean; strength: number; noise: number }) => void;
+  /** 그 방향에서 마지막에 고른 크기를 적어 둔다 */
+  setSizeLast: (dir: "landscape" | "portrait" | "square", wh: [number, number]) => void;
+  setLaneSide: (v: "bottom" | "right") => void;
+  setLaneWidth: (n: number) => void;
   setFont: (f: FontId) => void;
   /** 설정 창 — 열려 있으면 그 탭, 닫혀 있으면 null.
    *  ★상태를 스토어에 두는 이유: 여는 자리가 셋이다 (타이틀바 톱니 · AI 채팅의 엔진 칩 ·
@@ -173,7 +193,11 @@ type S = Persisted & {
   flashScroll: string[];
   /** ★**바꿨으면 보여 준다.** 접힌 패널을 펴고 그 자리를 잠깐 강조한다 (사용자 지시 2026-08-13).
    *  말없이 값만 바뀌면 사용자는 자기가 고른 것을 잃은 줄 안다. */
-  /** @param scroll 그 자리로 **데려갈지** (기본 예). 여러 자리가 한꺼번에 바뀔 때는 끈다 */
+  /** @param scroll 그 자리로 **데려갈지**. ★★기본은 **아니오**다 (사용자 지시 2026-08-22:
+   *  *"좌측 패널에 이미지 넣을 때 빼고는 자동스크롤 아예 안되게 다 빼"*).
+   *  값이 밖에서 바뀔 때마다 화면이 움직이면, 무엇이 바뀌었는지 오히려 못 본다.
+   *  ★켜는 자리는 **좌측 패널에 그림을 넣을 때 하나뿐**이다 (`ImageActions` 의 `base`) —
+   *    그림이 어디로 들어갔는지는 보여 줘야 한다. 새 자리에 함부로 켜지 말 것. */
   reveal: (side: "left" | "right", key: string, scroll?: boolean) => void;
   /** 드래그가 끝났을 때만 저장한다 — 매 프레임 localStorage 를 때리지 않는다. */
   commitLayout: () => void;
@@ -202,6 +226,12 @@ export const useUi = create<S>((set, get) => ({
   setLaneSize: (n) => set({ laneSize: Math.min(LANE_MAX, Math.max(LANE_MIN, Math.round(n))) }),
   setLaneHeadW: (n) => set({ laneHeadW: Math.min(HEAD_MAX, Math.max(HEAD_MIN, Math.round(n))) }),
   setLaneHeight: (n) => set({ laneHeight: Math.max(84, Math.round(n)) }),
+  // ★세로 모드의 씬 폭 — 너무 좁으면 씬 머리(프롬프트)가 안 들어간다 (`HEAD_MIN` 150)
+  setLaneWidth: (n) => set({ laneWidth: Math.max(220, Math.round(n)) }),
+  setLaneSide: (v) => {
+    set({ laneSide: v });
+    get().commitLayout();
+  },
   setLeftWidth: (w) => set({ leftWidth: w }),
   setAiWidth: (w) => set({ aiWidth: w }),
   toggleAi: () => {
@@ -253,6 +283,12 @@ export const useUi = create<S>((set, get) => ({
     set({ enhanceLast: v });
     get().commitLayout();
   },
+  setSizeLast: (dir, wh) => {
+    const cur = get().sizeLast[dir];
+    if (cur && cur[0] === wh[0] && cur[1] === wh[1]) return;   // 같은 값이면 저장을 안 부른다
+    set({ sizeLast: { ...get().sizeLast, [dir]: wh } });
+    get().commitLayout();
+  },
   setFont: (f) => {
     applyFont(f);
     set({ font: f });
@@ -271,7 +307,7 @@ export const useUi = create<S>((set, get) => ({
   },
   flashes: [],
   flashScroll: [],
-  reveal: (side, key, scroll = true) => {
+  reveal: (side, key, scroll = false) => {
     const patch = side === "left" ? { leftCollapsed: false } : { rightCollapsed: false };
     set({
       ...patch,
@@ -299,7 +335,8 @@ export const useUi = create<S>((set, get) => ({
     const { leftWidth, rightWidth, leftCollapsed, rightCollapsed, cols, laneSize, laneHeadW,
       laneHeight, font, aiWidth, aiCollapsed,
       notifyDone, notifySound, notifyVolume, perSlot, curated,
-      tagSuggest, weightHl, fmView, convertOpenFolder, enhanceLast } = get();
+      tagSuggest, weightHl, fmView, convertOpenFolder, enhanceLast, sizeLast,
+      laneSide, laneWidth } = get();
     try {
       localStorage.setItem(
         KEY,
@@ -325,6 +362,9 @@ export const useUi = create<S>((set, get) => ({
           fmView,
           convertOpenFolder,
           enhanceLast,
+          sizeLast,
+          laneSide,
+          laneWidth,
         }),
       );
     } catch {}
