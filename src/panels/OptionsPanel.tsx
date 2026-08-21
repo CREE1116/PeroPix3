@@ -3,6 +3,7 @@ import { Category } from "./Category";
 import { useEffect, useState } from "react";
 import { DEFAULT_MODEL, MODELS, NAI_MAX, SIZE_PRESETS, alignTo64, modelCaps, useGen } from "../store/gen";
 import { Icon } from "../components/Icon";
+import { Ratio } from "../components/Ratio";
 import { Help } from "../components/Tip";
 import { ImageInputPanel } from "./ImageInputPanel";
 import { flashStyle, useFlash, useUi } from "../store/ui";
@@ -298,23 +299,6 @@ const DIR_FALLBACK: Record<SizeDir, [number, number]> = {
   portrait: [832, 1216],
   square: [1024, 1024],
 };
-
-/** 비율 사각형 — **긴 변을 `max` 로 맞춘다.** 탭과 목록이 같은 것을 쓴다 */
-function Ratio({ w, h, max, on }: { w: number; h: number; max: number; on: boolean }) {
-  const k = max / Math.max(w, h);
-  return (
-    <span
-      aria-hidden
-      style={{
-        width: Math.round(w * k),
-        height: Math.round(h * k),
-        borderRadius: 2,
-        flexShrink: 0,
-        background: on ? "var(--accent)" : "var(--ink-ghost)",
-      }}
-    />
-  );
-}
 
 function Group({
   label,

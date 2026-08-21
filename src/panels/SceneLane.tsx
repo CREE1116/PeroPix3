@@ -9,6 +9,7 @@ import { newestFirst } from "../lib/takes";
 import { imgUrl, thumbUrlOf } from "../lib/imgUrl";
 import { EnhanceDialog } from "./EnhanceDialog";
 import { Icon } from "../components/Icon";
+import { Ratio, RATIO_LANDSCAPE, RATIO_PORTRAIT } from "../components/Ratio";
 import { kindColor } from "../cards/kindColor";
 import { slotBlock, slotBlocksOf } from "../lib/blocks";
 import { BlockList } from "../blocks/BlockList";
@@ -594,9 +595,11 @@ export function SceneLane() {
               적어 두지 않아도 안다. 지금 크기도 칸을 보면 보인다. */}
         {/* ★★씬을 **오른쪽으로 보내는** 모드 (사용자 지시 2026-08-22) — 큰 그림과 씬을
             가운데에서 좌우로 양분한다. 세로로 긴 그림을 크게 보며 뽑기 위한 것이다.
-            ★**글자를 함께 낸다** — 아이콘만 두면 무엇인지 알 수 없고, 실제로 「별표만 보기」를
-              걷을 때 바로 옆이라 **함께 잘려 사라졌다** (사용자 지적 2026-08-22).
-              화면에 글자로 서 있으면 그런 삭제가 눈에 띈다. */}
+            ★★모양은 **해상도 고르기의 비율 사각형과 같은 것**이다 (`components/Ratio`,
+              사용자 지시 2026-08-22) — 같은 뜻(가로냐 세로냐)을 두 곳에서 다르게 그리지 않는다.
+            ★**지금 상태**를 그린다 (아래에 있으면 가로, 오른쪽에 있으면 세로).
+            ★강조하지 않는다 (사용자 지시) — 켜짐/꺼짐이 아니라 **둘 중 하나**라,
+              색을 달리하면 한쪽이 특별한 상태로 읽힌다. 가르는 것은 아이콘 하나다. */}
         <button
           data-lane-side={laneSide}
           onClick={() => useUi.getState().setLaneSide(vert ? "bottom" : "right")}
@@ -604,18 +607,14 @@ export function SceneLane() {
           style={{
             display: "inline-flex",
             alignItems: "center",
-            gap: 3,
+            justifyContent: "center",
+            width: 22,
             height: 22,
-            padding: "0 var(--sp-2)",
             borderRadius: "var(--r-1)",
-            border: `1px solid ${vert ? "var(--accent)" : "transparent"}`,
-            color: vert ? "var(--accent)" : "var(--ink-faint)",
-            fontSize: "var(--text-2xs)",
-            whiteSpace: "nowrap",
+            border: "1px solid transparent",
           }}
         >
-          {Icon.grid}
-          {t(vert ? "canvas.laneVert" : "canvas.laneHorz")}
+          <Ratio {...(vert ? RATIO_PORTRAIT : RATIO_LANDSCAPE)} max={13} />
         </button>
       </div>
 
