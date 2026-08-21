@@ -591,6 +591,31 @@ export function SceneLane() {
               }),
         }}
       >
+        {/* ★★씬을 **오른쪽으로 보내는** 모드 (사용자 지시 2026-08-22) — 큰 그림과 씬을
+            가운데에서 좌우로 양분한다. 세로로 긴 그림을 크게 보며 뽑기 위한 것이다.
+            ★★자리는 **「씬」 바로 왼쪽**이다 (사용자 지시 2026-08-22) — 머리줄 끝에 두었더니
+              눈에 안 띄었다. 맨 앞이라야 무엇을 보는 화면인지와 함께 읽힌다.
+            ★★모양은 **해상도 고르기의 비율 사각형과 같은 것**이다 (`components/Ratio`,
+              사용자 지시 2026-08-22) — 같은 뜻(가로냐 세로냐)을 두 곳에서 다르게 그리지 않는다.
+            ★**지금 상태**를 그린다 (아래에 있으면 가로, 오른쪽에 있으면 세로).
+            ★강조하지 않는다 (사용자 지시) — 켜짐/꺼짐이 아니라 **둘 중 하나**라,
+              색을 달리하면 한쪽이 특별한 상태로 읽힌다. 가르는 것은 아이콘 하나다. */}
+        <button
+          data-lane-side={laneSide}
+          onClick={() => useUi.getState().setLaneSide(vert ? "bottom" : "right")}
+          data-tip={t(vert ? "canvas.laneToBottom" : "canvas.laneToRight")}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 22,
+            height: 22,
+            borderRadius: "var(--r-1)",
+            border: "1px solid transparent",
+          }}
+        >
+          <Ratio {...(vert ? RATIO_PORTRAIT : RATIO_LANDSCAPE)} max={13} />
+        </button>
         <b style={{ fontSize: "var(--text-2xs)", color: "var(--ink-dim)" }}>{t("scenes.title")}</b>
         {/* ★씬 프롬프트가 payload 의 **어디로 들어가나** — 왼쪽 컨테이너 이름(베이스 프롬프트 /
             캐릭터 프롬프트)을 그대로 가리킨다. ★탭에 **하나뿐**이다 (사용자 결정)
@@ -628,19 +653,12 @@ export function SceneLane() {
           >
             {/* ★보이는 글은 **지금 고른 것 하나뿐**이라, 자리도 그만큼만 차지한다 */}
             <span>{destLabel}</span>
-            {/* ★★화살표는 **세로쓰기에 안 딸려 돈다** (사용자 지적 2026-08-22: 오른쪽을
-                주었더니 화면에서는 위를 가리켰다). 아이콘까지 함께 돌면 어느 쪽을 넣어야
-                어느 쪽으로 보이는지 알 수 없으므로, **가로쓰기로 되돌려** 못 박는다.
-                그러면 넣은 방향이 곧 보이는 방향이다 — 세로 모드에서는 오른쪽(글이 나아가는
-                쪽에서 목록이 열린다), 아래 모드에서는 아래. */}
-            <span
-              style={{
-                display: "grid",
-                color: "var(--ink-faint)",
-                ...(vert ? { writingMode: "horizontal-tb" as const } : null),
-              }}
-            >
-              {vert ? Icon.chevronRight : Icon.chevronDown14}
+            {/* ★★화살표는 **언제나 아래**다 (사용자 지시 2026-08-22).
+                ★그러려면 세로쓰기에 **안 딸려 돌아야** 한다 — 아이콘까지 함께 돌면 오른쪽을
+                  넣었는데 화면에서는 위를 가리킨다. 그 자리만 가로쓰기로 되돌려 못 박는다.
+                  그래야 넣은 방향이 곧 보이는 방향이다. */}
+            <span style={{ display: "grid", color: "var(--ink-faint)", writingMode: "horizontal-tb" }}>
+              {Icon.chevronDown14}
             </span>
             <select
               data-scene-dest
@@ -680,34 +698,11 @@ export function SceneLane() {
             </select>
           </span>
         </label>
-        <span style={{ flex: 1 }} />
-        {/* ★칸 크기는 **Ctrl + 휠**로 바꾼다 (사용자 지시 2026-08-14). 버튼 셋이
+        {/* ★빈 자리를 채우던 조각은 걷었다 — 뒤에 밀어 낼 것이 없어졌다 (모드 단추가 맨 앞으로).
+            ★칸 크기는 **Ctrl + 휠**로 바꾼다 (사용자 지시 2026-08-14). 버튼 셋이
             차지하던 자리를 돌려주고, 손이 줄 위에 있는 채로 바로 조절된다.
             ★안내 문구를 두지 않는다 (사용자 지시 2026-08-19) — 휠로 조절되는 것은
               적어 두지 않아도 안다. 지금 크기도 칸을 보면 보인다. */}
-        {/* ★★씬을 **오른쪽으로 보내는** 모드 (사용자 지시 2026-08-22) — 큰 그림과 씬을
-            가운데에서 좌우로 양분한다. 세로로 긴 그림을 크게 보며 뽑기 위한 것이다.
-            ★★모양은 **해상도 고르기의 비율 사각형과 같은 것**이다 (`components/Ratio`,
-              사용자 지시 2026-08-22) — 같은 뜻(가로냐 세로냐)을 두 곳에서 다르게 그리지 않는다.
-            ★**지금 상태**를 그린다 (아래에 있으면 가로, 오른쪽에 있으면 세로).
-            ★강조하지 않는다 (사용자 지시) — 켜짐/꺼짐이 아니라 **둘 중 하나**라,
-              색을 달리하면 한쪽이 특별한 상태로 읽힌다. 가르는 것은 아이콘 하나다. */}
-        <button
-          data-lane-side={laneSide}
-          onClick={() => useUi.getState().setLaneSide(vert ? "bottom" : "right")}
-          data-tip={t(vert ? "canvas.laneToBottom" : "canvas.laneToRight")}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: 22,
-            height: 22,
-            borderRadius: "var(--r-1)",
-            border: "1px solid transparent",
-          }}
-        >
-          <Ratio {...(vert ? RATIO_PORTRAIT : RATIO_LANDSCAPE)} max={13} />
-        </button>
       </div>
 
       <div
