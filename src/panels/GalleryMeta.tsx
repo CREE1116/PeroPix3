@@ -177,7 +177,7 @@ export async function cloneMetaToNewTab(m: ImageMeta, file: string) {
     seed: m.seed,
     // 출처를 못 찾았을 때만 쓰인다 — 그때 슬롯을 비우면 씬 프롬프트가 사라진다
     scene: m.slot_prompt
-      ? { blocks: [makeBlock(t("slots.blockTags"), [], { tags: parseSegs(m.slot_prompt), open: true })] }
+      ? { blocks: [makeBlock(t("slots.blockTags"), [], { tags: parseSegs(m.slot_prompt), src: m.slot_prompt, open: true })] }
       : undefined,
     // ★구조를 되살렸으면 **값만** 얹는다 (워크스페이스 복제와 같다). 못 되살렸을 때만
     //   메타데이터로 프롬프트까지 세운다 — 안 그러면 되살린 블록·카드를 한 뭉텅이가 덮는다.
@@ -294,7 +294,9 @@ function applyMetaInner(m: ImageMeta, what: "prompt" | "all") {
   const p = usePrompt.getState();
 
   const block = (label: string, body?: string) =>
-    body ? [makeBlock(label, [], { tags: parseSegs(body), open: true })] : [];
+    /* ★★`src` 를 함께 담는다 — 그 그림이 실제로 쓴 글자다. 칩을 안 건드리면 다시 뽑을 때
+       **한 글자도 다르지 않게** 나간다 (`lib/blocks` 의 `Block.src`). */
+    body ? [makeBlock(label, [], { tags: parseSegs(body), src: body, open: true })] : [];
 
   const chars: Char[] = (m.characters ?? []).map((c, i) => ({
     id: `c${Date.now().toString(36)}${i}`,

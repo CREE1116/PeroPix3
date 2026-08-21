@@ -116,7 +116,7 @@ export function BlockBody({
   useEffect(
     () => () => {
       const l = live.current;
-      if (l.editing && !l.dropped) l.onChange({ ...l.block, tags: parseSegs(l.text) });
+      if (l.editing && !l.dropped) l.onChange({ ...l.block, tags: parseSegs(l.text), src: l.text });
     },
     [],
   );
@@ -171,7 +171,10 @@ export function BlockBody({
       skipBlur.current = false;
       return;
     }
-    onChange({ ...block, tags: parseSegs(text) });
+    /* ★★친 글이 **그대로 새 원문**이 된다 (`lib/blocks` 의 `Block.src`).
+       칩으로 쪼개 다시 조립하면 줄바꿈·간격이 바뀌어 나가는데, 글 상자는 사용자가
+       글자를 직접 다루는 자리라 그 글자가 그대로 NAI 로 가야 한다. */
+    onChange({ ...block, tags: parseSegs(text), src: text });
     setEditing(false);
   };
 
@@ -179,7 +182,7 @@ export function BlockBody({
   const commitNow = (): Block => {
     skipBlur.current = true;
     setEditing(false);
-    const b = { ...block, tags: parseSegs(text) };
+    const b = { ...block, tags: parseSegs(text), src: text };
     onChange(b);
     return b;
   };
@@ -227,7 +230,7 @@ export function BlockBody({
                 if (e.shiftKey && onEnter) {
                   skipBlur.current = true;
                   setEditing(false);
-                  onEnter({ ...block, tags: parseSegs(text) });
+                  onEnter({ ...block, tags: parseSegs(text), src: text });
                 } else if (onDone) {
                   commitNow();
                   onDone();

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { COLOR_HEX, fmtW, weightLevel, type Tag } from "../lib/blocks";
 import { useUi } from "../store/ui";
 
@@ -43,12 +43,42 @@ export function Chip({
   onWeightRef.current = onWeight;
   const wRef = useRef(tag.w);
   wRef.current = tag.w;
+
+  /** ★★**돌리는 동안에는 칩의 폭을 얼린다** (사용자 지적 2026-08-21).
+   *
+   *  가중치 배지는 글자 수가 계속 바뀐다 (`1.05` → `1.1` → 1 이 되면 아예 사라진다).
+   *  칩이 그때마다 넓어졌다 좁아지면 **줄바꿈이 다시 계산돼 칩이 다음 줄로 밀리고**,
+   *  커서 밑에 칩이 없어진 순간부터 휠이 패널 스크롤로 가 버린다 — 가중치를 맞추다
+   *  화면이 통째로 굴러간다.
+   *  ★그래서 돌리기 시작할 때의 폭을 재서 붙들어 두고, 배지는 **자리를 미리 비워** 둔다
+   *    (1 이어도 지우지 않고 「1」로 남긴다). 칩 안에서만 글자가 움직이고 줄은 안 바뀐다.
+   *  ★푸는 때는 **커서가 칩을 벗어날 때**다 (사용자 지시). 안 벗어난 채로 손을 떼는 경우가
+   *    있어 마지막 휠에서 조금 지나면 스스로도 푼다.
+   *  ★긴 태그는 이 동안 말줄임으로 잘릴 수 있다 — 폭이 고정되고 배지가 자리를 차지해서다.
+   *    놓으면 곧바로 돌아온다. 줄이 튀는 것보다 낫다고 봤다. */
+  const [pin, setPin] = useState<number | null>(null);
+  const pinning = useRef(false);
+  const idle = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const release = () => {
+    if (idle.current) clearTimeout(idle.current);
+    idle.current = null;
+    pinning.current = false;
+    setPin(null);
+  };
+  useEffect(() => () => { if (idle.current) clearTimeout(idle.current); }, []);
+
   useEffect(() => {
     const el = ref.current;
     if (!el || readOnly) return;
     const onWheel = (e: WheelEvent) => {
       if (!e.altKey) return;      // 맨 휠은 평소대로 스크롤이다
       e.preventDefault();
+      if (!pinning.current) {
+        pinning.current = true;
+        setPin(el.getBoundingClientRect().width);   // ★첫 눈금 **전에** 재야 원래 폭이다
+      }
+      if (idle.current) clearTimeout(idle.current);
+      idle.current = setTimeout(release, 900);
       const step = e.shiftKey ? 0.1 : 0.05;
       const cur = wRef.current ?? 1;
       const next = Math.round((cur + (e.deltaY < 0 ? step : -step)) * 100) / 100;
@@ -79,6 +109,7 @@ export function Chip({
       data-chip
       {...dragProps}
       ref={ref}
+      onPointerLeave={pin != null ? release : undefined}
       onMouseDown={(e) => {
         // 가운데 버튼의 브라우저 기본 동작(자동 스크롤)을 막는다
         if (e.button === 1) e.preventDefault();
@@ -111,17 +142,21 @@ export function Chip({
         // 끌고 있는 칩은 자리만 지키고 흐려진다 (고스트가 커서를 따라간다)
         opacity: dragging ? 0.3 : 1,
         ...(dragProps?.style ?? {}),
+        // ★얼린 폭은 **맨 마지막**이다 — 끌기 쪽 스타일이 덮으면 다시 줄이 튄다
+        ...(pin != null ? { width: pin, flexShrink: 0 } : null),
       }}
     >
-      {tag.w != null && (
+      {(tag.w != null || pin != null) && (
         <b
           style={{
             fontFamily: "var(--font-mono)",
             fontSize: "0.92em",
-            color: tag.w < 0 ? "var(--minus)" : "var(--accent)",
+            color: (tag.w ?? 1) < 0 ? "var(--minus)" : "var(--accent)",
+            // ★돌리는 동안은 **가장 긴 값이 들어갈 자리**를 미리 잡아 둔다 (`-0.95` 다섯 칸)
+            ...(pin != null ? { minWidth: "5ch", textAlign: "right" as const, flexShrink: 0 } : null),
           }}
         >
-          {fmtW(tag.w)}
+          {fmtW(tag.w ?? 1)}
         </b>
       )}
       <span

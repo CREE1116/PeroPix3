@@ -19,6 +19,17 @@ export type Block = {
   on: boolean;
   open: boolean;
   tags: Tag[];
+  /** ★★**들어온 글 그대로** — 붙여넣거나 친 글, 메타데이터에서 되살린 글이다.
+   *
+   *  칩을 하나도 안 건드렸으면 조립하지 않고 **이것을 그대로 NAI 에 보낸다**
+   *  (`compileBlock`). NAI 는 글자를 그대로 받는 쪽이라, 뜻이 같아도 표기가 달라지면
+   *  같은 시드에서 다른 그림이 나온다 — 실제로 그 대조에서 이 대화가 시작됐다.
+   *  ★**두 번째 편집 창구가 아니다.** 값은 언제나 `tags` 가 정본이고, 여기 것은
+   *    `parseSegs(src)` 가 `tags` 와 **똑같을 때만** 쓰인다 (`untouched`). 어긋나는 순간
+   *    버려지므로 「어느 쪽이 진짜인가」가 생기지 않는다. 맞춰 주는 장치를 만들지 말 것.
+   *  ★칩을 고치면 자동으로 안 맞게 되어 정식 문법으로 다시 쓰인다. 글 상자에서 친 글은
+   *    **친 그대로가 새 원문**이 된다 (`BlockBody`). */
+  src?: string;
 };
 
 export const COLORS: BlockColor[] = [null, "blue", "teal", "purple", "amber", "red", "green"];
@@ -69,11 +80,41 @@ export function effW(x: Tag): number | null {
  *  ★필요할 때만 넣는다 — 늘 넣으면 공홈이 내보내는 문자열과 달라진다. */
 const closeEmph = (inner: string) => (/[-.\d]$/.test(inner) ? `${inner} ::` : `${inner}::`);
 
+const sameTags = (a: Tag[], b: Tag[]) =>
+  a.length === b.length && a.every((x, i) => x.t === b[i].t && (x.w ?? null) === (b[i].w ?? null));
+
+/** 들어온 글을 그대로 써도 되는가 — **다시 읽어 지금 칩과 같은지**로만 판정한다.
+ *  ★「고쳤다」를 따로 기억하지 않는다. 기억해 두면 고치는 자리마다 지우는 것을 잊어
+ *    옛 글자가 조용히 나간다. 매번 다시 읽는 편이 싸고 틀릴 데가 없다. */
+export const untouched = (bl: Block): boolean =>
+  bl.src != null && sameTags(parseSegs(bl.src), bl.tags);
+
+/** 글이 끝나는 시점의 세기 — 1(=null)이 아니면 뒤에 오는 블록으로 **번진다**.
+ *  ★`::` 는 짝이 아니라 갈아 끼우는 값이라, 안 되돌린 채 끝나면 다음 블록의 태그까지
+ *    그 세기에 걸린다 (`compileBlocks` 가 쉼표로 이어 붙인다). */
+const endWeight = (str: string): number | null => {
+  const re = /(^|[,\s])(-?\d+(?:\.\d+)?)::|::/g;
+  let w: number | null = null;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(str))) {
+    const n = m[2] !== undefined ? parseFloat(m[2]) : NaN;
+    w = Number.isNaN(n) || n === 1 ? null : n;
+  }
+  return w;
+};
+
 /** 블록 하나를 NAI 프롬프트 문자열로.
+ *  ★손대지 않은 블록은 **들어온 글 그대로** 낸다 (`Block.src` 주석).
  *  ★같은 실효 가중치가 연속되면 하나로 묶는다: `1.8::a, b::` */
 export function compileBlock(bl: Block): string {
   const tags = bl.tags.filter((x) => x.t.trim());
   if (!tags.length) return "";
+
+  if (untouched(bl)) {
+    const raw = bl.src!.trim();
+    // ★세기를 안 되돌린 채 끝나면 `::` 하나로 막는다 — 그 한 글자 말고는 원문 그대로다
+    return endWeight(raw) != null ? `${raw}${/[-.\d]$/.test(raw) ? " ::" : "::"}` : raw;
+  }
 
   const parts: string[] = [];
   let run: string[] = [];
@@ -139,45 +180,84 @@ export function slotBlock(blocks: Block[] | undefined, id: string): Block {
 /** 칸에 다시 담는다 — ★저장본은 언제나 **하나짜리 목록**이다 */
 export const slotBlocksOf = (b: Block): Block[] => [{ ...b, label: "", on: true, open: true }];
 
-/** 텍스트를 태그 목록으로. `1.8::a, b::, plain, -2::c::` 를 이해한다. */
+/** 텍스트를 태그 목록으로.
+ *
+ *  ★★**`::` 는 짝을 맞추는 괄호가 아니다** (공홈 번들 대조 2026-08-21,
+ *    `reference/nai-web-2026-08-21/chunks/5196-…` 의 강조 표):
+ *
+ *      { textSequence: "::", needsBeforeNumber: true,
+ *        transformEmphasis: (p, n) => (n === undefined || Number.isNaN(n) ? 1 : n) }
+ *
+ *    숫자가 앞에 붙은 `N::` 를 만나면 세기가 **N 으로 갈아 끼워지고**, 숫자 없는 `::` 를
+ *    만나면 **1 로 돌아간다.** 쌓이지도 곱해지지도 않고, 여는 짝도 닫는 짝도 없다.
+ *    그래서 **닫는 `::` 가 없어도 정상이다** — 다음 `N::` 나 글 끝까지 그 세기가 이어진다.
+ *
+ *    ~~예전에는 `N::(.*?)::` 로 닫는 짝을 찾았다~~ — 공홈에 없는 규칙이라, 닫는 `::` 를
+ *    빠뜨린 글에서 **다음 줄의 가중치 숫자를 앞 그룹 안으로 끌고 들어갔다.** 실측:
+ *    `1.1::artist:ask (askzy),\n1.2::artist:bee (deadflow),` 가 「`1.2` 라는 이름의 태그가
+ *    1.1 세기로」 + 「bee 는 가중치 없음」이 됐다. 칩이 거짓말을 하고 있었다.
+ *
+ *  ★★**줄바꿈도 태그 경계다** (사용자 지적 2026-08-21). 예전에는 쉼표로만 잘라서
+ *    `girl⏎⏎solo` 가 줄바꿈을 품은 **칩 하나**가 됐다. 태그 안에 줄바꿈이 있는 것은
+ *    우리 모델에서 뜻이 없다. 가중치 앞에서는 이미 공백을 경계로 인정하고 있었으므로
+ *    (`[,\s]`) 같은 함수 안에서 규칙이 어긋나 있던 자리다.
+ *    공홈도 공백을 태그 경계로 본다 (`chunks/5196` 의 태그 자동완성 트리거: `/\s/.test(n)`).
+ *
+ *  ★★가중치 숫자는 **낱말 앞**에서만 시작한다 (앞이 쉼표·공백이거나 글 처음).
+ *    그렇지 않으면 **태그 끝의 숫자를 가중치로 뜯어 간다** — `artist:dishwasher1910::foo::`
+ *    가 `artist:dishwasher` + `1910::foo::` 로 갈려 태그가 두 동강 난다.
+ *    v2 에서 같은 것을 고쳤다 (사용자 지적 2026-08-21: "1910 을 가중치로 안 읽고
+ *    태그로 읽게 수정했었음").
+ *    ★NAI 서버는 이 규칙이 **없다** — 거기서는 `숫자::` 면 어디서든 연다. 그래서 만들 때는
+ *      닫는 `::` 앞에 공백을 넣어 막는다 (`closeEmph`). 읽는 쪽과 쓰는 쪽이 **다른 처방**이다.
+ *    ★그래서 `1.2 ::` 처럼 숫자와 `::` 사이가 떨어진 것은 **여는 것이 아니라 되돌리는 것**이다
+ *      (공홈도 숫자를 `::` 바로 앞에서만 찾는다). `\s*` 를 넣지 말 것 — 넣으면 우리가 만든
+ *      `…1910 ::` 를 다시 읽을 때 1910 으로 열어 버린다. */
 export function parseSegs(str: string): Tag[] {
-  const out: Tag[] = [];
-  /** ★★가중치 숫자는 **낱말 앞**에서만 시작한다 (앞이 쉼표·공백이거나 글 처음).
-   *
-   *  ★그렇지 않으면 **태그 끝의 숫자를 가중치로 뜯어 간다** — `artist:dishwasher1910::foo::`
-   *    가 `artist:dishwasher` + `1910::foo::` 로 갈려 태그가 두 동강 난다.
-   *    v2 에서 같은 것을 고쳤는데(사용자 지적 2026-08-21: "1910 을 가중치로 안 읽고
-   *    태그로 읽게 수정했었음") 3.0 으로 안 옮겨져 있었다.
-   *  ★NAI 서버는 이 규칙이 **없다** — 거기서는 `숫자::` 면 어디서든 연다. 그래서 만들 때는
-   *    닫는 `::` 앞에 공백을 넣어 막는다 (`closeEmph`). 읽는 쪽과 쓰는 쪽이 **다른 처방**이다. */
-  const re = /(^|[,\s])(-?\d+(?:\.\d+)?)\s*::(.*?)::/gs;
-  let last = 0;
+  return parseSpans(str).map(({ t, w }) => ({ t, w }));
+}
+
+/** 태그마다 **원문에서의 자리**까지 낸다 — 칩을 눌러 글 상자를 열 때 커서를 놓는 데 쓴다
+ *  (`caretAfterTag`). 규칙은 `parseSegs` 와 같은 것 하나다. */
+export function parseSpans(str: string): (Tag & { start: number; end: number })[] {
+  const out: (Tag & { start: number; end: number })[] = [];
+  /** 여는 자리(`낱말경계 + 숫자 + ::`) 또는 되돌리는 자리(맨 `::`) */
+  const re = /(^|[,\s])(-?\d+(?:\.\d+)?)::|::/g;
+  /** 지금 세기 — `::` 를 만날 때마다 갈아 끼운다 (스택이 아니다) */
+  let w: number | null = null;
+  let cur = 0;
   let m: RegExpExecArray | null;
 
-  const plain = (s: string) =>
-    s
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean)
-      .forEach((t) => out.push({ t, w: null }));
+  /** ★쉼표와 **줄바꿈** 둘 다에서 자른다 */
+  const plain = (from: number, to: number) => {
+    let i = from;
+    for (const piece of str.slice(from, to).split(/[,\n]/)) {
+      const t = piece.trim();
+      if (t) {
+        const at = i + piece.indexOf(t);
+        out.push({ t, w, start: at, end: at + t.length });
+      }
+      i += piece.length + 1;   // 자른 구분자 한 글자
+    }
+  };
 
   while ((m = re.exec(str))) {
-    // ★경계 글자(쉼표·공백)는 구분자라 버려도 된다 — `plain` 이 어차피 잘라 내는 것이다
-    plain(str.slice(last, m.index));
-    const w = parseFloat(m[2]);
-    m[3]
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean)
-      .forEach((t) => out.push({ t, w }));
-    last = re.lastIndex;
+    const opening = m[2] !== undefined;
+    // 경계 글자(쉼표·공백)는 구분자라 앞 구간에 남겨 둔다 — `plain` 이 어차피 잘라 낸다
+    plain(cur, opening ? m.index + m[1].length : m.index);
+    const n = opening ? parseFloat(m[2]) : NaN;
+    w = Number.isNaN(n) || n === 1 ? null : n;
+    cur = re.lastIndex;
   }
-  plain(str.slice(last));
+  plain(cur, str.length);
   return out;
 }
 
-/** 블록을 텍스트 편집용으로 직렬화. 파싱의 역이라 왕복해도 같은 결과가 나온다. */
+/** 블록을 텍스트 편집용으로 직렬화. 파싱의 역이라 왕복해도 같은 결과가 나온다.
+ *  ★손대지 않았으면 **들어온 글 그대로** 보여 준다 — 글 상자를 열어 보기만 해도 줄바꿈이
+ *    쉼표로 바뀌어 있으면, 사용자는 자기가 맞춰 둔 모양을 잃은 줄 안다. */
 export function serializeBlock(bl: Block): string {
+  if (untouched(bl)) return bl.src!;
   return bl.tags
     .map((x) => {
       const e = effW(x);
@@ -195,6 +275,14 @@ export function serializeBlock(bl: Block): string {
  *    `parseSegs` 가 버리므로 블록은 그대로다.
  */
 export function caretAfterTag(bl: Block, i: number): { at: number; text: string } {
+  // ★원문을 그대로 보여 주는 블록은 **원문에서의 자리**로 놓는다 — 조립한 글 기준으로
+  //   세면 줄바꿈이 쉼표로 바뀐 만큼 커서가 밀린다
+  if (untouched(bl)) {
+    const spans = parseSpans(bl.src!);
+    const next = spans[i + 1];
+    if (next) return { at: next.start, text: bl.src! };
+    return { at: bl.src!.length + 2, text: `${bl.src!}, ` };
+  }
   const head = serializeBlock({ ...bl, tags: bl.tags.slice(0, i + 1) });
   const last = i >= bl.tags.length - 1;
   return { at: head.length + 2, text: last ? `${head}, ` : serializeBlock(bl) };
