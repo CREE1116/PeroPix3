@@ -31,8 +31,14 @@ export type GenParams = {
   /** NAI 의 Guidance Rescale. 0~1 */
   cfg_rescale: number;
   uc_preset: string;
-  quality_tags: boolean;
+  /** 퀄리티 프리셋 id — `"standard"` / `"light"`(V5·custom) / `"none"`.
+   *  ★★공홈이 켬/끔에서 **목록**으로 바뀌어 따라간 것이다 (2026-08-21).
+   *    고를 수 있는 값은 모델마다 다르다 (`lib/naiModels.ts` 의 `quality_presets`). */
+  quality_preset: string;
   variety_plus: boolean;
+  /** 투명 배경 (V5 전용) — 프롬프트에 `transparent background` 가 붙고 알파가 살아 나온다.
+   *  ★지원하지 않는 모델에서는 화면에도 안 보이고 서버도 무시한다 (`nai.caps`). */
+  transparent_bg: boolean;
   /** 프롬프트 앞에 `fur dataset, ` 를 붙인다 */
   furry_mode: boolean;
   /** 저장 포맷 — png | jpg | webp */
@@ -59,18 +65,20 @@ export type GenParams = {
    *  - `round`  **한 바퀴에 시드 하나** — 그 바퀴의 씬들이 같은 조건이라 서로 견줄 수 있다
    *  - `scene`  같은 바퀴 안에서도 씬마다 새로 뽑는다 */
   seed_mode: SeedMode;
+  /** 캐릭터 좌표를 **쓰는가** — 끄면 NAI 가 알아서 배치한다 (공홈의 "AI's choice").
+   *
+   *  ★★공홈과 같이 **요청 하나에 하나**다 (인물마다 켜고 끄지 않는다). 좌표 자체는
+   *    꺼져 있어도 인물마다 남아 있고, 여기만 다시 켜면 그 자리로 돌아온다.
+   *  ★배치 판에서 인물을 옮기면 **자동으로 켜지고**, 이걸 끄면 배치 판이 닫힌다
+   *    (`panels/CharPositioner`). 공홈 `sk()` 와 같은 규칙이다. */
+  use_coords: boolean;
 };
 
-/** ★**V4.5 계열만 제공한다** (사용자 결정 2026-08-12 — V4.0 을 뺐다).
- *
- *  ★모델을 줄이면 규칙도 함께 줄어든다. V4.0 은 퀄리티 접미사·UC 프리셋·캐릭터 기본 UC·
- *    Variety+ 기준 시그마(19)가 전부 달라서, 남겨 두면 안 쓰는 갈래를 계속 맞춰야 한다.
- *  ★옛 워크스페이스가 V4.0 모델 id 를 들고 있으면 서버가 V4.5 Full 표로 떨어뜨린다
- *    (`nai.uc_presets`) — 조용히 다른 그림이 나오지 않게 화면도 기본값으로 되돌린다. */
-export const MODELS: [string, string][] = [
-  ["nai-diffusion-4-5-full", "V4.5 Full"],
-  ["nai-diffusion-4-5-curated", "V4.5 Curated"],
-];
+/** 모델 목록·능력표는 **`lib/naiModels.ts` 하나**다 (그 파일 머리 주석).
+ *  화면이 「이 모델에서 되는 것만」 보이게 하는 근거라, 여기 사본을 두지 않는다. */
+export { MODELS, caps as modelCaps, type ModelCaps } from "../lib/naiModels";
+// ★담아 둔 모델을 검사하려면 값이 **이 모듈 안**에도 있어야 한다 (re-export 만으로는 못 쓴다)
+import { MODELS as MODEL_LIST, caps as capsOf } from "../lib/naiModels";
 
 /** v2 의 Size 드롭다운 그대로. ✦ 는 NAI 가 기본 요금으로 처리하는 해상도 */
 /** 크기 프리셋 — ★**v2 목록 그대로**다 (`index.html` 의 `sizePreset`, 대조 2026-08-16).
@@ -118,8 +126,21 @@ export async function fitSizeToBase(b64: string): Promise<void> {
   toast(t("imgIn.sizeFitted", { w: String(next.width), h: String(next.height) }));
 }
 
+/** ★목록에 없는 모델을 만났을 때 되돌릴 값. **목록의 첫 줄이 아니다** —
+ *  드롭다운 순서는 「새것이 위」라 바뀌는데, 폴백은 바뀌면 안 된다
+ *  (옛 워크스페이스가 조용히 다른 모델로 옮겨 간다). */
+export const DEFAULT_MODEL = "nai-diffusion-4-5-full";
+
+/** 캐릭터에 좌표 사용 여부를 실어 준다.
+ *
+ *  ★`use_coords` 는 요청 하나에 하나인데(공홈과 같다) 백엔드는 인물마다 받아
+ *    `any(c.use_coord)` 로 다시 모은다 (`backend/nai.py`). 그래서 **전원에게 같은 값**을
+ *    준다 — 여기서 갈리면 원장이 둘이 된다. */
+const withCoords = <C extends object>(chars: C[], on: boolean): (C & { use_coord: boolean })[] =>
+  chars.map((c) => ({ ...c, use_coord: on }));
+
 const DEFAULT_PARAMS: GenParams = {
-  model: "nai-diffusion-4-5-full",
+  model: DEFAULT_MODEL,
   width: 832,
   height: 1216,
   steps: 28,
@@ -130,8 +151,9 @@ const DEFAULT_PARAMS: GenParams = {
   seed: Math.floor(Math.random() * 4294967295),
   cfg_rescale: 0,
   uc_preset: "Heavy",
-  quality_tags: true,
+  quality_preset: "standard",
   variety_plus: false,
+  transparent_bg: false,
   furry_mode: false,
   save_format: "png",
   jpg_quality: 95,
@@ -139,7 +161,38 @@ const DEFAULT_PARAMS: GenParams = {
   auto_save: true,
   exclude_slot_number: false,
   seed_mode: "round",
+  use_coords: false,
 };
+
+/** 생성 옵션을 담아 두는 열쇠 — ★**통째로** 담는다 (필드 목록을 따로 적지 않는다).
+ *
+ *  ★★`useUi` 는 저장할 필드를 손으로 적어 두는데, 필드를 늘리고 목록에 안 더해서
+ *    「켜 놓아도 껐다 켜면 기본값」이 된 적이 있다 (감사 2026-08-16). 여기서는 같은 덫을
+ *    안 만들려고 **객체를 통째로** 담고, 읽을 때 기본값에 있는 열쇠만 골라 받는다. */
+const PARAMS_KEY = "peropix.gen.params.v1";
+
+/** 담아 둔 옵션 — ★기본값에 **있는 열쇠**만, **같은 타입**일 때만 받는다.
+ *
+ *  ★스키마가 바뀌어도 조용히 깨지지 않는다: 없어진 열쇠(`quality_tags`)는 버려지고,
+ *    새로 생긴 열쇠(`quality_preset`)는 기본값이 채운다.
+ *  ★목록에서 사라진 모델은 기본 모델로 되돌린다 — 안 그러면 화면은 기본값을 보여 주는데
+ *    **보내는 값은 옛 모델**이라 둘이 어긋난다 (`OptionsPanel` 의 폴백과 같은 규칙). */
+function loadParams(): GenParams {
+  const out: GenParams = { ...DEFAULT_PARAMS };
+  try {
+    const raw = localStorage.getItem(PARAMS_KEY);
+    if (!raw) return out;
+    const saved = JSON.parse(raw) as Record<string, unknown>;
+    for (const k of Object.keys(DEFAULT_PARAMS) as (keyof GenParams)[]) {
+      const v = saved[k];
+      if (v !== undefined && typeof v === typeof DEFAULT_PARAMS[k]) {
+        (out as Record<string, unknown>)[k] = v;
+      }
+    }
+  } catch {}
+  if (!MODEL_LIST.some(([id]) => id === out.model)) out.model = DEFAULT_MODEL;
+  return out;
+}
 
 type S = {
   params: GenParams;
@@ -159,7 +212,7 @@ type S = {
 };
 
 export const useGen = create<S>((set, get) => ({
-  params: DEFAULT_PARAMS,
+  params: loadParams(),
   set: (k, v) => set({ params: { ...get().params, [k]: v } }),
   cell: null,
   setCell: (c) => set({ cell: c }),
@@ -205,7 +258,7 @@ export const useGen = create<S>((set, get) => ({
           ...(extra ?? {}),
           prompt,
           negative_prompt: uc,
-          characters: chars,
+          characters: withCoords(chars, get().params.use_coords),
           workspace: ws.current,
           char: tab.kind === "set" ? (ws.activeCharOf()?.name ?? null) : null,
           tab: tab.name,
@@ -288,12 +341,12 @@ export const useGen = create<S>((set, get) => ({
         tab: tab.name,
         tab_id: tab.id,
         negative_prompt: uc,
-        characters: chars,
+        characters: withCoords(chars, get().params.use_coords),
       },
       // ★**바퀴를 여기서 편다** (2026-08-11). 예전에는 씬 목록만 보내고 장 수는 서버가
       //   펼쳤는데(`qb.count`), 그러면 "한 바퀴에 시드 하나"를 표현할 수가 없다.
       //   여기서 펴면 순서와 시드가 둘 다 정확해진다.
-      rounds(Math.max(1, useUi.getState().perSlot), get().params, live, ({ card, cell: c }, seed) => {
+      rounds(Math.max(1, useUi.getState().perSlot), get().params, live, ({ cell: c }, seed) => {
         // ★씬 프롬프트가 **payload 의 어디로** 들어가나 — 탭의 선택 하나가 정한다.
         //   `base` 면 top-level prompt 에, 캐릭터 id 면 그 사람의 `characterPrompts[]` 에 붙는다.
         //   ★고른 캐릭터가 목록에 없으면(꺼짐·삭제) base 로 떨어진다 — 조용히 사라지지 않게.
@@ -315,11 +368,10 @@ export const useGen = create<S>((set, get) => ({
         //   ★푸는 것은 **이어 붙인 뒤**다. `#이름` 은 나타날 때마다 따로 뽑히므로 결과가 같고,
         //     접두·캐릭터·씬을 따로 풀던 v2 보다 자리가 하나로 모인다.
         const shot = resolveShot(pools, {
-          // 카드 접두 + 캐릭터 + 이 씬의 블록들 순서로 잇는다 (v2 프리셋 prefix 와 같은 자리).
+          // 베이스 + 이 씬의 블록들 순서로 잇는다.
           // ★씬도 블록이라 **켜진 블록만** 들어간다 — 프롬프트 쪽과 같은 규칙이다
-          prompt: [(card.prefix || "").trim(), raw.prompt, toChar ? "" : scene]
-            .filter(Boolean)
-            .join(", "),
+          // ★카드 공통 접두는 걷었다 (2026-08-21) — 같은 것을 붙이려면 베이스 블록을 쓴다
+          prompt: [raw.prompt, toChar ? "" : scene].filter(Boolean).join(", "),
           uc: raw.uc,
           chars: toChar
             ? raw.chars.map((ch) =>
@@ -338,7 +390,7 @@ export const useGen = create<S>((set, get) => ({
           seed,
           prompt: shot.prompt,
           negative_prompt: shot.uc,
-          characters: shot.chars,
+          characters: withCoords(shot.chars, get().params.use_coords),
           // ★★**이 장을 뽑는 화면 구조를 그대로 남긴다** (사용자 지시 2026-08-19).
           //   「새 탭으로 복제」가 이것으로 환경을 되살린다 — PNG 메타데이터에는 **합쳐진
           //   문자열**만 남아 스타일 카드·블록 나눔·캐릭터 카드를 못 되살리기 때문이다.
@@ -347,7 +399,6 @@ export const useGen = create<S>((set, get) => ({
           //     그림 바이트는 안 담는다 — 구조뿐이라 작다.
           env: {
             prompt: usePrompt.getState().snapshot(),
-            prefix: card.prefix,
             sceneDest: tab.sceneDest,
             cell: { name: c.name, blocks: c.blocks },
           },
@@ -358,3 +409,60 @@ export const useGen = create<S>((set, get) => ({
     if (get().params.seed_mode !== "fixed") get().set("seed", randomSeed());
   },
 }));
+
+/* ── 캐릭터 **활성화 수** 상한 ─────────────────────────────────────────────
+ *
+ *  ★★모델마다 받는 캐릭터 수가 다르다 (V4.5 6명 · V5 32명). 넘겨서 보내면 NAI 가
+ *    400 이 아니라 **500** 을 준다 — 사용자는 까닭을 알 수 없다.
+ *  ★★막는 자리는 **켜는 순간**이다 (사용자 지시 2026-08-21, v2 와 같은 방식).
+ *    예전에는 넘은 채로 두고 「초과분은 무시됩니다」를 띄웠는데, 그대로 생성하면
+ *    뒤쪽 캐릭터가 조용히 빠진다. **칸을 만드는 것 자체는 막지 않는다** — 꺼진 채로 들어온다.
+ *  ★이 규칙이 여기 있는 이유: 상한은 **모델**이 정하고 모델은 이 스토어가 갖는다.
+ *    `prompt.ts` 는 모델을 모른다 (거기서 읽으면 두 스토어가 서로를 가리키게 된다).
+ */
+export const charLimit = () => capsOf(useGen.getState().params.model).max_characters;
+
+/** 지금 하나 더 켤 수 있나 */
+export const canEnableChar = () =>
+  usePrompt.getState().chars.filter((c) => c.on).length < charLimit();
+
+/** 켜기 — 상한에 닿으면 켜지 않고 알린다. 끄기는 언제나 된다. */
+export function toggleCharCapped(id: string) {
+  const p = usePrompt.getState();
+  const ch = p.chars.find((c) => c.id === id);
+  if (ch && !ch.on && !canEnableChar()) {
+    toast(t("gen.charLimitHit", { max: charLimit() }), "warn");
+    return;
+  }
+  p.toggleChar(id);
+}
+
+/** ★상한이 **줄어드는 순간**(모델 전환)에 넘은 것을 뒤에서부터 끈다.
+ *  넘은 상태 자체를 두지 않으므로 「초과분은 무시됩니다」 같은 경고가 필요 없다. */
+export function clampCharsToModel() {
+  const limit = charLimit();
+  const over = usePrompt.getState().chars.filter((c) => c.on).slice(limit);
+  if (!over.length) return 0;
+  // ★`setState` 로 직접 갈아 끼우지 말 것 — 스토어 액션을 거쳐야 **저장이 예약된다**
+  //   (`prompt.ts` 의 `onEdit`). 직접 쓰면 화면만 바뀌고 워크스페이스에는 안 남는다.
+  for (const c of over) usePrompt.getState().toggleChar(c.id);
+  toast(t("gen.charLimitClamped", { max: limit, n: over.length }), "warn");
+  return over.length;
+}
+
+/** ★★**바뀌는 자리가 여럿이라** `set()` 이 아니라 스토어를 구독한다 —
+ *  메타데이터 적용(`metaApply`)·베이스 그림 크기 맞춤(`fitSizeToBase`)·이미지 입력도
+ *  `params` 를 직접 갈아 끼운다. 한 곳만 잡으면 나머지가 조용히 안 담긴다.
+ *  ★250ms 미룬다 — 숫자칸을 타이핑하면 글자마다 바뀐다. */
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
+useGen.subscribe((s, prev) => {
+  if (s.params === prev.params) return;
+  // ★모델이 바뀌면 상한도 바뀐다 — 줄어든 쪽이면 그 자리에서 초과분을 끈다
+  if (s.params.model !== prev.params.model) clampCharsToModel();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(PARAMS_KEY, JSON.stringify(useGen.getState().params));
+    } catch {}
+  }, 250);
+});

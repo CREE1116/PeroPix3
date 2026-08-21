@@ -92,9 +92,10 @@ export function useTagSuggest(
     // 공백 두 번이면 낱말이 끝난 것으로 본다
     if (at >= 2 && ta.value.substring(at - 2, at) === "  ") return close();
     const { word } = currentWord(ta.value, at);
-    const q = word.replace(/ /g, "_"); // 단부루는 언더바 형식
-    if (q.length < 2) return close();
-    const found = searchTags(q);
+    // ★표기를 여기서 바꾸지 않는다 — 밑줄·띄어쓰기를 같게 보는 자리는 `searchTags` 하나다
+    //   (예전에는 여기서 띄어쓰기를 밑줄로 바꿔, 띄어쓰기 표기의 태그가 안 걸렸다)
+    if (word.length < 2) return close();
+    const found = searchTags(word);
     if (!found.length) return close();
     setItems(found);
     setSel(0);

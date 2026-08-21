@@ -25,8 +25,6 @@ import type { Rec } from "../lib/takes";
  *  ★목록에는 안 실린다 (`server.py` 의 `_light`). 복제할 때 한 장씩 가져간다. */
 export type ShotEnv = {
   prompt: TabPrompt;
-  /** 그 씬이 든 카드의 공통 접두 */
-  prefix?: string;
   /** 씬 프롬프트가 베이스로 가나 캐릭터로 가나 */
   sceneDest?: string;
   cell: { name: string; blocks: Block[] };
@@ -92,10 +90,13 @@ export type SceneCard = {
   srcId?: string;
   /** 배너 그라데이션. ★지금은 **종류가 정한다** (`cards/kindColor`) — 저장된 값은 옛 자국이다 */
   color?: [string, string];
-  /** 이 카드의 모든 씬 앞에 붙는 공통 접두 (v2 프리셋의 prefix) */
-  prefix?: string;
   /** ★카드째 잠근다 — 옛 「전체 잠금」이 이 자리로 왔다 (사용자 결정 2026-08-11).
    *  잠긴 카드의 씬은 생성에서 빠진다. 씬 하나하나의 `locked` 와 **함께** 걸린다. */
+  /** ★머리에 거는 그림 (사용자 지시 2026-08-21) — 프롬프트 섹션 배너와 **같은 물건**이다.
+   *  바이트는 공용 저장소에 하나뿐이고(`/api/pin/<tid>`) 여기 담는 것은 「어느 것을 어떻게
+   *  볼지」뿐이다 (schema.md 1-1절). ★덱의 씬 세트 카드와는 다른 자리다 — 저장할 때
+   *  카드가 자기 것으로 한 벌 갖는다. */
+  thumb?: Thumb;
   /** 카드째 접혔나 — ★머리를 누르면 바뀐다. 화면 상태지만 탭에 남겨 껐다 켜도 유지된다 */
   folded?: boolean;
   locked?: boolean;
@@ -270,11 +271,11 @@ type S = {
   /** 카드를 얹는다. `cells` 를 주면 덱에서 떨군 것, 없으면 씬 하나짜리 새 카드 */
   addCard: (
     tabId: string,
-    card?: { name?: string; srcId?: string; color?: [string, string]; prefix?: string; cells?: Slot[] },
+    card?: { name?: string; srcId?: string; color?: [string, string]; cells?: Slot[] },
   ) => void;
   /** 카드를 뺀다. ★확인을 받지 않는다 — `Ctrl+Z` 로 되돌린다 (사용자 결정 2026-08-11) */
   removeCard: (tabId: string, cardId: string) => void;
-  /** 카드의 필드를 갈아 끼운다 (이름·공통 접두·씬 목록) */
+  /** 카드의 필드를 갈아 끼운다 (이름·씬 목록) */
   setCard: (tabId: string, cardId: string, patch: Partial<SceneCard>) => void;
   /** 씬을 **어느 카드의 어느 자리로든** 옮긴다 — 같은 카드 안이든, 다른 카드로든
    *  (v2 `index.html:11860-12002` 의 슬롯 드래그. 그쪽은 슬롯이 한 줄이라 카드 층이 없었다).
@@ -837,11 +838,11 @@ export const useWs = create<S>((set, get) => ({
      *  ★둘 다 없는 보관함 그림은 **메타데이터의 씬**을 쓴다 (v2 가 PNG 에 남긴 `slot_prompt`) —
      *    사용자 지적 2026-08-19: 갤러리에서 복제하면 슬롯 프롬프트가 통째로 사라졌다. */
     const srcScene = saved.env
-      ? { prefix: saved.env.prefix, color: fallbackScene?.card.color, cell: saved.env.cell }
+      ? { color: fallbackScene?.card.color, cell: saved.env.cell }
       : fallbackScene
-        ? { prefix: fallbackScene.card.prefix, color: fallbackScene.card.color, cell: fallbackScene.cell }
+        ? { color: fallbackScene.card.color, cell: fallbackScene.cell }
         : o.scene
-          ? { prefix: undefined, color: undefined, cell: o.scene }
+          ? { color: undefined, cell: o.scene }
           : undefined;
     const srcDest = saved.env ? saved.env.sceneDest : srcTab?.kind === "set" ? srcTab.sceneDest : undefined;
 
@@ -855,10 +856,9 @@ export const useWs = create<S>((set, get) => ({
     // 1) 프롬프트 구조 — 스타일·블록·캐릭터 카드 그대로 (새 탭으로 옮긴 **뒤**라 원본이 안 덮인다)
     //    ★구조를 못 찾았으면 **안 건드린다** — 그때는 `apply` 가 메타데이터로 세운다
     if (srcPrompt) usePrompt.getState().load(srcPrompt);
-    // 2) 슬롯 구조 — 그 씬과 **그 씬이 든 카드의 공통 접두**까지.
-    //    ★접두를 빼면 안 된다: `generateAll` 이 `카드 접두 + 베이스 + 씬` 으로 이어 붙이므로
-    //      (`gen.ts`), 접두가 없으면 같은 씬이라도 다른 프롬프트가 나간다.
-    //    ★`sceneDest`(씬 프롬프트가 베이스로 가나 캐릭터로 가나)도 같은 이유로 옮긴다.
+    // 2) 슬롯 구조 — 그 씬을 그대로 옮긴다.
+    //    ★`sceneDest`(씬 프롬프트가 베이스로 가나 캐릭터로 가나)도 함께 옮긴다 —
+    //      목적지가 다르면 같은 씬이라도 다른 프롬프트가 나간다.
     if (srcScene) {
       get().setTab(tab.id, {
         sceneDest: srcDest,
@@ -866,7 +866,6 @@ export const useWs = create<S>((set, get) => ({
           k.id === tab.cards[0]?.id
             ? {
                 ...k,
-                prefix: srcScene.prefix ?? k.prefix,
                 color: srcScene.color ?? k.color,
                 cells: k.cells.map((c) =>
                   c.id === cell.id
@@ -1173,7 +1172,6 @@ export const useWs = create<S>((set, get) => ({
           name: card.name ?? t("tabs.newSet"),
           srcId: card.srcId,
           color: card.color,
-          prefix: card.prefix,
           cells,
         },
       ],

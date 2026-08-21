@@ -39,9 +39,9 @@ import { useWildcards } from "./store/wildcards";
 import { ThumbDialog } from "./cards/ThumbDialog";
 import { saveCardWithThumb } from "./cards/saveCard";
 import { pinImage, setCardThumb } from "./cards/thumbUpload";
-import { usePrompt, defaultView, normThumb, thumbUrl, type Thumb } from "./store/prompt";
-import { useCards, type AnyCard, type CardKind } from "./store/cards";
-import type { DragImage } from "./cards/dragStore";
+import { usePrompt, defaultView, normThumb, thumbUrl } from "./store/prompt";
+import { useCards } from "./store/cards";
+import { setThumbAsker, type ThumbTarget } from "./cards/thumbAsk";
 
 /** 위치 잡는 창이 겨눌 수 있는 목적지 — 섹션 배너 또는 **덱 카드 한 장**.
  *
@@ -51,12 +51,8 @@ import type { DragImage } from "./cards/dragStore";
  *    노출되므로 거기 바로 떨군다 (사용자 원문: *"이제 다 펼쳐져 있어서 바로 드롭해도 될듯.
  *    대신 해당 카드가 받을 수 있게 노출된 상태일 때만"*).
  *  ★종류당 하나였던 **덱 커버**는 그리던 손패와 함께 통째로 걷었다 (2026-08-19). */
-type ThumbTarget =
-  | { type: "section"; section: string; img: DragImage }
-  | { type: "card"; kind: CardKind; card: AnyCard; img: DragImage }
-  /** ★이미 붙어 있는 그림의 **자리만 다시 잡는다** (카드 편집기에서 연다) —
-   *  새로 굽지 않으므로 `tid` 를 그대로 쓴다 (사용자 지시 2026-08-20) */
-  | { type: "card-thumb"; kind: CardKind; card: AnyCard; tid: string; view: Thumb };
+/** ★갈래 정의는 `cards/thumbAsk.ts` 하나다 — 씬 줄처럼 **props 가 안 닿는 자리**도
+ *  같은 창을 열어야 해서 그쪽으로 옮겼다 (2026-08-21). */
 
 export function App() {
   // ★백엔드 상태는 **스토어 하나**가 든다 — 보는 자리가 넷이다 (타이틀바 점 · 설정의 앱
@@ -77,6 +73,12 @@ export function App() {
   const loadCards = useCards((s) => s.load);
   const [ask, setAsk] = useState<SaveAsk | null>(null);
   const [thumbAsk, setThumbAsk] = useState<ThumbTarget | null>(null);
+  // ★★props 가 안 닿는 자리(씬 줄)도 이 창을 연다 — 여는 함수를 한 번 등록해 둔다
+  //   (`cards/thumbAsk.ts`, `prompt.ts` 의 `setPromptSaver` 와 같은 방식)
+  useEffect(() => {
+    setThumbAsker(setThumbAsk);
+    return () => setThumbAsker(null);
+  }, []);
   // ★어느 탭으로 열지까지 담는다 — 연 자리가 곧 볼 탭이다 (AI 채팅 → LLM).
   //   ★상태는 `useUi` 에 있다: 여는 자리가 셋이라(톱니·엔진 칩·토큰 없이 생성) 프롭으로
   //   내리면 생성 푸터까지 세 겹을 지나야 한다.
@@ -293,9 +295,13 @@ export function App() {
       <ThumbDialog
         key={
           thumbAsk
-            ? `${thumbAsk.type}:${"section" in thumbAsk ? thumbAsk.section : thumbAsk.card.id}:${
-                "img" in thumbAsk ? thumbAsk.img.file : thumbAsk.tid
-              }`
+            ? `${thumbAsk.type}:${
+                "section" in thumbAsk
+                  ? thumbAsk.section
+                  : "cardId" in thumbAsk
+                    ? thumbAsk.cardId
+                    : thumbAsk.card.id
+              }:${"img" in thumbAsk ? thumbAsk.img.file : thumbAsk.tid}`
             : "none"
         }
         ask={
@@ -358,6 +364,15 @@ export function App() {
                 banner: r.banner ?? defaultView(),
                 face: r.boxes.face ?? defaultView(),
               });
+            } else if (t.type === "scene-card") {
+              // ★씬 카드의 그림은 **탭이 든다** (`SceneCard.thumb`) — 덱 카드와 다른 자리다.
+              //   덱으로 저장하면 그때 카드가 자기 것으로 한 벌 갖는다.
+              const ws = useWs.getState();
+              const tab = ws.spec?.tabs.find((x) => x.id === t.tabId);
+              if (tab?.kind === "set")
+                ws.setCard(t.tabId, t.cardId, {
+                  thumb: { tid, banner: r.banner ?? defaultView(), face: r.boxes.face ?? defaultView() },
+                });
             } else {
               // ★떨군 **그 카드**의 그림이 된다. 목록의 그 한 장만 갈아 끼운다
               const view = { banner: r.banner ?? defaultView(), face: r.boxes.face ?? defaultView() };

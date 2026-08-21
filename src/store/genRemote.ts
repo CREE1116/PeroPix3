@@ -44,14 +44,13 @@ export async function queueToWorkspace(
   const n = Math.max(1, Math.min(50, count));
 
   if (tab.kind === "set") {
-    // ★씬마다 **그 카드의** 접두를 붙여 한 바퀴씩 돈다 (gen.generateAll 과 같은 규칙)
+    // ★씬마다 한 바퀴씩 돈다 (gen.generateAll 과 같은 규칙).
+    //   ★카드 공통 접두는 걷혔다 (2026-08-21) — 두 경로가 **같은 문자열**을 만들어야 한다
     const live = allScenes(tab).filter((x) => !x.cell.locked && !x.card.locked);
     if (!live.length) return { error: `'${tab.name}' 탭에 잠기지 않은 씬이 없습니다.` };
     for (let round = 0; round < n; round++) {
-      for (const [i, { card, cell: c }] of live.entries()) {
-        const cellPrompt = [(card.prefix || "").trim(), prompt, compileBlocks(c.blocks ?? [])]
-          .filter(Boolean)
-          .join(", ");
+      for (const [i, { cell: c }] of live.entries()) {
+        const cellPrompt = [prompt, compileBlocks(c.blocks ?? [])].filter(Boolean).join(", ");
         // ★와일드카드는 여기서도 **장마다** 뽑는다 (`lib/wildcards` 머리 주석).
         //   풀은 워크스페이스를 안 가리는 공용 문서라 남의 워크스페이스에도 그대로 먹는다.
         await useQueue.getState().enqueue(

@@ -1,7 +1,7 @@
 import { useI18n } from "../i18n";
 import { Category } from "./Category";
 import { useEffect, useState } from "react";
-import { MODELS, NAI_MAX, SIZE_PRESETS, alignTo64, useGen } from "../store/gen";
+import { DEFAULT_MODEL, MODELS, NAI_MAX, SIZE_PRESETS, alignTo64, modelCaps, useGen } from "../store/gen";
 import { Icon } from "../components/Icon";
 import { Help } from "../components/Tip";
 import { ImageInputPanel } from "./ImageInputPanel";
@@ -9,6 +9,13 @@ import { flashStyle, useFlash } from "../store/ui";
 
 const SAMPLERS = ["k_euler_ancestral", "k_euler", "k_dpmpp_2m", "k_dpmpp_2m_sde", "k_dpmpp_2s_ancestral", "k_dpmpp_sde"];
 const SCHEDULERS = ["karras", "native", "exponential", "polyexponential"];
+/** 퀄리티 프리셋 이름 — ★키를 조립하지 않는다 (i18n 검사가 리터럴만 센다).
+ *  ★목록 자체는 **모델이 정한다** (`lib/naiModels.ts` 의 `quality_presets`). */
+const QP_LABEL: Record<string, string> = {
+  standard: "options.qpStandard",
+  light: "options.qpLight",
+  none: "options.qpNone",
+};
 // ★v2 와 같은 5종. `Furry Focus` 는 ucPreset 숫자표에 없어 0(Heavy)으로 떨어지지만
 //   프리셋 **태그 문자열**은 자기 것을 쓴다 — v2 와 같은 동작이다 (nai.py 참조).
 const UC_PRESETS = ["Heavy", "Light", "Human Focus", "Furry Focus", "None"];
@@ -22,6 +29,11 @@ export function OptionsPanel() {
   const p = useGen((s) => s.params);
   const set = useGen((s) => s.set);
   const t = useI18n((s) => s.t);
+  /** ★★**이 모델에서 되는 것만 보여 준다** (사용자 지시 2026-08-21).
+   *
+   *  V5 는 스케줄러·Variety+ 가 아예 없다 — 서버가 무시하는 컨트롤을 남겨 두면 사용자는
+   *  켰다고 믿고 결과만 다르게 나온다. 능력표는 `lib/naiModels.ts` 하나다. */
+  const cap = modelCaps(p.model);
 
   return (
     /* ★★좌우 여백을 주지 않는다 (사용자 지적 2026-08-19) — 이 패널은 프롬프트와 **같은
@@ -40,7 +52,7 @@ export function OptionsPanel() {
                 {/* ★옛 워크스페이스가 없어진 모델(V4.0)을 들고 있으면 목록에 없어 빈칸으로 보인다 —
                     기본값으로 되돌린다. 조용히 다른 표로 생성되는 것보다 낫다 */}
                 <Select
-                  value={MODELS.some(([id]) => id === p.model) ? p.model : MODELS[0][0]}
+                  value={MODELS.some(([id]) => id === p.model) ? p.model : DEFAULT_MODEL}
                   options={MODELS}
                   onChange={(v) => set("model", v)}
                 />
@@ -52,13 +64,32 @@ export function OptionsPanel() {
               {/* ★시드는 여기 없다 — **생성 버튼 옆 하나**로 옮겼다 (사용자 지시 2026-08-04).
                   매번 만지는 유일한 옵션이라 생성 버튼 곁이 맞고, 두 곳에 두면 어느 쪽이
                   진짜인지 흐려진다 (하나의 정보에는 하나의 창구). → `GenerateFooter` */}
-              <Group label={t("options.misc")}>
-                <Check
-                  label={t("options.qualityTags")}
-                  checked={p.quality_tags}
-                  onChange={(v) => set("quality_tags", v)}
+              {/* ★★공홈과 같은 **드롭다운**이다 (2026-08-21). 예전에는 켬/끔 하나였는데
+                  V5 에서 `light` 가 생겨 셋이 됐다 — 켬/끔으로는 표현할 수가 없다.
+                  ★고를 수 있는 값은 **모델이 정한다**. 없는 것을 고른 채 모델을 바꾸면
+                    서버가 `standard` 로 내린다 (`nai.quality_preset_id`). */}
+              <Group label={t("options.qualityPreset")}>
+                <Select
+                  value={cap.quality_presets.includes(p.quality_preset) ? p.quality_preset : "standard"}
+                  options={cap.quality_presets.map((id) => [id, t(QP_LABEL[id])] as [string, string])}
+                  onChange={(v) => set("quality_preset", v)}
                 />
-                <Check label={t("options.varietyPlus")} checked={p.variety_plus} onChange={(v) => set("variety_plus", v)} />
+              </Group>
+              <Group label={t("options.misc")}>
+                {/* ★V5 에는 Variety+ 자체가 없다 (`cfgDelay` 거짓) — 서버가 값을 지운다 */}
+                {cap.cfg_delay && (
+                  <Check label={t("options.varietyPlus")} checked={p.variety_plus} onChange={(v) => set("variety_plus", v)} />
+                )}
+                {/* ★투명 배경은 V5 부터다. 프롬프트에 `transparent background` 를 넣고
+                    알파를 살려 받는다 (공홈 문구도 같은 설명이다) */}
+                {cap.transparency && (
+                  <Check
+                    label={t("options.transparentBg")}
+                    help={t("options.transparentBgHint")}
+                    checked={p.transparent_bg}
+                    onChange={(v) => set("transparent_bg", v)}
+                  />
+                )}
                 <Check label={t("options.furryMode")} checked={p.furry_mode} onChange={(v) => set("furry_mode", v)} />
               </Group>
         </div>
@@ -91,15 +122,21 @@ export function OptionsPanel() {
               <Group label={t("options.cfg")}>
                 <Num value={p.cfg} min={1} max={NAI_MAX.cfg} step={0.1} onChange={(v) => set("cfg", v)} />
               </Group>
-              <Group label={t("options.cfgRescale")}>
-                <Num value={p.cfg_rescale} min={0} max={1} step={0.02} onChange={(v) => set("cfg_rescale", v)} />
-              </Group>
+              {cap.cfg_rescale && (
+                <Group label={t("options.cfgRescale")}>
+                  <Num value={p.cfg_rescale} min={0} max={1} step={0.02} onChange={(v) => set("cfg_rescale", v)} />
+                </Group>
+              )}
               <Group label={t("options.sampler")}>
                 <Select value={p.sampler} options={SAMPLERS} onChange={(v) => set("sampler", v)} />
               </Group>
-              <Group label={t("options.scheduler")}>
-                <Select value={p.scheduler} options={SCHEDULERS} onChange={(v) => set("scheduler", v)} />
-              </Group>
+              {/* ★★V5 는 스케줄러를 못 고른다 — 공홈 전송 구간이 **karras 로 덮어쓴다.**
+                  칸을 남겨 두면 고른 값이 안 나가는데 화면만 그대로라 거짓말이 된다. */}
+              {cap.noise_schedule && (
+                <Group label={t("options.scheduler")}>
+                  <Select value={p.scheduler} options={SCHEDULERS} onChange={(v) => set("scheduler", v)} />
+                </Group>
+              )}
         </div>
       </Category>
 
@@ -142,7 +179,7 @@ export function OptionsPanel() {
       </Category>
 
       {/* v2 의 `Vibe / Character Ref` + `Base Image` 절 */}
-      <Category id="opt-img" label={t("options.catImage")} defaultFolded flashKey="base">
+      <Category id="opt-img" label={t("options.catImage")} defaultFolded flashKey="base" flashQuiet>
         <ImageInputPanel />
       </Category>
     </div>
@@ -394,7 +431,11 @@ function Check({
   return (
     <label
       style={{
-        display: "flex",
+        // ★★**글자 끝까지만** 누를 자리다 (사용자 지적 2026-08-21). `display: flex` 는 줄을
+        //   가득 채워서, 오른쪽 빈 곳을 눌러도 켜졌다 — 무엇을 누른 건지 알 수 없다.
+        //   `inline-flex` + `alignSelf` 로 **내용만큼만** 차지하게 한다.
+        display: "inline-flex",
+        alignSelf: "flex-start",
         alignItems: "center",
         gap: "var(--sp-2)",
         fontSize: "var(--text-xs)",

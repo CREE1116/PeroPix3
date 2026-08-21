@@ -26,6 +26,53 @@ const EXTRA: TagEntry[] = ["very_aesthetic", "masterpiece", "no_text", "best_qua
   (label) => ({ label, value: label, count: 8_000_000, type: "meta", category: 5 }),
 );
 
+/** ★NAI Diffusion **V5 에서 새로 생긴 태그** (NAI 공지 2026-08-21, 사용자 전달).
+ *
+ *  ★★근거는 **공지문뿐**이다. 공홈 번들에는 태그 사전이 없다 — 자동완성을 서버
+ *    (`/ai/generate-image/suggest-tags`)에 물어보는 구조라 뽑아 올 데가 없었다.
+ *    번들에서 교차 확인된 것은 실제 생성 프롬프트에 쓰인 `medium complexity` 하나다.
+ *  ★★**표기를 손대지 않는다** (사용자 지시 2026-08-21). 밑줄로 바꾸거나 콜론을 빼면
+ *    자동완성이 넣어 주는 문자열이 실제 태그와 달라진다 — 사전 표기가 아니라
+ *    **프롬프트에 그대로 나가는 문자열**이 정본이다.
+ *  ★`count` 는 0 이다 — 새 태그라 사용량 자료가 없다. 지어내지 않는다.
+ *  ★`tags.json`(단부루 덤프)에 이미 있는 `transparent background`·`alpha transparency`
+ *    는 여기 넣지 않는다 (중복은 `loadTags` 가 거르지만 애초에 둘 필요가 없다).
+ */
+const V5_TAGS: [string, number][] = [
+  ["depthness", 0],
+  ["attractive male", 0],
+  ["low complexity", 0],
+  ["medium complexity", 0],
+  ["high complexity", 0],
+  ["ultra complexity", 0],
+  ["has alpha", 0],
+  ["visual novel art", 0],
+  ["visual novel bg", 0],
+  ["visual novel cg", 0],
+  ["visual novel chibi", 0],
+  ["visual novel sprite", 0],
+  // ★`meta:` 접두가 붙은 둘. 콜론을 친 뒤에 골라도 제대로 들어간다
+  //   (`currentWord` 가 홑콜론을 태그 글자로 본다 — 2026-08-21 에 고쳤다).
+  ["meta:novel era", 5],
+  ["meta:golden era", 5],
+];
+EXTRA.push(
+  ...V5_TAGS.map(([label, category]) => ({
+    label,
+    value: label,
+    count: 0,
+    type: category === 5 ? "meta" : "general",
+    category,
+  })),
+);
+
+/** 검색용 표기 — ★**밑줄과 띄어쓰기를 같은 것으로 본다.**
+ *
+ *  ★★단부루 사전은 `high_complexity` 꼴이고 V5 새 태그는 `high complexity` 꼴이다.
+ *    예전에는 화면이 질의의 띄어쓰기를 밑줄로 바꿔 던졌는데(`word.replace(/ /g,"_")`),
+ *    그러면 **띄어쓰기 표기의 태그는 영영 안 걸린다.** 한쪽으로 맞추는 자리를 여기 하나로 둔다. */
+const norm = (s: string) => s.toLowerCase().replace(/_/g, " ");
+
 let ALL: TagEntry[] = [];
 let INDEX: Record<string, TagEntry[]> = {};
 let loaded = false;
@@ -48,13 +95,14 @@ export function loadTags(): Promise<void> {
     const index: Record<string, TagEntry[]> = {};
     const seen = new Set<string>();
     for (const t of tags) {
-      t._lower = t.label.toLowerCase();
+      t._lower = norm(t.label);
       seen.add(t._lower);
       (index[t._lower[0]] ||= []).push(t);
     }
-    const extra = EXTRA.filter((t) => !seen.has(t.label.toLowerCase()));
+    // ★중복 검사도 **같은 표기**로 — `seen` 은 정규화된 것이라 여기만 날것이면 걸리지 않는다
+    const extra = EXTRA.filter((t) => !seen.has(norm(t.label)));
     for (const t of extra) {
-      t._lower = t.label.toLowerCase();
+      t._lower = norm(t.label);
       (index[t._lower[0]] ||= []).unshift(t); // 앞에 넣어 먼저 보이게
     }
     ALL = [...extra, ...tags];
@@ -67,7 +115,7 @@ export function loadTags(): Promise<void> {
 /** 두 단계 검색: 첫 글자 인덱스(앞부터 일치) → 모자라면 전체(포함). */
 export function searchTags(query: string, max = 15): TagEntry[] {
   if (!query || query.length < 2) return [];
-  const q = query.toLowerCase();
+  const q = norm(query);
   const out: TagEntry[] = [];
 
   for (const t of INDEX[q[0]] ?? []) {
@@ -113,7 +161,21 @@ export function currentWord(value: string, cursor: number) {
   let start = cursor;
   while (start > 0) {
     const ch = value[start - 1];
-    if (",\n\r{}[]():".includes(ch) || !isTagChar(ch)) break;
+    if (ch === ":") {
+      // ★★홑콜론은 **태그 글자**다 (`meta:novel era` · `honkai:_star_rail`).
+      //   예전에는 경계라서, 콜론을 친 뒤에 고르면 앞의 `meta:` 가 남아
+      //   `meta:meta:novel era` 가 됐다 (사용자 지적 2026-08-21).
+      // ★★단 `::` 는 **강조 문법**이라 경계다 — 안 그러면 `1.5::fee` 가 통째로
+      //   한 낱말이 되어, 고르는 순간 강조 문법이 지워진다.
+      // ★★경계로 두는 것**만**으로 충분하다. 한때 강조 구간 안에서 자동완성을 통째로
+      //   껐는데(`inEmphasis`), `-0.8::feet::` 처럼 강조 안에 태그를 쓰는 것이 흔해서
+      //   되돌렸다 (사용자 지적 2026-08-21). 경계가 있으면 안쪽 낱말만 갈리므로
+      //   `1.5::` 는 그대로 남는다.
+      if (value[start - 2] === ":" || value[start] === ":") break;
+      start--;
+      continue;
+    }
+    if (",\n\r{}[]()".includes(ch) || !isTagChar(ch)) break;
     start--;
   }
   let end = cursor;

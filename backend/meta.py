@@ -24,6 +24,7 @@ import json
 from pathlib import Path
 
 import nai
+import naitext
 
 import piexif
 import piexif.helper
@@ -201,21 +202,35 @@ def read_raw(image_bytes: bytes) -> dict:
 #   Curated 에서 Human Focus 다). 보내는 표와 읽는 표가 갈리면 왕복이 조용히 깨진다.
 
 
-def _quality_patterns(model: str) -> list[str]:
-    """그 모델의 퀄리티 접미사 — **Enhance 변형을 먼저** 본다 (긴 쪽이 먼저 걸려야 한다).
-    ★모델을 모르면 아는 모델의 것을 전부 대 본다. 문자열이 길고 서로 달라 헛맞지 않는다."""
-    out: list[str] = []
-    suffixes = (
-        [nai.quality_suffix(model)]
-        if model
-        else list(dict.fromkeys(nai.QUALITY_SUFFIX.values()))
-    )
-    for suf in suffixes:
-        if not suf:
-            continue
-        out.append(suf + nai.ENHANCE_PROMPT_ADD)
-        out.append(suf)
-    out.sort(key=len, reverse=True)
+def _quality_patterns(model: str) -> list[tuple[str, str, bool]]:
+    """그 모델의 퀄리티 접미사 후보 — `(문자열, 프리셋 id, 투명배경인가)`.
+
+    ★**Enhance 변형을 먼저** 본다 (긴 쪽이 먼저 걸려야 한다).
+    ★모델을 모르면 아는 모델의 것을 전부 대 본다. 문자열이 길고 서로 달라 헛맞지 않는다.
+    ★★프리셋 id 와 투명 배경을 **갈라** 돌려주는 이유가 둘이다:
+      · 투명 배경만 켜고 퀄리티는 끈 조합이 있다 (꼬리가 `, transparent background` 하나뿐).
+        하나로 뭉치면 되읽을 때 퀄리티 태그가 저절로 켜진다.
+      · 공홈 V5 는 퀄리티 프리셋이 `standard`·`light` 둘이라, **어느 쪽이었는지**까지
+        되살려야 다시 그렸을 때 같은 문자열이 나간다."""
+    # ★★그 모델의 프리셋을 **전부** 대 본다. 모델을 모르면 아는 접미사 전부.
+    if model:
+        pairs = [(pid, s) for pid, s in nai.quality_presets(model) if s]
+    else:
+        # 모델을 모르면 id 를 특정할 수 없다 — standard 로 본다 (다시 그릴 때 기본값이다)
+        pairs = [("standard", s) for s in nai.ALL_QUALITY_SUFFIXES]
+    bg = ", " + nai.TRANSPARENT_BG_TAG
+
+    cands: list[tuple[str, str, bool]] = []
+    for pid, suf in pairs:
+        cands.append((bg + suf, pid, True))    # 투명 배경 + 퀄리티
+        cands.append((suf, pid, False))        # 퀄리티만
+    cands.append((bg, "none", True))           # 투명 배경만
+
+    out: list[tuple[str, str, bool]] = []
+    for text, pid, tb in cands:
+        out.append((text + nai.ENHANCE_PROMPT_ADD, pid, tb))
+        out.append((text, pid, tb))
+    out.sort(key=lambda x: len(x[0]), reverse=True)
     return out
 
 
@@ -427,23 +442,44 @@ def normalize(meta: dict | None) -> dict | None:
             nai_model = v
             break
     quality_pats = _quality_patterns(nai_model)
+    # ★★따옴표 → `teXt:` 자동 조립을 **먼저** 되돌린다 (`naitext.strip`).
+    #   붙는 자리가 맨 끝이라, 안 떼면 퀄리티 접미사가 그 뒤에 있는 셈이 되어 안 걸린다.
+    #   ★다시 만들어 보고 **같을 때만** 뗀다 — 손으로 적은 `teXt:` 는 안 건드린다.
+    _text_chars = [
+        {"prompt": p, "center": centers[i] if i < len(centers) and centers[i] else {"x": 0.5, "y": 0.5}}
+        for i, p in enumerate(char_prompts)
+    ]
+    _use_coords = bool(((meta.get("v4_prompt") or {}).get("use_coords")))
     # ★★`ucPreset` **숫자는 안 쓴다.** 프리셋은 네거티브 **앞에서 그 문자열을 떼어낼 수 있을
     #   때만** 이름을 붙인다 — 못 떼면 그 태그가 네거티브에 남아 있는 것이라, 이름까지 붙이면
     #   다시 그릴 때 프리셋이 **두 번** 들어간다. (숫자의 뜻도 모델마다 다르다:
     #   V4.5 Full 의 2 는 Furry Focus, Curated 의 2 는 Human Focus)
     uc_preset = "None"
     quality_tags = meta.get("qualityToggle")
+    # ★투명 배경 — 공홈은 `tag_hint_transparent_background` 를 싫고(2026-08-21),
+    #   우리는 접미사에서도 되잊는다. 둘 중 하나라도 참이면 켜진 것이다.
+    transparent_bg = bool(meta.get("tag_hint_transparent_background"))
+    # ★프리셋 id 는 접미사를 떼어 낼 때 함께 정해진다 (`_quality_patterns`).
+    #   못 떼면 "none" 이다 — 붙어 있지 않았다는 뜻이라 다시 붙이면 안 된다.
+    quality_preset = "none"
     slot_prompt = ppx.get("slot_prompt") or ""
     prompt = meta.get("prompt") or ""
     negative = meta.get("uc") or ""
 
+    if prompt:
+        prompt = naitext.strip(prompt, _text_chars, _use_coords)
+
     if is_pure_nai:
         # 순수 NAI: 프롬프트 끝의 퀄리티 태그 제거 (안 지우면 Apply 때마다 중복 누적)
         removed = False
-        for pat in quality_pats:
+        for pat, pid, was_bg in quality_pats:
             if prompt.endswith(pat):
                 prompt = prompt[: -len(pat)]
-                quality_tags = True
+                # ★★퀄리티 프리셋과 투명 배경을 **따로** 되살린다 — 붙는 자리가 같을 뿐
+                #   서로 다른 스위치다 (`_quality_patterns` 주석)
+                quality_preset = pid
+                quality_tags = pid != "none"
+                transparent_bg = was_bg
                 removed = True
                 break
         # ★V2 는 접미사가 아니라 **앞에** 붙는다 (`nai.QUALITY_PREFIX`)
@@ -452,6 +488,7 @@ def normalize(meta: dict | None) -> dict | None:
                 if prompt.startswith(pre):
                     prompt = prompt[len(pre) :]
                     quality_tags = True
+                    quality_preset = "standard"
                     removed = True
                     break
         if not removed:
@@ -479,16 +516,23 @@ def normalize(meta: dict | None) -> dict | None:
         if ppx.get("quality_tags") is not None:
             quality_tags = ppx["quality_tags"]
         else:
-            quality_tags = any((meta.get("prompt") or "").endswith(p) for p in quality_pats)
+            # ★패턴은 `(문자열, 프리셋 id, 투명배경인가)` 다 — 걸린 것의 id 를 그대로 쓴다
+            for pat, pid, _bg in quality_pats:
+                if (meta.get("prompt") or "").endswith(pat):
+                    quality_preset = pid
+                    break
+            quality_tags = quality_preset != "none"
 
         # base_prompt 가 있으면 직접 (v3+), 없으면 슬롯 프롬프트 수동 제거 (v2 하위호환)
         if ppx.get("base_prompt") is not None:
             prompt = ppx["base_prompt"] or ""
         elif slot_prompt:
-            for pat in quality_pats:
+            for pat, pid, was_bg in quality_pats:
                 if prompt.endswith(pat):
                     prompt = prompt[: -len(pat)]
-                    quality_tags = True
+                    quality_preset = pid
+                    quality_tags = pid != "none"
+                    transparent_bg = was_bg
                     break
             for suffix in (", " + slot_prompt, "," + slot_prompt, slot_prompt):
                 if prompt.endswith(suffix):
@@ -514,6 +558,9 @@ def normalize(meta: dict | None) -> dict | None:
             }
             for i, p in enumerate(char_prompts)
         ],
+        # ★좌표를 **쓰고 있었는가** — 자리(`center`)만 돌려주면 화면이 되살려도 NAI 는
+        #   무시한다 (`nai.py` 는 `any(c.use_coord)` 로만 켠다). 켜짐 상태가 있어야 왕복이 닫힌다.
+        "use_coords": _use_coords,
         "slot_prompt": slot_prompt,
         "seed": meta.get("seed"),
         "width": meta.get("width"),
@@ -526,6 +573,8 @@ def normalize(meta: dict | None) -> dict | None:
         "smea": "SMEA+DYN" if meta.get("sm_dyn") else ("SMEA" if meta.get("sm") else "none"),
         "uc_preset": uc_preset,
         "quality_tags": bool(quality_tags),
+        "quality_preset": quality_preset if quality_tags else "none",  # ★둘은 같은 사실의 두 표기다
+        "transparent_bg": bool(transparent_bg),
         "cfg_rescale": meta.get("cfg_rescale"),
         "variety_plus": variety_plus,
         "furry_mode": furry,

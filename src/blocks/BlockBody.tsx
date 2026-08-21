@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { caretAfterTag, parseSegs, serializeBlock, type Block } from "../lib/blocks";
 import { Chip } from "./Chip";
+import { pushTagUndo } from "../lib/tagUndo";
 import { useTagSuggest } from "./TagSuggest";
 
 /** 칩 끌기 손잡이 — 목록이 들고 있는 것을 이 블록 몫만 받는다 (`useTagDrag`) */
@@ -246,8 +247,12 @@ export function BlockBody({
               ...box,
               background: "var(--code-bg)",
               borderColor: "var(--accent)",
-              fontFamily: "var(--font-mono)",
-              fontSize: "var(--text-2xs)",
+              // ★★글꼴도 **칩과 같은 것**으로 (사용자 지시 2026-08-21: 칩 쪽이 더 잘 읽힌다).
+              //   한때 고정폭이었다 — `::` 와 숫자를 세로로 맞춰 보려던 것인데, 프롬프트는
+              //   숫자표가 아니라 **읽는 글**이라 본문 글꼴이 낫다.
+              //   ★가중치 숫자만은 칩에서처럼 고정폭이다 (`Chip` 의 `<b>`).
+              fontFamily: "var(--font-sans)",
+              fontSize: "var(--text-prompt)",
               lineHeight: 1.5,
               /* ★손잡이를 두지 않는다 — 높이는 **글이 정한다**. 손으로 줄여 놔도
                  다음 글자에 도로 늘어나므로, 있으면 고장으로 읽힌다 */
@@ -304,7 +309,13 @@ export function BlockBody({
                 tags[i] = { ...tag, w };
                 onChange({ ...block, tags });
               }}
-              onRemove={() => onChange({ ...block, tags: block.tags.filter((_, j) => j !== i) })}
+              onRemove={() => {
+                // ★★확인 없이 사라지는 자리라 **되돌릴 길**을 함께 담는다 (`Ctrl+Z`).
+                //   되돌리는 방법은 「이 블록을 지금 모습으로 되돌린다」 하나면 된다.
+                const before = block;
+                pushTagUndo(() => onChange(before));
+                onChange({ ...block, tags: block.tags.filter((_, j) => j !== i) });
+              }}
             />
           ))}
         </div>

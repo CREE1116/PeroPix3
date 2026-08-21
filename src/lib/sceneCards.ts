@@ -1,8 +1,11 @@
 /** 씬 세트 카드 층으로의 이전 — **사용자 데이터를 건드리는 자리**라 따로 떼어 시험한다.
  *
- *  옛 세트 탭은 씬(`cells`)과 공통 접두(`prefix`)를 **직접** 들었다. 카드 층이 생기면서
- *  그것을 **카드 한 장**으로 감싼다 (사용자 결정 2026-08-11). 감싸기만 하므로 아무것도 잃지
- *  않고, 열면 지금까지와 똑같이 보인다.
+ *  옛 세트 탭은 씬(`cells`)을 **직접** 들었다. 카드 층이 생기면서 그것을 **카드 한 장**으로
+ *  감싼다 (사용자 결정 2026-08-11). 열면 지금까지와 똑같이 보인다.
+ *
+ *  ★공통 접두(`prefix`)도 여기서 카드로 옮겨 주고 있었는데, **그 기능 자체가 걷혔다**
+ *    (사용자 지시 2026-08-21). 그래서 옛 탭의 그 값은 **버린다** — 같은 것을 붙이려면
+ *    베이스 프롬프트의 블록을 쓴다 (창구가 하나가 된다).
  *
  *  ★**씬 번호(`cellSeq`)는 탭에 그대로 둔다.** 카드로 내리면 두 카드의 `c1` 이 같은 결과를
  *    물어 한 카드의 그림이 다른 카드에 나타난다 (결과는 `cell_id` 로만 묶인다 — `takesOf`).
@@ -41,6 +44,7 @@ type OldSetTab = {
   name: string;
   cards?: unknown;
   cells?: unknown[];
+  /** ★걷힌 기능. 타입에만 남겨 **버린다는 것을 드러낸다** (옛 파일에는 아직 들어 있다) */
   prefix?: string;
   [k: string]: unknown;
 };
@@ -49,7 +53,8 @@ type OldSetTab = {
 export function wrapSetTabInCard(tab: OldSetTab): Record<string, unknown> | null {
   if (tab.kind !== "set") return null;
   if (Array.isArray(tab.cards)) return null; // 이미 옮겼다
-  const { cells, prefix, ...rest } = tab;
+  // ★`prefix` 는 여기서 **떨어져 나간다** (기능이 걷혔다). 옛 파일을 열어도 카드에 안 붙는다
+  const { cells, prefix: _dropped, ...rest } = tab;
   return {
     ...rest,
     cards: [
@@ -57,7 +62,6 @@ export function wrapSetTabInCard(tab: OldSetTab): Record<string, unknown> | null
         id: "k1",
         // 카드 이름은 탭 이름을 물려받는다 — 옛 탭은 곧 씬 세트 하나였다
         name: tab.name,
-        ...(prefix ? { prefix } : {}),
         cells: Array.isArray(cells) ? cells : [],
       },
     ],

@@ -15,8 +15,13 @@
 /** 그림 자리 폭 (목업 `.bimg`). 패널을 넓혀도 고정이다. */
 export const BANNER_IMG_W = 240;
 
-/** 배너 바탕 — 그림 오른쪽으로 이어지는 단색 */
-export const BANNER_BG = "#05070a";
+/** 배너 바탕 — 그림 오른쪽으로 이어지는 단색.
+ *
+ *  ★★**테마를 따른다** (사용자 지적 2026-08-21: 다크에선 너무 밝고 라이트에선 너무 어둡다).
+ *    예전에는 `#05070a` 로 박혀 있어서 흰 패널 위에 새까만 띠가 얹혔다. 값은
+ *    `styles/tokens.css` 의 `--banner-bg` 하나이고, 여기서는 그것을 가리키기만 한다.
+ *  ★이름 글자가 흰색이라 **라이트에서도 어두운 쪽**을 유지한다 (밝게 하면 글자가 안 보인다). */
+export const BANNER_BG = "var(--banner-bg)";
 
 /** 계단의 위치. 두 값이 곧 생김새다 — 여기만 바꾸면 세 곳이 함께 바뀐다. */
 const CUT_A = "63%"; // 중간 단이 시작하는 곳
@@ -32,15 +37,22 @@ const EDGE = "0.7%";
 export const BANNER_CUT =
   `linear-gradient(${ANGLE}, #000 0 ${CUT_B}, transparent calc(${CUT_B} + ${EDGE}))`;
 
-/** 잘리기 전 구간을 한 번 어둡게 눕혀 '단'을 만든다 */
+/** 잘리기 전 구간을 한 번 어둡게 눕혀 '단'을 만든다.
+ *  ★색은 **바탕과 같은 것**을 쓴다 (`--banner-bg`) — 이 단은 옆의 단색 띠로 이어지는
+ *    자리라, 색이 다르면 라이트에서 이음매에 색 차이가 보인다. */
 export const BANNER_STEP =
   `linear-gradient(${ANGLE}, transparent 0 ${CUT_A},` +
-  ` rgba(5,7,10,0.55) calc(${CUT_A} + ${EDGE}) ${CUT_B},` +
+  ` color-mix(in srgb, var(--banner-bg) 55%, transparent) calc(${CUT_A} + ${EDGE}) ${CUT_B},` +
   ` transparent calc(${CUT_B} + ${EDGE}))`;
 
-/** 그림이 없을 때 — 같은 실루엣에 카드 색만. 두 상태가 이어져 보이게 한다. */
+/** 그림이 없을 때 — 같은 실루엣에 카드 색만. 두 상태가 이어져 보이게 한다.
+ *
+ *  ★진하기는 `--banner-a1`(밝은 쪽) · `--banner-a2`(어두운 쪽)가 정한다 — **테마마다 다르다.**
+ *    예전에는 `59`·`33` 이 박혀 있어 어두운 바탕에서 색 겹이 도드라졌다. */
 export const bannerEmptyFill = (gradient: [string, string]) =>
-  `linear-gradient(118deg, ${gradient[1]}59, ${gradient[0]}33 78%)`;
+  `linear-gradient(118deg,` +
+  ` color-mix(in srgb, ${gradient[1]} var(--banner-a1), transparent),` +
+  ` color-mix(in srgb, ${gradient[0]} var(--banner-a2), transparent) 78%)`;
 
 /* ── 카드 커버(세로 3:4) ── 같은 3단, 다만 **수직** ────────────────
  *
@@ -66,7 +78,7 @@ export const COVER_CUT =
 /** 중간 단 */
 export const COVER_STEP =
   `linear-gradient(${COVER_ANGLE}, transparent 0 ${COVER_A},` +
-  ` rgba(5,7,10,0.55) calc(${COVER_A} + ${EDGE}) ${COVER_B},` +
+  ` color-mix(in srgb, var(--banner-bg) 55%, transparent) calc(${COVER_A} + ${EDGE}) ${COVER_B},` +
   ` transparent calc(${COVER_B} + ${EDGE}))`;
 
 /** 이름이 그림 위에서도 읽히게 하는 아래쪽 스크림 (배너와 같은 값) */

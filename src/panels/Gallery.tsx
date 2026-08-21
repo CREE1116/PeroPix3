@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useGen } from "../store/gen";
 import { useWs } from "../store/workspace";
 import { useGallery } from "../store/gallery";
-import { useDragSource } from "../cards/dragStore";
+import { useDragSource, dragSourceStyle } from "../cards/dragStore";
 import { keepThumb, keepUrl } from "../lib/imgUrl";
 import { api } from "../lib/backend";
 import { ImageActions } from "./ImageActions";
@@ -344,6 +344,9 @@ function Cell({
         )
       }
       style={{
+        // ★끌기 출발점의 공통 차림 — 네이티브 이미지 끌기·글자 선택을 원천에서 막는다.
+        //   여기만 빠져 있었다 (다른 출발점은 전부 쓴다).
+        ...dragSourceStyle,
         position: "relative",
         aspectRatio: "832 / 1216",
         borderRadius: "var(--r-2)",

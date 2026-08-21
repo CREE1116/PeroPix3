@@ -74,6 +74,11 @@ export function GalleryFolders() {
           on={folder === ALL}
           onClick={() => void setFolder(ws, ALL)}
         />
+        {/* ★★**뿌리로 되돌리는 줄** — 끌고 있을 때만 나온다 (사용자 지적 2026-08-21:
+            폴더 밖으로 못 뺐다). 「전체」는 폴더가 아니라 **보기**라 받을 수 없고, 그래서
+            한 번 폴더에 넣은 그림을 뿌리로 되돌릴 길이 화면에 없었다 (윗줄 드롭다운뿐).
+            ★평소에는 감춘다 — 늘 있으면 「전체」와 뜻이 겹쳐 폴더 목록이 헷갈린다. */}
+        <RootRow onDropFiles={(files) => void moveFiles(files, ALL)} />
         {rest.map((f) => (
           <Row
             key={f.path}
@@ -263,6 +268,40 @@ function Row({
         {Icon.trash}
       </button>
     )}
+    </div>
+  );
+}
+
+/** 뿌리(폴더 없음)로 옮기는 자리 — **끌고 있을 때만** 뜬다.
+ *  ★「전체」는 폴더가 아니라 **보기**라 받을 수 없다. 그래서 한 번 폴더에 넣은 그림을
+ *    뿌리로 되돌릴 길이 화면에 없었다 (윗줄 드롭다운뿐) — 이 줄이 그 자리다. */
+function RootRow({ onDropFiles }: { onDropFiles: (files: string[]) => void }) {
+  const t = useI18n((s) => s.t);
+  const zone = useDropZone({
+    id: "keep-folder-root",
+    kind: "keep",
+    prio: 10,
+    onDrop: (d) => d.files?.length && onDropFiles(d.files),
+  });
+  if (!zone.active) return null;
+  return (
+    <div
+      data-keep-folder-row="/"
+      ref={zone.ref}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--sp-2)",
+        margin: "2px 0",
+        padding: "5px var(--sp-3)",
+        borderRadius: "var(--r-2)",
+        border: `1px dashed ${zone.over ? "var(--accent)" : "var(--line)"}`,
+        background: zone.over ? "var(--accent-bg)" : undefined,
+        color: zone.over ? "var(--accent)" : "var(--ink-faint)",
+        fontSize: "var(--text-2xs)",
+      }}
+    >
+      {t("gallery.toRoot")}
     </div>
   );
 }

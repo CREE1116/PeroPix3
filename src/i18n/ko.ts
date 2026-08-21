@@ -234,11 +234,12 @@ export const ko: Dict = {
     noMeta: "{n}장은 저장된 생성 정보가 없어 지금 화면의 프롬프트·설정으로 돕니다",
   },
 
-  /** 업스케일 — NAI 가 4배로 키운다 (다시 그리는 인핸스와 다르다) */
+  /** 업스케일 — NAI 가 키운다 (다시 그리는 인핸스와 다르다).
+   *  ★★배율은 **서버가 정한다** (2026-08-21 규격 변경 — 예전에는 우리가 4를 박아 보냈다) */
   upscale: {
     button: "업스케일",
-    hint: "가로세로 4배로 키웁니다 ({a} Anlas). 다시 그리지 않아 그림이 안 바뀝니다.",
-    tooLarge: "1024×1024 보다 큰 그림은 업스케일할 수 없습니다.",
+    hint: "해상도를 키웁니다 ({a} Anlas). 다시 그리지 않아 그림이 안 바뀝니다.",
+    tooLarge: "3MP 보다 큰 그림은 업스케일할 수 없습니다.",
     done: "업스케일 완료. 새 그림으로 저장했습니다",
   },
 
@@ -251,6 +252,13 @@ export const ko: Dict = {
     vibeEncode: "바이브 인코딩 {a} Anlas",
     /** 비용이 어떻게 나왔나 (v2 `총액 (장당 × N슬롯 × M회)`) */
     costPerSlots: "장당 {p} × 씬 {s} × {r}회",
+    /** ★넘긴 채로 두지 않는다 — **켜는 순간** 막고, 상한이 줄면 그 자리에서 끈다.
+     *  「초과분은 무시됩니다」로 알리고 말면 그대로 생성했을 때 뒤쪽이 조용히 빠진다. */
+    charLimitHit: "이 모델은 캐릭터 {max}명까지 켤 수 있습니다.",
+    charLimitClamped: "이 모델은 캐릭터 {max}명까지입니다. 뒤 {n}명을 껐습니다.",
+    opusUsage: "Opus 무료 {p}%",
+    opusUsageHint: "Opus 무료 생성 잔량입니다. 다 쓰면 Anlas 를 씁니다 (V5 부터).",
+    opusRefill: "시간당 {r}% 회복 · 100% 까지 {f}",
     anlasRefresh: "잔액 새로고침",
     /** 한 장 비용 상한을 넘으면 공홈처럼 생성을 막는다 */
     overLimit: "한 장 비용이 상한 {a} Anlas 를 넘습니다. 해상도나 steps 를 줄여 주세요.",
@@ -370,10 +378,25 @@ export const ko: Dict = {
     seedRoll: "새 시드 뽑기",
     seedRandom: "랜덤",
     misc: "옵션",
-    qualityTags: "Add Quality Tags",
+    qualityPreset: "Quality Preset",
+    qpStandard: "Standard",
+    qpLight: "Light",
+    qpNone: "None",
     varietyPlus: "Variety+",
+    transparentBg: "Transparent BG",
+    transparentBgHint: "프롬프트에 transparent background 를 넣고 알파를 살려 받는다. V5 부터 된다.",
   },
 
+  /** 캐릭터 배치 판 (`panels/CharPositioner`) */
+  pos: {
+    ai: "AI에게 맡김",
+    aiTip: "인물의 자리를 NAI 가 알아서 정합니다 (좌표는 안 보냅니다)",
+    custom: "직접 배치",
+    customTip: "정해 둔 자리로 보냅니다",
+    open: "배치 판을 편다 — 그림 위에서 인물을 끌어 자리를 정합니다",
+    close: "배치 판을 닫습니다 (자리는 그대로 남습니다)",
+    stacked: "캐릭터가 같은 자리에 겹쳐 있습니다",
+  },
   canvas: {
     hideHint: "휴지통으로 보냅니다 (Ctrl+Z 로 되돌립니다 · 24시간 뒤 비워집니다)",
     starOnly: "별표만 보기",
@@ -412,6 +435,8 @@ export const ko: Dict = {
     tokenDeleteBody: "다시 넣기 전까지 생성이 되지 않습니다.",
     bulkWarn: "수 시간 이상 이어서 대량 생성하면 NovelAI 쪽에서 계정이 제한될 수 있습니다.",
     editing: "편집",
+    /** 가중치 강조 색 — 칩과 글 상자 둘 다 */
+    weightHl: "가중치 강조 색",
     tagSuggest: "태그 자동완성",
     tagSuggestHint: "치는 동안 단부루 태그를 제안합니다. 끄면 Enter·Esc 가 블록 편집기 것으로 돌아갑니다.",
     about: "앱 정보",
@@ -631,6 +656,8 @@ export const ko: Dict = {
     close: "닫기",
     copy: "복사",
     copied: "복사했습니다",
+    /** 시드를 누르면 복사하고 지금 시드로 넣는다 (시드 규칙은 안 건드린다) */
+    seedApplied: "시드 {n} 을 넣었습니다 (복사도 됐습니다)",
   },
 
   ai: {
@@ -696,8 +723,6 @@ export const ko: Dict = {
     removeCard: "빼기 (Ctrl+Z 로 되돌립니다)",
     addScene: "씬 추가",
     noneYet: "아직 없음",
-    prefix: "공통 접두",
-    prefixPlaceholder: "이 카드의 모든 씬 앞에 붙습니다",
     emptyHint: "비어 있습니다 · 씬 카드를 얹으면 그 카드의 씬이 생깁니다",
     unsaved: "미저장",
     saveToFile: "파일로 저장",
@@ -718,8 +743,6 @@ export const ko: Dict = {
     zoomIn: "확대",
     zoomOut: "축소",
     fit: "맞춤",
-    prefixPlaceholder: "이 씬 세트 전체에 공통으로 붙일 프롬프트",
-    prefixHint: "슬롯 태그 앞에 붙습니다 (v2 프리셋의 prefix)",
     lockAll: "전체 락 토글",
     lock: "잠금 (생성에서 제외)",
     duplicate: "씬 복제",
@@ -786,7 +809,12 @@ export const ko: Dict = {
     folderNotEmpty: "그림이 든 폴더는 지울 수 없습니다. 먼저 옮기거나 지우세요.",
     folders: "폴더",
     all: "전체",
+    /** 폴더 밖(뿌리)으로 되돌리는 드롭 자리 — 끌고 있을 때만 뜬다 */
+    toRoot: "폴더 밖으로",
     countImages: "{n}장",
+    /** 갤러리 단추에 그림을 떨궜을 때 */
+    dropToKeep: "여기 놓으면 보관합니다",
+    alreadyKept: "이미 보관돼 있습니다",
     empty: "아직 보관한 그림이 없습니다",
     emptyHint: "크게 본 그림에서 갤러리에 보관을 누르면 여기 모입니다. 작업이 바뀌어도 남습니다.",
     meta: "그림 정보",

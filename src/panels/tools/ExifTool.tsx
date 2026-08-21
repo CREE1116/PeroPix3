@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useI18n } from "../../i18n";
 import { api } from "../../lib/backend";
 import { useImageDrop, type Dropped } from "../../lib/dropImages";
@@ -38,6 +38,8 @@ type Meta = {
   smea?: string;
   uc_preset?: string;
   quality_tags?: boolean;
+  quality_preset?: string;
+  transparent_bg?: boolean;
   cfg_rescale?: number;
   variety_plus?: boolean;
   furry_mode?: boolean;
@@ -57,11 +59,21 @@ const KIND_LABEL: Record<string, string> = {
   custom: "Custom",
 };
 
+/** ★★**읽은 결과는 탭을 옮겨도 남는다** (사용자 지시 2026-08-21).
+ *
+ *  `Tools` 는 안 보이는 탭을 **렌더하지 않으므로**(언마운트) 컴포넌트 state 로 두면
+ *  이름 변환에 다녀오는 사이 결과가 통째로 사라진다. 모듈에 들고 있으면 다시 마운트될 때
+ *  그대로 돌아온다. ★앱을 껐다 켜면 비는 것이 맞다 — 남의 그림을 잠깐 들여다보는 자리다. */
+let kept: { name: string; meta: Meta | null } = { name: "", meta: null };
+
 export function ExifTool() {
   const t = useI18n((s) => s.t);
-  const [name, setName] = useState("");
-  const [meta, setMeta] = useState<Meta | null>(null);
+  const [name, setName] = useState(kept.name);
+  const [meta, setMeta] = useState<Meta | null>(kept.meta);
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    kept = { name, meta };
+  }, [name, meta]);
 
   const read = async (items: Dropped[]) => {
     const it = items[0];
@@ -83,7 +95,10 @@ export function ExifTool() {
     }
   };
 
-  const { zone, over, pick } = useImageDrop(read);
+  /** ★★**창 어디에 떨궈도 받는다** (사용자 지시 2026-08-21). 그림을 읽고 나면 드롭 상자가
+   *  머리 한 줄로 줄어들어, 넓은 아래쪽에 떨구면 아무 일도 안 일어났다.
+   *  ★주인이 따로 있는 자리(`[data-drop-file]`)는 비켜 간다 — 옆 패널의 베이스 그림 단추 등. */
+  const { zone, over, pick } = useImageDrop(read, true);
   const clear = () => {
     setMeta(null);
     setName("");
@@ -271,7 +286,7 @@ function settingRows(m: Meta): [string, unknown][] {
     ["Prompt Guidance Rescale", m.cfg_rescale],
     ["SMEA", m.smea === "none" ? "" : m.smea],
     ["UC Preset", m.uc_preset],
-    ["Quality Tags", m.quality_tags],
+    ["Quality Preset", m.quality_preset ?? m.quality_tags],
     ["Variety+", m.variety_plus],
     ["Furry", m.furry_mode],
   ];
@@ -307,14 +322,30 @@ function Col({ title, children }: { title: string; children: React.ReactNode }) 
   );
 }
 
-/** 프롬프트 한 구획 — 누르면 복사된다 (v2 `exif-copy-btn` 과 같은 쓰임) */
+/** 프롬프트 한 구획 — **복사 단추가 눈에 보인다** (v2 `exif-copy-btn` 과 같은 쓰임).
+ *
+ *  ★★예전에는 글자를 누르면 복사되기만 했다 (사용자 지적 2026-08-21). 커서가 `copy` 로
+ *    바뀌는 것 말고는 표가 없어서, 복사가 되는 자리인 줄 알 방법이 없었다.
+ *  ★글자 누르기도 **그대로 남긴다** — 이미 그렇게 쓰던 사람이 있다. 창구가 둘이 아니라
+ *    같은 일을 하는 **넓은 과녁과 또렷한 표지**다. */
 function Prompt({ label, value, empty }: { label: string; value?: string; empty: string }) {
+  const t = useI18n((s) => s.t);
   const has = !!(value || "").trim();
+  const copy = () => has && void navigator.clipboard?.writeText(value || "").then(() => toast(label));
   return (
     <div data-exif-part={label} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-      <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>{label}</span>
+      <span style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
+        <span style={{ flex: 1, minWidth: 0, fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
+          {label}
+        </span>
+        {has && (
+          <button data-exif-copy={label} onClick={copy} data-tip={t("act.copy")} style={copyBtn}>
+            {Icon.copy}
+          </button>
+        )}
+      </span>
       <span
-        onClick={() => has && void navigator.clipboard?.writeText(value || "").then(() => toast(label))}
+        onClick={copy}
         data-tip={has ? value : undefined}
         style={{
           fontSize: "var(--text-2xs)",
@@ -359,6 +390,19 @@ function Fields({ label, rows }: { label: string; rows: [string, unknown][] }) {
     </div>
   );
 }
+
+/** 구획 머리의 복사 단추 — 작고 흐리게, 누르면 그 구획만 복사한다 */
+const copyBtn: React.CSSProperties = {
+  flexShrink: 0,
+  display: "grid",
+  placeItems: "center",
+  width: 20,
+  height: 20,
+  borderRadius: "var(--r-1)",
+  border: "1px solid var(--line)",
+  background: "var(--panel)",
+  color: "var(--ink-dim)",
+};
 
 const hbtn: React.CSSProperties = {
   flexShrink: 0,

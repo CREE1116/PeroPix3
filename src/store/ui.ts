@@ -72,6 +72,8 @@ type Persisted = {
   /** 태그 자동완성을 켜 두나 (v2 `tagAutocompleteToggle`). 끄면 목록이 아예 안 뜬다 —
    *  Enter·Esc 도 블록 것으로 되돌아간다 (`TagSuggest.onKeyDown`) */
   tagSuggest: boolean;
+  /** 가중치 강조 색 (칩·글 상자 둘 다) — 끄면 평범한 글자로 보인다 */
+  weightHl: boolean;
   /** 파일 관리의 보기 — 썸네일 격자 / 이름·크기·수정일 목록 (v2 `fmViewThumbnail`·`fmViewList`) */
   fmView: "grid" | "list";
   /** 변환이 끝나면 저장한 폴더를 연다 (v2 `convertOpenFolder`, 기본 켬) */
@@ -101,6 +103,7 @@ const DEFAULTS: Persisted = {
   notifyVolume: 50,
   font: "pretendard",
   tagSuggest: true,
+  weightHl: true,
   fmView: "grid",
   convertOpenFolder: true,
   // v2 `enhanceLast` 의 초기값 그대로 (magnitude 3 = strength 0.5 · noise 0)
@@ -129,6 +132,14 @@ type S = Persisted & {
    *    사정). 줄만 거르면 휠로 넘길 때 걸러진 장이 큰 그림에 떠서 둘이 어긋난다. */
   laneStarOnly: boolean;
   setLaneStarOnly: (v: boolean) => void;
+  /** 캐릭터 배치 판을 펴 놓았나 (큰 그림 위에 겹친다 — `panels/CharPositioner`).
+   *
+   *  ★**저장하지 않는다** — `laneStarOnly` 와 같은 사정이다. 켜 둔 채로 앱을 켜면
+   *    그림이 막에 덮여 있어 무엇이 잘못됐는지 알 수 없다.
+   *  ★공홈도 화면 상태로 둔다(`n9.VD`). 켜 둘 수 있는 조건이 깨지거나(`use_coords` 를 끄거나,
+   *    인물이 모자라거나) 하면 **스스로 닫힌다** — 닫는 자리는 `ScenePreview` 다. */
+  positioning: boolean;
+  setPositioning: (v: boolean) => void;
   setLaneSize: (n: number) => void;
   setLaneHeadW: (n: number) => void;
   setLaneHeight: (n: number) => void;
@@ -143,6 +154,7 @@ type S = Persisted & {
   setNotifySound: (v: boolean) => void;
   setNotifyVolume: (v: number) => void;
   setTagSuggest: (v: boolean) => void;
+  setWeightHl: (v: boolean) => void;
   setFmView: (v: "grid" | "list") => void;
   setConvertOpenFolder: (v: boolean) => void;
   setEnhanceLast: (v: { mag: number; adv: boolean; strength: number; noise: number }) => void;
@@ -157,9 +169,12 @@ type S = Persisted & {
   toggleRight: () => void;
   /** 방금 바뀐 자리들 — 키를 담아 두고 잠깐 뒤 스스로 지운다 */
   flashes: string[];
+  /** 그중 **그 자리로 데려갈** 것 (`reveal(..., scroll)`) */
+  flashScroll: string[];
   /** ★**바꿨으면 보여 준다.** 접힌 패널을 펴고 그 자리를 잠깐 강조한다 (사용자 지시 2026-08-13).
    *  말없이 값만 바뀌면 사용자는 자기가 고른 것을 잃은 줄 안다. */
-  reveal: (side: "left" | "right", key: string) => void;
+  /** @param scroll 그 자리로 **데려갈지** (기본 예). 여러 자리가 한꺼번에 바뀔 때는 끈다 */
+  reveal: (side: "left" | "right", key: string, scroll?: boolean) => void;
   /** 드래그가 끝났을 때만 저장한다 — 매 프레임 localStorage 를 때리지 않는다. */
   commitLayout: () => void;
 };
@@ -182,6 +197,8 @@ export const useUi = create<S>((set, get) => ({
   setMode: (m) => set({ mode: m }),
   laneStarOnly: false,
   setLaneStarOnly: (v) => set({ laneStarOnly: v }),
+  positioning: false,
+  setPositioning: (v) => set({ positioning: v }),
   setLaneSize: (n) => set({ laneSize: Math.min(LANE_MAX, Math.max(LANE_MIN, Math.round(n))) }),
   setLaneHeadW: (n) => set({ laneHeadW: Math.min(HEAD_MAX, Math.max(HEAD_MIN, Math.round(n))) }),
   setLaneHeight: (n) => set({ laneHeight: Math.max(84, Math.round(n)) }),
@@ -220,6 +237,10 @@ export const useUi = create<S>((set, get) => ({
     set({ tagSuggest: v });
     get().commitLayout();
   },
+  setWeightHl: (v) => {
+    set({ weightHl: v });
+    get().commitLayout();
+  },
   setFmView: (v) => {
     set({ fmView: v });
     get().commitLayout();
@@ -249,12 +270,27 @@ export const useUi = create<S>((set, get) => ({
     get().commitLayout();
   },
   flashes: [],
-  reveal: (side, key) => {
+  flashScroll: [],
+  reveal: (side, key, scroll = true) => {
     const patch = side === "left" ? { leftCollapsed: false } : { rightCollapsed: false };
-    set({ ...patch, flashes: [...new Set([...get().flashes, key])] });
+    set({
+      ...patch,
+      flashes: [...new Set([...get().flashes, key])],
+      // ★★**그 자리로 데려갈지는 부르는 쪽이 정한다** (사용자 지시 2026-08-21).
+      //   베이스 그림이 해상도를 바꾼 것처럼 **한 자리**가 바뀌면 데려가는 편이 낫지만,
+      //   설정 불러오기는 **여러 자리가 한꺼번에** 바뀌어 화면이 튀는 것으로만 보인다.
+      flashScroll: scroll ? [...new Set([...get().flashScroll, key])] : get().flashScroll,
+    });
     get().commitLayout();
     // ★스스로 꺼진다 — 강조가 남아 있으면 다음에 바뀐 것과 구별이 안 된다
-    setTimeout(() => set({ flashes: get().flashes.filter((k) => k !== key) }), 2200);
+    setTimeout(
+      () =>
+        set({
+          flashes: get().flashes.filter((k) => k !== key),
+          flashScroll: get().flashScroll.filter((k) => k !== key),
+        }),
+      2200,
+    );
   },
   commitLayout: () => {
     // ★★레이아웃만이 아니라 **저장해야 하는 것 전부**를 적는다. 예전에는 목록에서
@@ -263,7 +299,7 @@ export const useUi = create<S>((set, get) => ({
     const { leftWidth, rightWidth, leftCollapsed, rightCollapsed, cols, laneSize, laneHeadW,
       laneHeight, font, aiWidth, aiCollapsed,
       notifyDone, notifySound, notifyVolume, perSlot, curated,
-      tagSuggest, fmView, convertOpenFolder, enhanceLast } = get();
+      tagSuggest, weightHl, fmView, convertOpenFolder, enhanceLast } = get();
     try {
       localStorage.setItem(
         KEY,
@@ -285,6 +321,7 @@ export const useUi = create<S>((set, get) => ({
           perSlot,
           curated,
           tagSuggest,
+          weightHl,
           fmView,
           convertOpenFolder,
           enhanceLast,

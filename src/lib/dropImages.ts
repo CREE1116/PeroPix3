@@ -29,6 +29,9 @@ export function useTauriDrop(
   accept: RegExp,
   onPaths: (paths: string[]) => void,
   onOver?: (over: boolean) => void,
+  /** ★**창 어디에 떨궈도 받는다** — 다만 *다른* 드롭존(`[data-drop-file]`) 위는 비켜 준다.
+   *  그 자리는 주인이 따로 있다 (베이스 그림 단추 등). */
+  wide = false,
 ) {
   const cb = useRef(onPaths);
   cb.current = onPaths;
@@ -44,7 +47,9 @@ export function useTauriDrop(
       const mine = (p: { x: number; y: number }) => {
         const dpr = window.devicePixelRatio || 1;
         const el = document.elementFromPoint(p.x / dpr, p.y / dpr);
-        return !!(el && ref.current?.contains(el));
+        if (el && ref.current?.contains(el)) return true;
+        // ★넓게 받는 자리: **다른 드롭존이 아닌 곳**이면 내 것이다
+        return wide && !el?.closest?.("[data-drop-file]");
       };
       const un = await getCurrentWebview().onDragDropEvent((e) => {
         const p = e.payload;
@@ -76,7 +81,7 @@ const readAsData = (f: File) =>
     r.readAsDataURL(f);
   });
 
-export function useImageDrop(onDrop: (items: Dropped[]) => void) {
+export function useImageDrop(onDrop: (items: Dropped[]) => void, wide = false) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [over, setOver] = useState(false);
   const cb = useRef(onDrop);
@@ -87,12 +92,46 @@ export function useImageDrop(onDrop: (items: Dropped[]) => void) {
     IMG,
     (paths) => cb.current(paths.map((x) => ({ name: x.split(/[\\/]/).pop() || x, path: x }))),
     setOver,
+    wide,
   );
+
+  /** 브라우저(개발·QA)에서 **창 전체로** 받는 갈래. 앱에서는 위 `useTauriDrop` 이 한다.
+   *  ★판정은 두 갈래가 **같은 표식**으로 한다 — 다른 드롭존 위는 비켜 준다. */
+  useEffect(() => {
+    if (!wide || inTauri()) return;
+    const mine = (e: DragEvent) => !(e.target as HTMLElement | null)?.closest?.("[data-drop-file]");
+    const onOver = (e: DragEvent) => {
+      if (!mine(e)) return;
+      e.preventDefault();
+      setOver(true);
+    };
+    const onLeave = (e: DragEvent) => {
+      if (!e.relatedTarget) setOver(false);
+    };
+    const onDropAny = async (e: DragEvent) => {
+      if (!mine(e)) return;
+      e.preventDefault();
+      setOver(false);
+      const fs = [...(e.dataTransfer?.files ?? [])].filter((f) => IMG.test(f.name));
+      if (!fs.length) return;
+      cb.current(await Promise.all(fs.map(async (f) => ({ name: f.name, data: await readAsData(f) }))));
+    };
+    window.addEventListener("dragover", onOver);
+    window.addEventListener("dragleave", onLeave);
+    window.addEventListener("drop", onDropAny);
+    return () => {
+      window.removeEventListener("dragover", onOver);
+      window.removeEventListener("dragleave", onLeave);
+      window.removeEventListener("drop", onDropAny);
+    };
+  }, [wide]);
 
   /** 브라우저 쪽 손잡이. Tauri 에서는 이 이벤트가 안 오므로 그냥 놀고 있는다. */
   const zone = {
     ref,
     "data-drop": true,
+    /** ★**파일 드롭존 표식** — 넓게 받는 자리(`wide`)가 「여긴 주인이 따로 있다」를 이것으로 안다 */
+    "data-drop-file": true,
     onDragOver: (e: React.DragEvent) => {
       e.preventDefault();
       setOver(true);

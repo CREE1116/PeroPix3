@@ -317,8 +317,16 @@ class GenBody(BaseModel):
     seed: int = -1
     cfg_rescale: float = 0.0
     uc_preset: str = "Heavy"
-    quality_tags: bool = True
+    #: 퀄리티 프리셋 id — "standard" / "light"(V5·custom) / "none"
+    quality_preset: str = "standard"
+    #: ★옛 필드. 백엔드가 큐를 들고 있어 **판올림 전에 담긴 작업**이 이 모양으로 남아
+    #:  있을 수 있다. 새 필드가 없을 때만 옮겨 준다.
+    quality_tags: bool | None = None
     variety_plus: bool = False
+    #: 투명 배경 (V5 전용). 지원 안 하는 모델에서는 `nai.build_payload` 가 무시한다
+    transparent_bg: bool = False
+    #: 투명 배경의 알파 모드 — True=Straight / False=Premultiplied (공홈 기본값 Straight)
+    straight_alpha: bool = True
     furry_mode: bool = False
     # 저장 옵션 (v2 Save Options)
     save_format: str = "png"          # png | jpg | webp
@@ -775,9 +783,17 @@ async def subscription():
         raise HTTPException(r.status_code, r.text[:300])
     d = r.json()
     ts = d.get("trainingStepsLeft", {})
+    # ★★Opus 무료 생성 **잔량** (2026-08-21 신설). V5 부터 Opus 무료가 유한해졌다 —
+    #   바닥나면(`isNegative`) 무료가 꺼지고 정상 과금된다.
+    #     percent               남은 비율 0~100
+    #     timeUntilNextPercent  1% 회복까지 남은 **초**
+    #     isNegative            빚진 상태 (다 쓰고 더 쓴 만큼)
+    #   ★그대로 넘긴다 — 뜻을 정하는 계산은 `src/lib/opusUsage.ts` 한 곳이다.
+    u = d.get("usage")
     return {
         "tier": d.get("tier"),
         "anlas": ts.get("fixedTrainingStepsLeft", 0) + ts.get("purchasedTrainingSteps", 0),
+        "usage": u if isinstance(u, dict) else None,
     }
 
 
@@ -1013,6 +1029,18 @@ async def save_wildcards(body: WildcardBody):
 
 
 # ── 생성 ──────────────────────────────────────────────────────────
+def _quality_preset_of(body: GenBody) -> str:
+    """퀄리티 프리셋 id — ★**옛 켬/끔 필드도 받아 준다.**
+
+    큐는 백엔드가 들고 있어서, 판올림 전에 담긴 작업이 `quality_tags` 만 들고 남아 있을 수
+    있다 (`store/queue.ts`). 새 필드가 없을 때만 옮긴다."""
+    if body.quality_preset:
+        return body.quality_preset
+    if body.quality_tags is None:
+        return "standard"
+    return "standard" if body.quality_tags else "none"
+
+
 def _req_of(body: GenBody) -> nai.GenRequest:
     return nai.GenRequest(
         prompt=body.prompt,
@@ -1027,8 +1055,10 @@ def _req_of(body: GenBody) -> nai.GenRequest:
         seed=body.seed,
         cfg_rescale=body.cfg_rescale,
         uc_preset=body.uc_preset,
-        quality_tags=body.quality_tags,
+        quality_preset=_quality_preset_of(body),
         variety_plus=body.variety_plus,
+        transparent_bg=body.transparent_bg,
+        straight_alpha=body.straight_alpha,
         furry_mode=body.furry_mode,
         # ★기본 좌표는 화면 한가운데다 (공홈 `{x:0.5, y:0.5}`). 격자를 쓰면 화면이 실어 보낸다
         characters=[
@@ -1228,11 +1258,13 @@ class UpscaleBody(BaseModel):
 
 @app.post("/api/upscale")
 async def upscale_image(body: UpscaleBody):
-    """4배 업스케일 (`/ai/upscale`).
+    """업스케일 (`/ai/upscale`).
 
     ★결과는 **원본 옆에 새 파일**이고, 강화와 같은 방식으로 **그 그림의 버전**이 된다
       (`enhance_of` = 뿌리). 원본을 갈아 끼우지 않는다.
-    ★생성 파이프라인을 타지 않는다 — 프롬프트도 시드도 없는 별개 호출이다."""
+    ★생성 파이프라인을 타지 않는다 — 프롬프트도 시드도 없는 별개 호출이다.
+    ★★2026-08-21 재배포로 **배율을 우리가 못 정한다** — 서버가 정한다 (`nai.upscale`).
+      「4배」라는 말을 화면·문구에 새로 박지 말 것."""
     src = store.file_path(body.workspace, body.file)
     if not src or not src.exists():
         raise HTTPException(404, "업스케일할 그림을 찾지 못했습니다")
@@ -1240,7 +1272,7 @@ async def upscale_image(body: UpscaleBody):
         w, h = im.size
     # ★공홈도 이 한계에서 버튼을 막는다. 보내 봐야 거절이라 여기서 끊는다
     if w * h > nai.UPSCALE_MAX_PX:
-        raise HTTPException(400, f"1024x1024 보다 큰 그림은 업스케일할 수 없습니다 ({w}x{h})")
+        raise HTTPException(400, f"3MP 보다 큰 그림은 업스케일할 수 없습니다 ({w}x{h})")
 
     b64 = base64.b64encode(src.read_bytes()).decode()
     try:
@@ -1626,13 +1658,37 @@ async def get_file(ws: str, rel: str):
 #   보관함으로 옮겨 가며 남은 자국이라 걷어냈다 (`docs/v2-port-audit.md` F절).
 
 
+def _model_from_record(ws: str, file: str) -> str:
+    """그 그림을 뽑을 때 쓴 **모델 id** — `records.jsonl` 의 `resolved.model` 에서 찾는다.
+
+    ★★**NAI 는 모델 id 를 그림에 안 남긴다.** 응답 PNG 의 Comment 에는
+      `request_type:"PromptGenerateRequest"` 와 (V5 부터) `model_name:"NovelAI Diffusion V5"`
+      만 있고 `model` 키가 없다 — `model_name` 도 Full/Curated 를 못 가른다.
+      그래서 「설정 불러오기」가 모델만 못 되살리고 있었다 (2026-08-21 사용자 지적).
+    ★우리는 보낸 페이로드를 통째로 기록해 두므로 **우리 워크스페이스 그림은** 되살릴 수 있다.
+      밖에서 가져온 그림은 기록이 없어 여전히 빈 값이다 — 그때는 화면 값이 유지된다.
+    ★인페인트 결과는 `model` 이 인페인팅 id 라 원본으로 되돌려 준다 (`nai.base_model`)."""
+    rec = next(
+        (r for r in reversed(store.records(ws, limit=100000)) if r.get("file") == file),
+        None,
+    )
+    m = ((rec or {}).get("resolved") or {}).get("model")
+    return nai.base_model(m) if isinstance(m, str) else ""
+
+
 @app.get("/api/gallery/{ws}/meta")
 async def gallery_meta(ws: str, file: str):
     """고른 **한 장**의 메타데이터. 목록에서는 안 읽는다 (수백 장이면 그것만으로 몇 초다)."""
     p = store.file_path(ws, file)
     if not p:
         raise HTTPException(404, "not found")
-    return {"file": file, "meta": meta.read(p)}
+    m = meta.read(p)
+    # ★그림에 모델 id 가 없을 때만 기록에서 채운다 — 그림이 언제나 정본이다
+    if m is not None and not m.get("nai_model"):
+        found = _model_from_record(ws, file)
+        if found:
+            m["nai_model"] = found
+    return {"file": file, "meta": m}
 
 
 KEEP_DIR = APP_DIR / "gallery"
@@ -1647,6 +1703,9 @@ class KeepSave(BaseModel):
     file: str
     folder: str = ""
     meta: dict | None = None
+    # ★★끌어다 놓기는 **무르지 않는다** (`toggle=False`) — 「여기 넣어라」라는 몸짓이라
+    #   이미 있다고 빼 버리면 놓았는데 사라진다. 단추(보관 켜기/끄기)는 기존대로 무른다.
+    toggle: bool = True
 
 
 class KeepFiles(BaseModel):
@@ -1765,12 +1824,15 @@ async def keep_save(body: KeepSave):
     """작업 폴더의 그림을 보관함으로 **복사**한다 (원본은 그대로).
 
     ★이미 보관돼 있으면 **무른다** (`removed: true`). 같은 그림에 보관을 두 번 누르면
-      사본이 둘 생기던 것을 고친 것이다 (keep.save 주석)."""
+      사본이 둘 생기던 것을 고친 것이다 (keep.save 주석).
+    ★★`toggle: false` 면 무르지 않는다 — **끌어다 놓기**가 쓴다 (놓았는데 사라지면 안 된다)."""
     src = store.file_path(body.workspace, body.file)
     if not src:
         raise HTTPException(404, "그림을 찾지 못했습니다")
     try:
-        return keep.save(KEEP_DIR, src, body.folder, body.meta, f"{body.workspace}/{body.file}")
+        return keep.save(
+            KEEP_DIR, src, body.folder, body.meta, f"{body.workspace}/{body.file}", body.toggle
+        )
     except ValueError as e:
         raise HTTPException(400, str(e))
 

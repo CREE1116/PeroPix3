@@ -231,11 +231,11 @@ export const ja: Dict = {
     noMeta: "{n}枚は生成情報が残っていないため、今の画面のプロンプト・設定で実行します",
   },
 
-  /** アップスケール — NAI が 4 倍に拡大する（描き直す強化とは別） */
+  /** アップスケール — NAI が拡大する（描き直す強化とは別）。★倍率はサーバーが決める */
   upscale: {
     button: "アップスケール",
-    hint: "縦横 4 倍に拡大します（{a} Anlas）。描き直さないので絵は変わりません。",
-    tooLarge: "1024×1024 より大きい画像はアップスケールできません。",
+    hint: "解像度を拡大します（{a} Anlas）。描き直さないので絵は変わりません。",
+    tooLarge: "3MP より大きい画像はアップスケールできません。",
     done: "アップスケール完了。新しい画像として保存しました",
   },
 
@@ -248,6 +248,11 @@ export const ja: Dict = {
     vibeEncode: "バイブエンコード {a} Anlas",
     /** 費用の内訳（v2 の `合計（1枚あたり × Nスロット × M回）`） */
     costPerSlots: "1枚 {p} × シーン {s} × {r}回",
+    charLimitHit: "このモデルで有効にできるキャラクターは {max} 体までです。",
+    charLimitClamped: "このモデルは {max} 体までです。末尾の {n} 体をオフにしました。",
+    opusUsage: "Opus {p}%",
+    opusUsageHint: "Opus の無料生成の残量です。使い切ると Anlas を消費します（V5 以降）。",
+    opusRefill: "毎時 {r}% 回復 ・ 100% まで {f}",
     anlasRefresh: "残高を再取得",
     /** 1枚あたりの上限を超えると公式サイトと同じく生成を止める */
     overLimit: "1枚の費用が上限 {a} Anlas を超えています。解像度か steps を下げてください。",
@@ -361,10 +366,24 @@ export const ja: Dict = {
     seedRoll: "新しいシードを引く",
     seedRandom: "ランダム",
     misc: "オプション",
-    qualityTags: "Add Quality Tags",
+    qualityPreset: "品質プリセット",
+    qpStandard: "標準",
+    qpLight: "軽い",
+    qpNone: "なし",
     varietyPlus: "Variety+",
+    transparentBg: "透過背景",
+    transparentBgHint: "プロンプトに transparent background を追加し、アルファを保持します。V5 のみ。",
   },
 
+  pos: {
+    ai: "AIにおまかせ",
+    aiTip: "キャラクターの位置を NAI が決めます（座標は送りません）",
+    custom: "手動配置",
+    customTip: "設定した位置で送ります",
+    open: "配置ボードを開く — 画像の上でキャラクターをドラッグして位置を決めます",
+    close: "配置ボードを閉じる（位置はそのまま残ります）",
+    stacked: "キャラクターが同じ位置に重なっています",
+  },
   canvas: {
     hideHint: "ゴミ箱へ移動します (Ctrl+Z で戻せます・24時間後に空に)",
     starOnly: "星のみ表示",
@@ -400,6 +419,7 @@ export const ja: Dict = {
     tokenDeleteBody: "入れ直すまで生成できなくなります。",
     bulkWarn: "何時間も続けて大量生成すると NovelAI 側でアカウントが制限されることがあります。",
     editing: "編集",
+    weightHl: "強調の色分け",
     tagSuggest: "タグ自動補完",
     tagSuggestHint: "入力中に Danbooru タグを提案します。切ると Enter・Esc はブロック編集側に戻ります。",
     about: "アプリ情報",
@@ -618,6 +638,7 @@ export const ja: Dict = {
     close: "閉じる",
     copy: "コピー",
     copied: "コピーしました",
+    seedApplied: "シード {n} を入れました（コピーもしました）",
   },
 
   ai: {
@@ -681,8 +702,6 @@ export const ja: Dict = {
     removeCard: "外す（Ctrl+Z で戻せます）",
     addScene: "シーン追加",
     noneYet: "まだありません",
-    prefix: "共通接頭",
-    prefixPlaceholder: "このカードの全シーンの前に付きます",
     emptyHint: "空です · シーンカードを置くとシーンができます",
     unsaved: "未保存",
     saveToFile: "ファイルに保存",
@@ -703,8 +722,6 @@ export const ja: Dict = {
     zoomIn: "拡大",
     zoomOut: "縮小",
     fit: "フィット",
-    prefixPlaceholder: "このタブの全スロットに共通で付けるプロンプト",
-    prefixHint: "スロットのタグの前に付きます（v2 プリセットの prefix）",
     lockAll: "全ロック切替",
     lock: "ロック（生成から除外）",
     duplicate: "スロットを複製",
@@ -770,7 +787,10 @@ export const ja: Dict = {
     folderNotEmpty: "画像が入っているフォルダは削除できません。先に移動するか削除してください。",
     folders: "フォルダ",
     all: "すべて",
+    toRoot: "フォルダの外へ",
     countImages: "{n}枚",
+    dropToKeep: "ここに置くと保存します",
+    alreadyKept: "すでに保存されています",
     empty: "保存した画像はまだありません",
     emptyHint: "大きく開いてギャラリーに保存を押すと、ここに集まります。作業が変わっても残ります。",
     meta: "画像情報",

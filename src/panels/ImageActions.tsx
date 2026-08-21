@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Icon } from "../components/Icon";
 import { useI18n } from "../i18n";
-import { fitSizeToBase } from "../store/gen";
+import { fitSizeToBase, useGen } from "../store/gen";
 import { useImageInput } from "../store/imageInput";
 import { useUi } from "../store/ui";
 import { toast } from "../store/toast";
@@ -65,7 +65,7 @@ export function ImageActions({
    *  창구는 **「새 탭으로 복제」 하나**다. 보고 있던 탭이 조용히 갈리는 길을 남기지 않는다. */
   hideSettings?: boolean;
   onEnhance?: () => void;
-  /** 4배 업스케일 — **워크스페이스 파일에만** 뜻이 있다 (갤러리 보관함에는 안 뜬다).
+  /** 업스케일 — **워크스페이스 파일에만** 뜻이 있다 (갤러리 보관함에는 안 뜬다).
    *  ★배율을 안 받는다: 공홈이 언제나 4 로 보낸다 (`nai.py UPSCALE_SCALE`) */
   upscale?: { ws: string; file: string };
   onKeep?: () => void | Promise<void>;
@@ -161,7 +161,8 @@ export function ImageActions({
     }
   };
 
-  /** 4배 업스케일 — 결과는 **원본의 다음 판**으로 붙는다 (원본은 그대로 남는다) */
+  /** 업스케일 — 결과는 **원본의 다음 판**으로 붙는다 (원본은 그대로 남는다).
+   *  ★배율은 서버가 정한다 (2026-08-21 규격 변경) */
   const cost = dims ? upscaleCost(dims.w, dims.h, opus) : -1;
   const runUpscale = async () => {
     if (!upscale || busy || cost < 0) return;
@@ -340,10 +341,16 @@ export function ImageActions({
         {seed !== undefined && (
           <button
             data-act-seed
-            /* ★★**누르면 복사**다 (사용자 지시 2026-08-19).
-                 예전에는 눌러 그 시드로 고정했는데, 지금 시드와 같아지면 강조가 **계속 남아**
-                 무엇이 눌린 상태인지 알 수 없었다. 강조는 이제 **커서를 올린 동안만**이다. */
-            onClick={() => void navigator.clipboard?.writeText(String(seed)).then(() => toast(t("act.copied")))}
+            /* ★★누르면 **복사하고 지금 시드로 넣는다** (사용자 지시 2026-08-21).
+                 ★한때 「그 시드로 고정」이었다가 복사로 바뀐 적이 있는데, 그때 문제는
+                   *동작*이 아니라 **강조가 계속 남는 것**이었다 (지금 시드와 같아지면 눌린
+                   상태처럼 보였다). 강조를 커서 올린 동안만으로 고친 뒤라 둘 다 해도 된다.
+                 ★**시드 규칙(고정/랜덤)은 건드리지 않는다** — 사용자가 고른 것이다. */
+            onClick={() => {
+              useGen.getState().set("seed", Number(seed));
+              void navigator.clipboard?.writeText(String(seed));
+              toast(t("act.seedApplied", { n: seed }));
+            }}
             onPointerEnter={() => setSeedHot(true)}
             onPointerLeave={() => setSeedHot(false)}
             style={{

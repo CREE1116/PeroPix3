@@ -4,13 +4,14 @@ import { useI18n } from "../i18n";
 /** ★키를 조립하지 않는다 — i18n 검사가 동적 접두사를 잡는다 (`i18n.test.ts`) */
 const SEED_LABELS = ["options.seedFixed", "options.seedRound", "options.seedScene"] as const;
 const SEED_HINTS = ["options.seedFixedHint", "options.seedRoundHint", "options.seedSceneHint"] as const;
-import { SEED_MODES, randomSeed, useGen } from "../store/gen";
+import { SEED_MODES, modelCaps, randomSeed, useGen } from "../store/gen";
 import { useQueue } from "../store/queue";
 import { allScenes, useWs } from "../store/workspace";
 import { useImageInput } from "../store/imageInput";
 import { useUi } from "../store/ui";
 import { toast } from "../store/toast";
 import { anlasCost, MAX_PER_IMAGE } from "../lib/anlas";
+import { usageDuration, usageFullInSeconds, usageLow, usagePercent, usageRefillPerHour } from "../lib/opusUsage";
 import { useSub } from "../store/sub";
 import { useAnlasMeter } from "../store/anlasMeter";
 import { useHasToken } from "../store/health";
@@ -46,6 +47,15 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
   const [firing, setFiring] = useState(false);
   const tab = useWs((s) => s.activeTab());
   const img = useImageInput();
+  /** ★그 모델에서 되는 것 — 값 계산이 **보내는 것과 같아야** 한다 (`lib/naiModels.ts`) */
+  const cap = modelCaps(params.model);
+  /* ★★캐릭터 상한은 **켜는 순간** 막는다 (사용자 지시 2026-08-21, `store/gen.ts` 의
+     `toggleCharCapped`·`clampCharsToModel`). 넘긴 채로 두고 여기서 「초과분은 무시됩니다」를
+     띄우던 것을 걷었다 — 다른 자리는 전부 막는데 여기만 알리고 두면, 그대로 생성했을 때
+     뒤쪽 캐릭터가 조용히 빠진다. 서버의 자르기(`backend/nai.py`)는 마지막 방어선으로 남는다. */
+
+  /** Opus 무료 잔량 — ★Opus 이고 서버가 값을 줄 때만 있다 */
+  const usage = (sub?.tier ?? 0) >= 3 ? (sub?.usage ?? null) : null;
 
   // ★탭은 언제나 씬 탭이다 (싱글 폐기 2026-08-11) — 옛 싱글 탭은 열 때 옮겨진다.
   //   그래도 한 번 좁히는 이유는 `CanvasTab` 이 옛 파일을 읽으려고 두 갈래를 남겨 두기 때문이다.
@@ -74,16 +84,23 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
    *  키워 보내므로 둘이 다르다 (`imageInput.costSize`) */
   const size = img.costSize();
   const cost = anlasCost({
+    // ★★모델을 함께 넘긴다 — **V5 는 배율이 1.5**다 (`lib/anlas.ts`). 빼면 표시가 2/3 가 된다
+    model: params.model,
     width: size.width,
     height: size.height,
     steps: params.steps,
     opus: (sub?.tier ?? 0) >= 3,
-    uncachedVibes: img.vibeOn ? img.vibes.filter((v) => !v.encoded).length : 0,
+    // ★잔량이 바닥나면 무료가 꺼진다 (V5·custom 한정 — `lib/anlas.ts`)
+    opusExhausted: !!usage?.isNegative,
+    // ★★그 모델이 지원하지 않으면 **안 나간다** — V5 는 바이브도 정밀 참조도 없다.
+    //   화면에서 절을 감추지만 담아 둔 것은 남아 있으므로, **값도 같은 능력표로** 막아야
+    //   보내는 것과 표시가 같아진다 (`backend/nai.py` 의 `caps`).
+    uncachedVibes: cap.vibe && img.vibeOn ? img.vibes.filter((v) => !v.encoded).length : 0,
     // ★**켜진** 것이 4개를 넘으면 초과분 개당 +2 — 구워 둔 것도 센다 (요청당 한 번).
     //   v3 에는 바이브 하나씩 끄는 스위치가 없다 — 목록에 있는 것이 곧 켜진 것이다
     //   (`payload()` 가 목록을 통째로 싣는다). 그런 스위치를 만들면 여기도 함께 고친다
-    activeVibes: img.vibeOn ? img.vibes.length : 0,
-    refCount: img.refOn ? img.refs.length : 0,
+    activeVibes: cap.vibe && img.vibeOn ? img.vibes.length : 0,
+    refCount: cap.char_ref && img.refOn ? img.refs.length : 0,
     // ★인페인트면 바이브 비용이 통째로 빠진다 (공홈 호출부의 `!mask`)
     inpaint: img.costInpaint(),
     // ★강도 계수는 모드마다 다르다 (`imageInput.costStrength` — 9절의 `y`). 인페인트에서
@@ -127,8 +144,8 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
       height: size.height,
       steps: params.steps,
       opus: (sub?.tier ?? 0) >= 3,
-      refs: img.refOn ? img.refs.length : 0,
-      vibes: img.vibeOn ? img.vibes.length : 0,
+      refs: cap.char_ref && img.refOn ? img.refs.length : 0,
+      vibes: cap.vibe && img.vibeOn ? img.vibes.length : 0,
       inpaint: img.costInpaint(),
       count,
       from: "generate",
@@ -307,50 +324,6 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
         </button>
       )}
 
-      {/* 큐 줄 — 돌고 있을 때와 **막 끝났을 때**만. 눌렀다는 신호이자 멈추는 창구다.
-          ★v2 는 「준비」를 늘 띄워 뒀지만 우리는 줄 자체가 없는 것이 그 자리다
-            (CLAUDE.md 「큐 줄은 돌고 있을 때만 뜬다」, 사용자 지시 2026-08-04). */}
-      {(running || phase !== "idle") && (
-        <div data-queue-bar style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
-            <span
-              data-queue-state={phase}
-              style={{
-                flex: 1,
-                minWidth: 0,
-                fontSize: "var(--text-2xs)",
-                color: stateInk,
-                fontVariantNumeric: "tabular-nums",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {stateText}
-              {running && progress.queue_length > 0 && ` · ${t("queue.waiting", { n: progress.queue_length })}`}
-            </span>
-            {/* ★취소는 **버튼 하나**다 (사용자 결정 2026-08-18). NAI 는 이미 나간 한 장을
-                못 끊으므로 「지금 것만 중단」과 「대기만 비우기」를 가를 실익이 없었고,
-                v3 는 배치가 잡 하나라 「큐 비우기」 혼자서는 아무것도 안 멈췄다 (감사 D5). */}
-
-          </div>
-          {/* 진행바 — v2 `progressFill` 이관 (index.html:9442-9444, 16119-16127) */}
-          <div
-            data-queue-progress={pct}
-            style={{ height: 3, borderRadius: "var(--r-1)", background: "var(--line)", overflow: "hidden" }}
-          >
-            <div
-              style={{
-                height: "100%",
-                width: `${pct}%`,
-                background: stateInk,
-                transition: "width 0.18s linear",
-              }}
-            />
-          </div>
-        </div>
-      )}
-
       {/* ★몇 장 — **씬 하나당**이다. 한 번에 여러 장을 뽑아 고르는 것이 본래 쓰임이다 */}
       <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
           <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)", flexShrink: 0 }}>
@@ -461,27 +434,23 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
       </div>
 
       {genBtn}
-      {/* ★★취소는 **생성 버튼 바로 아래**다 (사용자 지시 2026-08-19) — 접었을 때(`C`)와
-          같은 자리여야 헷갈리지 않는다. 예전에는 큐 줄 안에 있어서 접고 펴면 자리가 달라졌다.
-          ★받은 뒤에는 「취소 중」으로 바뀌고 안 눌린다 — 눌렀다는 것이 보여야 한다. */}
-      {running && (
-        <button
-          data-queue-cancel
-          onClick={() => void cancelQueue()}
-          disabled={cancelled}
-          data-tip={t("queue.cancelHint")}
+
+      {/* ★★진행바는 **언제나 자리를 차지한다** (사용자 지시 2026-08-21: 생성 버튼이 움직였다).
+          돌 때만 나타나게 하면 버튼이 그만큼 밀려 올라가, 연달아 누르려던 손이 빗나간다.
+          쉴 때는 선 하나로만 보인다. */}
+      <div
+        data-queue-progress={pct}
+        style={{ height: 3, borderRadius: "var(--r-1)", background: "var(--line)", overflow: "hidden" }}
+      >
+        <div
           style={{
-            ...qbtn,
-            width: "100%",
-            padding: "var(--sp-2)",
-            textAlign: "center",
-            color: cancelled ? "var(--ink-ghost)" : "var(--err)",
-            borderColor: cancelled ? "var(--line)" : "var(--err)",
+            height: "100%",
+            width: running || phase !== "idle" ? `${pct}%` : 0,
+            background: stateInk,
+            transition: "width 0.18s linear",
           }}
-        >
-          {cancelled ? t("queue.cancelling") : t("queue.cancel")}
-        </button>
-      )}
+        />
+      </div>
 
       {/* ★막았으면 **왜 막혔는지**를 같은 자리에서 말한다. v2 는 눌렀을 때 토스트였는데,
           버튼이 잠긴 채 이유가 없으면 무엇을 고쳐야 하는지 알 수 없다 */}
@@ -511,7 +480,56 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
           </span>
         )}
         {cost.encoding > 0 && <span>{t("gen.vibeEncode", { a: cost.encoding })}</span>}
+
+        {/* ★★취소·진행은 **이 줄의 빈 자리**에 산다 (사용자 지시 2026-08-21).
+            새 줄로 만들면 그만큼 위가 밀려 생성 버튼이 움직인다 — 그래서 여기다. */}
+        {(running || phase !== "idle") && (
+          <span
+            data-queue-state={phase}
+            style={{ color: stateInk, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}
+          >
+            {stateText}
+            {running && progress.queue_length > 0 && ` · ${t("queue.waiting", { n: progress.queue_length })}`}
+          </span>
+        )}
+        {running && (
+          <button
+            data-queue-cancel
+            onClick={() => void cancelQueue()}
+            disabled={cancelled}
+            data-tip={t("queue.cancelHint")}
+            style={{
+              ...qbtn,
+              padding: "0 var(--sp-2)",
+              color: cancelled ? "var(--ink-ghost)" : "var(--err)",
+              borderColor: cancelled ? "var(--line)" : "var(--err)",
+            }}
+          >
+            {cancelled ? t("queue.cancelling") : t("queue.cancel")}
+          </button>
+        )}
+
         <span style={{ flex: 1 }} />
+
+        {/* ★★Opus 무료 **잔량** — V5 부터 무료가 유한하다 (`lib/opusUsage.ts`).
+            ★Opus 가 아니거나 서버가 값을 안 주면 아무것도 안 보인다 — 없는 것을 0% 로
+              보여 주면 다 쓴 것처럼 읽힌다. */}
+        {usage && (
+          <span
+            data-opus-usage={Math.round(usagePercent(usage))}
+            data-tip={`${t("gen.opusUsageHint")}\n${t("gen.opusRefill", {
+              r: String(usageRefillPerHour(usage)),
+              f: usageDuration(usageFullInSeconds(usage)),
+            })}`}
+            style={{
+              color: usageLow(usage) ? "var(--warn)" : "var(--ink-faint)",
+              fontVariantNumeric: "tabular-nums",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {t("gen.opusUsage", { p: String(Math.round(usagePercent(usage))) })}
+          </span>
+        )}
         <span data-anlas-balance data-tip={sub ? `tier ${sub.tier}` : undefined}>
           Anlas{" "}
           <b style={{ fontFamily: "var(--font-mono)", color: "var(--ink-soft)" }}>

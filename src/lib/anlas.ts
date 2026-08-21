@@ -5,6 +5,7 @@
  *    청구와 어긋났다. 특히 steps 를 나중에 곱해서 28 을 넘는 순간부터 크게 틀렸다.
  *  ★비용은 **정렬된 해상도**로 세야 한다 (`alignTo64`) — 부르는 쪽에서 정렬해 넘긴다. */
 import { alignTo64 } from "./align.ts";
+import { caps } from "./naiModels.ts";
 
 /** 공홈 `getPrice` 상수 */
 const C_BASE = 2.951823174884865e-6;
@@ -29,11 +30,17 @@ const VIBE_ENCODE = 2;
 const VIBE_FREE_SLOTS = 4;
 
 export type CostInput = {
+  /** ★모델 id — **V5 는 배율이 1.5다.** 빠뜨리면 표시가 실제의 2/3 가 된다 */
+  model?: string;
   width: number;
   height: number;
   steps: number;
   /** 티어 3 이상 */
   opus: boolean;
+  /** ★★Opus 무료 **잔량이 바닥났나** (`subscription.usage.isNegative`).
+   *  V5 부터 무료가 유한하다 — 바닥나면 무료가 꺼지고 정상 과금된다.
+   *  ★`opusUsageLimit` 능력이 있는 모델(V5·custom)에만 걸린다. */
+  opusExhausted?: boolean;
   /** ★**아직 안 구운** 바이브 수. 구워 둔 것은 다시 돈이 들지 않는다 */
   uncachedVibes: number;
   /** 지금 **켜져 있는** 바이브 수 — 4개 초과분에 요금이 붙는다 (구워 둔 것도 센다) */
@@ -56,29 +63,28 @@ export type Cost = {
   overLimit: boolean;
 };
 
-/** 업스케일(×4) 값 — 픽셀 수 **구간**으로 정해진다 (공홈 `e0`/`e1`).
+/** 업스케일 값 — 픽셀 수 **구간**으로 정해진다 (공홈 `g`/`f`).
  *
  *  ★생성 요금과 **다른 산식**이다 — steps 도 강도도 안 본다.
- *  ★**-1 이면 못 한다.** 공홈은 1024×1024(=1,048,576px)를 넘으면 버튼을 막는다
- *    (공홈은 `-3` 을 쓰지만 우리는 "알 수 없음/불가"를 음수 하나로 통일한다).
- *  ★Opus 무료 구간이 생성(1MP)보다 **좁다** (409,600px = 640×640). */
+ *  ★★**2026-08-21 재배포로 표가 통째로 바뀌었다** (문서 「NAI Diffusion V5」 절):
+ *    상한 1MP → **3MP** · 값 1~7 → **1~4** · **Opus 무료 구간 없어짐** ·
+ *    훑는 방향도 반대다(**처음 걸리는 구간**이 답. 옛 표는 마지막이 남았다).
+ *    옛 기대값을 되살리지 말 것 — 백엔드(`nai.upscale_cost`)에도 같은 표가 있다.
+ *  ★**-1 이면 못 한다** (공홈은 `-3`. 우리는 "알 수 없음/불가"를 음수 하나로 통일한다). */
 const UPSCALE_TABLE: [number, number][] = [
-  [1048576, 7],
-  [786432, 5],
-  [524288, 3],
-  [409600, 2],
-  [262144, 1],
+  [1048576, 1],
+  [1747627, 2],
+  [2446678, 3],
+  [3145728, 4],
 ];
-export const UPSCALE_MAX_PX = 1048576;
-const UPSCALE_FREE_PX = 409600;
+export const UPSCALE_MAX_PX = 3145728;
 
-export function upscaleCost(width: number, height: number, opus: boolean): number {
+/** ★`opus` 인자를 남긴다 — 지금은 값에 영향이 없지만 부르는 쪽이 여럿이고,
+ *  무료가 되살아나면 여기 한 줄로 돌아온다. */
+export function upscaleCost(width: number, height: number, _opus: boolean): number {
   const px = width * height;
-  if (px <= UPSCALE_FREE_PX && opus) return 0;
-  let cost = -1;
-  // ★큰 구간부터 훑으며 덮어써서 **가장 작은** 해당 구간이 남는다 (공홈 루프 그대로)
-  for (const [limit, c] of UPSCALE_TABLE) if (px <= limit) cost = c;
-  return cost;
+  for (const [limit, c] of UPSCALE_TABLE) if (px <= limit) return c;
+  return -1;
 }
 
 export function anlasCost(i: CostInput): Cost {
@@ -103,9 +109,15 @@ export function anlasCost(i: CostInput): Cost {
   //   Opus·832x1216·28step·참조 1개 = **5** (기본 0 + 참조 5).
   //   ★여기에 `refCount === 0` 을 넣지 말 것. 공홈 `eZ()` 의 `!characterRef` 를 보고 한 번
   //     넣었다가 참조 하나에 25 가 되어 되돌렸다 (`anlas.test.ts` 에 판정이 있다).
-  const free = i.opus && px <= FREE_PIXELS && i.steps <= FREE_STEPS;
+  // ★★공홈 원문: `D = PE(model).opusUsageLimit && (usage?.isNegative ?? false)` 이고
+  //   무료 차감이 `… && !D` 다. 퍼센트가 낮다고 미리 끄지 않는다 — **바닥났을 때만**이다.
+  const spent = !!i.opusExhausted && caps(i.model ?? "").opus_usage_limit;
+  const free = i.opus && !spent && px <= FREE_PIXELS && i.steps <= FREE_STEPS;
 
-  const perSample = Math.ceil(C_BASE * px + C_STEP * px * i.steps);
+  // ★★모델 배율 — **V5 는 1.5배**다 (공홈 `Jg(model)===v5 && (M *= 1.5)`, 2026-08-21).
+  //   식은 v4/v4.5/XL 과 같고 **곱하기 하나만** 다르다. 배율을 빼면 V5 표시가 실제의 2/3 가 된다.
+  const mult = caps(i.model ?? "").anlas_multiplier;
+  const perSample = Math.ceil(C_BASE * px + C_STEP * px * i.steps) * mult;
   // 강도 계수 — 베이스 그림이 있을 때만 걸린다. 바닥은 2 다
   const y = i.strength < 1 ? i.strength : 1;
   // ★공홈의 `I` — **언제나 계산한다.** 무료는 값을 0 으로 만드는 것이 아니라 장 수(`v`)에서

@@ -2,6 +2,12 @@ import { create } from "zustand";
 import { compileBlocks, makeBlock, type Block } from "../lib/blocks";
 import { t } from "../i18n";
 import { kindColor } from "../cards/kindColor";
+import { nextCenter, type Center } from "../lib/charPos";
+// ★모델이 자유 배치를 하는지에 따라 「이 자리가 찼나」의 판정이 다르다 (`charPos`).
+//   `gen` 과 서로 참조하게 되는데, 함수 안에서만 읽으므로 문제가 없다
+//   (`imageInput` ↔ `gen` 이 이미 같은 모양이다).
+import { useGen } from "./gen";
+import { caps } from "../lib/naiModels";
 
 /** 프롬프트 영역 — NAI 요청 구조 그대로.
  *  ★소유는 워크스페이스다. 여기는 편집 중인 사본이고, 저장은 workspace 스토어가 한다. */
@@ -62,6 +68,10 @@ export type Char = {
   prompt: Block[];
   uc: Block[];
   on: boolean;
+  /** 화면에서 이 인물이 설 자리 (0~1). **언제나 값이 있다** — 좌표를 안 쓰는 상태는
+   *  `center` 를 비우는 것이 아니라 `params.use_coords` 를 끄는 것이다 (공홈과 같다).
+   *  ★들어올 때 `charPos.nextCenter` 가 빈 자리를 골라 준다. */
+  center: Center;
   /** 순차 생성 더미. **맨 앞이 다음 차례**이고, 생성이 끝나면 현재 인물이 맨 뒤로 간다. */
   stack: { ref: string | null; name: string; color: [string, string] }[];
 };
@@ -101,6 +111,8 @@ type S = {
   removeChar: (id: string) => void;
   renameChar: (id: string, name: string) => void;
   toggleChar: (id: string) => void;
+  /** 배치 판에서 인물을 옮긴다 */
+  setCenter: (id: string, center: Center) => void;
   /** 생성 한 장이 끝났을 때 스택을 한 칸 돌린다 — 현재 인물이 맨 뒤로 */
   rotateStack: (id: string) => void;
 
@@ -119,7 +131,7 @@ type S = {
     uc: string;
     /** ★`id` 를 함께 낸다 — 씬 프롬프트 목적지가 캐릭터 id 로 가리킨다 (`SceneLane` 의 선택기).
      *  서버는 모르는 키를 무시하므로 그대로 실어 보내도 된다. */
-    chars: { id: string; prompt: string; uc: string }[];
+    chars: { id: string; prompt: string; uc: string; center: Center }[];
   };
 };
 
@@ -128,6 +140,10 @@ type S = {
  *  (*"바꾸고싶으면 유저가 직접 다른 이미지를 넣으면 됨"*). */
 export const DEFAULT_STYLE_COLOR = kindColor("styles");
 export const CHAR_COLOR = kindColor("characters");
+
+/** 지금 모델이 자유 배치인가 — 새 인물의 자리를 고를 때 「이 칸이 찼다」의 뜻이 갈린다.
+ *  자유 배치는 **거리 0.1**, 격자는 **같은 칸**이다 (`lib/charPos` 머리 주석). */
+const freeformNow = () => caps(useGen.getState().params.model).freeform_position;
 
 /** ★★**새 탭의 베이스 프롬프트는 비어 있다** (사용자 지시 2026-08-20).
  *
@@ -214,6 +230,9 @@ export const usePrompt = create<S>((set, get) => ({
           prompt: c.prompt ?? [],
           uc: c.uc ?? [],
           on: c.on ?? true,
+          /* ★새로 들어오는 인물은 **빈 자리**에 세운다 (공홈 `sw` 사다리 — `lib/charPos`).
+             전원을 한가운데 겹쳐 놓으면 좌표를 켜는 순간 셋이 한 칸에 서 있다. */
+          center: c.center ?? nextCenter(chars.map((x) => x.center), freeformNow()),
           stack: c.stack ?? [],
         },
       ],
@@ -242,6 +261,11 @@ export const usePrompt = create<S>((set, get) => ({
 
   toggleChar(id) {
     set({ chars: get().chars.map((c) => (c.id === id ? { ...c, on: !c.on } : c)) });
+    onEdit();
+  },
+
+  setCenter(id, center) {
+    set({ chars: get().chars.map((c) => (c.id === id ? { ...c, center } : c)) });
     onEdit();
   },
 
@@ -301,7 +325,24 @@ export const usePrompt = create<S>((set, get) => ({
     onEdit();
   },
 
-  load: (p) =>
+  load: (p) => {
+    /* ★좌표가 없던 시절의 워크스페이스는 **사다리로 자리를 나눠 준다** (`lib/charPos`).
+       전원을 한가운데 두면 배치 판을 처음 여는 순간 마커 셋이 한 점에 겹쳐 있다 —
+       새로 만든 워크스페이스와 같은 모습이 되도록 맞춘다.
+       ★`center` 가 **있으면 그대로 둔다.** 메타데이터에서 되살릴 때는 그 그림이 실제로
+         쓰던 자리라, 없던 그림은 없던 대로(한가운데)여야 한다 (`GalleryMeta` 가 채워 준다). */
+    const seated: Center[] = [];
+    const chars = (p.chars ?? []).map((c) => {
+      const center = c.center ?? nextCenter(seated, freeformNow());
+      seated.push(center);
+      return {
+        ...c,
+        color: CHAR_COLOR,
+        thumb: normThumb(c.thumb),
+        center,
+        stack: (c.stack ?? []).map((x) => ({ ...x, color: CHAR_COLOR })),
+      };
+    });
     set({
       // ★★**빈 목록과 「없음」은 다르다** (2026-08-19). 예전에는 빈 목록에도 기본 블록을
       //   채워서, 스타일 카드를 비워 두면 다시 열 때 기본값이 되살아났다. 없을 때만 채운다.
@@ -312,17 +353,13 @@ export const usePrompt = create<S>((set, get) => ({
         : { ref: null, name: t("prompt.defaultStyleName"), color: DEFAULT_STYLE_COLOR, thumb: null },
       // ★값이 없으면 켜진 것이다 — 옛 워크스페이스가 스타일 카드를 잃으면 안 된다
       styleOn: p.styleOn !== false,
-      /* ★옛 인물·스택에는 **이름 해시로 뽑힌 색**이 박혀 있다 — 읽을 때 종류 색으로
-         맞춘다. 안 맞추면 같은 종류인데 카드마다 색이 다른 화면이 남는다 */
-      chars: (p.chars ?? []).map((c) => ({
-        ...c,
-        color: CHAR_COLOR,
-        thumb: normThumb(c.thumb),
-        stack: (c.stack ?? []).map((x) => ({ ...x, color: CHAR_COLOR })),
-      })),
+      /* ★옛 인물·스택에는 **이름 해시로 뽑힌 색**이 박혀 있다 — 위에서 종류 색으로
+         맞춰 뒀다. 안 맞추면 같은 종류인데 카드마다 색이 다른 화면이 남는다 */
+      chars,
       tabs: {},
       folded: {},
-    }),
+    });
+  },
 
   snapshot: () => ({
     base: get().base,
@@ -353,7 +390,7 @@ export const usePrompt = create<S>((set, get) => ({
     uc: get().styleOn ? compileBlocks(get().baseUc) : "",
     chars: get()
       .chars.filter((c) => c.on)
-      .map((c) => ({ id: c.id, prompt: compileBlocks(c.prompt), uc: compileBlocks(c.uc) })),
+      .map((c) => ({ id: c.id, prompt: compileBlocks(c.prompt), uc: compileBlocks(c.uc), center: c.center })),
   }),
 }));
 

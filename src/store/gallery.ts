@@ -34,6 +34,9 @@ export type ImageMeta = {
   smea?: string;
   uc_preset?: string;
   quality_tags?: boolean;
+  quality_preset?: string;
+  /** 자동 투명 배경 (V5) — 서버가 접미사에서 떼어 낸 값이다 */
+  transparent_bg?: boolean;
   cfg_rescale?: number;
   variety_plus?: boolean;
   furry_mode?: boolean;
@@ -41,6 +44,9 @@ export type ImageMeta = {
   /** 이 그림이 순수 NAI 출신인가 (PeroPix 확장이 없다) — 적용 시 경고 대상 */
   pure_nai?: boolean;
   characters?: { prompt: string; negative: string; center: { x: number; y: number } | null }[];
+  /** 그 그림이 캐릭터 좌표를 **쓰고 있었는가** (`v4_prompt.use_coords`).
+   *  자리만 되살리면 NAI 가 무시하므로 이 값이 함께 있어야 같은 그림이 나온다. */
+  use_coords?: boolean;
   /** ★NAI 가 남긴 바이브 — **인코딩만** 있고 원본 그림은 없다 (다시 굽지 못한다) */
   nai_vibes?: { images: string[]; strengths: number[]; info_extracted: number[] };
   precise_ref_count?: number;
@@ -84,8 +90,15 @@ type S = {
   /** @param only 끌어다 놓은 파일들 (없으면 고른 것 전부) */
   moveTo: (ws: string, dest: string, only?: string[]) => Promise<number>;
   /** ★작업 폴더의 그림을 **보관함으로 복사**한다 (원본은 그대로). 생성 옵션은 PNG 가 안고 간다.
-   *  ★이미 보관돼 있으면 **무른다** — 두 번 눌러 사본이 둘 생기지 않는다 (`removed`). */
-  keep: (ws: string, file: string, folder?: string) => Promise<{ file: string; removed: boolean }>;
+   *  ★이미 보관돼 있으면 **무른다** — 두 번 눌러 사본이 둘 생기지 않는다 (`removed`).
+   *  ★★`toggle: false` 면 무르지 않는다 — **끌어다 놓기**가 쓴다 (놓았는데 사라지면 안 된다).
+   *    이미 있으면 그대로 두고 `existed` 로 알린다. */
+  keep: (
+    ws: string,
+    file: string,
+    folder?: string,
+    toggle?: boolean,
+  ) => Promise<{ file: string; removed: boolean; existed?: boolean }>;
   /** 보관함 안에 하위 폴더를 만든다 (앱 안에서 정리할 유일한 창구) */
   newFolder: (ws: string, name: string) => Promise<void>;
   /** ★빈 폴더만 지운다 — 그림째 지우는 창구는 두지 않는다 */
@@ -162,11 +175,11 @@ export const useGallery = create<S>((set, get) => ({
     }
   },
 
-  async keep(ws, file, folder = "") {
-    return await api<{ file: string; removed: boolean }>(`/api/keep/save`, {
+  async keep(ws, file, folder = "", toggle = true) {
+    return await api<{ file: string; removed: boolean; existed?: boolean }>(`/api/keep/save`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ workspace: ws, file, folder }),
+      body: JSON.stringify({ workspace: ws, file, folder, toggle }),
     });
   },
 

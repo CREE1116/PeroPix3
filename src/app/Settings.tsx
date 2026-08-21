@@ -46,6 +46,8 @@ export function Settings({
   const setVol = useUi((s) => s.setNotifyVolume);
   const setNotify = useUi((s) => s.setNotifyDone);
   const suggest = useUi((s) => s.tagSuggest);
+  const weightHl = useUi((s) => s.weightHl);
+  const setWeightHl = useUi((s) => s.setWeightHl);
   const setSuggest = useUi((s) => s.setTagSuggest);
   // ★토큰 유무·앱 버전·요청 창구는 **백엔드가 정본**이다 (`store/health.ts`)
   const has = useHealth((s) => !!s.health?.hasToken);
@@ -248,7 +250,9 @@ export function Settings({
                 <Group label={t("settings.editing")} help={t("settings.tagSuggestHint")}>
                   <label
                     style={{
-                      display: "flex",
+                      // ★누를 자리는 **글자 끝까지만** (빈 곳을 눌러도 켜지지 않게)
+                      display: "inline-flex",
+                      alignSelf: "flex-start",
                       alignItems: "center",
                       gap: "var(--sp-2)",
                       fontSize: "var(--text-2xs)",
@@ -264,12 +268,35 @@ export function Settings({
                     />
                     {t("settings.tagSuggest")}
                   </label>
+                  {/* ★가중치 강조 — 칩과 글 상자가 **같은 스위치**를 본다 */}
+                  <label
+                    style={{
+                      // ★누를 자리는 **글자 끝까지만** (빈 곳을 눌러도 켜지지 않게)
+                      display: "inline-flex",
+                      alignSelf: "flex-start",
+                      alignItems: "center",
+                      gap: "var(--sp-2)",
+                      fontSize: "var(--text-2xs)",
+                      color: "var(--ink-soft)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      data-weight-hl-toggle
+                      checked={weightHl}
+                      onChange={(e) => setWeightHl(e.target.checked)}
+                    />
+                    {t("settings.weightHl")}
+                  </label>
                 </Group>
 
                 <Group label={t("settings.queue")} help={t("settings.notifyHint")}>
                   <label
                     style={{
-                      display: "flex",
+                      // ★누를 자리는 **글자 끝까지만** (빈 곳을 눌러도 켜지지 않게)
+                      display: "inline-flex",
+                      alignSelf: "flex-start",
                       alignItems: "center",
                       gap: "var(--sp-2)",
                       fontSize: "var(--text-2xs)",

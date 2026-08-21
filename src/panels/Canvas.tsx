@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { useDragSource, dragSourceStyle } from "../cards/dragStore";
-import { useGen } from "../store/gen";
+import { useGen, modelCaps } from "../store/gen";
 import { useWs, takesOfScene, allCells, allScenes, type ShotEnv } from "../store/workspace";
 import { SceneLane, takeSrc } from "./SceneLane";
 import { useSceneFocus } from "../store/sceneFocus";
+import { pickAfterRemoving } from "../lib/sceneTakes";
 import { useUi } from "../store/ui";
 import { CanvasTabs } from "./CanvasTabs";
 import { imgUrl } from "../lib/imgUrl";
@@ -19,6 +20,9 @@ import { usePreviews, withPreviews } from "../store/previews";
 import { api } from "../lib/backend";
 import { applyMetaParams, applyMetaVibes } from "./GalleryMeta";
 import { hasMeta } from "../lib/metaApply";
+import { CharPositioner } from "./CharPositioner";
+import { usePrompt } from "../store/prompt";
+import { crowded, snapCenter } from "../lib/charPos";
 
 /** 캔버스 — 씬 세트 줄 + 씬 무대 (마스크를 칠하는 동안에는 그 자리가 편집기다).
  *
@@ -280,8 +284,13 @@ function SceneActions() {
               <button
                 data-scene-delete
                 onClick={() => {
+                  // ★★`Del` 키와 **같은 규칙**으로 옆 장을 고른다 (`lib/sceneTakes`).
+                  //   전에는 여기서만 `null` 로 비워서, 단추로 지우면 큰 자리가 텅 비었다
+                  //   (사용자 지적 2026-08-21). 규칙은 한 곳에만 둔다.
+                  const cell = useSceneFocus.getState().cell;
+                  const next = pickAfterRemoving(cell, file);   // ★지우기 **전에** 정한다
                   void deleteFiles([file]);
-                  useSceneFocus.getState().focus(useSceneFocus.getState().cell, null);
+                  useSceneFocus.getState().focus(cell, next);
                 }}
                 data-tip={`${tr("common.delete")} — ${tr("canvas.hideHint")}`}
                 style={{ ...rowBtn, color: "var(--danger, var(--err))", minWidth: 28, justifyContent: "center" }}
@@ -323,6 +332,20 @@ const rowBtn: React.CSSProperties = {
   color: "var(--ink-soft)",
 };
 
+/** 배치 2택의 칸 모양 — 캔버스 위에 얹히므로 `rowBtn` 보다 촘촘하다 */
+const segBtn: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 4,
+  border: "none",
+  background: "transparent",
+  padding: "4px var(--sp-3)",
+  color: "var(--ink-soft)",
+  fontSize: "inherit",
+  cursor: "pointer",
+};
+const segOn: React.CSSProperties = { background: "var(--accent)", color: "var(--accent-on)" };
+
 /** 고른 한 장 — 씬 칸에서 고른 결과를 크게. 아무것도 안 골랐으면 안내만 */
 function ScenePreview() {
   const tr = useI18n((s) => s.t);
@@ -336,6 +359,49 @@ function ScenePreview() {
   const previews = usePreviews((s) => s.items);
   /** ★씬 줄과 **같은 거르기**를 건다 — 줄에서 안 보이는 장이 휠로 넘어오면 둘이 어긋난다 */
   const starOnly = useUi((u) => u.laneStarOnly);
+
+  /* ★캐릭터 배치 — 큰 그림 위에 판을 겹친다 (`CharPositioner` 머리 주석).
+     열 수 있는 조건과 스스로 닫히는 규칙은 공홈 `sk()` 를 그대로 따른다. */
+  const positioning = useUi((u) => u.positioning);
+  const setPositioning = useUi((u) => u.setPositioning);
+  const model = useGen((s) => s.params.model);
+  const useCoords = useGen((s) => s.params.use_coords);
+  /* ★★셀렉터 안에서 **새 배열·객체를 만들지 말 것** — zustand v5 는 `Object.is` 로 비교해서
+     매 렌더 다른 값이 되고, React 가 「getSnapshot 이 캐시되지 않았다」로 죽는다
+     (실측 2026-08-21: 여기서 `.map(c => c.center)` 를 셀렉터에 넣었다가 **화면이 통째로
+     안 떴다**). 스토어에서는 **참조가 안 바뀌는 것**만 꺼내고, 가공은 `useMemo` 로 한다. */
+  const allChars = usePrompt((s) => s.chars);
+  const centers = useMemo(
+    () => allChars.filter((c) => c.on).map((c) => c.center),
+    [allChars],
+  );
+  const onStage = centers.length;
+  /* ★겹쳐 선 인물 경고 (공홈 `dp()`) — **판을 닫고 있을 때만** 낸다. 판이 열려 있으면
+     마커가 이미 경고 색이라 같은 말을 두 번 하게 된다. 좌표를 안 쓰면 겹쳐도 상관없다. */
+  const freeform = modelCaps(model).freeform_position;
+  const stacked =
+    useCoords &&
+    !positioning &&
+    (freeform
+      ? crowded(centers).size > 0
+      : centers.some((a, i) =>
+          centers.some((b, j) => {
+            if (i === j) return false;
+            const p = snapCenter(a);
+            const q = snapCenter(b);
+            return p.x === q.x && p.y === q.y;
+          }),
+        ));
+  /* ★공홈은 인물이 하나뿐일 때 배치를 여는 조건으로 `canPositionOneCharacter` 를 따로 두는데,
+     번들의 **모델 일곱 군을 전수로 대조하니 `freeformCharacterPosition` 과 언제나 같았다**
+     (2026-08-21). 값이 하나면 표도 하나다 — 두 번째 플래그를 만들지 않는다. */
+  const canPosition = onStage >= 2 || (onStage === 1 && modelCaps(model).freeform_position);
+  /* ★스스로 닫히는 자리 (공홈의 두 `useEffect` 와 같다):
+       · 인물이 모자라면 — 판에 세울 사람이 없다
+       · 좌표를 끄면 — 「AI 에게 맡김」인데 판이 열려 있으면 무엇이 먹는지 알 수 없다 */
+  useEffect(() => {
+    if (positioning && (!canPosition || !useCoords)) setPositioning(false);
+  }, [positioning, canPosition, useCoords, setPositioning]);
 
   /** ★휠로 앞뒤 장 (사용자 지시 2026-08-14, 싱글 큰 그림과 같은 조작).
    *
@@ -384,6 +450,7 @@ function ScenePreview() {
         alignItems: "stretch",
         padding: "var(--sp-4)",
         overflow: "hidden",
+        position: "relative",
       }}
     >
       {file ? (
@@ -428,6 +495,93 @@ function ScenePreview() {
           }}
         >
           {tr("scenes.pickOne")}
+        </div>
+      )}
+
+      {/* ★판은 **그림과 같은 상자**에 들어간다 — 큰 그림도 `objectFit: contain` 이라
+          비율이 같으면 두 사각형이 겹친다 (`CharPositioner` 머리 주석 1번). */}
+      {positioning && (
+        <div style={{ position: "absolute", inset: "var(--sp-4)", zIndex: 2 }}>
+          <CharPositioner />
+        </div>
+      )}
+
+      {/* ★★공홈과 **같은 조작**이다 (`dg()` 의 `sR` 세그먼트, 번들 대조 2026-08-21):
+             「AI 에게 맡김 ↔ 직접 배치」 2택이고, 판을 여는 아이콘은 **직접 배치 쪽에 붙는다.**
+             아이콘을 누르면 좌표를 켜면서 판을 연다 (`i.use_coords||n({...}); g(!p)`).
+           ★★2택을 아이콘 하나로 줄이지 말 것 — **좌표를 다시 끄는 창구가 사라진다.**
+             판을 닫아도 좌표는 켜진 채라, AI 배치로 돌아갈 방법이 없어진다.
+           ★자리만 공홈과 다르다: 공홈은 캐릭터 프롬프트 패널에 두는데 우리는 판이 서는
+             캔버스에 뒀다 (사용자 결정 「1안 — 캔버스 위 오버레이」). */}
+      {canPosition && (
+        <div
+          style={{
+            position: "absolute",
+            top: "var(--sp-4)",
+            right: "var(--sp-4)",
+            zIndex: 3,
+            display: "flex",
+            alignItems: "stretch",
+            borderRadius: "var(--r-2)",
+            border: "1px solid var(--line)",
+            background: "var(--panel)",
+            overflow: "hidden",
+            fontSize: "var(--text-2xs)",
+          }}
+        >
+          <button
+            data-position-mode="ai"
+            onClick={() => useGen.getState().set("use_coords", false)}
+            data-tip={tr("pos.aiTip")}
+            style={{ ...segBtn, ...(useCoords ? null : segOn) }}
+          >
+            {tr("pos.ai")}
+          </button>
+          <button
+            data-position-mode="custom"
+            onClick={() => useGen.getState().set("use_coords", true)}
+            data-tip={tr("pos.customTip")}
+            style={{ ...segBtn, ...(useCoords ? segOn : null), borderLeft: "1px solid var(--line)" }}
+          >
+            {tr("pos.custom")}
+          </button>
+          <button
+            data-position-toggle={positioning ? "on" : "off"}
+            onClick={() => {
+              // ★공홈과 같다 — 아이콘을 누르면 좌표를 켜면서 판을 연다
+              if (!useCoords) useGen.getState().set("use_coords", true);
+              setPositioning(!positioning);
+            }}
+            data-tip={positioning ? tr("pos.close") : tr("pos.open")}
+            style={{
+              ...segBtn,
+              ...(positioning ? segOn : null),
+              borderLeft: "1px solid var(--line)",
+              padding: "4px var(--sp-2)",
+            }}
+          >
+            {Icon.grid}
+          </button>
+        </div>
+      )}
+
+      {canPosition && stacked && (
+        <div
+          data-stacked-warning
+          style={{
+            position: "absolute",
+            top: "calc(var(--sp-4) + 30px)",
+            right: "var(--sp-4)",
+            zIndex: 3,
+            padding: "3px var(--sp-3)",
+            borderRadius: "var(--r-2)",
+            background: "var(--warn)",
+            color: "var(--accent-on)",
+            fontSize: "var(--text-2xs)",
+            pointerEvents: "none",
+          }}
+        >
+          {tr("pos.stacked")}
         </div>
       )}
     </div>

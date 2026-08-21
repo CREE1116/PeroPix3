@@ -1,8 +1,10 @@
+import { useEffect, useRef } from "react";
 import { COLOR_HEX, fmtW, weightLevel, type Tag } from "../lib/blocks";
+import { useUi } from "../store/ui";
 
 /** 태그 칩.
  *  - **끌기 = 자리 옮기기** (같은 블록 안에서도, 다른 블록으로도 — `useTagDrag`)
- *  - 휠 = 가중치 (0.05 단위, Shift 로 0.1)
+ *  - **Alt + 휠 = 가중치** (0.05 단위, Alt+Shift 로 0.1)
  *  - **휠 클릭(가운데 버튼) = 가중치 초기화(1)**
  *  - 우클릭 = 삭제
  *  - ★가중치 강조 수준에 따라 칩 색이 변한다 */
@@ -26,7 +28,35 @@ export function Chip({
   onWeight: (w: number | null) => void;
   onRemove: () => void;
 }) {
-  const lv = weightLevel(tag.w);
+  /** 가중치 강조를 켜 두나 (설정) — 끄면 **평범한 칩**으로 보인다 (겹침 표시는 남는다) */
+  const hl = useUi((u) => u.weightHl);
+  const lv = hl ? weightLevel(tag.w) : 0;
+
+  /** ★★가중치는 **Alt + 휠**이다 (사용자 지시 2026-08-21).
+   *
+   *  ★맨 휠로 두면 프롬프트를 훑어 내리다 **지나가는 칩의 가중치가 바뀐다** — 바뀐 줄도
+   *    모르고 그대로 생성하게 된다 (실제로 그렇게 2.6 이 박혀 초록 노이즈가 나왔다).
+   *  ★**네이티브 리스너로 붙인다.** React 의 `onWheel` 은 뿌리에 passive 로 달려서
+   *    `preventDefault()` 가 안 먹는다 — 그대로 두면 가중치와 스크롤이 **함께** 일어난다. */
+  const ref = useRef<HTMLSpanElement | null>(null);
+  const onWeightRef = useRef(onWeight);
+  onWeightRef.current = onWeight;
+  const wRef = useRef(tag.w);
+  wRef.current = tag.w;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || readOnly) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.altKey) return;      // 맨 휠은 평소대로 스크롤이다
+      e.preventDefault();
+      const step = e.shiftKey ? 0.1 : 0.05;
+      const cur = wRef.current ?? 1;
+      const next = Math.round((cur + (e.deltaY < 0 ? step : -step)) * 100) / 100;
+      onWeightRef.current(next === 1 ? null : next);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [readOnly]);
 
   // 강조 수준 → 배경·테두리 세기. 음수는 붉은 계열로 갈린다.
   const tone =
@@ -48,14 +78,7 @@ export function Chip({
     <span
       data-chip
       {...dragProps}
-      onWheel={(e) => {
-        if (readOnly) return;
-        e.preventDefault();
-        const step = e.shiftKey ? 0.1 : 0.05;
-        const cur = tag.w ?? 1;
-        const next = Math.round((cur + (e.deltaY < 0 ? step : -step)) * 100) / 100;
-        onWeight(next === 1 ? null : next);
-      }}
+      ref={ref}
       onMouseDown={(e) => {
         // 가운데 버튼의 브라우저 기본 동작(자동 스크롤)을 막는다
         if (e.button === 1) e.preventDefault();
@@ -81,7 +104,8 @@ export function Chip({
         background: tone.bg,
         border: `1px solid ${dup ? "var(--warn)" : tone.bd}`,
         color: tone.fg,
-        fontSize: "var(--text-2xs)",
+        // ★프롬프트를 **읽고 치는 글자**다 — v2 와 같은 14px (`--text-prompt`)
+        fontSize: "var(--text-prompt)",
         cursor: "default",
         userSelect: "none",
         // 끌고 있는 칩은 자리만 지키고 흐려진다 (고스트가 커서를 따라간다)

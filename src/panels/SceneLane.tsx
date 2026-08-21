@@ -14,9 +14,14 @@ import { slotBlock, slotBlocksOf } from "../lib/blocks";
 import { BlockList } from "../blocks/BlockList";
 import { DropVeil } from "../cards/DropVeil";
 import { useDragSource, useDropZone } from "../cards/dragStore";
+import { askThumb } from "../cards/thumbAsk";
+import { FittedImg } from "../cards/FittedImg";
+import { useThumbView } from "./PromptSections";
 import { DragGhost } from "../cards/DragGhost";
 import { useLaneReorder, type LaneDrop } from "../lib/useReorder";
 import { useSceneFocus } from "../store/sceneFocus";
+import { pickAfterRemoving, stepTake, visibleTakes } from "../lib/sceneTakes";
+import { clearTagUndo, undoTagEdit } from "../lib/tagUndo";
 import { useRename } from "../components/useRename";
 import { ask } from "../store/ask";
 import { usePreviews, withPreviews } from "../store/previews";
@@ -268,22 +273,74 @@ export function SceneLane() {
     };
   }, []);
 
-  /** ★Ctrl + 휠로 칸 크기.
+  /** 휠 — **어디에 얹혀 있나로 갈린다.**
    *
+   *      Ctrl(⌘) + 휠            칸 크기
+   *      썸네일 영역 위          **좌우** 스크롤 (그림 사이 배경까지 그 영역이다)
+   *      그 밖(머리·씬 이름)     평소대로 위아래
+   *
+   *  ★★썸네일은 **가로로** 늘어서므로 그 위에서 위아래로 굴리는 것은 뜻이 없다
+   *    (사용자 지시 2026-08-21). 한 줄에 수십 장이 놓이는 자리라 좌우가 기본 동작이어야 한다.
    *  ★**네이티브 리스너로 붙인다.** React 의 `onWheel` 은 뿌리에 passive 로 달려서
-   *    `preventDefault()` 가 안 먹고, 그러면 Ctrl+휠이 웹뷰 **확대**로 새어 나간다. */
+   *    `preventDefault()` 가 안 먹고, 그러면 Ctrl+휠이 웹뷰 **확대**로 새어 나가고
+   *    좌우 전환도 세로 스크롤과 함께 일어난다. */
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey && !e.metaKey) return;
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const cur = useUi.getState().laneSize;
+        useUi.getState().setLaneSize(e.deltaY < 0 ? cur * ZOOM : cur / ZOOM);
+        return;
+      }
+      // 이미 가로로 굴리고 있으면(터치패드·Shift) 브라우저에 맡긴다
+      if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      const t = e.target as HTMLElement | null;
+      if (!t?.closest?.("[data-scene-takes]")) return;
+      // ★가로로 넘칠 것이 없으면 **가로채지 않는다** — 안 그러면 그림이 몇 장 없을 때
+      //   썸네일 위에서 휠이 통째로 죽어(위아래도 안 된다) 줄이 멈춘 것처럼 보인다
+      if (el.scrollWidth - el.clientWidth <= 0) return;
       e.preventDefault();
-      const cur = useUi.getState().laneSize;
-      useUi.getState().setLaneSize(e.deltaY < 0 ? cur * ZOOM : cur / ZOOM);
+      el.scrollLeft += e.deltaY;
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
+
+  /** ★★**고른 장은 언제나 보인다** (사용자 지시 2026-08-21).
+   *
+   *  ★칸은 **다 그리지 않는다** — 보이는 구간 앞뒤 두 칸씩만 그린다(`SceneRow` 의 `from`/`to`).
+   *    그래서 `scrollIntoView` 를 쓸 수 없다: 화면 밖의 장은 **요소가 아예 없다.**
+   *    대신 자리를 **계산**한다 — 칸은 `머리폭 + 8 + 번호 × (칸 + 틈)` 에 선다.
+   *  ★왼쪽 여백은 **줄 머리만큼** 둔다 — 머리가 `sticky` 라 그 밑으로 들어가면 가려진다.
+   *  ★세로는 요소로 한다 (줄 자체는 언제나 그려진다). */
+  const focusCell = focus.cell;
+  const focusFile = focus.file;
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !focusCell || !focusFile) return;
+    const list = visibleTakes(focusCell);
+    const at = list.findIndex((r) => r.file === focusFile);
+    if (at < 0) return;
+    const waiting = pending.filter((p) => p.tabId === tab?.id && p.cellId === focusCell).length;
+    const cw = Math.min(LANE_MAX, Math.max(LANE_MIN, laneSize));
+    const step = cw + GAP;
+    const left = headw + 8 + (waiting + at) * step;
+
+    // 가로 — 줄 머리에 가리지도, 오른쪽으로 넘치지도 않게
+    if (left < el.scrollLeft + headw) el.scrollLeft = left - headw - 8;
+    else if (left + cw > el.scrollLeft + el.clientWidth) el.scrollLeft = left + cw - el.clientWidth + 8;
+
+    // 세로 — 그 줄이 화면 밖이면 끌어온다
+    const row = el.querySelector<HTMLElement>(`[data-scene="${CSS.escape(focusCell)}"]`);
+    if (row) {
+      const r = row.getBoundingClientRect();
+      const b = el.getBoundingClientRect();
+      if (r.top < b.top) el.scrollTop -= b.top - r.top;
+      else if (r.bottom > b.bottom) el.scrollTop += r.bottom - b.bottom;
+    }
+  }, [focusCell, focusFile, headw, laneSize, pending, tab?.id]);
 
   // 탭을 옮기면 고른 것을 놓는다 — 다른 탭의 파일을 고른 채로 두면 안 된다
   const tabId = tab?.id;
@@ -297,6 +354,7 @@ export function SceneLane() {
     lastTab.current = tabId;
     setPicked(new Set());
     useSceneFocus.getState().clear();
+    clearTagUndo();   // ★없어진 블록을 되살리려 들면 안 된다
   }, [tabId]);
 
   // Del = 숨김(휴지통) · Ctrl+Z = 되돌리기 · Esc = 선택 해제 (멀티 무대의 규칙 그대로)
@@ -317,17 +375,26 @@ export function SceneLane() {
         //   줄은 최신이 왼쪽이라, 오른쪽이 '그 다음으로 옛것'이다.
         const cur = useSceneFocus.getState();
         if (!cur.file) return;
-        const cell = tab?.kind === "set" ? allCells(tab).find((c) => c.id === cur.cell) : undefined;
-        const list = cell ? [...takesOfCell(cell)].sort(newestFirst) : [];
-        const at = list.findIndex((r) => r.file === cur.file);
         e.preventDefault();
+        // ★규칙은 `lib/sceneTakes` 하나다 — 프리뷰의 삭제 단추도 같은 것을 쓴다.
+        //   ★어디로 갈지는 **지우기 전에** 정한다 (지운 뒤엔 자리를 잃는다)
+        const next = pickAfterRemoving(cur.cell, cur.file);
         void deleteFiles([cur.file]);
-        const next = list[at + 1] ?? list[at - 1] ?? null;
-        useSceneFocus.getState().focus(cur.cell, next?.file ?? null);
+        useSceneFocus.getState().focus(cur.cell, next);
+        return;
+      }
+      // ★★고른 장이 있으면 **좌우 방향키로 장을 넘긴다** (사용자 지시 2026-08-21).
+      //   예전에는 브라우저 기본대로 줄이 **스크롤**됐다 — 그림을 견주려고 방향키를 눌렀는데
+      //   화면만 밀렸다. 아무것도 안 골랐을 때는 평소대로 스크롤이다.
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        if (stepTake(e.key === "ArrowRight" ? 1 : -1)) e.preventDefault();
         return;
       }
       if ((e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z")) {
-        if (undoSelection()) e.preventDefault();
+        // ★★되돌릴 것이 둘이다 — **칩 지우기**(더 최근의 일)를 먼저 본다.
+        //   전역 키 임자를 여기 하나로 두는 이유: 두 곳에서 window 에 매달면 등록 순서에
+        //   따라 **둘 다** 돌아 선별까지 함께 되돌아간다.
+        if (undoTagEdit() || undoSelection()) e.preventDefault();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -583,6 +650,7 @@ export function SceneLane() {
               <DropLine on={lane.drop?.kind === "card" && lane.drop.index === ci} />
               <CardGroup
                 card={card}
+                tabId={tab.id}
                 offset={offsets[ci]}
                 gripOf={lane.gripProps}
                 drop={lane.drop}
@@ -900,6 +968,8 @@ function Empty({ onAdd }: { onAdd: () => void }) {
 
 type GroupProps = {
   card: SceneCard;
+  /** 이 카드가 든 탭 — 머리에 건 그림을 어디에 적을지 (`askThumb`) */
+  tabId: string;
   /** 앞선 카드들의 씬 수 — 줄 앞 번호가 탭 전체에서 이어지게 (`offsets` 주석) */
   offset: number;
   /** 씬·카드 그립에 펴 넣을 것 (`useLaneReorder`) */
@@ -972,6 +1042,18 @@ function CardGroup(p: GroupProps) {
    *  ★판은 **줄 전체**다 (`useLaneReorder`) — 카드를 넘어 씬을 옮길 수 있어야 하고,
    *    같은 하나로 카드 자체의 자리도 바꾼다 */
   const cardGrip = p.gripOf("card", p.card.id);
+  /** ★★머리에 **그림을 걸 수 있다** (사용자 지시 2026-08-21) — 프롬프트 섹션 배너와 같은
+   *  몸짓이다: 생성물을 끌어다 놓으면 자리 잡는 창이 뜨고, 고른 자리가 카드에 남는다.
+   *  ★그림 바이트는 굽지 않는다 — 창구는 `askThumb` 하나이고 굳히는 것은 `App` 이 한다. */
+  const headThumb = useThumbView(p.card.thumb ?? null);
+  const headDrop = useDropZone({
+    id: `scene-card-thumb-${p.card.id}`,
+    kind: "image",
+    dir: "image",
+    prio: 6,
+    onDrop: (d) =>
+      d.img && askThumb({ type: "scene-card", tabId: p.tabId, cardId: p.card.id, img: d.img }),
+  });
   /** 이 카드 안에서 씬이 놓일 자리 (없으면 null) */
   const sceneAt =
     p.drop?.kind === "scene" && p.drop.cardId === p.card.id ? p.drop.index : null;
@@ -1029,15 +1111,23 @@ function CardGroup(p: GroupProps) {
               줄 전체 폭이라 그 자리에서 잘리면 **가운데서 뚝 끊긴 것처럼** 보였다.
               그래서 여기서는 자르지 않고(`BANNER_CUT` 미사용) 오른쪽 끝을 부드럽게 뺀다. */}
           <div
+            ref={headDrop.ref}
             style={{
               position: "absolute",
               inset: 0,
               pointerEvents: "none",
               maskImage: HEAD_FADE,
               WebkitMaskImage: HEAD_FADE,
-              background: bannerEmptyFill(grad),
+              // 그림이 있으면 그림이, 없으면 지금까지처럼 카드 색이 깔린다
+              background: headThumb ? undefined : bannerEmptyFill(grad),
+              outline: headDrop.over ? "2px solid var(--accent)" : undefined,
+              outlineOffset: -2,
             }}
-          />
+          >
+            {headThumb && (
+              <FittedImg url={headThumb.url} w={p.headw} h={HEAD_H} view={headThumb} />
+            )}
+          </div>
           {/* ★어둡게 눕히는 겹도 **같은 마스크**를 쓴다 — 안 그러면 그림은 사라졌는데 이 겹만
               끝에서 뚝 끊겨 세로 이음매가 보인다 (사용자 지적 2026-08-19) */}
           <div
@@ -1166,39 +1256,9 @@ function CardGroup(p: GroupProps) {
       {/* ★접으면 머리만 남는다 */}
       {p.folded ? null : (
       <>
-      {/* 공통 접두 — ★**첫 씬 바로 위**. 이 카드의 모든 씬에 걸리는 값이라 그 자리가 맞다 */}
-      <div style={{ minWidth: "100%", borderBottom: "1px solid var(--line-soft)" }}>
-        <span
-          style={{
-            position: "sticky",
-            left: 0,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "var(--sp-3)",
-            padding: "5px var(--sp-3)",
-          }}
-        >
-          <span style={{ fontSize: 11, color: "var(--ink-faint)", whiteSpace: "nowrap" }}>
-            {t("scenes.prefix")}
-          </span>
-          <input
-            data-card-prefix={p.card.id}
-            value={p.card.prefix ?? ""}
-            onChange={(e) => p.onPatch({ prefix: e.target.value })}
-            placeholder={t("scenes.prefixPlaceholder")}
-            style={{
-              width: 230,
-              background: "var(--bg)",
-              border: "1px solid var(--line)",
-              borderRadius: "var(--r-2)",
-              padding: "3px var(--sp-3)",
-              fontSize: "var(--text-2xs)",
-              color: "var(--ink-soft)",
-            }}
-          />
-        </span>
-      </div>
-
+      {/* ★공통 접두는 **걷었다** (사용자 지시 2026-08-21). 프롬프트에 실려 나가는 값이
+          카드 머리에 한 줄로만 보여서, 어느 씬에 무엇이 붙는지 화면에서 따라가기 어려웠다.
+          같은 것을 붙이려면 **베이스 프롬프트의 블록**을 쓴다 (창구가 하나가 된다). */}
       {p.card.cells.map((c, i) => (
         <Fragment key={c.id}>
           <DropLine on={sceneAt === i} />
@@ -1432,7 +1492,12 @@ function SceneRow(
         </div>
       </div>
 
-      <div style={{ flex: 1, display: "flex", alignItems: "center", gap: GAP, padding: "6px 0 6px 8px" }}>
+      {/* ★이 상자가 곧 **썸네일 영역**이다 — `flex: 1` 이라 마지막 그림 오른쪽의 빈 자리까지
+          여기 들어간다. 그 위에서는 휠이 **좌우 스크롤**이 된다 (아래 `onWheel`). */}
+      <div
+        data-scene-takes
+        style={{ flex: 1, display: "flex", alignItems: "center", gap: GAP, padding: "6px 0 6px 8px" }}
+      >
         {!takes.length && !waits.length && (
           <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-ghost)" }}>
             {t("scenes.noneYet")}

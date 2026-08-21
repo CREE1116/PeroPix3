@@ -11,8 +11,8 @@ import {
   type BaseMode,
 } from "../store/imageInput";
 import { canFocus } from "../lib/focused";
-import { fitSizeToBase, useGen } from "../store/gen";
-import { flashStyle, useFlash } from "../store/ui";
+import { fitSizeToBase, modelCaps, useGen } from "../store/gen";
+import { flashStyle, useFlash, useUi } from "../store/ui";
 import { toast } from "../store/toast";
 import { NAI_VIBE_EXT, isNaiVibeFile, parseNaiVibeFile } from "../lib/naiVibeFile";
 import { useTauriDrop } from "../lib/dropImages";
@@ -35,6 +35,7 @@ export function ImageInputPanel() {
   const t = useI18n((s) => s.t);
   const s = useImageInput();
   const model = useGen((g) => g.params.model);
+  const cap = modelCaps(model);
   const [cache, setCache] = useState(false);
 
   /** ★서버에 구워 둔 인코딩이 있으면 「구워 둠」이 뜨고 비용에서도 빠진다.
@@ -101,6 +102,11 @@ export function ImageInputPanel() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-5)" }}>
+      {/* ★★**그 모델이 지원하는 것만 보여 준다** (사용자 지시 2026-08-21).
+          V5 는 Vibe Transfer 도 Precise Reference 도 없다 (공홈 FAQ: "post-launch additions").
+          담아 둔 그림은 **지우지 않는다** — 모델을 되돌리면 그대로 돌아온다. 보내는 쪽도
+          같은 능력표로 막으므로(`backend/nai.py` `caps`) 숨은 값이 몰래 나가지 않는다. */}
+      {cap.vibe && (
       <Section
         label={t("imgIn.vibe")}
         help={t("imgIn.vibeHint")}
@@ -171,7 +177,9 @@ export function ImageInputPanel() {
           </button>
         </div>
       </Section>
+      )}
 
+      {cap.char_ref && (
       <Section label={t("imgIn.ref")} help={t("imgIn.refHint")} on={s.refOn} onToggle={s.setRefOn} data-sec="ref">
         {s.refs.map((r, i) => (
           <Card
@@ -232,6 +240,7 @@ export function ImageInputPanel() {
           onPath={addRefPath}
         />
       </Section>
+      )}
 
       <Section label={t("imgIn.base")} data-sec="base" flashKey="base">
         {s.baseImage ? (
@@ -506,8 +515,11 @@ function Section({
    *  화면 밖이면 못 본다. `nearest` 라 이미 보이면 화면이 안 흔들린다. */
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (flash) box.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [flash]);
+    // ★데려갈지는 **부르는 쪽이 정한다** (`useUi.reveal(..., scroll)`) — 설정 불러오기처럼
+    //   여러 자리가 한꺼번에 바뀔 때는 움직이지 않는다 (`Category` 와 같은 규칙)
+    if (flash && useUi.getState().flashScroll.includes(flashKey ?? ""))
+      box.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [flash, flashKey]);
   return (
     <div
       ref={box}
@@ -619,7 +631,11 @@ function Check({
     <label
       data-tip={title}
       style={{
-        display: "flex",
+        // ★★**글자 끝까지만** 누를 자리다 (사용자 지적 2026-08-21). `display: flex` 는 줄을
+        //   가득 채워서, 오른쪽 빈 곳을 눌러도 켜졌다 — 무엇을 누른 건지 알 수 없다.
+        //   `inline-flex` + `alignSelf` 로 **내용만큼만** 차지하게 한다.
+        display: "inline-flex",
+        alignSelf: "flex-start",
         alignItems: "center",
         gap: "var(--sp-2)",
         fontSize: "var(--text-2xs)",
@@ -802,6 +818,9 @@ function Pick({
     <>
       <button
         ref={btn}
+        /** ★**파일 드롭존 표식** — 「창 전체로 받는」 자리(EXIF 리더)가 이 자리는 비켜 간다.
+         *  없으면 베이스 그림에 떨구려던 것을 옆 도구가 가로챈다 (`lib/dropImages` 의 `wide`). */
+        data-drop-file
         disabled={disabled}
         onClick={() => ref.current?.click()}
         onDragOver={(e) => {

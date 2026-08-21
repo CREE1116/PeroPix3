@@ -57,6 +57,18 @@ export function effW(x: Tag): number | null {
   return e === 1 ? null : e;
 }
 
+/** ★★강조를 **닫는** `::` 를 만드는 유일한 자리.
+ *
+ *  ★★**앞이 숫자로 끝나면 공백을 하나 넣는다.** 안 넣으면 NAI 가 닫는 `::` 를
+ *    **여는 것**으로 읽는다 — 파서가 `::` 앞에서 숫자를 되찾기 때문이다
+ *    (공홈 `/-?\d*\.?\d*$/`). 그래서 `0.8::artist:dishwasher1910::` 는
+ *    「0.8 로 열고 … **1910 으로 다시 연다**」가 되고, 그 뒤가 전부 1910배로 조건화돼
+ *    잠재값이 터진다 → **초록 노이즈만 나온다** (실측 2026-08-21, 이분 탐색으로 확인).
+ *  ★`.` 나 `-` 로 끝나도 같다 — 그때는 가중치가 **0** 으로 잡힌다.
+ *  ★공홈도 같은 처방을 쓴다: 편집기가 `emphasisError3` 로 **「`숫자 ::` 처럼 띄우라」**고 알린다.
+ *  ★필요할 때만 넣는다 — 늘 넣으면 공홈이 내보내는 문자열과 달라진다. */
+const closeEmph = (inner: string) => (/[-.\d]$/.test(inner) ? `${inner} ::` : `${inner}::`);
+
 /** 블록 하나를 NAI 프롬프트 문자열로.
  *  ★같은 실효 가중치가 연속되면 하나로 묶는다: `1.8::a, b::` */
 export function compileBlock(bl: Block): string {
@@ -69,7 +81,7 @@ export function compileBlock(bl: Block): string {
 
   const flush = () => {
     if (!run.length) return;
-    parts.push(runW != null ? `${fmtW(runW)}::${run.join(", ")}::` : run.join(", "));
+    parts.push(runW != null ? `${fmtW(runW)}::${closeEmph(run.join(", "))}` : run.join(", "));
     run = [];
     runW = undefined;
   };
@@ -130,7 +142,15 @@ export const slotBlocksOf = (b: Block): Block[] => [{ ...b, label: "", on: true,
 /** 텍스트를 태그 목록으로. `1.8::a, b::, plain, -2::c::` 를 이해한다. */
 export function parseSegs(str: string): Tag[] {
   const out: Tag[] = [];
-  const re = /(-?\d+(?:\.\d+)?)\s*::(.*?)::/gs;
+  /** ★★가중치 숫자는 **낱말 앞**에서만 시작한다 (앞이 쉼표·공백이거나 글 처음).
+   *
+   *  ★그렇지 않으면 **태그 끝의 숫자를 가중치로 뜯어 간다** — `artist:dishwasher1910::foo::`
+   *    가 `artist:dishwasher` + `1910::foo::` 로 갈려 태그가 두 동강 난다.
+   *    v2 에서 같은 것을 고쳤는데(사용자 지적 2026-08-21: "1910 을 가중치로 안 읽고
+   *    태그로 읽게 수정했었음") 3.0 으로 안 옮겨져 있었다.
+   *  ★NAI 서버는 이 규칙이 **없다** — 거기서는 `숫자::` 면 어디서든 연다. 그래서 만들 때는
+   *    닫는 `::` 앞에 공백을 넣어 막는다 (`closeEmph`). 읽는 쪽과 쓰는 쪽이 **다른 처방**이다. */
+  const re = /(^|[,\s])(-?\d+(?:\.\d+)?)\s*::(.*?)::/gs;
   let last = 0;
   let m: RegExpExecArray | null;
 
@@ -142,9 +162,10 @@ export function parseSegs(str: string): Tag[] {
       .forEach((t) => out.push({ t, w: null }));
 
   while ((m = re.exec(str))) {
+    // ★경계 글자(쉼표·공백)는 구분자라 버려도 된다 — `plain` 이 어차피 잘라 내는 것이다
     plain(str.slice(last, m.index));
-    const w = parseFloat(m[1]);
-    m[2]
+    const w = parseFloat(m[2]);
+    m[3]
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean)
@@ -160,7 +181,7 @@ export function serializeBlock(bl: Block): string {
   return bl.tags
     .map((x) => {
       const e = effW(x);
-      return e != null ? `${fmtW(e)}::${x.t}::` : x.t;
+      return e != null ? `${fmtW(e)}::${closeEmph(x.t)}` : x.t;
     })
     .join(", ");
 }

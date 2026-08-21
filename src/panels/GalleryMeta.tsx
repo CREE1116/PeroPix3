@@ -2,10 +2,12 @@ import { t, useI18n } from "../i18n";
 import { useState } from "react";
 import { makeBlock, parseSegs } from "../lib/blocks";
 import { useGen } from "../store/gen";
+import { DEFAULT_CENTER } from "../lib/charPos";
 import { useGallery, type ImageMeta } from "../store/gallery";
 import { CHAR_COLOR, usePrompt, type Char } from "../store/prompt";
 import { useImageInput } from "../store/imageInput";
 import { useUi } from "../store/ui";
+import { keepScroll, LEFT_SCROLL } from "../lib/keepScroll";
 import { useSceneFocus } from "../store/sceneFocus";
 import { useWs } from "../store/workspace";
 import { api } from "../lib/backend";
@@ -217,14 +219,24 @@ export function applyMetaParams(m: ImageMeta) {
   const g = useGen.getState();
   // ★★값이 밖에서 갈리면 **그 자리를 펴고 강조한다** (사용자 지시 2026-08-19) —
   //   왼쪽 패널이 접혀 있으면 무엇이 바뀌었는지 알 길이 없다 (`Category` 의 `flashKey`)
-  useUi.getState().reveal("left", "params");
-  useUi.getState().reveal("left", "size");
+  // ★★강조만 한다 — **데려가지 않는다** (사용자 지시 2026-08-21). 불러오면 여러 자리가
+  //   한꺼번에 바뀌어서, 그때마다 화면이 움직이면 무엇이 바뀌었는지 오히려 못 본다.
+  useUi.getState().reveal("left", "params", false);
+  useUi.getState().reveal("left", "size", false);
   useGen.setState({ params: { ...g.params, ...metaParams(m) } });
   if (m.width !== undefined) g.set("width", m.width);
   if (m.height !== undefined) g.set("height", m.height);
   if (m.seed !== undefined) g.set("seed", m.seed);
-  // ★시드를 되살렸으면 **랜덤을 끈다** — 안 끄면 다음 생성이 새 시드로 굴러 재현이 안 된다
-  if (m.seed !== undefined) g.set("seed_mode", "fixed");
+  /* ★★캐릭터 좌표 켜짐은 **`lib/metaApply` 표에 안 넣는다** — 시드·해상도와 같은 사정이다
+     (그 파일 머리 주석): 쓰는 자리마다 뜻이 다르다. 강화는 캐릭터를 `{prompt, uc}` 로만
+     실어 보내기로 정해 둔 자리라(`EnhanceDialog.metaJob` 의 ★주, v2 `index.html:24472`),
+     표에 넣으면 **자리 없이 좌표만 켜져** 인물 전원이 한가운데로 겹친다.
+     여기(갤러리의 「설정 불러오기」)는 `applyMetaInner` 가 자리까지 되살리므로 뜻이 맞는다. */
+  if (m.use_coords !== undefined) g.set("use_coords", m.use_coords);
+  // ★★**시드 규칙(고정/한 바퀴/씬마다)은 건드리지 않는다** (사용자 지시 2026-08-21).
+  //   예전에는 시드를 되살리면 「고정」으로 바꿨는데, 그러면 사용자가 골라 둔 규칙이
+  //   그림 하나 불러올 때마다 말없이 뒤집힌다. 값만 넣고 규칙은 사용자 것으로 둔다
+  //   (그 시드로 다시 뽑고 싶으면 「고정」은 바로 옆에서 누를 수 있다).
 }
 
 /** 그 그림의 **바이브**를 되살린다 (인코딩이 남아 있어 다시 굽지 않는다).
@@ -272,6 +284,13 @@ export function applyMetaVibes(m: ImageMeta) {
 
 /** @param what `prompt` = 프롬프트만 · `all` = 설정·시드·이미지 입력까지 (그 그림을 재현한다) */
 export function applyMeta(m: ImageMeta, what: "prompt" | "all" = "all") {
+  // ★★**보던 자리를 고정한다** (사용자 지시 2026-08-21). 불러오면 좌측 패널에서 여러 가지가
+  //   한꺼번에 벌어져(묶음 펴짐·프롬프트 교체·강조) 내용 높이가 변하고, 그러면 보던 자리가
+  //   위아래로 밀린다. 「데려가지 않기」만으로는 안 잡히는 움직임이라 값을 재서 되돌린다.
+  keepScroll(LEFT_SCROLL, () => applyMetaInner(m, what));
+}
+
+function applyMetaInner(m: ImageMeta, what: "prompt" | "all") {
   const p = usePrompt.getState();
 
   const block = (label: string, body?: string) =>
@@ -286,7 +305,8 @@ export function applyMeta(m: ImageMeta, what: "prompt" | "all" = "all") {
     prompt: block("Character", c.prompt),
     uc: block("UC", c.negative),
     on: true,
-    center: c.center ?? undefined,
+    // ★자리가 없던 그림은 한가운데 (백엔드 기본값과 같다 — `charPos.DEFAULT_CENTER`)
+    center: c.center ?? DEFAULT_CENTER,
     stack: [],
   })) as Char[];
 
@@ -297,7 +317,8 @@ export function applyMeta(m: ImageMeta, what: "prompt" | "all" = "all") {
   });
 
   // ★프롬프트가 통째로 바뀐다 — 좌측 패널을 펴고 알린다 (사용자 지시 2026-08-13)
-  useUi.getState().reveal("left", "prompt");
+  //   ★데려가지는 않는다 (2026-08-21) — 불러오기는 여러 자리가 함께 바뀐다
+  useUi.getState().reveal("left", "prompt", false);
   if (what === "prompt") return;
 
   // 설정 — 있는 것만 덮는다. 없는 값을 기본값으로 되돌리면 사용자가 잡아 둔 것이 날아간다.

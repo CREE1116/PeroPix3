@@ -2,6 +2,7 @@ import { useI18n } from "../i18n";
 import { useState } from "react";
 import { compileBlocks } from "../lib/blocks";
 import { usePrompt } from "../store/prompt";
+import { canEnableChar } from "../store/gen";
 import { StyleSection, CharSection, JoinZone, type SectionProps } from "./PromptSections";
 import { BlockLibButton } from "../blocks/BlockDrawer";
 import { WildcardButton } from "./WildcardModal";
@@ -58,7 +59,9 @@ export function PromptPanel({ onThumb }: SectionProps) {
           <JoinZone />
 
           <button
-            onClick={() => addChar({})}
+            /* ★자리가 없으면 **꺼진 채로** 만든다 — 칸을 만드는 것은 막지 않고,
+               나가는 수만 모델 상한에 맞춘다 (`store/gen.ts` 의 `canEnableChar`) */
+            onClick={() => addChar({ on: canEnableChar() })}
             style={{
               width: "100%",
               marginBottom: "var(--sp-5)",

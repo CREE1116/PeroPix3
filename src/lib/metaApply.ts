@@ -26,7 +26,9 @@ export function metaParams(m: ImageMeta): Partial<GenParams> {
   // ★서버가 정규화해 준 값들 (`backend/meta.py`). 프롬프트에서 퀄리티 태그를, 네거티브에서
   //   UC 프리셋을 이미 떼어 냈으므로 그 둘을 **설정으로 되돌려야** 다시 그렸을 때 같아진다.
   if (m.uc_preset) p.uc_preset = m.uc_preset;
-  if (m.quality_tags !== undefined) p.quality_tags = m.quality_tags;
+  if (m.quality_preset) p.quality_preset = m.quality_preset;
+  // ★투명 배경은 퀄리티 태그와 **같은 자리에 붙지만 다른 스위치**다 (`backend/meta.py`)
+  if (m.transparent_bg !== undefined) p.transparent_bg = m.transparent_bg;
   if (m.variety_plus !== undefined) p.variety_plus = m.variety_plus;
   // ★프롬프트 앞의 `fur dataset, ` 도 서버가 떼어 내 값으로 돌려준다 — 빠져 있던 자리다
   if (m.furry_mode !== undefined) p.furry_mode = m.furry_mode;

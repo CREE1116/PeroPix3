@@ -7,7 +7,17 @@ import { api } from "../lib/backend";
  *    (업스케일 값 표시) 넘겨줄 길이 없어졌다 — 같은 정보를 두 곳에 두지 않으려고 스토어로 뺀다.
  *  ★티어 3(Opus)이면 무료 구간이 생긴다. 그 판정을 화면마다 다시 쓰지 않게 `opus()` 를 둔다. */
 
-export type Sub = { tier: number; anlas: number };
+/** Opus 무료 생성 잔량 (공홈 `subscription.usage`). ★V5 부터 무료가 유한하다 */
+export type OpusUsage = {
+  /** 남은 비율 0~100 */
+  percent: number;
+  /** 1% 회복까지 남은 **초** */
+  timeUntilNextPercent: number;
+  /** 다 쓰고 더 쓴 상태 — ★이러면 무료가 **꺼진다** */
+  isNegative: boolean;
+};
+
+export type Sub = { tier: number; anlas: number; usage?: OpusUsage | null };
 
 type S = {
   sub: Sub | null;

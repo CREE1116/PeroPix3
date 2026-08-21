@@ -12,7 +12,7 @@ import {
   type Thumb,
 } from "../store/prompt";
 import type { DragImage } from "../cards/dragStore";
-import { useGen } from "../store/gen";
+import { canEnableChar, toggleCharCapped, useGen } from "../store/gen";
 import { useDropZone, useDragSource, useDrag } from "../cards/dragStore";
 import { zoneIcon } from "../cards/CardArt";
 import { DropVeil } from "../cards/DropVeil";
@@ -176,8 +176,7 @@ export function StyleSection({ onThumb }: SectionProps) {
 /* ── 캐릭터 섹션 ──────────────────────────────────────────────── */
 export function CharSection({ ch, index, onThumb }: { ch: Char; index: number } & SectionProps) {
   const t = useI18n((s) => s.t);
-  const { updateChar, stackChar, removeChar, toggleChar, renameChar, folded, toggleFold } =
-    usePrompt();
+  const { updateChar, stackChar, removeChar, renameChar, folded, toggleFold } = usePrompt();
   const startDrag = useDragSource();
   const active = useDrag((s) => s.drag?.kind === "characters" && s.drag.dir === "apply");
 
@@ -240,7 +239,8 @@ export function CharSection({ ch, index, onThumb }: { ch: Char; index: number } 
             {/* ★아이콘은 언제나 SVG (CLAUDE.md) — 여기는 `● ○ × ✎` 글자를 쓰고 있었다 */}
             <BannerBtn
               title={ch.on ? t("block.toggleOff") : t("block.toggleOn")}
-              onClick={() => toggleChar(ch.id)}
+              /* ★켜기는 모델 상한에 막힌다 (V4.5 6명 · V5 32명). 끄기는 언제나 된다 */
+              onClick={() => toggleCharCapped(ch.id)}
             >
               {ch.on ? Icon.dotOn : Icon.dotOff}
             </BannerBtn>
@@ -403,6 +403,8 @@ export function JoinZone() {
         prompt: c.prompt,
         uc: c.uc,
         thumb: thumbFromCard(c.thumb),
+        // ★자리가 없으면 **꺼진 채로** 들어온다 — 담는 것은 막지 않고, 나가는 수만 지킨다
+        on: canEnableChar(),
       });
     },
   });

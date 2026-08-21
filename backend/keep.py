@@ -214,7 +214,8 @@ def _slice(items: list, page: int, limit: int):
     return page, pages, items[start : start + limit]
 
 
-def save(root: Path, src: Path, folder: str, meta: dict | None, key: str = "") -> dict:
+def save(root: Path, src: Path, folder: str, meta: dict | None, key: str = "",
+         toggle: bool = True) -> dict:
     """작업 폴더의 그림 하나를 보관함으로 **복사**한다.
 
     ★PNG 메타데이터를 그대로 옮긴다 — 그것이 "그대로 다시 쓸 수 있다"의 전부다.
@@ -223,9 +224,18 @@ def save(root: Path, src: Path, folder: str, meta: dict | None, key: str = "") -
     ★**이미 보관돼 있으면 무른다** (v2 `index.html:12274-12330` 과 같은 토글). 전에는
       같은 그림에 보관을 두 번 누르면 사본이 둘 생겼다 — 보관은 켜고 끄는 것이지
       누른 횟수만큼 쌓이는 것이 아니다. 무엇이 이미 보관됐는지는 `key`(워크스페이스/파일)로
-      가른다: 보관 파일명에는 보관 시각이 붙어 매번 달라지므로 이름으로는 못 가른다."""
+      가른다: 보관 파일명에는 보관 시각이 붙어 매번 달라지므로 이름으로는 못 가른다.
+
+    ★★`toggle=False` 는 **끌어다 놓기**가 쓴다 (2026-08-21). 「여기 넣어라」라는 몸짓이라
+      이미 있다고 빼 버리면 **놓았는데 사라지는** 꼴이 된다. 그때는 있는 그대로 두고
+      `existed: True` 로 알린다 — 폴더도 안 바꾼다 (되보관하면 새 이름·새 폴더가 된다)."""
     st = _state(root)
     prev = st["sources"].get(key) if key else None
+    if prev and not toggle:
+        if (root / prev).is_file():
+            return {"file": prev, "removed": False, "existed": True}
+        st["sources"].pop(key, None)   # 밖에서 지운 그림이다 — 표만 걷고 새로 보관한다
+        prev = None
     if prev:
         p = root / prev
         if p.is_file():

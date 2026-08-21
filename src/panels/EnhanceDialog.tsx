@@ -171,6 +171,12 @@ export function EnhanceDialog({
     const m = metas?.[f];
     return (hasMeta(m) ? metaParams(m!).steps : undefined) ?? params.steps;
   };
+  /** 이 장에 실제로 나갈 모델 — steps 와 **같은 규칙**이다 (`metaJob` 이 그 값을 싣는다).
+   *  ★V5 는 Anlas 배율이 1.5라, 화면 모델로 세면 옛 V4.5 그림을 강화할 때 표시가 어긋난다. */
+  const modelOf = (f: string) => {
+    const m = metas?.[f];
+    return (hasMeta(m) ? (metaParams(m!).model as string | undefined) : undefined) ?? params.model;
+  };
   /** 배율이 내려간 장 수 — ★**누르기 전에** 알린다 (v2 는 큐에 넣고 나서 토스트로 알렸다) */
   const adjusted = sizes ? targets.filter((f) => scaleOf(f) !== scale).length : 0;
   // ★배율 선택지는 대상 **아무나** 쓸 수 있는 것까지 보여 준다. 한 장이면 그 장의 목록 그대로다
@@ -197,7 +203,8 @@ export function EnhanceDialog({
     return anlasCost({
       // ★steps 도 **그 그림의 것**이다 — 요청에 그 값이 나가므로(`metaJob`) 화면 값으로 세면
       //   표시 비용과 실제 청구가 어긋난다 (v2 는 사이드바 steps 로 세어 어긋나 있었다)
-      width: w, height: h, steps: stepsOf(f), opus,
+      // ★모델도 **그 그림의 것**이다 — V5 는 배율이 1.5 라 이걸 빼면 표시가 실제의 2/3 가 된다
+      model: modelOf(f), width: w, height: h, steps: stepsOf(f), opus,
       uncachedVibes: 0, activeVibes: 0, refCount: 0,
       strength: useStrength, count: 1,
     });

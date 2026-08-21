@@ -71,7 +71,9 @@ button:disabled, input:disabled, textarea:disabled {
   cursor: not-allowed;
 }
 
-::selection { background: var(--accent-bg); }
+/* ★전용 토큰을 쓴다 — `--accent-bg`(눌린 상태의 옅은 바탕)로는 거의 안 보였다
+   (사용자 지적 2026-08-21). 글자색은 그대로 두어 칩·강조 글자의 색이 살아 있게 한다. */
+::selection { background: var(--sel-bg); }
 
 /* 스크롤바 — 패널이 많아 기본 스크롤바는 시끄럽다 */
 ::-webkit-scrollbar { width: 10px; height: 10px; }

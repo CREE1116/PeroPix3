@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { flashStyle, useFlash } from "../store/ui";
+import { flashStyle, useFlash, useUi } from "../store/ui";
 import { Icon } from "../components/Icon";
 
 /** 왼쪽 기둥의 **카테고리** — 이름 한 줄과 그 아래 내용. 이름을 누르면 접힌다.
@@ -30,6 +30,7 @@ export function Category({
   right,
   defaultFolded,
   flashKey,
+  flashQuiet,
   spot,
   children,
 }: {
@@ -42,6 +43,11 @@ export function Category({
   /** ★★밖에서 값이 바뀌면 **펴고 강조한다** (사용자 지시 2026-08-19) — 「설정 불러오기」로
    *  옵션이 통째로 갈리는데 접혀 있으면 무엇이 바뀌었는지 알 수가 없다. */
   flashKey?: string;
+  /** ★★**펴 주기만 하고 테두리는 안 그린다.**
+   *  안쪽 항목이 같은 열쇠로 자기를 강조할 때 쓴다 — 둘 다 그리면 바깥 테두리와
+   *  안쪽 테두리가 겹쳐 보인다 (사용자 지적 2026-08-21: 이미지 입력에서 두 개가 떴다).
+   *  강조는 **가장 좁은 자리 하나**가 맡는다. */
+  flashQuiet?: boolean;
   /** ★★**지금 여기로 카드를 끌고 있다** — 묶음 **전체**를 어둠 위로 올린다
    *  (사용자 지적 2026-08-20: *"드롭영역 전체가 밝아져야하는데, 개별 카드만 밝아져"*).
    *  카드마다 올리면 카드 사이 여백이 어두운 채라 자리가 조각조각 보인다. */
@@ -59,7 +65,10 @@ export function Category({
     }
     // ★★강조만으로는 못 본다 — **그 자리로 데려간다** (사용자 지적 2026-08-19: 카드가
     //   바뀌는데 아무 신호가 없었다). `nearest` 라 이미 보이면 화면이 안 흔들린다.
-    box.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    // ★★단 **부르는 쪽이 끌 수 있다** (사용자 지시 2026-08-21) — 설정 불러오기처럼 여러
+    //   자리가 한꺼번에 바뀌면 데려가는 것이 화면이 튀는 것으로만 보인다.
+    if (useUi.getState().flashScroll.includes(flashKey ?? ""))
+      box.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flash]);
   const toggle = () => {
@@ -75,7 +84,7 @@ export function Category({
       style={{
         marginBottom: "var(--sp-5)",
         ...(spot ? { position: "relative" as const, zIndex: 31 } : {}),
-        ...flashStyle(!!flashKey && flash),
+        ...flashStyle(!!flashKey && !flashQuiet && flash),
       }}
     >
       <div

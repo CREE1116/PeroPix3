@@ -231,11 +231,12 @@ export const en = {
     noMeta: "{n} have no saved generation info, so they use the prompt and settings on screen",
   },
 
-  /** Upscale — NAI enlarges 4x (unlike Enhance, nothing is redrawn) */
+  /** Upscale — NAI enlarges it (unlike Enhance, nothing is redrawn).
+   *  ★The scale factor is decided by the server since 2026-08-21. */
   upscale: {
     button: "Upscale",
-    hint: "Enlarges 4x in each direction ({a} Anlas). Nothing is redrawn, so the image stays the same.",
-    tooLarge: "Images larger than 1024×1024 cannot be upscaled.",
+    hint: "Increases the resolution ({a} Anlas). Nothing is redrawn, so the image stays the same.",
+    tooLarge: "Images larger than 3MP cannot be upscaled.",
     done: "Upscaled. Saved as a new image",
   },
 
@@ -248,6 +249,11 @@ export const en = {
     vibeEncode: "Vibe encoding {a} Anlas",
     /** How the cost adds up (v2 `total (per image × N slots × M rounds)`) */
     costPerSlots: "{p} each × {s} scenes × {r}",
+    charLimitHit: "This model allows up to {max} characters.",
+    charLimitClamped: "This model allows up to {max} characters. The last {n} were turned off.",
+    opusUsage: "Opus {p}%",
+    opusUsageHint: "Opus free generations remaining. When it runs out, generations cost Anlas (V5+).",
+    opusRefill: "Refilling {r}%/h - full in {f}",
     anlasRefresh: "Refresh balance",
     /** Over the per image cap, so generation is blocked just like the official site */
     overLimit: "One image costs more than the {a} Anlas cap. Lower the size or steps.",
@@ -362,10 +368,24 @@ export const en = {
     seedRoll: "Draw a new seed",
     seedRandom: "Random",
     misc: "Options",
-    qualityTags: "Add Quality Tags",
+    qualityPreset: "Quality Preset",
+    qpStandard: "Standard",
+    qpLight: "Light",
+    qpNone: "None",
     varietyPlus: "Variety+",
+    transparentBg: "Transparent BG",
+    transparentBgHint: "Adds \"transparent background\" to the prompt and keeps the alpha channel. V5 only.",
   },
 
+  pos: {
+    ai: "AI's choice",
+    aiTip: "Let NAI place the characters (no coordinates are sent)",
+    custom: "Custom",
+    customTip: "Send the positions you set",
+    open: "Open the positioning board — drag each character where it should stand",
+    close: "Close the board (positions are kept)",
+    stacked: "Characters are stacked on the same spot",
+  },
   canvas: {
     hideHint: "Moves to trash (Ctrl+Z undoes; emptied after 24h)",
     starOnly: "Starred only",
@@ -401,6 +421,7 @@ export const en = {
     tokenDeleteBody: "Generation stops working until you enter a token again.",
     bulkWarn: "Generating in bulk for hours on end can get your NovelAI account limited.",
     editing: "Editing",
+    weightHl: "Weight highlight",
     tagSuggest: "Tag autocomplete",
     tagSuggestHint: "Suggests Danbooru tags as you type. With it off, Enter and Esc go back to the block editor.",
     about: "About",
@@ -619,6 +640,7 @@ export const en = {
     close: "Close",
     copy: "Copy",
     copied: "Copied",
+    seedApplied: "Seed {n} applied (and copied)",
   },
 
   ai: {
@@ -682,8 +704,6 @@ export const en = {
     removeCard: "Remove (undo with Ctrl+Z)",
     addScene: "Add scene",
     noneYet: "none yet",
-    prefix: "Prefix",
-    prefixPlaceholder: "prepended to every scene in this card",
     emptyHint: "Empty · drop a scene card here to get scenes",
     unsaved: "Unsaved",
     saveToFile: "Save to file",
@@ -704,8 +724,6 @@ export const en = {
     zoomIn: "Zoom in",
     zoomOut: "Zoom out",
     fit: "Fit",
-    prefixPlaceholder: "Common prompt for every slot in this tab",
-    prefixHint: "Goes in front of every slot's tags (v2 preset prefix)",
     lockAll: "Lock/unlock all",
     lock: "Lock (skip when generating)",
     duplicate: "Duplicate slot",
@@ -772,7 +790,10 @@ export const en = {
     folderNotEmpty: "This folder still has images. Move or delete them first.",
     folders: "Folders",
     all: "All images",
+    toRoot: "Out of folders",
     countImages: "{n} images",
+    dropToKeep: "Drop here to keep",
+    alreadyKept: "Already kept",
     empty: "Nothing kept yet",
     emptyHint: "Open an image large and press Keep in gallery. Kept images stay across workspaces.",
     meta: "Image info",
