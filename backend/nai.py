@@ -399,6 +399,16 @@ UC_PRESET_ID = {
 }
 
 
+def uc_preset_name(model: str, pid: str) -> str:
+    """공홈 `ucPresetId` → **그 모델 목록의 표시이름** (`uc_preset_id` 의 역).
+
+    ★모델마다 목록이 다르므로 이름도 모델로 풀어야 한다 (V4.5 Curated 에는 Furry Focus 가 없다).
+    ★모르는 id 는 마지막(none)의 이름으로 — 없는 프리셋을 켜 두는 것보다 안전하다."""
+    cat = next((c for c, i in UC_PRESET_ID.items() if i == pid), "none")
+    plist = uc_presets(model)
+    return next((name for c, name, _t in plist if c == cat), plist[-1][1])
+
+
 def uc_preset_id(model: str, preset_name: str) -> str:
     """표시이름 → 공홈 `ucPresetId`. 그 모델에 없으면 인덱스와 **같은 폴백**을 탄다."""
     presets = uc_presets(model)

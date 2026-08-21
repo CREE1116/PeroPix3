@@ -1658,6 +1658,37 @@ async def get_file(ws: str, rel: str):
 #   보관함으로 옮겨 가며 남은 자국이라 걷어냈다 (`docs/v2-port-audit.md` F절).
 
 
+def _sent_from_record(ws: str, file: str) -> dict:
+    """그 그림을 뽑을 때 **실제로 보낸 값** — `records.jsonl` 의 `resolved` 에서 찾는다.
+
+    ★★NAI 는 `ucPreset`·`qualityToggle` 을 **null 로 비워** 돌려준다. 그래서 프리셋이
+      무엇이었는지는 그림만 봐서는 알 수 없고, 지금까지는 네거티브 앞에서 본문을 떼어내
+      **짐작**했다 — 사용자 UC 가 마침 Heavy 본문으로 시작하면 안 쓴 프리셋이 Heavy 로 읽혔고,
+      본문을 손대 놓았으면 언제나 None 이 됐다 (사용자 지적 2026-08-21).
+    ★우리 워크스페이스 그림은 보낸 페이로드를 통째로 기록해 두므로 짐작할 이유가 없다.
+      밖에서 가져온 그림에는 기록이 없어 예전처럼 짐작한다."""
+    rec = next(
+        (r for r in reversed(store.records(ws, limit=100000)) if r.get("file") == file),
+        None,
+    )
+    res = (rec or {}).get("resolved") or {}
+    par = res.get("parameters") or {}
+    out: dict = {}
+    m = res.get("model")
+    if isinstance(m, str):
+        out["model"] = nai.base_model(m)
+        # ★프리셋 **이름**은 모델마다 다른 목록에서 나온다 — 그 그림의 모델로 푼다
+        pid = par.get("ucPresetId")
+        if isinstance(pid, str):
+            out["uc_preset"] = nai.uc_preset_name(out["model"], pid)
+    q = par.get("qualityPresetId")
+    if isinstance(q, str):
+        out["quality_preset"] = q
+    if "tag_hint_transparent_background" in par:
+        out["transparent_bg"] = bool(par.get("tag_hint_transparent_background"))
+    return out
+
+
 def _model_from_record(ws: str, file: str) -> str:
     """그 그림을 뽑을 때 쓴 **모델 id** — `records.jsonl` 의 `resolved.model` 에서 찾는다.
 
@@ -1682,12 +1713,12 @@ async def gallery_meta(ws: str, file: str):
     p = store.file_path(ws, file)
     if not p:
         raise HTTPException(404, "not found")
-    m = meta.read(p)
+    # ★★프리셋은 **기록이 정본**이다 (그림에는 null 로 비워져 온다, `_sent_from_record`).
+    sent = _sent_from_record(ws, file)
+    m = meta.read(p, sent)
     # ★그림에 모델 id 가 없을 때만 기록에서 채운다 — 그림이 언제나 정본이다
-    if m is not None and not m.get("nai_model"):
-        found = _model_from_record(ws, file)
-        if found:
-            m["nai_model"] = found
+    if m is not None and not m.get("nai_model") and sent.get("model"):
+        m["nai_model"] = sent["model"]
     return {"file": file, "meta": m}
 
 

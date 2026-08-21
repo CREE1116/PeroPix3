@@ -174,7 +174,30 @@ export function StyleSection({ onThumb }: SectionProps) {
 }
 
 /* ── 캐릭터 섹션 ──────────────────────────────────────────────── */
-export function CharSection({ ch, index, onThumb }: { ch: Char; index: number } & SectionProps) {
+/** 차례를 바꾸는 동안 커서를 따라오는 잔상 — **접힌 그 카드**다.
+ *  ★잔상을 따로 그리지 않는다 (CLAUDE.md: 복제하면 불일치가 계속 생긴다). */
+export function CharGhost({ ch, index }: { ch: Char; index: number }) {
+  const t = useI18n((s) => s.t);
+  const thumb = useThumbView(ch.thumb);
+  return (
+    <SectionCard
+      name={ch.name || t("cards.charN", { n: index + 1 })}
+      gradient={ch.color}
+      thumb={thumb}
+      folded
+      dim={!ch.on}
+    >
+      {null}
+    </SectionCard>
+  );
+}
+
+export function CharSection({
+  ch,
+  index,
+  onThumb,
+  gripProps,
+}: { ch: Char; index: number; gripProps?: React.HTMLAttributes<HTMLElement> } & SectionProps) {
   const t = useI18n((s) => s.t);
   const { updateChar, stackChar, removeChar, renameChar, folded, toggleFold } = usePrompt();
   const startDrag = useDragSource();
@@ -236,6 +259,32 @@ export function CharSection({ ch, index, onThumb }: { ch: Char; index: number } 
         renameTip={t("cards.rename")}
         bannerActions={
           <>
+            {/* ★★차례를 바꾸는 **전용 손잡이** (사용자 지시 2026-08-21). 머리 누르기(접기)·
+                머리 끌기(덱에 저장)와 뜻이 달라 자리를 따로 둔다 — 셋을 한 자리에 얹으면
+                무엇이 될지 알 수 없다 (씬 카드가 같은 이유로 그립을 따로 둔다). */}
+            {gripProps && (
+              // ★`BannerBtn` 을 쓰지 않는다 — 그쪽은 `pointerdown` 을 막고 `onClick` 을
+              //   요구해서 **끌기가 시작되지 않는다.** 생김새만 같게 두고 손잡이로 쓴다.
+              <span
+                data-char-grip={ch.id}
+                data-tip={t("cards.moveChar")}
+                {...gripProps}
+                style={{
+                  display: "grid",
+                  placeItems: "center",
+                  width: 20,
+                  height: 20,
+                  borderRadius: 5,
+                  background: "rgba(0,0,0,0.42)",
+                  color: "#fff",
+                  cursor: "grab",
+                  touchAction: "none",
+                  ...(gripProps.style ?? {}),
+                }}
+              >
+                {Icon.grip}
+              </span>
+            )}
             {/* ★아이콘은 언제나 SVG (CLAUDE.md) — 여기는 `● ○ × ✎` 글자를 쓰고 있었다 */}
             <BannerBtn
               title={ch.on ? t("block.toggleOff") : t("block.toggleOn")}

@@ -127,6 +127,7 @@ export const en = {
     charN: "Character {n}",
     addChar: "+ Character",
     removeChar: "Remove character",
+    moveChar: "Drag to reorder",
     renameChar: "Rename character",
     nextUp: "next",
     stackFront: "Bring to front",

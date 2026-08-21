@@ -3,6 +3,7 @@ import { compileBlocks, makeBlock, type Block } from "../lib/blocks";
 import { t } from "../i18n";
 import { kindColor } from "../cards/kindColor";
 import { nextCenter, type Center } from "../lib/charPos";
+import { moveTo } from "../lib/moveTo";
 // ★모델이 자유 배치를 하는지에 따라 「이 자리가 찼나」의 판정이 다르다 (`charPos`).
 //   `gen` 과 서로 참조하게 되는데, 함수 안에서만 읽으므로 문제가 없다
 //   (`imageInput` ↔ `gen` 이 이미 같은 모양이다).
@@ -109,6 +110,9 @@ type S = {
   dropStack: (id: string, at: number) => void;
   frontStack: (id: string, at: number) => void;
   removeChar: (id: string) => void;
+  /** 인물 차례 바꾸기 — ★차례가 곧 `characterPrompts[]` 의 차례다 (`use_order: true`).
+   *  NAI 는 앞에 온 인물을 먼저 잡으므로 **누가 몇 번째인가가 그림에 남는다.** */
+  moveChar: (from: number, to: number) => void;
   renameChar: (id: string, name: string) => void;
   toggleChar: (id: string) => void;
   /** 배치 판에서 인물을 옮긴다 */
@@ -251,6 +255,17 @@ export const usePrompt = create<S>((set, get) => ({
 
   removeChar(id) {
     set({ chars: get().chars.filter((c) => c.id !== id) });
+    onEdit();
+  },
+
+  /** ★★인물의 **차례를 바꾼다** (사용자 지시 2026-08-21).
+   *  차례가 곧 `characterPrompts[]`·`char_captions[]` 의 차례이고 NAI 가 `use_order: true`
+   *  로 그 차례를 쓰므로(`backend/nai.py`), 그림에 실제로 남는 값이다.
+   *  ★자리 좌표(`center`)는 인물이 들고 다니므로 같이 따라간다 — 옮겼다고 자리가 바뀌지 않는다. */
+  moveChar(from, to) {
+    const chars = moveTo(get().chars, from, to);
+    if (chars === get().chars) return;
+    set({ chars });
     onEdit();
   },
 

@@ -130,6 +130,7 @@ export const ko: Dict = {
     charN: "캐릭터 {n}",
     addChar: "+ 캐릭터",
     removeChar: "캐릭터 제거",
+    moveChar: "끌어서 차례 바꾸기",
     renameChar: "캐릭터 이름 변경",
     nextUp: "다음",
     stackFront: "맨 앞으로",

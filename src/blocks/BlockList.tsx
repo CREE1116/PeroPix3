@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { dupSet, makeBlock, type Block } from "../lib/blocks";
 import { useReorder } from "../lib/useReorder";
+import { moveTo } from "../lib/moveTo";
 import { useTagDrag, type Spot } from "./useTagDrag";
 import { TagDragLayer } from "./TagDragLayer";
 import { BlockRow } from "./BlockRow";
@@ -93,12 +94,7 @@ export function BlockList({
   /** Enter 로 딸려 만들어진 블록들. 비운 채 Esc 로 나가면 도로 거둔다 */
   const auto = useRef(new Set<string>());
 
-  const move = (from: number, to: number) => {
-    const n = blocks.slice();
-    const [moved] = n.splice(from, 1);
-    n.splice(to > from ? to - 1 : to, 0, moved);
-    onChange(n);
-  };
+  const move = (from: number, to: number) => onChange(moveTo(blocks, from, to));
 
   const moveTag = (from: Spot, to: Spot) => {
     const n = blocks.map((b) => ({ ...b, tags: b.tags.slice() }));

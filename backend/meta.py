@@ -256,6 +256,20 @@ def _preset_candidates(model: str) -> list[tuple[str, str]]:
     return out
 
 
+def _strip_named_uc(neg: str, name: str, model: str = "") -> str:
+    """**이름을 알고** 떼어낸다 — 짐작하지 않는다 (`sent` 가 있을 때).
+
+    ★못 찾으면 그대로 둔다. 억지로 떼면 사용자가 적은 네거티브가 잘려 나간다 —
+      프리셋 본문을 손대 놓았거나, 프리셋이 맨 앞이 아닐 수 있다."""
+    neg = neg or ""
+    for cand in sorted(
+        (c for n, c in _preset_candidates(model) if n == name), key=len, reverse=True
+    ):
+        if neg.startswith(cand):
+            return neg[len(cand):].lstrip(", ").lstrip()
+    return neg
+
+
 def _strip_uc_preset(neg: str, model: str = ""):
     """네거티브 앞에서 프리셋 태그를 감지·제거. 매칭되면 (이름, 나머지), 아니면 None."""
     neg = neg or ""
@@ -392,8 +406,18 @@ def kind_of(raw: dict | None, info: dict | None = None) -> str:
     return "custom" if info else ""
 
 
-def normalize(meta: dict | None) -> dict | None:
-    """NAI 원본 + PeroPix 확장 → 내부 형식. `read_raw` 의 결과를 넣는다."""
+def normalize(meta: dict | None, sent: dict | None = None) -> dict | None:
+    """NAI 원본 + PeroPix 확장 → 내부 형식. `read_raw` 의 결과를 넣는다.
+
+    ★★`sent` 는 **그때 실제로 보낸 값**이다 (`records.jsonl` 의 `resolved`).
+      NAI 는 응답 PNG 에 `ucPreset`·`qualityToggle` 을 **`null` 로 비워** 돌려주므로,
+      프리셋이 무엇이었는지는 그림만 봐서는 **알 수 없다.** 그래서 지금까지는 네거티브 앞에서
+      프리셋 본문을 떼어내 **짐작**했는데, 두 갈래로 틀렸다 (사용자 지적 2026-08-21):
+
+        · 프리셋을 안 썼는데 사용자 UC 가 마침 Heavy 본문으로 시작하면 **Heavy 로 읽혔다**
+        · 프리셋 본문을 손대 놓았으면 못 찾아 **언제나 None** 이었다
+
+      기록이 있으면 짐작하지 않는다. 짐작은 밖에서 가져온 그림에만 남는다."""
     if not meta:
         return None
     # ComfyUI 는 규격이 통째로 달라 따로 푼다
@@ -469,10 +493,34 @@ def normalize(meta: dict | None) -> dict | None:
     if prompt:
         prompt = naitext.strip(prompt, _text_chars, _use_coords)
 
+    # ★★**기록이 있으면 짐작하지 않는다** (사용자 지적 2026-08-21: 다른 프리셋으로 뽑았는데
+    #   같은 것이 불러와진다). NAI 가 `ucPreset`·`qualityToggle` 을 null 로 비워 돌려주기
+    #   때문에, 지금까지는 네거티브 앞에서 본문을 떼어내 짐작하는 길밖에 없었다.
+    #   ★떼어내는 것은 여전히 필요하다 — 안 떼면 다시 적용할 때 프리셋이 **두 번** 들어간다.
+    #     다만 **이름을 알고** 그것만 뗀다 (`_strip_named_uc`).
+    sent_uc = (sent or {}).get("uc_preset")
+    sent_q = (sent or {}).get("quality_preset")
+    if sent_uc is not None:
+        uc_preset = sent_uc
+        if uc_preset != "None":
+            negative = _strip_named_uc(negative, uc_preset, nai_model)
+    if sent_q is not None:
+        quality_preset = sent_q
+        quality_tags = quality_preset != "none"
+        transparent_bg = bool((sent or {}).get("transparent_bg", transparent_bg))
+        # 그 프리셋(+투명 배경)의 접미사만 떼어낸다
+        for pat, pid, was_bg in quality_pats:
+            if pid == quality_preset and was_bg == transparent_bg and prompt.endswith(pat):
+                prompt = prompt[: -len(pat)]
+                break
+
     if is_pure_nai:
         # 순수 NAI: 프롬프트 끝의 퀄리티 태그 제거 (안 지우면 Apply 때마다 중복 누적)
-        removed = False
+        #   ★기록이 있으면 위에서 이미 뗐다 — 여기서 또 짐작하지 않는다
+        removed = sent_q is not None
         for pat, pid, was_bg in quality_pats:
+            if removed:
+                break
             if prompt.endswith(pat):
                 prompt = prompt[: -len(pat)]
                 # ★★퀄리티 프리셋과 투명 배경을 **따로** 되살린다 — 붙는 자리가 같을 뿐
@@ -493,11 +541,13 @@ def normalize(meta: dict | None) -> dict | None:
                     break
         if not removed:
             quality_tags = False
-        res = _strip_uc_preset(negative, nai_model)
-        if res:
-            uc_preset, negative = res
-        else:
-            uc_preset = "None"
+        # ★기록이 있으면 위에서 이름을 알고 뗐다 — 짐작은 기록이 없을 때만
+        if sent_uc is None:
+            res = _strip_uc_preset(negative, nai_model)
+            if res:
+                uc_preset, negative = res
+            else:
+                uc_preset = "None"
     else:
         # PeroPix 이미지
         base_neg = ppx.get("base_negative_prompt")
@@ -590,7 +640,7 @@ def normalize(meta: dict | None) -> dict | None:
     }
 
 
-def read(path: Path) -> dict | None:
+def read(path: Path, sent: dict | None = None) -> dict | None:
     """파일 한 장의 내부 형식 메타데이터. 없거나 못 읽으면 None.
 
     ★못 읽는 것은 **정상 경우다** — 밖에서 가져온 그림, 메타데이터를 지운 그림.
@@ -603,7 +653,7 @@ def read(path: Path) -> dict | None:
     except Exception:
         return None
 
-    out = normalize(read_raw(data)) or {}
+    out = normalize(read_raw(data), sent) or {}
     out.setdefault("width", size[0])
     out.setdefault("height", size[1])
     if out.get("width") is None:

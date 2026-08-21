@@ -127,6 +127,7 @@ export const ja: Dict = {
     charN: "キャラクター {n}",
     addChar: "+ キャラクター",
     removeChar: "キャラクターを削除",
+    moveChar: "ドラッグで順番を変更",
     renameChar: "キャラクター名を変更",
     nextUp: "次",
     stackFront: "先頭へ",
