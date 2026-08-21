@@ -144,13 +144,16 @@ export function compileBlock(bl: Block): string {
   return parts.join(", ");
 }
 
-/** 켜진 블록만 이어 붙인다. */
+/** 켜진 블록만 이어 붙인다.
+ *  ★★앞 조각이 **이미 쉼표로 끝나면** 쉼표를 하나 더 붙이지 않는다 (사용자 지적 2026-08-22).
+ *    원문을 그대로 내는 블록(`Block.src`)은 사용자가 친 그대로라 `girl,` 처럼 쉼표로
+ *    끝날 수 있는데, 거기에 `", "` 를 더하면 `girl,, ` 가 된다. */
 export function compileBlocks(blocks: Block[]): string {
   return blocks
     .filter((b) => b.on)
     .map(compileBlock)
     .filter(Boolean)
-    .join(", ");
+    .reduce((acc, part) => (acc ? acc + (/,\s*$/.test(acc) ? " " : ", ") + part : part), "");
 }
 
 /** 씬 칸 하나 = **블록 하나** (사용자 결정 2026-08-20).
@@ -281,7 +284,12 @@ export function caretAfterTag(bl: Block, i: number): { at: number; text: string 
     const spans = parseSpans(bl.src!);
     const next = spans[i + 1];
     if (next) return { at: next.start, text: bl.src! };
-    return { at: bl.src!.length + 2, text: `${bl.src!}, ` };
+    /* ★★마지막 태그면 이어 적을 자리를 만들어 주는데, 원문이 **이미 쉼표로 끝나면**
+       하나 더 붙이지 않는다 (사용자 지적 2026-08-22: `girl,` 로 저장한 뒤 칩을 누를
+       때마다 쉼표가 하나씩 늘었다). 빠진 것만 채운다. */
+    const raw = bl.src!;
+    const tail = /,\s*$/.test(raw) ? (/\s$/.test(raw) ? "" : " ") : ", ";
+    return { at: raw.length + tail.length, text: raw + tail };
   }
   const head = serializeBlock({ ...bl, tags: bl.tags.slice(0, i + 1) });
   const last = i >= bl.tags.length - 1;
