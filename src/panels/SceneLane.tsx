@@ -592,6 +592,31 @@ export function SceneLane() {
             차지하던 자리를 돌려주고, 손이 줄 위에 있는 채로 바로 조절된다.
             ★안내 문구를 두지 않는다 (사용자 지시 2026-08-19) — 휠로 조절되는 것은
               적어 두지 않아도 안다. 지금 크기도 칸을 보면 보인다. */}
+        {/* ★★씬을 **오른쪽으로 보내는** 모드 (사용자 지시 2026-08-22) — 큰 그림과 씬을
+            가운데에서 좌우로 양분한다. 세로로 긴 그림을 크게 보며 뽑기 위한 것이다.
+            ★**글자를 함께 낸다** — 아이콘만 두면 무엇인지 알 수 없고, 실제로 「별표만 보기」를
+              걷을 때 바로 옆이라 **함께 잘려 사라졌다** (사용자 지적 2026-08-22).
+              화면에 글자로 서 있으면 그런 삭제가 눈에 띈다. */}
+        <button
+          data-lane-side={laneSide}
+          onClick={() => useUi.getState().setLaneSide(vert ? "bottom" : "right")}
+          data-tip={t(vert ? "canvas.laneToBottom" : "canvas.laneToRight")}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 3,
+            height: 22,
+            padding: "0 var(--sp-2)",
+            borderRadius: "var(--r-1)",
+            border: `1px solid ${vert ? "var(--accent)" : "transparent"}`,
+            color: vert ? "var(--accent)" : "var(--ink-faint)",
+            fontSize: "var(--text-2xs)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {Icon.grid}
+          {t(vert ? "canvas.laneVert" : "canvas.laneHorz")}
+        </button>
       </div>
 
       <div
