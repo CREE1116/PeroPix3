@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { useGen } from "../store/gen";
 import { usePrompt } from "../store/prompt";
@@ -113,7 +113,19 @@ export function SceneLane() {
     if (f.file && takes.some((r) => r.file === f.file)) return focus.focus(f.cell, f.file);
     focus.focus(f.cell, takes[0]?.file ?? null);
   };
+  /** 손으로 고른 것 — ★실제로 걸리는 것은 아래 `selected` 다 (지금 보는 장이 더해진다) */
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  /** ★★실제로 걸리는 목록 — **지금 보고 있는 장이 언제나 든다** (사용자 지시 2026-08-22).
+   *  손으로 하나만 골라도 「그것과 지금 보는 것」 둘이다. 그래야 견줄 두 장을 한 번에 다룬다.
+   *  ★아직 아무것도 안 골랐으면 **빈 것**이다 — 그냥 보고 있는 것만으로 선택 막대가 뜨면
+   *    큰 그림 아래 줄(`SceneActions`)과 하는 말이 겹친다. */
+  const selected = useMemo(() => {
+    if (!picked.size) return picked;
+    const s = new Set(picked);
+    if (focus.file) s.add(focus.file);
+    return s;
+  }, [picked, focus.file]);
+
   const [expandedId, setExpandedId] = useState<string | null>(null);
   /** ★★펼치면서 **곧장 치려는** 것인가 (사용자 지시 2026-08-19: 한 번 눌러 바로 친다).
    *  씬 칸은 이제 블록이라 펼치면 **칩**이 보인다 — 그런데 요약 글자를 누른 것은 거기서부터
@@ -408,7 +420,7 @@ export function SceneLane() {
       if (e.key === "Delete" || e.key === "Backspace") {
         if (picked.size) {
           e.preventDefault();
-          void deleteFiles([...picked]);
+          void deleteFiles([...selected]);
           setPicked(new Set());
           return;
         }
@@ -445,7 +457,7 @@ export function SceneLane() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [picked, deleteFiles, undoSelection]);
+  }, [picked, selected, deleteFiles, undoSelection]);
 
   if (tab?.kind !== "set") return null;
 
@@ -508,12 +520,29 @@ export function SceneLane() {
   /** 레코드는 만든 차례대로 쌓이므로 **마지막이 최신**이다 (줄은 그것을 뒤집어 왼쪽에 둔다) */
   const dragTake = dragCell ? takesOfCell(dragCell).at(-1) : undefined;
 
-  const pick = (file: string, add: boolean) => {
+  /** 여러 장 고르기 (사용자 지시 2026-08-22).
+   *
+   *      Ctrl(⌘) + 클릭   **하나씩** 넣고 뺀다
+   *      Shift + 클릭     **지금 보고 있는 장부터 누른 장까지** 전부
+   *
+   *  ★범위는 **그 씬 안에서**만 잡는다 — 지금 보는 장이 다른 씬이면 어디서 어디까지인지
+   *    정할 수가 없다. 그때는 누른 것 하나만 넣는다.
+   *  ★차례는 **화면에 보이는 그대로**여야 한다 (`visibleTakes`) — 저장 차례로 세면
+   *    눈에 보이는 사이의 것과 실제로 들어가는 것이 갈린다.
+   *  ★미저장(파일 없는 그림)은 뺀다 — 고른 것에 걸리는 일이 전부 파일 경로를 보낸다. */
+  const pick = (file: string, cellId: string, range: boolean) => {
     const next = new Set(picked);
-    if (!add) {
+    if (!range) {
       next.has(file) ? next.delete(file) : next.add(file);
-    } else if (next.has(file)) next.delete(file);
-    else next.add(file);
+      return setPicked(next);
+    }
+    const list = visibleTakes(cellId).filter((r) => !r.preview).map((r) => r.file);
+    const f = useSceneFocus.getState();
+    const to = list.indexOf(file);
+    const from = f.cell === cellId && f.file ? list.indexOf(f.file) : -1;
+    if (to < 0) return;
+    if (from < 0) next.add(file);
+    else for (let i = Math.min(from, to); i <= Math.max(from, to); i++) next.add(list[i]);
     setPicked(next);
   };
 
@@ -796,7 +825,7 @@ export function SceneLane() {
                 w={w}
                 h={h}
                 focus={focus}
-                picked={picked}
+                picked={selected}
                 onFocus={setFocus}
                 onPick={pick}
                 takes={takesOfCell}
@@ -898,7 +927,7 @@ export function SceneLane() {
       </div>
 
       {/* 고른 것이 있을 때만 뜨는 줄 (멀티 무대의 선택 막대와 같은 자리) */}
-      {picked.size > 0 && (
+      {selected.size > 0 && (
         <div
           data-sel-bar
           style={{
@@ -912,13 +941,13 @@ export function SceneLane() {
             color: "var(--warn)",
           }}
         >
-          <span data-sel-count>{t("slots.picked", { n: picked.size })}</span>
+          <span data-sel-count>{t("slots.picked", { n: selected.size })}</span>
           <span style={{ flex: 1 }} />
           {/* ★고른 것을 **한 번에 강화**한다 (v2 「슬롯 전체 인핸스」). 창이 이미 강화한 것을
               걸러 내고, 못 쓰는 배율은 장마다 낮춘다 (`EnhanceDialog`) */}
           <button
             data-sel-enhance
-            onClick={() => setEnhance([...picked])}
+            onClick={() => setEnhance([...selected])}
             style={{ border: "1px solid currentColor", borderRadius: "var(--r-1)", padding: "1px var(--sp-3)" }}
           >
             {t("enhance.button")}
@@ -926,7 +955,7 @@ export function SceneLane() {
           <button
             data-sel-hide
             onClick={() => {
-              void deleteFiles([...picked]);
+              void deleteFiles([...selected]);
               setPicked(new Set());
             }}
             style={{ border: "1px solid currentColor", borderRadius: "var(--r-1)", padding: "1px var(--sp-3)" }}
@@ -1148,7 +1177,8 @@ type GroupProps = {
   focus: { cell: string; file: string | null };
   picked: Set<string>;
   onFocus: (f: { cell: string; file: string | null }) => void;
-  onPick: (file: string, add: boolean) => void;
+  /** 여러 장 고르기 — `range` 면 **지금 보는 장부터 이 장까지** (`SceneLane` 의 `pick`) */
+  onPick: (file: string, cellId: string, range: boolean) => void;
   takes: (c: Slot) => Rec[];
   queuedOf: (cellId: string) => { id: string }[];
   firstWaiting: string | null;
@@ -1827,7 +1857,8 @@ function SceneRow(
                   // ★미저장은 **여러 장 고르기에서 뺀다.** 고른 것에 걸리는 일(휴지통·강화)이
                   //   전부 파일 경로를 서버로 보내는 것이라, 섞이면 조용히 실패한다.
                   //   버리는 것도 저장하는 것도 큰 그림 아래 줄에서 한다 (`SceneActions`)
-                  if (!un && (e.ctrlKey || e.metaKey || e.shiftKey)) p.onPick(r.file, true);
+                  if (!un && (e.ctrlKey || e.metaKey)) p.onPick(r.file, c.id, false);
+                  else if (!un && e.shiftKey) p.onPick(r.file, c.id, true);
                   else p.onFocus({ cell: c.id, file: r.file });
                 };
                 if (un) return tap();
