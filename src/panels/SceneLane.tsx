@@ -1178,11 +1178,20 @@ function CardGroup(p: GroupProps) {
             /* ★★폭은 **줄 머리와 같은 값**이어야 한다 (사용자 지적 2026-08-19).
                상수 302 로 박혀 있었는데 줄 머리는 사용자가 끄는 값이라(`laneHeadW`, 기본 286),
                그림이 끝나는 자리와 아래 줄들의 경계가 어긋나 **가운데서 잘린 것처럼** 보였다.
-               ★세로 모드에서는 카드가 가로로 안 굴러가므로 붙들 필요가 없다 — 폭을 다 쓴다. */
-            ...(p.vert ? { width: "100%" } : { position: "sticky" as const, left: 0, width: p.headw }),
+               ★세로 모드에서는 카드가 가로로 안 굴러가므로 붙들 필요가 없다 — 폭을 다 쓴다.
+               ★★다만 **`position` 을 없애면 안 된다** (사용자 지적 2026-08-22: 배너가 화면
+                 오른쪽을 통째로 덮었다). 안쪽 그림이 `position:absolute; inset:0` 이라
+                 **여기가 그 기준**인데, `static` 이 되면 기준을 저 위 상자(`boxRef`,
+                 `position:relative`)에서 찾아 줄 전체로 퍼진다. 붙들지 않되 기준은 남긴다. */
+            ...(p.vert
+              ? { position: "relative" as const, width: "100%" }
+              : { position: "sticky" as const, left: 0, width: p.headw }),
             height: HEAD_H,
             overflow: "hidden",
-            borderRadius: p.folded ? "11px 0 0 11px" : "11px 0 0 0",
+            // ★세로 모드에서는 배너가 카드 **위**에 눕는다 — 둥근 모서리도 위 두 곳이다
+            borderRadius: p.vert
+              ? (p.folded ? "11px" : "11px 11px 0 0")
+              : (p.folded ? "11px 0 0 11px" : "11px 0 0 0"),
           }}
         >
           {/* ★★그림은 **끝까지 이어진다** (사용자 지적 2026-08-16).
