@@ -2,7 +2,134 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useGen, modelCaps } from "../store/gen";
 import { usePrompt } from "../store/prompt";
 import { useImageInput } from "../store/imageInput";
+import { useUi } from "../store/ui";
+import { useI18n } from "../i18n";
+import { Icon } from "../components/Icon";
 import { crowded, snapCenter, toCenter, CENTER_GRID, type Center } from "../lib/charPos";
+
+/** 배치와 관련된 화면이 **모두 같은 판정을 본다** — 세 곳에서 따로 세면 어긋난다.
+ *
+ *  ★공홈은 인물이 하나뿐일 때 배치를 여는 조건으로 `canPositionOneCharacter` 를 따로 두는데,
+ *    번들의 **모델 일곱 군을 전수로 대조하니 `freeformCharacterPosition` 과 언제나 같았다**
+ *    (2026-08-21). 값이 하나면 표도 하나다 — 두 번째 플래그를 만들지 않는다.
+ */
+function usePositioning() {
+  const model = useGen((s) => s.params.model);
+  const useCoords = useGen((s) => s.params.use_coords);
+  const positioning = useUi((u) => u.positioning);
+  const setPositioning = useUi((u) => u.setPositioning);
+  const allChars = usePrompt((s) => s.chars);
+  /* ★★셀렉터 안에서 **새 배열·객체를 만들지 말 것** — zustand v5 는 `Object.is` 로 비교해서
+     매 렌더 다른 값이 되고, React 가 「getSnapshot 이 캐시되지 않았다」로 죽는다
+     (실측 2026-08-21: `.map(c => c.center)` 를 셀렉터에 넣었다가 **화면이 통째로 안 떴다**).
+     스토어에서는 참조가 안 바뀌는 것만 꺼내고, 가공은 `useMemo` 로 한다. */
+  const centers = useMemo(() => allChars.filter((c) => c.on).map((c) => c.center), [allChars]);
+  const freeform = modelCaps(model).freeform_position;
+  const canPosition = centers.length >= 2 || (centers.length === 1 && freeform);
+  return { useCoords, positioning, setPositioning, centers, freeform, canPosition };
+}
+
+/** 좌표를 쓰는 방식 2택 + 판 여닫기 — **캐릭터 프롬프트 카테고리 이름 줄 오른쪽**에 선다
+ *  (사용자 지시 2026-08-21). 공홈도 캐릭터 프롬프트 패널에 둔다 (`dg()` 의 `sR` 세그먼트).
+ *
+ *  ★★2택을 아이콘 하나로 줄이지 말 것 — **좌표를 다시 끄는 창구가 사라진다.**
+ *    판을 닫아도 좌표는 켜진 채라, AI 배치로 돌아갈 방법이 없어진다.
+ *  ★판 여닫기 아이콘을 누르면 좌표를 켜면서 연다 (공홈 `i.use_coords||n({...}); g(!p)`). */
+export function CharPositionToggle() {
+  const tr = useI18n((s) => s.t);
+  const { useCoords, positioning, setPositioning, canPosition } = usePositioning();
+  const set = useGen((s) => s.set);
+  if (!canPosition) return null;
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "stretch",
+        borderRadius: "var(--r-2)",
+        border: "1px solid var(--line)",
+        overflow: "hidden",
+        fontSize: "var(--text-2xs)",
+        fontWeight: "var(--w-normal)",
+      }}
+    >
+      <button
+        data-position-mode="ai"
+        onClick={() => set("use_coords", false)}
+        data-tip={tr("pos.aiTip")}
+        style={{ ...segBtn, ...(useCoords ? null : segOn) }}
+      >
+        {tr("pos.ai")}
+      </button>
+      <button
+        data-position-mode="custom"
+        onClick={() => set("use_coords", true)}
+        data-tip={tr("pos.customTip")}
+        style={{ ...segBtn, ...(useCoords ? segOn : null), borderLeft: "1px solid var(--line)" }}
+      >
+        {tr("pos.custom")}
+      </button>
+      <button
+        data-position-toggle={positioning ? "on" : "off"}
+        onClick={() => {
+          if (!useCoords) set("use_coords", true);
+          setPositioning(!positioning);
+        }}
+        data-tip={positioning ? tr("pos.close") : tr("pos.open")}
+        style={{ ...segBtn, ...(positioning ? segOn : null), borderLeft: "1px solid var(--line)", padding: "3px var(--sp-2)" }}
+      >
+        {Icon.grid}
+      </button>
+    </span>
+  );
+}
+
+const segBtn: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 4,
+  border: "none",
+  background: "transparent",
+  padding: "3px var(--sp-3)",
+  color: "var(--ink-soft)",
+  fontSize: "inherit",
+  cursor: "pointer",
+};
+const segOn: React.CSSProperties = { background: "var(--accent)", color: "var(--accent-on)" };
+
+/** 겹쳐 선 인물 경고 (공홈 `dp()`) — 캐릭터 프롬프트 **안**에 한 줄로 선다.
+ *  ★**판을 닫고 있을 때만** 낸다. 판이 열려 있으면 마커가 이미 경고 색이라 같은 말을 두 번 한다.
+ *  ★좌표를 안 쓰면 겹쳐도 상관없다. */
+export function CharStackedWarning() {
+  const tr = useI18n((s) => s.t);
+  const { useCoords, positioning, centers, freeform, canPosition } = usePositioning();
+  const stacked = freeform
+    ? crowded(centers).size > 0
+    : centers.some((a, i) =>
+        centers.some((b, j) => {
+          if (i === j) return false;
+          const p = snapCenter(a);
+          const q = snapCenter(b);
+          return p.x === q.x && p.y === q.y;
+        }),
+      );
+  if (!canPosition || !useCoords || positioning || !stacked) return null;
+  return (
+    <div
+      data-stacked-warning
+      style={{
+        margin: "0 0 var(--sp-3)",
+        padding: "3px var(--sp-3)",
+        borderRadius: "var(--r-2)",
+        background: "var(--warn)",
+        color: "var(--accent-on)",
+        fontSize: "var(--text-2xs)",
+      }}
+    >
+      {tr("pos.stacked")}
+    </div>
+  );
+}
 
 /** 캐릭터 배치 판 — 큰 그림 위에 겹쳐 인물이 설 자리를 정한다.
  *
@@ -29,6 +156,7 @@ export function CharPositioner() {
   const setCenter = usePrompt((s) => s.setCenter);
   const baseImage = useImageInput((s) => s.baseImage);
   const [picked, setPicked] = useState(0);
+  const { canPosition, setPositioning } = usePositioning();
 
   const freeform = modelCaps(params.model).freeform_position;
   /** 화면에 서는 인물만 — 꺼 둔 인물은 나가지 않으므로 자리도 없다 */
@@ -37,6 +165,15 @@ export function CharPositioner() {
   useEffect(() => {
     if (picked > live.length - 1) setPicked(Math.max(0, live.length - 1));
   }, [live.length, picked]);
+
+  /* ★★판은 **스스로 닫힌다** (공홈 `sk()` 를 감싸는 두 `useEffect` 와 같다):
+       · 인물이 모자라면 — 판에 세울 사람이 없다
+       · 좌표를 끄면 — 「AI 에게 맡김」인데 판이 열려 있으면 무엇이 먹는지 알 수 없다
+     ★이 검사를 **바깥(토글이나 캔버스)에 두지 말 것.** 판이 닫혀 있을 때는 할 일이
+       없는 검사라, 판과 생사를 같이하는 여기가 유일하게 빠짐없이 도는 자리다. */
+  useEffect(() => {
+    if (!canPosition || !params.use_coords) setPositioning(false);
+  }, [canPosition, params.use_coords, setPositioning]);
 
   /** 자리를 찍으면 좌표를 **켠다** — 끈 채로 옮기면 아무 일도 안 일어난다 (공홈 `p()`) */
   const place = (i: number, at: Center) => {

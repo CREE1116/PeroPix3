@@ -8,6 +8,7 @@ import { BlockLibButton } from "../blocks/BlockDrawer";
 import { WildcardButton } from "./WildcardModal";
 import { OptionsPanel } from "./OptionsPanel";
 import { Category } from "./Category";
+import { CharPositionToggle, CharStackedWarning } from "./CharPositioner";
 import { useDrag } from "../cards/dragStore";
 
 /** 좌측 패널 — 카드형 섹션 안에 블록 시퀀스.
@@ -51,7 +52,16 @@ export function PromptPanel({ onThumb }: SectionProps) {
           <StyleSection onThumb={onThumb} />
         </Category>
 
-        <Category id="p-char" label={t("prompt.charBox")} flashKey="prompt" spot={dragKind === "characters" || dragImg}>
+        <Category
+          id="p-char"
+          label={t("prompt.charBox")}
+          flashKey="prompt"
+          spot={dragKind === "characters" || dragImg}
+          /* ★좌표 2택은 **여기** 선다 (사용자 지시 2026-08-21) — 공홈도 캐릭터 프롬프트
+             패널에 둔다 (`dg()`). 판 자체는 큰 그림 위에 겹친다 (`Canvas` 의 `ScenePreview`). */
+          right={<CharPositionToggle />}
+        >
+          <CharStackedWarning />
           {chars.map((ch, i) => (
             <CharSection key={ch.id} ch={ch} index={i} onThumb={onThumb} />
           ))}
