@@ -93,6 +93,10 @@ type Persisted = {
    *  `right` 는 **세로 모드** — 큰 그림과 씬을 가운데에서 좌우로 양분한다. 세로로 긴 그림을
    *  뽑을 때 아래에 줄이 누우면 그림이 그만큼 작아지는데, 옆으로 보내면 높이를 다 쓴다. */
   laneSide: "bottom" | "right";
+  /** 세로 모드에서 **씬 머리의 높이** — 아래 모드의 `laneHeadW`(폭)에 해당한다.
+   *  ★값을 같이 쓰지 않는다: 폭과 높이는 다른 것이라, 한 모드에서 끌면 다른 모드가
+   *    엉뚱하게 두꺼워진다 (한 창구가 두 가지를 뜻하게 된다). */
+  laneHeadH: number;
   /** 세로 모드일 때 씬 쪽의 폭 (`bottom` 일 때의 `laneHeight` 에 해당) */
   laneWidth: number;
 };
@@ -124,6 +128,7 @@ const DEFAULTS: Persisted = {
   sizeLast: { landscape: [1216, 832], portrait: [832, 1216], square: [1024, 1024] },
   laneSide: "bottom",
   laneWidth: 420,
+  laneHeadH: 132,
 };
 
 export const COLS_MIN = 1;
@@ -177,6 +182,7 @@ type S = Persisted & {
   /** 그 방향에서 마지막에 고른 크기를 적어 둔다 */
   setSizeLast: (dir: "landscape" | "portrait" | "square", wh: [number, number]) => void;
   setLaneSide: (v: "bottom" | "right") => void;
+  setLaneHeadH: (n: number) => void;
   setLaneWidth: (n: number) => void;
   setFont: (f: FontId) => void;
   /** 설정 창 — 열려 있으면 그 탭, 닫혀 있으면 null.
@@ -228,6 +234,8 @@ export const useUi = create<S>((set, get) => ({
   setLaneHeight: (n) => set({ laneHeight: Math.max(84, Math.round(n)) }),
   // ★세로 모드의 씬 폭 — 너무 좁으면 씬 머리(프롬프트)가 안 들어간다 (`HEAD_MIN` 150)
   setLaneWidth: (n) => set({ laneWidth: Math.max(220, Math.round(n)) }),
+  // 세로 모드의 머리 높이 — 프롬프트 칩 한두 줄이 들어갈 만큼은 있어야 한다
+  setLaneHeadH: (n) => set({ laneHeadH: Math.min(420, Math.max(72, Math.round(n))) }),
   setLaneSide: (v) => {
     set({ laneSide: v });
     get().commitLayout();
@@ -336,7 +344,7 @@ export const useUi = create<S>((set, get) => ({
       laneHeight, font, aiWidth, aiCollapsed,
       notifyDone, notifySound, notifyVolume, perSlot, curated,
       tagSuggest, weightHl, fmView, convertOpenFolder, enhanceLast, sizeLast,
-      laneSide, laneWidth } = get();
+      laneSide, laneWidth, laneHeadH } = get();
     try {
       localStorage.setItem(
         KEY,
@@ -365,6 +373,7 @@ export const useUi = create<S>((set, get) => ({
           sizeLast,
           laneSide,
           laneWidth,
+          laneHeadH,
         }),
       );
     } catch {}

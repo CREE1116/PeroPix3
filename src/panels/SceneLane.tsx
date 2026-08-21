@@ -56,12 +56,23 @@ export function SceneLane() {
   //   「생성 중」이 영영 안 뜬다 (사용자 지적 2026-08-14)
   const progress = useQueue((s) => s.progress);
   const laneSize = useUi((u) => u.laneSize);
-  const headw = useUi((u) => u.laneHeadW);
   /** ★「별표만 보기」 — 옛 싱글 캔버스에 있던 보기 전환이 여기로 왔다 (사용자 지시 2026-08-18).
    *  탭 전체를 거르는 것이라 씬마다 두지 않고 줄 머리에 하나만 둔다. */
   const starOnly = useUi((u) => u.laneStarOnly);
   /** 씬을 아래에 두나 오른쪽에 두나 — 무대를 그리는 것은 `Canvas`, 켜고 끄는 것은 여기다 */
   const laneSide = useUi((u) => u.laneSide);
+  /** ★★**세로 모드에서는 줄이 통째로 90° 돈다** (사용자 지시 2026-08-22).
+   *
+   *    아래에 있을 때   씬은 세로로 쌓이고, 한 씬의 장들이 **가로로** 흐른다
+   *    오른쪽에 있을 때 씬은 **세로 기둥**이 되어 **오른쪽으로** 늘어서고, 장들이 아래로 쌓인다
+   *
+   *  ★세로용 컴포넌트를 따로 만들지 않는다 — 같은 것에 **축만 넘긴다**(`vert`). 두 벌이면
+   *    고칠 때마다 맞춰야 하고, 한쪽만 고쳐진 채로 남는다.
+   *  ★머리 크기는 **모드마다 따로 기억한다** (`laneHeadW` 폭 · `laneHeadH` 높이) — 한 값을
+   *    나눠 쓰면 한쪽에서 끈 것이 다른 쪽을 엉뚱하게 두껍게 만든다. */
+  const vert = laneSide === "right";
+  /** 씬 머리의 **그 축 크기** — 아래 모드면 폭, 세로 모드면 높이 */
+  const headw = useUi((u) => (vert ? u.laneHeadH : u.laneHeadW));
   /** 미저장 그림 — ★저장된 것과 **같은 목록**에 얹는다 (`store/previews.ts`) */
   const previews = usePreviews((s) => s.items);
   const startDrag = useDragSource();
@@ -142,7 +153,7 @@ export function SceneLane() {
   const boxRef = useRef<HTMLDivElement>(null);
   /** ★보이는 자리만 그리려고 재 두는 값 (사용자 지시 2026-08-14).
    *  칸이 560px 까지 커지고 한 줄에 수십 장이 붙으므로, 다 그리면 화면이 무거워진다. */
-  const [view, setView] = useState({ x: 0, w: 0 });
+  const [view, setView] = useState({ x: 0, w: 0 });   // x = 그 축의 스크롤, w = 그 축의 보이는 길이
   /** 머리 폭 손잡이를 잡은 자리 */
   const grip = useRef<{ x: number; w: number } | null>(null);
 
@@ -152,6 +163,7 @@ export function SceneLane() {
   const tabIdNow = tab?.id;
   const lane = useLaneReorder({
     scrollRef,
+    vert,
     onMoveScene: (cellId, cardId, index) => {
       if (tabIdNow) moveScene(tabIdNow, cellId, cardId, index);
     },
@@ -167,9 +179,9 @@ export function SceneLane() {
     let raf = 0;
     const measure = () => {
       raf = 0;
-      setView((v) =>
-        v.x === el.scrollLeft && v.w === el.clientWidth ? v : { x: el.scrollLeft, w: el.clientWidth },
-      );
+      const x = vert ? el.scrollTop : el.scrollLeft;
+      const w = vert ? el.clientHeight : el.clientWidth;
+      setView((v) => (v.x === x && v.w === w ? v : { x, w }));
     };
     const onScroll = () => { if (!raf) raf = requestAnimationFrame(measure); };
     measure();
@@ -181,7 +193,7 @@ export function SceneLane() {
       ro.disconnect();
       if (raf) cancelAnimationFrame(raf);
     };
-  }, []);
+  }, [vert]);
 
   /** ★슬롯 자리를 잡아 **좌우로 끈다** (사용자 지시 2026-08-14).
    *
@@ -298,6 +310,8 @@ export function SceneLane() {
       }
       // 이미 가로로 굴리고 있으면(터치패드·Shift) 브라우저에 맡긴다
       if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      // ★★세로 모드에서는 장이 **세로로** 쌓이므로 위아래가 곧 그 방향이다 — 가로채지 않는다
+      if (vert) return;
       const t = e.target as HTMLElement | null;
       if (!t?.closest?.("[data-scene-takes]")) return;
       // ★가로로 넘칠 것이 없으면 **가로채지 않는다** — 안 그러면 그림이 몇 장 없을 때
@@ -308,7 +322,7 @@ export function SceneLane() {
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+  }, [vert]);
 
   /** ★★**고른 장은 언제나 보인다** (사용자 지시 2026-08-21).
    *
@@ -328,21 +342,33 @@ export function SceneLane() {
     const waiting = pending.filter((p) => p.tabId === tab?.id && p.cellId === focusCell).length;
     const cw = Math.min(LANE_MAX, Math.max(LANE_MIN, laneSize));
     const step = cw + GAP;
-    const left = headw + 8 + (waiting + at) * step;
+    const lead = headw + 8 + (waiting + at) * step;
 
-    // 가로 — 줄 머리에 가리지도, 오른쪽으로 넘치지도 않게
-    if (left < el.scrollLeft + headw) el.scrollLeft = left - headw - 8;
-    else if (left + cw > el.scrollLeft + el.clientWidth) el.scrollLeft = left + cw - el.clientWidth + 8;
+    // ★장이 늘어서는 축 — 줄 머리에 가리지도, 끝으로 넘치지도 않게
+    const pos = vert ? el.scrollTop : el.scrollLeft;
+    const size = vert ? el.clientHeight : el.clientWidth;
+    let next = pos;
+    if (lead < pos + headw) next = lead - headw - 8;
+    else if (lead + cw > pos + size) next = lead + cw - size + 8;
+    if (next !== pos) {
+      if (vert) el.scrollTop = next;
+      else el.scrollLeft = next;
+    }
 
-    // 세로 — 그 줄이 화면 밖이면 끌어온다
+    // ★씬이 늘어서는 축 — 그 씬이 화면 밖이면 끌어온다 (씬 자체는 언제나 그려진다)
     const row = el.querySelector<HTMLElement>(`[data-scene="${CSS.escape(focusCell)}"]`);
     if (row) {
       const r = row.getBoundingClientRect();
       const b = el.getBoundingClientRect();
-      if (r.top < b.top) el.scrollTop -= b.top - r.top;
-      else if (r.bottom > b.bottom) el.scrollTop += r.bottom - b.bottom;
+      if (vert) {
+        if (r.left < b.left) el.scrollLeft -= b.left - r.left;
+        else if (r.right > b.right) el.scrollLeft += r.right - b.right;
+      } else {
+        if (r.top < b.top) el.scrollTop -= b.top - r.top;
+        else if (r.bottom > b.bottom) el.scrollTop += r.bottom - b.bottom;
+      }
     }
-  }, [focusCell, focusFile, headw, laneSize, pending, tab?.id]);
+  }, [focusCell, focusFile, headw, laneSize, pending, tab?.id, vert]);
 
   // 탭을 옮기면 고른 것을 놓는다 — 다른 탭의 파일을 고른 채로 두면 안 된다
   const tabId = tab?.id;
@@ -616,22 +642,31 @@ export function SceneLane() {
           ...(setDrop.active ? { zIndex: 31, background: "var(--bg)" } : {}),
         }}
       >
-      {/* ★줄 머리 폭 손잡이. 머리는 왼쪽에 붙어 있으므로(sticky left:0) 손잡이는
-          스크롤과 무관하게 늘 같은 자리에 선다 */}
+      {/* ★줄 머리 크기 손잡이. 머리는 시작 쪽에 붙어 있으므로(sticky) 손잡이는
+          스크롤과 무관하게 늘 같은 자리에 선다.
+          ★세로 모드에서는 머리가 **위**에 있으므로 손잡이도 가로로 눕고 위아래로 끈다. */}
       <div
-        data-head-grip
+        data-head-grip={vert ? "row" : "col"}
         onPointerDown={(e) => {
           (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-          grip.current = { x: e.clientX, w: headw };
+          grip.current = { x: vert ? e.clientY : e.clientX, w: headw };
         }}
         onPointerMove={(e) => {
           const g = grip.current;
           if (!g) return;
-          useUi.getState().setLaneHeadW(g.w + (e.clientX - g.x));
+          const next = g.w + ((vert ? e.clientY : e.clientX) - g.x);
+          if (vert) useUi.getState().setLaneHeadH(next);
+          else useUi.getState().setLaneHeadW(next);
         }}
         onPointerUp={() => { grip.current = null; useUi.getState().commitLayout(); }}
         onPointerCancel={() => { grip.current = null; }}
-        style={{ position: "absolute", left: headw - 3, top: 0, bottom: 0, width: 7, zIndex: 6, cursor: "col-resize" }}
+        style={{
+          position: "absolute",
+          zIndex: 6,
+          ...(vert
+            ? { top: headw - 3, left: 0, right: 0, height: 7, cursor: "row-resize" }
+            : { left: headw - 3, top: 0, bottom: 0, width: 7, cursor: "col-resize" }),
+        }}
       />
       {/* ★★씬 세트 카드는 **이 줄이 받는다** (사용자 지시 2026-08-19).
           예전에는 캔버스에 고정 크기 판을 띄웠는데, 씬이 사는 자리와 다른 데다 받는 넓이가
@@ -661,15 +696,23 @@ export function SceneLane() {
         {!tab.cards.length ? (
           <Empty onAdd={() => addCard(tab.id)} />
         ) : (
-          <div style={{ width: "max-content", minWidth: "100%" }}>
+          <div
+            style={
+              // ★세로 모드에서는 카드가 **오른쪽으로** 늘어선다 (씬 기둥이 그 안에 선다)
+              vert
+                ? { height: "max-content", minHeight: "100%", display: "flex", alignItems: "stretch" }
+                : { width: "max-content", minWidth: "100%" }
+            }
+          >
             {/* ★눈금 줄(1·2·3…)을 걷었다 (사용자 지시 2026-08-19) — 몇 번째 장인지는
                 세어서 쓸 일이 없고, 줄마다 자리를 하나씩 먹고 있었다. */}
             {tab.cards.map((card, ci) => (
               <Fragment key={card.id}>
               {/* ★카드를 끌 때 놓일 자리 — **레이아웃을 안 밀도록** 높이 0 위에 띄운다
                   (CLAUDE.md: 칸 사이에 끼워 넣으면 방금 잰 좌표가 어긋난다) */}
-              <DropLine on={lane.drop?.kind === "card" && lane.drop.index === ci} />
+              <DropLine on={lane.drop?.kind === "card" && lane.drop.index === ci} vert={vert} />
               <CardGroup
+                vert={vert}
                 card={card}
                 tabId={tab.id}
                 offset={offsets[ci]}
@@ -731,15 +774,21 @@ export function SceneLane() {
               </Fragment>
             ))}
             {/* 맨 끝에 놓을 때 */}
-            <DropLine on={lane.drop?.kind === "card" && lane.drop.index === tab.cards.length} />
+            <DropLine on={lane.drop?.kind === "card" && lane.drop.index === tab.cards.length} vert={vert} />
 
-            <div style={{ borderTop: "1px dashed var(--line)", minWidth: "100%" }}>
+            {/* ★세로 모드에서는 카드가 오른쪽으로 늘어서므로 「카드 추가」도 **맨 오른쪽 기둥**이다 */}
+            <div
+              style={
+                vert
+                  ? { borderLeft: "1px dashed var(--line)", minHeight: "100%", flexShrink: 0, display: "flex" }
+                  : { borderTop: "1px dashed var(--line)", minWidth: "100%" }
+              }
+            >
               <button
                 data-add-card
                 onClick={() => addCard(tab.id)}
                 style={{
-                  position: "sticky",
-                  left: 0,
+                  ...(vert ? null : { position: "sticky" as const, left: 0 }),
                   display: "inline-flex",
                   alignItems: "center",
                   gap: "var(--sp-2)",
@@ -924,20 +973,24 @@ export function takeSrc(r: Rec, base: string, ws: string, thumb: boolean): strin
 
 /** 끼울 자리 표시 — ★**높이 0 위에 띄운다.** 칸 사이에 실제로 끼워 넣으면 레이아웃이 밀려
  *  방금 잰 좌표가 어긋난다 (CLAUDE.md 의 칩 드래그 규칙과 같은 이유). */
-function DropLine({ on }: { on: boolean }) {
+function DropLine({ on, vert = false }: { on: boolean; vert?: boolean }) {
   return (
-    <div style={{ position: "relative", height: 0, minWidth: "100%", zIndex: 5 }}>
+    <div
+      style={{
+        position: "relative",
+        zIndex: 5,
+        // ★자리를 안 차지해야 방금 잰 좌표가 안 어긋난다 (CLAUDE.md) — 그 축으로 0 이다
+        ...(vert ? { width: 0, minHeight: "100%" } : { height: 0, minWidth: "100%" }),
+      }}
+    >
       {on && (
         <div
           data-drop-line
           style={{
             position: "absolute",
-            left: 0,
-            right: 0,
-            top: -1,
-            height: 2,
             borderRadius: 1,
             background: "var(--accent)",
+            ...(vert ? { top: 0, bottom: 0, left: -1, width: 2 } : { left: 0, right: 0, top: -1, height: 2 }),
           }}
         />
       )}
@@ -988,6 +1041,8 @@ function Empty({ onAdd }: { onAdd: () => void }) {
 }
 
 type GroupProps = {
+  /** 세로 모드인가 — 씬이 세로 기둥이 되어 오른쪽으로 늘어선다 (`SceneLane` 의 ★★주) */
+  vert: boolean;
   card: SceneCard;
   /** 이 카드가 든 탭 — 머리에 건 그림을 어디에 적을지 (`askThumb`) */
   tabId: string;
@@ -1082,11 +1137,14 @@ function CardGroup(p: GroupProps) {
     <div
       data-scene-card={p.card.id}
       style={{
-        minWidth: "100%",
+        // ★세로 모드에서는 카드가 **세로로 꽉 차고** 폭은 안에 든 기둥만큼이다
+        ...(p.vert
+          ? { minHeight: "100%", display: "flex", flexDirection: "column", flexShrink: 0 }
+          : { minWidth: "100%" }),
         /* ★위아래로 **숨 쉴 자리**를 둔다 (사용자 지시 2026-08-20: 씬 머리줄과 카드가
            딱 붙어 있었다). 카드는 둥근 상자라, 붙어 있으면 머리줄의 선과 모서리가
            한 덩어리로 읽힌다. */
-        margin: "var(--sp-2) 0 var(--sp-4)",
+        margin: p.vert ? "var(--sp-2) var(--sp-4) var(--sp-2) 0" : "var(--sp-2) 0 var(--sp-4)",
         border: "1px solid var(--line)",
         borderRadius: "var(--r-4)",
         background: "var(--surface)",
@@ -1104,7 +1162,8 @@ function CardGroup(p: GroupProps) {
         }}
         style={{
           cursor: "grab",
-          minWidth: "100%",
+          // ★세로 모드에서는 카드가 세로 기둥이라 배너가 그 **폭**을 다 쓴다
+          ...(p.vert ? { width: "100%", flexShrink: 0 } : { minWidth: "100%" }),
           // ★높이를 절반으로 (사용자 지적 2026-08-16: 56 은 너무 두꺼웠다)
           height: HEAD_H,
           background: BANNER_BG,
@@ -1116,12 +1175,11 @@ function CardGroup(p: GroupProps) {
       >
         <div
           style={{
-            position: "sticky",
-            left: 0,
             /* ★★폭은 **줄 머리와 같은 값**이어야 한다 (사용자 지적 2026-08-19).
                상수 302 로 박혀 있었는데 줄 머리는 사용자가 끄는 값이라(`laneHeadW`, 기본 286),
-               그림이 끝나는 자리와 아래 줄들의 경계가 어긋나 **가운데서 잘린 것처럼** 보였다. */
-            width: p.headw,
+               그림이 끝나는 자리와 아래 줄들의 경계가 어긋나 **가운데서 잘린 것처럼** 보였다.
+               ★세로 모드에서는 카드가 가로로 안 굴러가므로 붙들 필요가 없다 — 폭을 다 쓴다. */
+            ...(p.vert ? { width: "100%" } : { position: "sticky" as const, left: 0, width: p.headw }),
             height: HEAD_H,
             overflow: "hidden",
             borderRadius: p.folded ? "11px 0 0 11px" : "11px 0 0 0",
@@ -1280,19 +1338,33 @@ function CardGroup(p: GroupProps) {
       {/* ★공통 접두는 **걷었다** (사용자 지시 2026-08-21). 프롬프트에 실려 나가는 값이
           카드 머리에 한 줄로만 보여서, 어느 씬에 무엇이 붙는지 화면에서 따라가기 어려웠다.
           같은 것을 붙이려면 **베이스 프롬프트의 블록**을 쓴다 (창구가 하나가 된다). */}
-      {p.card.cells.map((c, i) => (
-        <Fragment key={c.id}>
-          <DropLine on={sceneAt === i} />
-          <SceneRow {...p} cell={c} index={i} grip={p.gripOf("scene", c.id)} />
-        </Fragment>
-      ))}
-      <div style={{ borderTop: "1px dashed var(--line)", minWidth: "100%" }}>
+      {/* ★세로 모드에서는 씬이 **오른쪽으로** 늘어선다 (기둥 하나가 씬 하나) */}
+      <div
+        style={
+          p.vert
+            ? { flex: 1, minHeight: 0, display: "flex", alignItems: "stretch" }
+            : undefined
+        }
+      >
+        {p.card.cells.map((c, i) => (
+          <Fragment key={c.id}>
+            <DropLine on={sceneAt === i} vert={p.vert} />
+            <SceneRow {...p} cell={c} index={i} grip={p.gripOf("scene", c.id)} />
+          </Fragment>
+        ))}
+      </div>
+      <div
+        style={{
+          borderTop: "1px dashed var(--line)",
+          ...(p.vert ? { width: "100%", flexShrink: 0 } : { minWidth: "100%" }),
+        }}
+      >
         <button
           data-add-scene={p.card.id}
           onClick={p.onAddScene}
           style={{
-            position: "sticky",
-            left: 0,
+            // ★세로 모드에서는 카드가 가로로 안 굴러가므로 붙들 필요가 없다
+            ...(p.vert ? null : { position: "sticky" as const, left: 0 }),
             display: "inline-flex",
             alignItems: "center",
             gap: "var(--sp-2)",
@@ -1340,7 +1412,8 @@ function SceneRow(
   const takes = [...p.takes(c)].sort(newestFirst);
   const waits = [...p.queuedOf(c.id)].reverse();
   /** 보이는 구간의 칸 번호. 앞뒤로 2칸씩 더 그려 스크롤이 끊겨 보이지 않게 한다 */
-  const STEP = p.w + GAP;
+  // ★세로 모드에서는 장이 **아래로** 쌓이므로 걸음도 높이다
+  const STEP = (p.vert ? p.h : p.w) + GAP;
   const total = waits.length + takes.length;
   const from = p.view.w
     ? Math.max(0, Math.floor((p.view.x - p.headw - 8) / STEP) - 2)
@@ -1360,11 +1433,21 @@ function SceneRow(
       style={{
         display: "flex",
         alignItems: "stretch",
-        /* ★줄 높이는 **오른쪽 썸네일이 정한다** (사용자 지시 2026-08-11). 프롬프트가 길다고
-           줄이 늘어나면 줄마다 키가 달라져 눈이 훑을 기준을 잃는다. 그래서 블록은
-           **펼쳤을 때만** 자리를 차지한다 — 접혀 있을 때는 한 줄 요약이다. */
-        ...(expanded ? { minHeight: p.h + 12 } : { height: p.h + 12 }),
-        borderBottom: "1px solid var(--line-soft)",
+        /* ★줄 두께는 **썸네일이 정한다** (사용자 지시 2026-08-11). 프롬프트가 길다고 줄이
+           늘어나면 줄마다 두께가 달라져 눈이 훑을 기준을 잃는다. 그래서 블록은
+           **펼쳤을 때만** 자리를 차지한다 — 접혀 있을 때는 한 줄 요약이다.
+           ★세로 모드에서는 그 두께가 **폭**이고, 기둥은 세로로 꽉 찬다. */
+        ...(p.vert
+          ? {
+              flexDirection: "column" as const,
+              flexShrink: 0,
+              ...(expanded ? { minWidth: p.w + 12 } : { width: p.w + 12 }),
+              borderRight: "1px solid var(--line-soft)",
+            }
+          : {
+              ...(expanded ? { minHeight: p.h + 12 } : { height: p.h + 12 }),
+              borderBottom: "1px solid var(--line-soft)",
+            }),
         // ★끌고 있는 줄은 흐리게 — 자리는 지킨 채다 (칩 드래그와 같은 규칙, CLAUDE.md)
         opacity: p.dragId === c.id ? 0.4 : c.locked || p.card.locked ? 0.62 : 1,
       }}
@@ -1379,12 +1462,13 @@ function SceneRow(
         style={{
           cursor: "pointer",
           position: "sticky",
-          left: 0,
           zIndex: 2,
-          width: p.headw,
           flexShrink: 0,
+          // ★머리는 시작 쪽에 붙는다 — 아래 모드면 왼쪽, 세로 모드면 위. 크기는 같은 값이다
+          ...(p.vert
+            ? { top: 0, height: p.headw, borderBottom: "1px solid var(--line)" }
+            : { left: 0, width: p.headw, borderRight: "1px solid var(--line)" }),
           background: on ? "var(--accent-bg)" : "var(--surface)",
-          borderRight: "1px solid var(--line)",
           display: "flex",
           flexDirection: "column",
           gap: 4,
@@ -1513,11 +1597,20 @@ function SceneRow(
         </div>
       </div>
 
-      {/* ★이 상자가 곧 **썸네일 영역**이다 — `flex: 1` 이라 마지막 그림 오른쪽의 빈 자리까지
-          여기 들어간다. 그 위에서는 휠이 **좌우 스크롤**이 된다 (아래 `onWheel`). */}
+      {/* ★이 상자가 곧 **썸네일 영역**이다 — `flex: 1` 이라 마지막 그림 뒤의 빈 자리까지
+          여기 들어간다. 아래 모드에서는 그 위의 휠이 **좌우 스크롤**이 된다 (`onWheel`);
+          세로 모드에서는 장이 아래로 쌓이므로 휠을 안 가로챈다. */}
       <div
         data-scene-takes
-        style={{ flex: 1, display: "flex", alignItems: "center", gap: GAP, padding: "6px 0 6px 8px" }}
+        style={{
+          flex: 1,
+          display: "flex",
+          alignItems: "center",
+          gap: GAP,
+          ...(p.vert
+            ? { flexDirection: "column" as const, padding: "8px 6px 0" }
+            : { padding: "6px 0 6px 8px" }),
+        }}
       >
         {!takes.length && !waits.length && (
           <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-ghost)" }}>
@@ -1527,7 +1620,7 @@ function SceneRow(
         {/* ★보이는 구간 앞뒤는 **빈 자리**로 때운다 (사용자 지시 2026-08-14).
             폭을 그대로 채워야 스크롤 길이와 눈금이 안 어긋난다. flex 의 gap 때문에
             빈 자리 하나가 간격 하나를 더 만들므로 그만큼 뺀다. */}
-        {lead > 0 && <div style={{ width: lead, flexShrink: 0 }} />}
+        {lead > 0 && <div style={{ ...(p.vert ? { height: lead } : { width: lead }), flexShrink: 0 }} />}
         {waits.slice(from, to).map((q) => (
           <div
             key={q.id}
@@ -1663,7 +1756,7 @@ function SceneRow(
             </button>
           );
         })}
-        {tail > 0 && <div style={{ width: tail, flexShrink: 0 }} />}
+        {tail > 0 && <div style={{ ...(p.vert ? { height: tail } : { width: tail }), flexShrink: 0 }} />}
       </div>
     </div>
   );

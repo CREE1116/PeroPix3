@@ -135,15 +135,21 @@ const ramp = (d: number) => {
  *    끼워 넣으면 방금 잰 좌표가 어긋난다). 여기서는 자리만 알려 준다.
  *  ★v2 는 슬롯이 **가로**로 놓여 가로로 굴렸다. 3.0 은 씬도 카드도 **세로**로 쌓이므로
  *    세로로 굴린다. 굴린 뒤에는 칸이 밀렸으므로 자리를 **다시 잡는다** (v2 도 그랬다).
+ *  ★★**세로 모드에서는 축이 뒤집힌다** (사용자 지시 2026-08-22, `useUi.laneSide`): 씬이
+ *    세로 기둥이 되어 오른쪽으로 늘어서므로, 자리도 **가로 좌표**로 잡고 가장자리 자동
+ *    스크롤도 **좌우**로 돈다. 두 벌로 나누지 않고 `vert` 하나로 축만 고른다.
  *  ★`pointerdown` 의 `preventDefault` 는 **전용 그립에서만** 한다 — 그립은 누를 일이 없는
  *    손잡이라 잃을 클릭이 없다 (CLAUDE.md 「잊기 쉬운 것」). */
 export function useLaneReorder({
   scrollRef,
+  vert = false,
   onMoveScene,
   onMoveCard,
 }: {
-  /** 세로로 굴릴 스크롤 상자 (씬 줄) */
+  /** 굴릴 스크롤 상자 (씬 줄) */
   scrollRef: React.RefObject<HTMLElement | null>;
+  /** 세로 모드인가 — 참이면 씬이 가로로 늘어서므로 축이 전부 뒤집힌다 */
+  vert?: boolean;
   onMoveScene: (cellId: string, toCardId: string, toIndex: number) => void;
   onMoveCard: (cardId: string, toIndex: number) => void;
 }) {
@@ -158,19 +164,23 @@ export function useLaneReorder({
   const at = useRef({ x: 0, y: 0 });
   const raf = useRef(0);
 
-  /** 지금 커서 높이가 어느 틈인가 */
+  /** 커서가 어느 틈인가 — 세로 모드면 가로 좌표로 본다 */
   const hit = useCallback(
-    (kind: "scene" | "card", y: number): LaneDrop | null => {
+    (kind: "scene" | "card", x: number, y: number): LaneDrop | null => {
       const root = scrollRef.current;
       if (!root) return null;
       const cards = [...root.querySelectorAll<HTMLElement>("[data-scene-card]")];
       if (!cards.length) return null;
+      /** 그 축의 커서 자리 */
+      const at = vert ? x : y;
+      /** 그 축에서 상자의 시작·끝·가운데 */
+      const mid = (r: DOMRect) => (vert ? r.left + r.width / 2 : r.top + r.height / 2);
+      const end = (r: DOMRect) => (vert ? r.right : r.bottom);
 
       if (kind === "card") {
         let i = cards.length;
         for (let k = 0; k < cards.length; k++) {
-          const r = cards[k].getBoundingClientRect();
-          if (y < r.top + r.height / 2) {
+          if (at < mid(cards[k].getBoundingClientRect())) {
             i = k;
             break;
           }
@@ -178,10 +188,10 @@ export function useLaneReorder({
         return { kind: "card", index: i };
       }
 
-      // 어느 카드 위인가 — 마지막 카드보다 아래면 그 카드다
+      // 어느 카드 위인가 — 마지막 카드보다 뒤면 그 카드다
       let card = cards[cards.length - 1];
       for (const c of cards) {
-        if (y < c.getBoundingClientRect().bottom) {
+        if (at < end(c.getBoundingClientRect())) {
           card = c;
           break;
         }
@@ -193,22 +203,21 @@ export function useLaneReorder({
       if (!rows.length) return { kind: "scene", cardId: id, index: -1 };
       let i = rows.length;
       for (let k = 0; k < rows.length; k++) {
-        const r = rows[k].getBoundingClientRect();
-        if (y < r.top + r.height / 2) {
+        if (at < mid(rows[k].getBoundingClientRect())) {
           i = k;
           break;
         }
       }
       return { kind: "scene", cardId: id, index: i };
     },
-    [scrollRef],
+    [scrollRef, vert],
   );
 
   const track = useCallback(
-    (y: number) => {
+    (x: number, y: number) => {
       const d = dragRef.current;
       if (!d) return;
-      const next = hit(d.kind, y);
+      const next = hit(d.kind, x, y);
       dropRef.current = next;
       setDrop(next);
     },
@@ -221,20 +230,23 @@ export function useLaneReorder({
       const root = scrollRef.current;
       if (!root || !dragRef.current) return;
       const r = root.getBoundingClientRect();
-      const max = root.scrollHeight - root.clientHeight;
-      const top = at.current.y - r.top;
-      const bottom = r.bottom - at.current.y;
+      // ★가장자리 자동 스크롤도 **그 축**으로 돈다
+      const max = vert ? root.scrollWidth - root.clientWidth : root.scrollHeight - root.clientHeight;
+      const pos = vert ? root.scrollLeft : root.scrollTop;
+      const head = vert ? at.current.x - r.left : at.current.y - r.top;
+      const tail = vert ? r.right - at.current.x : r.bottom - at.current.y;
       let d = 0;
-      if (top < ZONE && root.scrollTop > 0) d = -SPEED * ramp(top);
-      else if (bottom < ZONE && root.scrollTop < max) d = SPEED * ramp(bottom);
+      if (head < ZONE && pos > 0) d = -SPEED * ramp(head);
+      else if (tail < ZONE && pos < max) d = SPEED * ramp(tail);
       if (d) {
-        root.scrollTop += d;
+        if (vert) root.scrollLeft += d;
+        else root.scrollTop += d;
         // 굴리면 칸이 밀리므로 놓일 자리도 다시 잡아야 따라온다 (v2 `startDragAutoScroll`)
-        track(at.current.y);
+        track(at.current.x, at.current.y);
       }
       raf.current = requestAnimationFrame(step);
     },
-    [scrollRef, track],
+    [scrollRef, track, vert],
   );
 
   const finish = useCallback(() => {
@@ -292,7 +304,7 @@ export function useLaneReorder({
           if (!raf.current) raf.current = requestAnimationFrame(loop);
         }
         setGhost({ x: e.clientX, y: e.clientY });
-        track(e.clientY);
+        track(e.clientX, e.clientY);
       },
       onPointerUp: (e: React.PointerEvent) => {
         try {
