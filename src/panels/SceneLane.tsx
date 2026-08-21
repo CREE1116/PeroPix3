@@ -620,13 +620,26 @@ export function SceneLane() {
               border: "1px solid var(--line)",
               borderRadius: "var(--r-2)",
               color: "var(--ink)",
-              padding: "1px var(--sp-2)",
+              /* ★★세로 모드에서는 **안쪽 여백도 축을 따라간다** (사용자 지적 2026-08-22:
+                 세로 모드에서만 상자가 너무 두꺼웠다). 가로쓰기에서 좌우로 주던 여백을
+                 그대로 두면 그 값이 곧 **띠의 두께**가 된다 — 글이 서는 쪽으로 옮긴다. */
+              padding: vert ? "var(--sp-2) 1px" : "1px var(--sp-2)",
             }}
           >
             {/* ★보이는 글은 **지금 고른 것 하나뿐**이라, 자리도 그만큼만 차지한다 */}
             <span>{destLabel}</span>
-            {/* ★세로쓰기에서는 목록이 **옆으로** 열린다 — 화살표도 그쪽을 가리킨다 */}
-            <span style={{ display: "grid", color: "var(--ink-faint)" }}>
+            {/* ★★화살표는 **세로쓰기에 안 딸려 돈다** (사용자 지적 2026-08-22: 오른쪽을
+                주었더니 화면에서는 위를 가리켰다). 아이콘까지 함께 돌면 어느 쪽을 넣어야
+                어느 쪽으로 보이는지 알 수 없으므로, **가로쓰기로 되돌려** 못 박는다.
+                그러면 넣은 방향이 곧 보이는 방향이다 — 세로 모드에서는 오른쪽(글이 나아가는
+                쪽에서 목록이 열린다), 아래 모드에서는 아래. */}
+            <span
+              style={{
+                display: "grid",
+                color: "var(--ink-faint)",
+                ...(vert ? { writingMode: "horizontal-tb" as const } : null),
+              }}
+            >
               {vert ? Icon.chevronRight : Icon.chevronDown14}
             </span>
             <select
