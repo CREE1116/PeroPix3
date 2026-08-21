@@ -28,6 +28,10 @@ import { ask } from "../store/ask";
 import { usePreviews, withPreviews } from "../store/previews";
 import { BANNER_BG, bannerEmptyFill } from "../cards/banner";
 
+/** 드롭다운 **목록 항목**의 색 — 팝업은 브라우저가 따로 그리므로 색을 직접 준다
+ *  (다크 모드에서 밝은 글자가 밝은 바탕에 얹히던 자리, 사용자 지적 2026-08-22). */
+const optStyle: React.CSSProperties = { color: "var(--ink)", background: "var(--bg)" };
+
 /** 씬 칸 — **그릇**이고, 그 위에 **씬 세트 카드**를 얹는다 (사용자 결정 2026-08-11).
  *
  *  ★층이 셋이다: 씬 칸(평면) → 카드(둥근 카드) → 씬(줄). 그릇이 둥글고 카드가 납작하면
@@ -629,6 +633,12 @@ export function SceneLane() {
               data-scene-dest
               value={dest}
               onChange={(e) => setTab(tab.id, { sceneDest: e.target.value })}
+              /* ★★**목록(팝업)은 `opacity` 를 안 따른다** — 브라우저가 따로 그리면서
+                 `<select>` 의 `color`·`background-color` 를 그대로 쓴다. 상자를 투명하게
+                 만들면서 그 둘을 빼 버렸더니, 다크 모드에서 **밝은 글자가 밝은 바탕에**
+                 얹혀 목록이 안 보였다 (사용자 지적 2026-08-22).
+                 ★상자는 `opacity: 0` 으로 감추되 **색은 남긴다.** `<option>` 에도 같이 준다 —
+                   일부 브라우저는 항목의 색을 따로 본다. */
               style={{
                 position: "absolute",
                 inset: 0,
@@ -639,16 +649,18 @@ export function SceneLane() {
                 appearance: "none",
                 border: "none",
                 padding: 0,
+                color: "var(--ink)",
+                background: "var(--bg)",
               }}
             >
-              <option value="base">{t("scenes.destBase")}</option>
+              <option value="base" style={optStyle}>{t("scenes.destBase")}</option>
               {/* ★v2 의 `promptTarget === "char"` (backend.py:2803-2833) — 씬 태그가 켜진
                   캐릭터 **전부**에 붙는다. 두 명부터만 낸다 (위 `canAll` 주석) */}
-              {canAll && <option value="all">{t("scenes.destAll")}</option>}
+              {canAll && <option value="all" style={optStyle}>{t("scenes.destAll")}</option>}
               {/* ★이름이 비어 있으면 **화면에 뜨는 이름**을 그대로 쓴다 (사용자 지적 2026-08-19:
                   갓 만든 캐릭터가 공백으로 떴다). 카드 머리도 같은 규칙이다 (`CharSection`) */}
               {chars.map((c, i) => (
-                <option key={c.id} value={c.id}>
+                <option key={c.id} value={c.id} style={optStyle}>
                   {t("scenes.destChar", { name: c.name || t("cards.charN", { n: i + 1 }) })}
                 </option>
               ))}
