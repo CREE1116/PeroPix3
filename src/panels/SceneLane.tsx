@@ -458,6 +458,20 @@ export function SceneLane() {
         ? tab.sceneDest!
         : "base";
 
+  /** 지금 고른 목적지의 **보이는 글자** — 드롭다운 목록과 같은 규칙으로 만든다.
+   *  ★자리를 차지하는 것은 이것 하나다 (`<select>` 는 투명하게 겹쳐 둔다) — 그래야 폭이
+   *    가장 긴 항목이 아니라 **고른 것**에 맞는다 (사용자 지적 2026-08-22). */
+  const destLabel =
+    dest === "base"
+      ? t("scenes.destBase")
+      : dest === "all"
+        ? t("scenes.destAll")
+        : (() => {
+            const i = chars.findIndex((c) => c.id === dest);
+            const c = chars[i];
+            return c ? t("scenes.destChar", { name: c.name || t("cards.charN", { n: i + 1 }) }) : t("scenes.destBase");
+          })();
+
   const h = Math.min(LANE_MAX, Math.max(LANE_MIN, laneSize));
   const w = h;
   const queued = pending.filter((p) => p.tabId === tab.id);
@@ -575,7 +589,13 @@ export function SceneLane() {
       >
         <b style={{ fontSize: "var(--text-2xs)", color: "var(--ink-dim)" }}>{t("scenes.title")}</b>
         {/* ★씬 프롬프트가 payload 의 **어디로 들어가나** — 왼쪽 컨테이너 이름(베이스 프롬프트 /
-            캐릭터 프롬프트)을 그대로 가리킨다. ★탭에 **하나뿐**이다 (사용자 결정) */}
+            캐릭터 프롬프트)을 그대로 가리킨다. ★탭에 **하나뿐**이다 (사용자 결정)
+            ★★고르는 것은 그대로 `<select>` 지만 **보이는 것은 우리가 그린다**
+              (사용자 지적 2026-08-22). 브라우저가 그리는 대로 두면 둘이 걸린다:
+                · 폭이 **가장 긴 항목**에 맞춰 미리 벌어진다 (세로 모드에서는 높이가 그렇다)
+                · 화살표 방향을 바꿀 수 없다 — 세로쓰기에서는 아래가 아니라 옆이다
+              그래서 `appearance: none` 으로 껍데기를 벗기고, 글자와 화살표를 우리가 얹는다.
+              고르는 동작·키보드·목록은 그대로 `<select>` 의 것이다. */}
         <label
           style={{
             display: "flex",
@@ -586,33 +606,54 @@ export function SceneLane() {
           }}
         >
           {t("scenes.destLabel")}
-          <select
-            data-scene-dest
-            value={dest}
-            onChange={(e) => setTab(tab.id, { sceneDest: e.target.value })}
+          <span
             style={{
+              position: "relative",
+              display: "flex",
+              alignItems: "center",
+              gap: 2,
               background: "var(--bg)",
               border: "1px solid var(--line)",
               borderRadius: "var(--r-2)",
               color: "var(--ink)",
-              fontSize: "var(--text-2xs)",
               padding: "1px var(--sp-2)",
             }}
           >
-            <option value="base">{t("scenes.destBase")}</option>
-            {/* ★v2 의 `promptTarget === "char"` (backend.py:2803-2833) — 씬 태그가 켜진
-                캐릭터 **전부**에 붙는다. 두 명부터만 낸다 (위 `canAll` 주석) */}
-            {canAll && (
-              <option value="all">{t("scenes.destAll")}</option>
-            )}
-            {/* ★이름이 비어 있으면 **화면에 뜨는 이름**을 그대로 쓴다 (사용자 지적 2026-08-19:
-                갓 만든 캐릭터가 공백으로 떴다). 카드 머리도 같은 규칙이다 (`CharSection`) */}
-            {chars.map((c, i) => (
-              <option key={c.id} value={c.id}>
-                {t("scenes.destChar", { name: c.name || t("cards.charN", { n: i + 1 }) })}
-              </option>
-            ))}
-          </select>
+            {/* ★보이는 글은 **지금 고른 것 하나뿐**이라, 자리도 그만큼만 차지한다 */}
+            <span>{destLabel}</span>
+            {/* ★세로쓰기에서는 목록이 **옆으로** 열린다 — 화살표도 그쪽을 가리킨다 */}
+            <span style={{ display: "grid", color: "var(--ink-faint)" }}>
+              {vert ? Icon.chevronRight : Icon.chevronDown14}
+            </span>
+            <select
+              data-scene-dest
+              value={dest}
+              onChange={(e) => setTab(tab.id, { sceneDest: e.target.value })}
+              style={{
+                position: "absolute",
+                inset: 0,
+                width: "100%",
+                height: "100%",
+                opacity: 0,
+                cursor: "pointer",
+                appearance: "none",
+                border: "none",
+                padding: 0,
+              }}
+            >
+              <option value="base">{t("scenes.destBase")}</option>
+              {/* ★v2 의 `promptTarget === "char"` (backend.py:2803-2833) — 씬 태그가 켜진
+                  캐릭터 **전부**에 붙는다. 두 명부터만 낸다 (위 `canAll` 주석) */}
+              {canAll && <option value="all">{t("scenes.destAll")}</option>}
+              {/* ★이름이 비어 있으면 **화면에 뜨는 이름**을 그대로 쓴다 (사용자 지적 2026-08-19:
+                  갓 만든 캐릭터가 공백으로 떴다). 카드 머리도 같은 규칙이다 (`CharSection`) */}
+              {chars.map((c, i) => (
+                <option key={c.id} value={c.id}>
+                  {t("scenes.destChar", { name: c.name || t("cards.charN", { n: i + 1 }) })}
+                </option>
+              ))}
+            </select>
+          </span>
         </label>
         <span style={{ flex: 1 }} />
         {/* ★칸 크기는 **Ctrl + 휠**로 바꾼다 (사용자 지시 2026-08-14). 버튼 셋이
