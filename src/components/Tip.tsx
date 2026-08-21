@@ -97,12 +97,21 @@ export function TipLayer() {
     };
   }, []);
 
-  // 폭을 재고 나서 가로를 화면 안으로 밀어 넣는다 (재기 전에는 안 보인다)
+  /** 재고 나서 화면 안으로 밀어 넣는다 (재기 전에는 안 보인다).
+   *
+   *  ★★자리를 **`transform` 으로만** 잡는다 (사용자 지적 2026-08-22: 화면 오른쪽 끝의
+   *    단추에서 툴팁이 **아주 좁게 접혔다**). `left` 에 그 자리를 넣으면 상자가 거기서
+   *    배치되므로 **남는 폭만큼만 늘어난다** — 오른쪽 끝이면 남는 폭이 거의 없어 글자마다
+   *    줄이 바뀐다. 그 뒤에 `left` 를 되밀어도 **폭은 이미 접힌 채**다.
+   *    `left: 0` 에서 재면 `maxWidth` 만큼 온전히 펴지고, 그 다음에 옮기면 된다. */
   useLayoutEffect(() => {
     const el = box.current;
     if (!el || !tip) return;
-    const half = el.offsetWidth / 2;
-    el.style.left = `${Math.max(8 + half, Math.min(window.innerWidth - 8 - half, tip.x))}px`;
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    const x = Math.max(8, Math.min(window.innerWidth - 8 - w, tip.x - w / 2));
+    const y = Math.max(8, Math.min(window.innerHeight - 8 - h, tip.below ? tip.y : tip.y - h));
+    el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
     el.style.opacity = "1";
   }, [tip]);
 
@@ -114,9 +123,9 @@ export function TipLayer() {
       role="tooltip"
       style={{
         position: "fixed",
-        left: tip.x,
-        top: tip.y,
-        transform: `translate(-50%, ${tip.below ? "0" : "-100%"})`,
+        // ★언제나 `0, 0` 에서 배치한다 — 자리는 위 `useLayoutEffect` 가 `transform` 으로 잡는다
+        left: 0,
+        top: 0,
         zIndex: 9000,
         pointerEvents: "none",
         opacity: 0,

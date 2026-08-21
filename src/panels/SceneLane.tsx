@@ -533,15 +533,17 @@ export function SceneLane() {
          flex 자식의 기본 `min-width: auto` 가 내용 폭만큼 늘어나기 때문이다. */
       style={{ flex: 1, minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column" }}
     >
-      {/* ★머리줄 — 그릇의 것이다. 카드 이름은 카드 배너가 말한다 */}
+      {/* ★머리줄 — 그릇의 것이다. 카드 이름은 카드 배너가 말한다.
+          ★★**자리가 모자라면 접힌다** (사용자 지시 2026-08-22) — 세로 모드에서는 줄이 좁아
+            한 줄에 다 안 들어간다. 그때는 키를 고정하지 않고 늘어나게 둔다. */}
       <div
         style={{
           flexShrink: 0,
-          height: 30,
+          ...(vert ? { minHeight: 30, flexWrap: "wrap" as const, rowGap: 2, padding: "3px var(--sp-3)" } : { height: 30 }),
           display: "flex",
           alignItems: "center",
           gap: "var(--sp-3)",
-          padding: "0 var(--sp-3) 0 var(--sp-4)",
+          ...(vert ? null : { padding: "0 var(--sp-3) 0 var(--sp-4)" }),
           borderTop: "1px solid var(--line)",
           borderBottom: "1px solid var(--line)",
           background: "var(--panel)",
@@ -772,11 +774,28 @@ export function SceneLane() {
                 data-add-card
                 onClick={() => addCard(tab.id)}
                 style={{
-                  ...(vert ? null : { position: "sticky" as const, left: 0 }),
-                  display: "inline-flex",
-                  alignItems: "center",
+                  // ★글자를 **위로** 붙인다 — 기둥이 길어 가운데면 화면 밖에 놓인다
+                  //   (사용자 지적 2026-08-22). 「씬 추가」와 같은 규칙이다.
+                  ...(vert
+                    ? {
+                        display: "flex",
+                        flexDirection: "column" as const,
+                        alignItems: "center",
+                        justifyContent: "flex-start",
+                        width: 58,
+                        padding: "var(--sp-3) var(--sp-2)",
+                        textAlign: "center" as const,
+                        whiteSpace: "normal" as const,
+                        wordBreak: "keep-all" as const,
+                      }
+                    : {
+                        position: "sticky" as const,
+                        left: 0,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        padding: "var(--sp-3) var(--sp-5)",
+                      }),
                   gap: "var(--sp-2)",
-                  padding: "var(--sp-3) var(--sp-5)",
                   color: "var(--ink-faint)",
                   fontSize: "var(--text-2xs)",
                 }}
@@ -1112,18 +1131,19 @@ function CardGroup(p: GroupProps) {
     onDrop: (d) =>
       d.img && askThumb({ type: "scene-card", tabId: p.tabId, cardId: p.card.id, img: d.img }),
   });
-  /** 「씬 추가」 한 줄 — **한 번만 만들고 자리만 가른다.**
-   *  ★세로 모드에서는 **카드 맨 위**(배너 바로 아래)에 둔다 (사용자 지적 2026-08-22):
-   *    카드가 세로로 꽉 차서 아래쪽 끝이 화면 밖이라 단추가 안 보였다.
+  /** 「씬 추가」 — **한 번만 만들고 방향만 가른다.**
+   *
+   *  ★★자리는 **두 모드가 같다**: 씬들 **뒤**다 (아래 모드는 아래, 세로 모드는 오른쪽).
+   *    한 번 카드 맨 위로 올렸다가 되돌렸다 — 통일성이 어긋났다 (사용자 지적 2026-08-22).
+   *  ★★글자는 **위로 붙인다** (사용자 지적 2026-08-22). 세로 모드에서는 기둥이 길어서
+   *    가운데 정렬이면 글자가 화면 한참 아래에 놓여 안 보인다.
    *  ★두 벌로 적지 말 것 — 한쪽만 고쳐진 채로 남는다 (실제로 이 자리를 옮기다 아래 모드의
    *    단추를 통째로 잃었다). */
   const addScene = (
       <div
         style={{
-          /* ★★세로 모드에서는 **카드 맨 위**(배너 바로 아래)에 둔다 (사용자 지적 2026-08-22).
-             카드가 세로로 꽉 차서 아래쪽 끝은 화면 밖이라 단추가 안 보였다. */
           ...(p.vert
-            ? { borderBottom: "1px dashed var(--line)", width: "100%", flexShrink: 0 }
+            ? { borderLeft: "1px dashed var(--line)", minHeight: "100%", flexShrink: 0, display: "flex" }
             : { borderTop: "1px dashed var(--line)", minWidth: "100%" }),
         }}
       >
@@ -1132,11 +1152,27 @@ function CardGroup(p: GroupProps) {
           onClick={p.onAddScene}
           style={{
             // ★세로 모드에서는 카드가 가로로 안 굴러가므로 붙들 필요가 없다
-            ...(p.vert ? null : { position: "sticky" as const, left: 0 }),
-            display: "inline-flex",
-            alignItems: "center",
+            ...(p.vert
+              ? {
+                  // ★글자를 **위로** 붙인다 — 기둥이 길어 가운데면 화면 밖에 놓인다
+                  display: "flex",
+                  flexDirection: "column" as const,
+                  alignItems: "center",
+                  justifyContent: "flex-start",
+                  width: 58,
+                  padding: "var(--sp-3) var(--sp-2)",
+                  textAlign: "center" as const,
+                  whiteSpace: "normal" as const,
+                  wordBreak: "keep-all" as const,
+                }
+              : {
+                  position: "sticky" as const,
+                  left: 0,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "var(--sp-3) var(--sp-5)",
+                }),
             gap: "var(--sp-2)",
-            padding: "var(--sp-3) var(--sp-5)",
             color: "var(--ink-faint)",
             fontSize: "var(--text-2xs)",
           }}
@@ -1364,7 +1400,6 @@ function CardGroup(p: GroupProps) {
       {/* ★공통 접두는 **걷었다** (사용자 지시 2026-08-21). 프롬프트에 실려 나가는 값이
           카드 머리에 한 줄로만 보여서, 어느 씬에 무엇이 붙는지 화면에서 따라가기 어려웠다.
           같은 것을 붙이려면 **베이스 프롬프트의 블록**을 쓴다 (창구가 하나가 된다). */}
-{p.vert && addScene}
       {/* ★세로 모드에서는 씬이 **오른쪽으로** 늘어선다 (기둥 하나가 씬 하나) */}
       <div
         style={
@@ -1379,6 +1414,7 @@ function CardGroup(p: GroupProps) {
             <SceneRow {...p} cell={c} index={i} grip={p.gripOf("scene", c.id)} />
           </Fragment>
         ))}
+        {p.vert && addScene}
       </div>
       {!p.vert && addScene}
       </>

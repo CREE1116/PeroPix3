@@ -222,8 +222,10 @@ export const useUi = create<S>((set, get) => ({
   setLaneSize: (n) => set({ laneSize: Math.min(LANE_MAX, Math.max(LANE_MIN, Math.round(n))) }),
   setLaneHeadW: (n) => set({ laneHeadW: Math.min(HEAD_MAX, Math.max(HEAD_MIN, Math.round(n))) }),
   setLaneHeight: (n) => set({ laneHeight: Math.max(84, Math.round(n)) }),
-  // ★세로 모드의 씬 폭 — 너무 좁으면 씬 머리(프롬프트)가 안 들어간다 (`HEAD_MIN` 150)
-  setLaneWidth: (n) => set({ laneWidth: Math.max(220, Math.round(n)) }),
+  /** 세로 모드의 씬 폭 — ★**칸 하나만 남을 만큼까지 줄인다** (사용자 지시 2026-08-22).
+   *  머리가 좁아지면 글이 줄바꿈으로 접히고, 그래도 모자라면 잘린다 — 큰 그림을 넓게 쓰려고
+   *  줄이는 것이라 여기서 막지 않는다. */
+  setLaneWidth: (n) => set({ laneWidth: Math.max(96, Math.round(n)) }),
   // 세로 모드의 머리 높이 — 프롬프트 칩 한두 줄이 들어갈 만큼은 있어야 한다
   setLaneHeadH: (n) => set({ laneHeadH: Math.min(420, Math.max(72, Math.round(n))) }),
   setLaneSide: (v) => {
