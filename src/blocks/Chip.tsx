@@ -1,6 +1,47 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { COLOR_HEX, fmtW, weightLevel, type Tag } from "../lib/blocks";
 import { useUi } from "../store/ui";
+
+/** 돌리는 동안 얼려 둘 칩 폭 — **바꾸기 전에** 계산한다.
+ *
+ *  지금 폭에서 지금 배지를 빼고, 돌리는 동안 쓸 배지(두 자리 고정)의 폭을 더한다.
+ *  배지가 없으면 잠깐 넣어 글자 하나 폭을 재고 지운다 — React 가 다시 그리기 전의
+ *  동기 작업이라 화면에는 안 보인다.
+ *  ★★**늘려도 같은 줄에 남을 때만 늘린다** (사용자 지적 2026-08-22). 배지가 들어갈 자리는
+ *    한 번은 생겨야 하는데, 칩이 줄 끝에 있으면 그 한 번에 다음 줄로 넘어가 버린다 —
+ *    고치려던 바로 그 증상이다. 자리가 모자라면 **지금 폭 그대로** 얼린다: 태그 이름이
+ *    말줄임으로 조금 잘리지만 칩은 제자리에 있다. 두 번 지적받은 것이 「칩이 움직인다」다.
+ *  ★음수는 부호만큼 한 칸 더 든다. 지금 값의 부호로 잡으므로, 한 번의 조작 안에서
+ *    부호를 넘나들면 그만큼 태그 이름이 잘릴 수 있다 (드물어서 그대로 둔다).
+ *  ★못 재면 `null` — 그때는 안 얼린다 (예전처럼 튀되, 잘못된 폭으로 굳지는 않는다). */
+function pinWidth(el: HTMLElement, w: number | null): number | null {
+  const r = el.getBoundingClientRect();
+  const now = r.width;
+  if (!now) return null;
+  /** 늘린 폭이 이 줄에 들어가나 — 안 들어가면 지금 폭으로 얼린다 */
+  const fits = (want: number) => {
+    const box = el.parentElement;
+    if (!box) return want;
+    const p = box.getBoundingClientRect();
+    const right = p.right - parseFloat(getComputedStyle(box).paddingRight || "0");
+    return r.left + want <= right ? want : now;
+  };
+  const chars = (w ?? 1).toFixed(2).length;   // 돌리는 동안의 표기와 같아야 한다
+  const b = el.querySelector("b");
+  if (b) {
+    const bw = b.getBoundingClientRect().width;
+    const per = bw / Math.max(1, (b.textContent ?? "").length);
+    return fits(now - bw + per * chars);
+  }
+  // 배지가 아직 없다 — 같은 모양으로 하나 넣어 재고 지운다 (간격 `gap: 4` 도 새로 생긴다)
+  const probe = document.createElement("b");
+  probe.style.cssText = "font-family:var(--font-mono);font-size:0.92em;visibility:hidden;position:absolute";
+  probe.textContent = "0".repeat(chars);
+  el.appendChild(probe);
+  const pw = probe.getBoundingClientRect().width;
+  probe.remove();
+  return pw ? fits(now + pw + 4) : null;
+}
 
 /** 태그 칩.
  *  - **끌기 = 자리 옮기기** (같은 블록 안에서도, 다른 블록으로도 — `useTagDrag`)
@@ -50,16 +91,23 @@ export function Chip({
    *  칩이 그때마다 넓어졌다 좁아지면 **줄바꿈이 다시 계산돼 칩이 다음 줄로 밀리고**,
    *  커서 밑에 칩이 없어진 순간부터 휠이 패널 스크롤로 가 버린다 — 가중치를 맞추다
    *  화면이 통째로 굴러간다.
-   *  ★그래서 폭을 재서 붙들어 둔다. 칩 안에서만 글자가 움직이고 줄은 안 바뀐다.
+   *  ★그래서 폭을 얼린다. 칩 안에서만 글자가 움직이고 줄은 안 바뀐다.
    *    1 이 되어도 배지를 지우지 않는다 — 지우면 칩 안이 한 번 더 출렁인다.
-   *  ★★재는 때는 **첫 눈금을 적용한 뒤**다. 가중치가 없던 칩은 배지가 새로 생기면서
-   *    한 번 넓어지는데, 그 전 폭으로 얼리면 그만큼 태그 이름이 말줄임으로 잘린다.
-   *    적용한 뒤에 재면 배지가 이미 든 폭이라 글자가 안 잘린다 (`useLayoutEffect`).
-   *    ★그래서 **첫 눈금에서만** 줄이 한 번 다시 잡힐 수 있다. 두 번째 눈금부터는 고정이다 —
-   *      귀찮은 것은 돌리는 내내 튀는 쪽이지 시작할 때 한 번이 아니다.
-   *  ★★배지에 **자리를 미리 비워 두지 말 것** (사용자 지적 2026-08-22) — `minWidth` 로 넉넉히
-   *    잡았더니 숫자 왼쪽에 빈칸이 크게 남고, 그것이 고정 풀릴 때에야 사라져 **반응이 느린
-   *    것처럼** 보였다. 겉폭이 이미 고정이라 배지 폭은 줄바꿈과 무관하다.
+   *
+   *  ★★**첫 눈금이 그려지기 전에**, 배지가 다 든 폭을 계산해서 얼린다 (`pinWidth`).
+   *    두 번 헛디딘 자리라 근거를 남긴다:
+   *      · 첫 눈금 **뒤에** 재면(`useLayoutEffect`) 그 한 번의 넓어짐이 이미 화면에 반영돼
+   *        **거기서 줄이 바뀐다.** 특히 이미 가중치가 있는 칩은 `1.2`→`1.20` 으로 한 글자
+   *        넓어져서 **거의 매번** 튀었다 (사용자 지적 2026-08-22).
+   *      · 첫 눈금 **전의** 폭으로 얼리면 배지가 들어갈 자리가 없어 태그 이름이 잘린다.
+   *    그래서 재지 말고 **계산한다**: 지금 폭에서 지금 배지를 빼고, 들어갈 배지 폭을 더한다.
+   *    배지가 등폭 글꼴이라 글자 하나 폭만 알면 되고, 배지가 없으면 잠깐 넣어 재고 지운다
+   *    (React 가 다시 그리기 전의 동기 작업이라 화면에 안 보인다).
+   *  ★★돌리는 동안은 **자릿수를 두 자리로 고정**한다 (`1.05`·`1.10`·`1.00`). `fmtW` 는 끝의 0 을
+   *    떼어 내 글자 수가 오락가락하는데, 겉폭이 고정이라 그만큼 칩 안에 빈칸이 남는다
+   *    (실측 2026-08-22: 최대 22px → 2px). 놓으면 곧바로 원래 표기로 돌아온다.
+   *  ★★배지에 `minWidth` 로 **자리를 미리 비워 두지 말 것** (사용자 지적 2026-08-22) —
+   *    숫자 왼쪽에 빈칸이 남고, 그것이 고정 풀릴 때에야 사라져 **반응이 느린 것처럼** 보였다.
    *  ★푸는 때는 **커서가 칩을 벗어날 때**다 (사용자 지시). 안 벗어난 채로 손을 떼는 경우가
    *    있어 마지막 휠에서 조금 지나면 스스로도 푼다.
    *  ★긴 태그는 이 동안 말줄임으로 잘릴 수 있다 — 폭이 고정되고 배지가 자리를 차지해서다.
@@ -74,10 +122,6 @@ export function Chip({
     setPin(null);
   };
   useEffect(() => () => { if (idle.current) clearTimeout(idle.current); }, []);
-  /** 첫 눈금이 그려진 **직후**의 폭으로 얼린다 — 배지가 이미 들어간 폭이다 */
-  useLayoutEffect(() => {
-    if (pinning.current && pin == null && ref.current) setPin(ref.current.getBoundingClientRect().width);
-  });
 
   useEffect(() => {
     const el = ref.current;
@@ -85,7 +129,10 @@ export function Chip({
     const onWheel = (e: WheelEvent) => {
       if (!e.altKey) return;      // 맨 휠은 평소대로 스크롤이다
       e.preventDefault();
-      pinning.current = true;    // 폭은 **적용한 뒤** `useLayoutEffect` 가 잰다
+      if (!pinning.current) {
+        pinning.current = true;
+        setPin(pinWidth(el, wRef.current));   // ★바꾸기 **전에** 얼린다 (위 ★★주)
+      }
       if (idle.current) clearTimeout(idle.current);
       idle.current = setTimeout(release, 900);
       const step = e.shiftKey ? 0.1 : 0.05;
