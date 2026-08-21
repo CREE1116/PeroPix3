@@ -93,9 +93,9 @@ type Persisted = {
    *  `right` 는 **세로 모드** — 큰 그림과 씬을 가운데에서 좌우로 양분한다. 세로로 긴 그림을
    *  뽑을 때 아래에 줄이 누우면 그림이 그만큼 작아지는데, 옆으로 보내면 높이를 다 쓴다. */
   laneSide: "bottom" | "right";
-  /** 세로 모드에서 **씬 머리의 높이** — 아래 모드의 `laneHeadW`(폭)에 해당한다.
-   *  ★값을 같이 쓰지 않는다: 폭과 높이는 다른 것이라, 한 모드에서 끌면 다른 모드가
-   *    엉뚱하게 두꺼워진다 (한 창구가 두 가지를 뜻하게 된다). */
+  /** 세로 모드에서 **씬 머리 띠의 폭** — 글이 세로로 서므로 아래 모드보다 훨씬 좁다.
+   *  ★값을 같이 쓰지 않는다(`laneHeadW`): 같은 「머리 크기」라도 가로쓰기와 세로쓰기는
+   *    필요한 폭이 자릿수부터 다르다. 한 모드에서 끌면 다른 모드가 엉뚱해진다. */
   laneHeadH: number;
   /** 세로 모드일 때 씬 쪽의 폭 (`bottom` 일 때의 `laneHeight` 에 해당) */
   laneWidth: number;
@@ -128,7 +128,7 @@ const DEFAULTS: Persisted = {
   sizeLast: { landscape: [1216, 832], portrait: [832, 1216], square: [1024, 1024] },
   laneSide: "bottom",
   laneWidth: 420,
-  laneHeadH: 132,
+  laneHeadH: 44,
 };
 
 export const COLS_MIN = 1;
@@ -226,8 +226,8 @@ export const useUi = create<S>((set, get) => ({
    *  머리가 좁아지면 글이 줄바꿈으로 접히고, 그래도 모자라면 잘린다 — 큰 그림을 넓게 쓰려고
    *  줄이는 것이라 여기서 막지 않는다. */
   setLaneWidth: (n) => set({ laneWidth: Math.max(96, Math.round(n)) }),
-  // 세로 모드의 머리 높이 — 프롬프트 칩 한두 줄이 들어갈 만큼은 있어야 한다
-  setLaneHeadH: (n) => set({ laneHeadH: Math.min(420, Math.max(72, Math.round(n))) }),
+  // 세로 모드의 머리 띠 폭 — 세로쓰기라 한두 칸이면 된다
+  setLaneHeadH: (n) => set({ laneHeadH: Math.min(240, Math.max(28, Math.round(n))) }),
   setLaneSide: (v) => {
     set({ laneSide: v });
     get().commitLayout();
