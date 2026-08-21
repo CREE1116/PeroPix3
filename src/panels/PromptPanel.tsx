@@ -3,34 +3,18 @@ import { useState } from "react";
 import { compileBlocks } from "../lib/blocks";
 import { usePrompt } from "../store/prompt";
 import { canEnableChar } from "../store/gen";
-import { StyleSection, CharSection, CharGhost, JoinZone, type SectionProps } from "./PromptSections";
+import { StyleSection, CharSection, JoinZone, type SectionProps } from "./PromptSections";
 import { BlockLibButton } from "../blocks/BlockDrawer";
 import { WildcardButton } from "./WildcardModal";
 import { OptionsPanel } from "./OptionsPanel";
 import { Category } from "./Category";
 import { CharPositionToggle, CharStackedWarning } from "./CharPositioner";
 import { useDrag } from "../cards/dragStore";
-import { DragGhost } from "../cards/DragGhost";
-import { useReorder } from "../lib/useReorder";
-
-/** 놓을 자리 — ★블록 목록의 것과 **같은 모양**이다 (`blocks/BlockList` 의 `DropLine`) */
-function CharDropLine({ active }: { active: boolean }) {
-  return (
-    <div style={{ height: active ? 18 : 0, transition: "height 0.08s", display: "flex", alignItems: "center" }}>
-      {active && (
-        <div style={{ width: "100%", height: 3, borderRadius: 2, background: "var(--accent)" }} />
-      )}
-    </div>
-  );
-}
 
 /** 좌측 패널 — 카드형 섹션 안에 블록 시퀀스.
  *  스타일 섹션(= NAI 의 공통 prompt/uc) 하나 + 캐릭터 섹션 여럿(= characterPrompts[]). */
 export function PromptPanel({ onThumb }: SectionProps) {
-  const { base, baseUc, chars, addChar, moveChar } = usePrompt();
-  /** 인물 차례 바꾸기 — 블록 목록과 같은 판 (`lib/useReorder`) */
-  const reorder = useReorder(chars.length, moveChar);
-  const { dragIdx, overIdx, ghost } = reorder;
+  const { base, baseUc, chars, addChar } = usePrompt();
   /** ★★끌고 있는 동안 **그 묶음 전체**가 어둠 위로 올라온다 (사용자 지적 2026-08-20).
    *  카드마다 올리면 카드 사이 여백이 어두운 채라 「영역」으로 안 읽힌다.
    *  ★그림 끌기(`image`)는 두 묶음 다 받는다 — 카드 배너에 꽂는 그림이라 어느 쪽이든 될 수 있다. */
@@ -78,28 +62,12 @@ export function PromptPanel({ onThumb }: SectionProps) {
           right={<CharPositionToggle />}
         >
           <CharStackedWarning />
-          {/* ★★인물 **차례를 바꾼다** (사용자 지시 2026-08-21). 차례가 곧
-              `characterPrompts[]` 의 차례라(`use_order: true`) 그림에 남는 값이다.
-              ★블록 목록과 **같은 판**을 쓴다 (`lib/useReorder`) — 끄는 방식·놓는 자리 표시가
-                같아야 하나만 고치면 둘 다 고쳐진다. */}
+          {/* ★★인물의 **차례**가 곧 `characterPrompts[]`·`char_captions[]` 의 차례이고
+              NAI 가 `use_order: true` 로 그 차례를 쓴다 (`backend/nai.py`) — 그림에 남는 값이다.
+              바꾸는 것은 배너의 **위아래 단추**다 (`CharSection`). */}
           {chars.map((ch, i) => (
-            <div key={ch.id} ref={reorder.register(i)}>
-              {/* 놓일 자리 — 조건은 ★블록 목록과 **글자 그대로 같다** (제자리 두 곳은 안 띄운다) */}
-              <CharDropLine active={dragIdx != null && overIdx === i && i !== dragIdx && i !== dragIdx + 1} />
-              <div style={{ opacity: dragIdx === i ? 0.35 : 1 }}>
-                <CharSection ch={ch} index={i} onThumb={onThumb} gripProps={reorder.handleProps(i)} />
-              </div>
-            </div>
+            <CharSection key={ch.id} ch={ch} index={i} last={i === chars.length - 1} onThumb={onThumb} />
           ))}
-          <CharDropLine active={dragIdx != null && overIdx === chars.length && dragIdx !== chars.length - 1} />
-
-          {/* 커서를 따라오는 잔상 — 포인터 방식은 브라우저가 만들어 주지 않는다 (`BlockList` 와 같다).
-              ★따로 그리지 않고 **접힌 그 카드**를 띄운다 (`CharGhost`) — 생김새가 갈리지 않게. */}
-          {ghost && dragIdx != null && chars[dragIdx] && (
-            <DragGhost x={ghost.x} y={ghost.y} anchor="exact" style={{ width: ghost.w }}>
-              <CharGhost ch={chars[dragIdx]} index={dragIdx} />
-            </DragGhost>
-          )}
 
           <JoinZone />
 

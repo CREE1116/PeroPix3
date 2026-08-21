@@ -18,22 +18,28 @@ export function BannerBtn({
   title,
   onClick,
   mark,
+  off,
   children,
 }: {
   title: string;
   onClick: () => void;
   /** 조작 테스트가 잡는 손잡이 */
   mark?: string;
+  /** 지금은 할 수 없는 것 — ★**자리를 지킨 채** 흐려진다. 숨기면 옆 단추가 밀려
+   *  맨 위·맨 아래 카드에서 「제거」가 다른 자리에 서게 된다 */
+  off?: boolean;
   children: ReactNode;
 }) {
   return (
     <button
       {...(mark ? { [mark]: "" } : {})}
       data-tip={title}
+      disabled={off}
       onPointerDown={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.preventDefault()}
       onClick={(e) => {
         e.stopPropagation();
+        if (off) return;
         onClick();
       }}
       style={{
@@ -46,6 +52,8 @@ export function BannerBtn({
         color: "#fff",
         fontSize: 11,
         lineHeight: 1,
+        opacity: off ? 0.3 : 1,
+        cursor: off ? "default" : "pointer",
       }}
     >
       {children}
@@ -67,6 +75,7 @@ export function SectionCard({
   overlay,
   onRename,
   renameTip = "",
+  bannerLead,
   bannerActions,
   hoverLift,
   thumb,
@@ -96,6 +105,8 @@ export function SectionCard({
   renameTip?: string;
   /** 배너 우측 버튼 (켜기·삭제 등) */
   bannerActions?: ReactNode;
+  /** 이름변경 **앞**에 서는 버튼 — 카드 자체를 다루는 것(차례 바꾸기)이 여기 온다 */
+  bannerLead?: ReactNode;
   /** 배너를 끌 수 있음을 알리는 살짝 떠오름 */
   hoverLift?: boolean;
   /** 배너에 꽂아 둔 생성물 (없으면 그라데이션) */
@@ -228,7 +239,7 @@ export function SectionCard({
               「CHARACTER CARD」는 그 자리에 있는 것만으로 이미 아는 것이라, 이름 옆에서
               자리만 먹었다. 프롭도 함께 걷었다. */}
         </div>
-        {(bannerActions || onRename) && (
+        {(bannerActions || bannerLead || onRename) && (
           <div
             style={{
               position: "absolute",
@@ -240,10 +251,12 @@ export function SectionCard({
               gap: 4,
             }}
           >
-            {/* ★★단추 차례는 앱 전체에서 하나다: **이름변경 · 온오프 · 삭제**
-                (사용자 지시 2026-08-19: 카드·블록마다 제멋대로였다).
+            {/* ★★단추 차례는 앱 전체에서 하나다: **(차례 바꾸기 ·) 이름변경 · 온오프 · 삭제**
+                (사용자 지시 2026-08-19: 카드·블록마다 제멋대로였다.
+                 2026-08-21: 차례 바꾸기는 이름변경 **앞**에 선다).
                 ★이름 고치기는 **카드가 스스로** 단다 — 섹션마다 따로 만들면 어디는 있고
                   어디는 없는 상태가 된다 (스타일 카드에는 아예 없었다) */}
+            {bannerLead}
             {onRename && (
               <BannerBtn
                 mark="data-card-rename-btn"
