@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useUi } from "../store/ui";
 import { useI18n } from "../i18n";
 import { useCards, type AnyCard, type CardKind } from "../store/cards";
 import { useDrag, useDragSource, useDropZone, dragSourceStyle, type DragImage, type SectionThumb } from "./dragStore";
@@ -56,7 +57,10 @@ export function DeckPanel({
   const counts: Record<CardKind, number> = { styles: nStyles, characters: nChars, posesets: nSets };
   /** ★★종류마다 **탭**이다 (사용자 지시 2026-08-19) — 셋을 한 줄에 쌓아 두면 카드가 늘수록
    *  아래 것이 안 보이고, 접었다 폈다로 관리하게 된다. 한 번에 한 종류만 본다. */
-  const [tab, setTab] = useState<CardKind>("styles");
+  /** 어느 덱을 보고 있나 — ★**저장되는 작업 상태**다 (`useUi.view.tab`, 사용자 지시 2026-08-22).
+   *  새로고침하면 「스타일」로 되돌아가 있었다. */
+  const tab = useUi((u) => (u.view.tab["deck"] as CardKind | undefined) ?? "styles");
+  const setTab = (k: CardKind) => useUi.getState().setView("tab", "deck", k as never);
   /** 편집기가 열려 있는 카드의 id (없으면 닫힘). ★카드 **사본이 아니라 id** 를 든다 —
    *  그림 위치를 잡고 돌아왔을 때 옛 값이 화면에 남지 않게 (아래 ★주) */
   const [editing, setEditing] = useState<string | null>(null);

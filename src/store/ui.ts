@@ -97,6 +97,21 @@ type Persisted = {
    *  ★값을 같이 쓰지 않는다: 폭과 높이는 다른 것이라, 한 모드에서 끌면 다른 모드가
    *    엉뚱하게 두꺼워진다 (한 창구가 두 가지를 뜻하게 된다). */
   laneHeadH: number;
+  /** ★★**작업 상태** — 화면을 어떻게 펴 두었나 (사용자 지시 2026-08-22).
+   *
+   *  새로고침해도, 탭을 옮겨도 **그대로 남는다.** 예전에는 카테고리 접힘이 모듈 변수에만
+   *  있었고(새로고침에 사라짐) 섹션 접힘·`Prompt`/`UC` 탭은 프롬프트 스토어에 있다가
+   *  `load()` 가 통째로 비웠다(탭을 옮길 때마다 기본값). 「내가 펴 둔 대로」가 자꾸 풀렸다.
+   *  ★값은 **화면 것**이지 문서가 아니다 — 그래서 워크스페이스 파일이 아니라 여기 산다.
+   *  ★열쇠는 자리 이름이다: 카테고리 id · 섹션 id(`base` 또는 캐릭터 id). */
+  view: {
+    /** 좌·우 기둥의 **카테고리** 접힘 (`panels/Category` 의 `id`) */
+    cat: Record<string, boolean>;
+    /** 프롬프트 **섹션** 접힘 (스타일 카드·캐릭터 카드) */
+    fold: Record<string, boolean>;
+    /** 섹션마다 `Prompt` 를 보고 있나 `Undesired Content` 를 보고 있나 */
+    tab: Record<string, "p" | "u">;
+  };
   /** 세로 모드일 때 씬 쪽의 폭 (`bottom` 일 때의 `laneHeight` 에 해당) */
   laneWidth: number;
 };
@@ -129,6 +144,7 @@ const DEFAULTS: Persisted = {
   laneSide: "bottom",
   laneWidth: 420,
   laneHeadH: 132,
+  view: { cat: {}, fold: {}, tab: {} },
 };
 
 export const COLS_MIN = 1;
@@ -175,6 +191,8 @@ type S = Persisted & {
   setSizeLast: (dir: "landscape" | "portrait" | "square", wh: [number, number]) => void;
   setLaneSide: (v: "bottom" | "right") => void;
   setLaneHeadH: (n: number) => void;
+  /** 작업 상태 한 칸을 적어 둔다 (`view` 주석) */
+  setView: <K extends keyof S["view"]>(kind: K, id: string, v: S["view"][K][string]) => void;
   setLaneWidth: (n: number) => void;
   setFont: (f: FontId) => void;
   /** 설정 창 — 열려 있으면 그 탭, 닫혀 있으면 null.
@@ -228,6 +246,12 @@ export const useUi = create<S>((set, get) => ({
   setLaneWidth: (n) => set({ laneWidth: Math.max(96, Math.round(n)) }),
   // 세로 모드의 머리 높이 — 프롬프트 칩 한두 줄이 들어갈 만큼은 있어야 한다
   setLaneHeadH: (n) => set({ laneHeadH: Math.min(420, Math.max(72, Math.round(n))) }),
+  setView: (kind, id, v) => {
+    const cur = get().view;
+    if (cur[kind][id] === v) return;   // 같은 값이면 저장을 안 부른다
+    set({ view: { ...cur, [kind]: { ...cur[kind], [id]: v } } });
+    get().commitLayout();
+  },
   setLaneSide: (v) => {
     set({ laneSide: v });
     get().commitLayout();
@@ -336,7 +360,7 @@ export const useUi = create<S>((set, get) => ({
       laneHeight, font, aiWidth, aiCollapsed,
       notifyDone, notifySound, notifyVolume, perSlot, curated,
       tagSuggest, weightHl, fmView, convertOpenFolder, enhanceLast, sizeLast,
-      laneSide, laneWidth, laneHeadH } = get();
+      laneSide, laneWidth, laneHeadH, view } = get();
     try {
       localStorage.setItem(
         KEY,
@@ -366,6 +390,7 @@ export const useUi = create<S>((set, get) => ({
           laneSide,
           laneWidth,
           laneHeadH,
+          view,
         }),
       );
     } catch {}

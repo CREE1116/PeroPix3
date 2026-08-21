@@ -91,13 +91,9 @@ type S = {
    *  ★값이 없으면(옛 워크스페이스) **켜진 것**이다. */
   styleOn: boolean;
   chars: Char[];
-  /** 지금 보고 있는 섹션의 Prompt/UC 탭 — 섹션마다 따로 기억한다 */
-  tabs: Record<string, "p" | "u">;
-  /** 접어 둔 섹션 — **보기 상태**라 탭과 같이 세션에 저장하지 않는다 */
-  folded: Record<string, boolean>;
-
-  setTab: (section: string, t: "p" | "u") => void;
-  toggleFold: (section: string) => void;
+  /* ★★섹션 접힘과 `Prompt`/`UC` 탭은 **여기 없다** — `useUi.view` 로 옮겼다
+     (사용자 지시 2026-08-22). 여기 있으면 `load()` 가 탭을 옮길 때마다 통째로 비워서
+     「펴 둔 대로」가 자꾸 풀렸다. 문서가 아니라 **보는 방식**이라 화면 쪽에 산다. */
   update: (area: AreaId, fn: (blocks: Block[]) => Block[]) => void;
   updateChar: (id: string, area: "prompt" | "uc", fn: (blocks: Block[]) => Block[]) => void;
 
@@ -175,13 +171,6 @@ export const usePrompt = create<S>((set, get) => ({
   style: { ref: null, name: t("prompt.defaultStyleName"), color: DEFAULT_STYLE_COLOR, thumb: null },
   styleOn: true,
   chars: [],
-  tabs: {},
-  folded: {},
-
-  setTab: (section, tab) => set({ tabs: { ...get().tabs, [section]: tab } }),
-
-  toggleFold: (section) =>
-    set({ folded: { ...get().folded, [section]: !get().folded[section] } }),
 
   update: (area, fn) => {
     set({ [area]: fn(get()[area]) } as Pick<S, AreaId>);
@@ -376,8 +365,6 @@ export const usePrompt = create<S>((set, get) => ({
       /* ★옛 인물·스택에는 **이름 해시로 뽑힌 색**이 박혀 있다 — 위에서 종류 색으로
          맞춰 뒀다. 안 맞추면 같은 종류인데 카드마다 색이 다른 화면이 남는다 */
       chars,
-      tabs: {},
-      folded: {},
     });
   },
 

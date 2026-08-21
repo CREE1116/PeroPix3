@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useUi } from "../store/ui";
 import { useI18n } from "../i18n";
 import { ExifTool } from "./tools/ExifTool";
 import { ConvertTool } from "./tools/ConvertTool";
@@ -22,7 +22,10 @@ const TABS = [
 
 export function Tools() {
   const t = useI18n((s) => s.t);
-  const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("exif");
+  /** 어느 도구를 보고 있나 — ★**저장되는 작업 상태**다 (`useUi.view.tab`) */
+  type ToolId = (typeof TABS)[number]["id"];
+  const tab = useUi((u) => (u.view.tab["tools"] as ToolId | undefined) ?? "exif");
+  const setTab = (k: ToolId) => useUi.getState().setView("tab", "tools", k as never);
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: "var(--sp-4)", gap: "var(--sp-4)" }}>

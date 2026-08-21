@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { flashStyle, useFlash, useUi } from "../store/ui";
 import { Icon } from "../components/Icon";
 
@@ -20,9 +20,6 @@ import { Icon } from "../components/Icon";
  *    NAI Settings · Generation · Vibe / Character Ref · Base Image · Save Options.
  *    항목마다 접히게 두지 않는다 — 그러면 훑을 수가 없다.
  */
-
-/** 접힘 상태 — 화면 것이라 스토어에 안 넣는다 (대화·워크스페이스와 함께 저장될 값이 아니다) */
-const foldState: Record<string, boolean> = {};
 
 export function Category({
   id,
@@ -54,15 +51,16 @@ export function Category({
   spot?: boolean;
   children: React.ReactNode;
 }) {
-  const [folded, setFolded] = useState(foldState[id] ?? !!defaultFolded);
+  /** ★★접힘은 **저장되는 작업 상태**다 (`useUi.view.cat`, 사용자 지시 2026-08-22).
+   *  ~~모듈 변수에만 두던 것~~은 새로고침 한 번에 사라져, 펴 둔 대로가 자꾸 풀렸다.
+   *  ★워크스페이스 파일이 아니라 화면 쪽에 산다 — 문서가 아니라 **보는 방식**이다. */
+  const folded = useUi((u) => u.view.cat[id] ?? !!defaultFolded);
+  const setFolded = (v: boolean) => useUi.getState().setView("cat", id, v);
   const flash = useFlash(flashKey ?? "");
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!flash) return;
-    if (folded) {
-      foldState[id] = false;
-      setFolded(false);
-    }
+    if (folded) setFolded(false);
     // ★★강조만으로는 못 본다 — **그 자리로 데려간다** (사용자 지적 2026-08-19: 카드가
     //   바뀌는데 아무 신호가 없었다). `nearest` 라 이미 보이면 화면이 안 흔들린다.
     // ★★단 **부르는 쪽이 끌 수 있다** (사용자 지시 2026-08-21) — 설정 불러오기처럼 여러
@@ -71,10 +69,7 @@ export function Category({
       box.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flash]);
-  const toggle = () => {
-    foldState[id] = !folded;
-    setFolded(!folded);
-  };
+  const toggle = () => setFolded(!folded);
   return (
     <div
       ref={box}

@@ -13,6 +13,7 @@ import {
 } from "../store/prompt";
 import type { DragImage } from "../cards/dragStore";
 import { canEnableChar, toggleCharCapped, useGen } from "../store/gen";
+import { useUi } from "../store/ui";
 import { useDropZone, useDragSource, useDrag } from "../cards/dragStore";
 import { zoneIcon } from "../cards/CardArt";
 import { DropVeil } from "../cards/DropVeil";
@@ -51,7 +52,10 @@ function useThumbDrop(section: string, onAsk: (img: DragImage) => void) {
 /* ── 스타일 섹션 = Base ───────────────────────────────────────── */
 export function StyleSection({ onThumb }: SectionProps) {
   const t = useI18n((s) => s.t);
-  const { base, baseUc, style, styleOn, setStyleOn, update, setStyle, folded, toggleFold } = usePrompt();
+  const { base, baseUc, style, styleOn, setStyleOn, update, setStyle } = usePrompt();
+  /** 접힘은 **저장되는 작업 상태**다 (`useUi.view.fold`) — 탭을 옮겨도 새로고침해도 남는다 */
+  const folded = useUi((u) => u.view.fold);
+  const toggleFold = (id: string) => useUi.getState().setView("fold", id, !useUi.getState().view.fold[id]);
   const startDrag = useDragSource();
 
   const { ref, over, active } = useDropZone({
@@ -181,7 +185,9 @@ export function CharSection({
   onThumb,
 }: { ch: Char; index: number; /** 맨 아래 카드인가 — 아래 단추를 흐리게 한다 */ last: boolean } & SectionProps) {
   const t = useI18n((s) => s.t);
-  const { updateChar, stackChar, removeChar, renameChar, stepChar, folded, toggleFold } = usePrompt();
+  const { updateChar, stackChar, removeChar, renameChar, stepChar } = usePrompt();
+  const folded = useUi((u) => u.view.fold);
+  const toggleFold = (id: string) => useUi.getState().setView("fold", id, !useUi.getState().view.fold[id]);
   const startDrag = useDragSource();
   const active = useDrag((s) => s.drag?.kind === "characters" && s.drag.dir === "apply");
 
@@ -490,8 +496,9 @@ export function SectionBody({
   onUc: (b: Block[]) => void;
 }) {
   const t = useI18n((s) => s.t);
-  const tab = usePrompt((s) => s.tabs[id] ?? "p");
-  const setTab = usePrompt((s) => s.setTab);
+  /** `Prompt`/`UC` 중 무엇을 보고 있나 — **저장되는 작업 상태**다 (`useUi.view.tab`) */
+  const tab = useUi((u) => u.view.tab[id] ?? "p");
+  const setTab = (sec: string, v: "p" | "u") => useUi.getState().setView("tab", sec, v);
   const ucFull = ucHasContent(uc);
   const showUc = tab === "u";
 
