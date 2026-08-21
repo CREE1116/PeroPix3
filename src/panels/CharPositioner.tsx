@@ -133,7 +133,7 @@ export function CharStackedWarning() {
 
 /** 캐릭터 배치 판 — 큰 그림 위에 겹쳐 인물이 설 자리를 정한다.
  *
- *  ★★공홈 `sk()`·`sD()` 를 옮긴 것이다 (`_tmp/nai-v5/chunks/1388`, 대조 2026-08-21).
+ *  ★★공홈 `sk()`·`sD()` 를 옮긴 것이다 (`reference/nai-web-2026-08-21/chunks/9360-…`, 대조 2026-08-21).
  *    좌표 값 자체는 `lib/charPos` 가 갖고 있고(회귀 `charPos.test.ts`), 여기는 화면이다.
  *    공홈에서 갈리는 자리 셋을 그대로 지킨다:
  *
