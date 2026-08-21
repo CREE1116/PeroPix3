@@ -531,22 +531,46 @@ export function SceneLane() {
       /* ★`minWidth: 0` 이 없으면 **가로로 넘칠 때 스크롤이 아니라 통째로 커진다**.
          칸이 넓어지자 씬 줄이 오른쪽 기둥을 뚫고 나갔다 (사용자 지적 2026-08-14).
          flex 자식의 기본 `min-width: auto` 가 내용 폭만큼 늘어나기 때문이다. */
-      style={{ flex: 1, minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column" }}
+      /* ★★세로 모드에서는 **머리줄이 왼쪽에 세로로 선다** (사용자 지시 2026-08-22) —
+         줄이 좁아 가로 머리줄이 높이를 통째로 먹는다. 그래서 뿌리의 방향부터 바뀐다. */
+      style={{
+        flex: 1,
+        minHeight: 0,
+        minWidth: 0,
+        display: "flex",
+        flexDirection: vert ? "row" : "column",
+      }}
     >
       {/* ★머리줄 — 그릇의 것이다. 카드 이름은 카드 배너가 말한다.
-          ★★**자리가 모자라면 접힌다** (사용자 지시 2026-08-22) — 세로 모드에서는 줄이 좁아
-            한 줄에 다 안 들어간다. 그때는 키를 고정하지 않고 늘어나게 둔다. */}
+          ★★**세로 모드에서는 왼쪽에 세로로 선다** (사용자 지시 2026-08-22): 글도 세로쓰기다.
+            좁은 줄에서 가로 머리줄은 높이를 통째로 먹는데, 여기 담긴 것은 몇 개 안 된다.
+            ★`writing-mode: vertical-rl` 안에서는 **flex 축도 함께 돈다** — `row` 가 곧
+              위에서 아래다. 그래서 안쪽 배치는 손대지 않는다 (빈 자리 채우기 `flex: 1` 도 그대로).
+            ★자리가 모자라면 접힌다 (`flexWrap`) — 옆 칸으로 넘어간다. */}
       <div
+        data-scene-lane-head
         style={{
           flexShrink: 0,
-          ...(vert ? { minHeight: 30, flexWrap: "wrap" as const, rowGap: 2, padding: "3px var(--sp-3)" } : { height: 30 }),
           display: "flex",
           alignItems: "center",
           gap: "var(--sp-3)",
-          ...(vert ? null : { padding: "0 var(--sp-3) 0 var(--sp-4)" }),
-          borderTop: "1px solid var(--line)",
-          borderBottom: "1px solid var(--line)",
           background: "var(--panel)",
+          ...(vert
+            ? {
+                writingMode: "vertical-rl" as const,
+                minWidth: 30,
+                flexWrap: "wrap" as const,
+                columnGap: 2,
+                padding: "var(--sp-4) 3px var(--sp-3)",
+                borderLeft: "1px solid var(--line)",
+                borderRight: "1px solid var(--line)",
+              }
+            : {
+                height: 30,
+                padding: "0 var(--sp-3) 0 var(--sp-4)",
+                borderTop: "1px solid var(--line)",
+                borderBottom: "1px solid var(--line)",
+              }),
         }}
       >
         <b style={{ fontSize: "var(--text-2xs)", color: "var(--ink-dim)" }}>{t("scenes.title")}</b>
