@@ -145,17 +145,9 @@ function load(): Persisted {
 type S = Persisted & {
   mode: ModeId;
   setMode: (m: ModeId) => void;
-  /** 씬 줄을 **별표만** 보여 주나 (v2·옛 싱글 캔버스의 「별표만 보기」).
-   *
-   *  ★**저장하지 않는다** — 거르는 상태로 앱을 켜면 그림이 사라진 것처럼 보인다.
-   *    옛 구현도 화면 상태였다 (`Canvas.tsx` 의 `starOnly`, 커밋 1ae9fda 이전).
-   *  ★스토어에 두는 이유는 **씬 줄과 큰 그림이 다른 컴포넌트**라서다 (`sceneFocus` 와 같은
-   *    사정). 줄만 거르면 휠로 넘길 때 걸러진 장이 큰 그림에 떠서 둘이 어긋난다. */
-  laneStarOnly: boolean;
-  setLaneStarOnly: (v: boolean) => void;
   /** 캐릭터 배치 판을 펴 놓았나 (큰 그림 위에 겹친다 — `panels/CharPositioner`).
    *
-   *  ★**저장하지 않는다** — `laneStarOnly` 와 같은 사정이다. 켜 둔 채로 앱을 켜면
+   *  ★**저장하지 않는다** — 켜 둔 채로 앱을 켜면
    *    그림이 막에 덮여 있어 무엇이 잘못됐는지 알 수 없다.
    *  ★공홈도 화면 상태로 둔다(`n9.VD`). 켜 둘 수 있는 조건이 깨지거나(`use_coords` 를 끄거나,
    *    인물이 모자라거나) 하면 **스스로 닫힌다** — 닫는 자리는 `ScenePreview` 다. */
@@ -225,8 +217,6 @@ export const useUi = create<S>((set, get) => ({
   ...load(),
   mode: "generate",
   setMode: (m) => set({ mode: m }),
-  laneStarOnly: false,
-  setLaneStarOnly: (v) => set({ laneStarOnly: v }),
   positioning: false,
   setPositioning: (v) => set({ positioning: v }),
   setLaneSize: (n) => set({ laneSize: Math.min(LANE_MAX, Math.max(LANE_MIN, Math.round(n))) }),

@@ -381,12 +381,10 @@ function ScenePreview() {
   const startDrag = useDragSource();
   const { base } = useGen();
   const ws = useWs((s) => s.current);
-  const { records, activeTab, isDeleted, isStarred } = useWs();
+  const { records, activeTab, isDeleted } = useWs();
   const cell = useSceneFocus((s) => s.cell);
   const file = useSceneFocus((s) => s.file);
   const previews = usePreviews((s) => s.items);
-  /** ★씬 줄과 **같은 거르기**를 건다 — 줄에서 안 보이는 장이 휠로 넘어오면 둘이 어긋난다 */
-  const starOnly = useUi((u) => u.laneStarOnly);
 
   /* ★캐릭터 배치 — 큰 그림 위에 판을 겹친다 (`CharPositioner` 머리 주석).
      ★여기는 **판을 놓을 자리만** 안다. 열 수 있는지·스스로 닫히는지는 전부
@@ -409,7 +407,6 @@ function ScenePreview() {
     setTab && scene
       ? [...takesOfScene(merged, setTab, allCells(setTab), scene.cell)]
           .filter((r) => !isDeleted(r.file))
-          .filter((r) => !starOnly || isStarred(r.file))
           .reverse()
       : [];
   /** 지금 띄울 장 — ★**거르기 전 목록**에서 찾는다. 「별표만 보기」를 켜면 보고 있던 장이

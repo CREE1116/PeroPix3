@@ -4,7 +4,7 @@ import { useGen } from "../store/gen";
 import { usePrompt } from "../store/prompt";
 import { useQueue } from "../store/queue";
 import { LANE_MAX, LANE_MIN, useUi } from "../store/ui";
-import { allCells, useWs, takesOf, takesOfScene, type Rec, type SceneCard, type Slot } from "../store/workspace";
+import { allCells, useWs, takesOfScene, type Rec, type SceneCard, type Slot } from "../store/workspace";
 import { newestFirst } from "../lib/takes";
 import { imgUrl, thumbUrlOf } from "../lib/imgUrl";
 import { EnhanceDialog } from "./EnhanceDialog";
@@ -49,16 +49,13 @@ const GAP = 6;
 export function SceneLane() {
   const t = useI18n((s) => s.t);
   const base = useGen((g) => g.base);
-  const { records, current: ws, activeTab, isDeleted, isStarred, toggleStar, deleteFiles,
+  const { records, current: ws, activeTab, isDeleted, deleteFiles,
     undoSelection, setTab, setCard, addCard, removeCard, addSlot, moveScene, moveCard } = useWs();
   const pending = useQueue((s) => s.pending);
   // ★구독해서 읽는다. `getState()` 로 읽으면 진행이 바뀌어도 다시 그리지 않아
   //   「생성 중」이 영영 안 뜬다 (사용자 지적 2026-08-14)
   const progress = useQueue((s) => s.progress);
   const laneSize = useUi((u) => u.laneSize);
-  /** ★「별표만 보기」 — 옛 싱글 캔버스에 있던 보기 전환이 여기로 왔다 (사용자 지시 2026-08-18).
-   *  탭 전체를 거르는 것이라 씬마다 두지 않고 줄 머리에 하나만 둔다. */
-  const starOnly = useUi((u) => u.laneStarOnly);
   /** 씬을 아래에 두나 오른쪽에 두나 — 무대를 그리는 것은 `Canvas`, 켜고 끄는 것은 여기다 */
   const laneSide = useUi((u) => u.laneSide);
   /** ★★**세로 모드에서는 줄이 통째로 90° 돈다** (사용자 지시 2026-08-22).
@@ -73,6 +70,9 @@ export function SceneLane() {
   const vert = laneSide === "right";
   /** 씬 머리의 **그 축 크기** — 아래 모드면 폭, 세로 모드면 높이 */
   const headw = useUi((u) => (vert ? u.laneHeadH : u.laneHeadW));
+  /** 전역 키 임자는 한 번만 매다므로(`window`) 축은 ref 로 읽는다 */
+  const vertRef = useRef(vert);
+  vertRef.current = vert;
   /** 미저장 그림 — ★저장된 것과 **같은 목록**에 얹는다 (`store/previews.ts`) */
   const previews = usePreviews((s) => s.items);
   const startDrag = useDragSource();
@@ -310,10 +310,19 @@ export function SceneLane() {
       }
       // 이미 가로로 굴리고 있으면(터치패드·Shift) 브라우저에 맡긴다
       if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
-      // ★★세로 모드에서는 장이 **세로로** 쌓이므로 위아래가 곧 그 방향이다 — 가로채지 않는다
-      if (vert) return;
       const t = e.target as HTMLElement | null;
-      if (!t?.closest?.("[data-scene-takes]")) return;
+      const onTakes = !!t?.closest?.("[data-scene-takes]");
+      /* ★★세로 모드에서는 **정반대**다 (사용자 지시 2026-08-22):
+           그림 위     장이 아래로 쌓이므로 **위아래가 곧 그 방향** — 가로채지 않는다
+           그 밖       씬이 오른쪽으로 늘어서므로 **좌우로** 굴린다 */
+      if (vert) {
+        if (onTakes) return;
+        if (el.scrollWidth - el.clientWidth <= 0) return;
+        e.preventDefault();
+        el.scrollLeft += e.deltaY;
+        return;
+      }
+      if (!onTakes) return;
       // ★가로로 넘칠 것이 없으면 **가로채지 않는다** — 안 그러면 그림이 몇 장 없을 때
       //   썸네일 위에서 휠이 통째로 죽어(위아래도 안 된다) 줄이 멈춘 것처럼 보인다
       if (el.scrollWidth - el.clientWidth <= 0) return;
@@ -411,11 +420,15 @@ export function SceneLane() {
         useSceneFocus.getState().focus(cur.cell, next);
         return;
       }
-      // ★★고른 장이 있으면 **좌우 방향키로 장을 넘긴다** (사용자 지시 2026-08-21).
-      //   예전에는 브라우저 기본대로 줄이 **스크롤**됐다 — 그림을 견주려고 방향키를 눌렀는데
-      //   화면만 밀렸다. 아무것도 안 골랐을 때는 평소대로 스크롤이다.
-      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-        if (stepTake(e.key === "ArrowRight" ? 1 : -1)) e.preventDefault();
+      /* ★★고른 장이 있으면 **방향키로 장을 넘긴다** (사용자 지시 2026-08-21).
+         예전에는 브라우저 기본대로 줄이 **스크롤**됐다 — 그림을 견주려고 방향키를 눌렀는데
+         화면만 밀렸다. 아무것도 안 골랐을 때는 평소대로 스크롤이다.
+         ★★**장이 늘어선 방향의 키**다 (사용자 지시 2026-08-22): 아래 모드는 좌우,
+           세로 모드는 위아래. 반대 축의 키는 평소대로 둔다 — 그쪽이 씬을 오가는 방향이다. */
+      const fwd = vertRef.current ? "ArrowDown" : "ArrowRight";
+      const back = vertRef.current ? "ArrowUp" : "ArrowLeft";
+      if (e.key === fwd || e.key === back) {
+        if (stepTake(e.key === fwd ? 1 : -1)) e.preventDefault();
         return;
       }
       if ((e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z")) {
@@ -458,13 +471,7 @@ export function SceneLane() {
   const cells = allCells(tab);
   const all = withPreviews(records, ws, previews);
   const takesOfCell = (c: Slot) =>
-    takesOfScene(all, tab, cells, c)
-      .filter((r) => !isDeleted(r.file))
-      .filter((r) => !starOnly || isStarred(r.file));
-  /** 버튼 안에 적는 별표 수 — ★**이 탭 전체**다 (거르는 범위와 같아야 한다) */
-  const starCount = takesOf(all, tab, undefined).filter(
-    (r) => !isDeleted(r.file) && isStarred(r.file),
-  ).length;
+    takesOfScene(all, tab, cells, c).filter((r) => !isDeleted(r.file));
 
   /** 카드마다 **앞선 카드들의 씬 수**.
    *  ★줄 앞 번호는 **탭 안에서 통째로** 센다 — 그 값이 곧 파일 이름 앞의 번호이기 때문이다
@@ -585,48 +592,6 @@ export function SceneLane() {
             차지하던 자리를 돌려주고, 손이 줄 위에 있는 채로 바로 조절된다.
             ★안내 문구를 두지 않는다 (사용자 지시 2026-08-19) — 휠로 조절되는 것은
               적어 두지 않아도 안다. 지금 크기도 칸을 보면 보인다. */}
-        {/* ★「별표만 보기」 — **탭 전체를 거르는 보기 전환**이다 (옛 싱글 캔버스에서 옮겨 왔다).
-            별표를 켜는 자리는 그대로 썸네일 우상단이고, 여기는 **거르는 창구**다.
-            별표 수를 버튼 안 괄호에 적는 것도 그때와 같다 (줄에는 글자를 두지 않는다). */}
-        {/* ★★씬을 **오른쪽으로 보내는** 모드 (사용자 지시 2026-08-22) — 큰 그림과 씬을
-            가운데에서 좌우로 양분한다. 세로로 긴 그림을 크게 보며 뽑기 위한 것이라,
-            켜고 끄는 자리는 씬 줄 머리다 (`Canvas` 의 `SceneStage` 가 그린다). */}
-        <button
-          data-lane-side={laneSide}
-          onClick={() => useUi.getState().setLaneSide(laneSide === "right" ? "bottom" : "right")}
-          data-tip={t(laneSide === "right" ? "canvas.laneToBottom" : "canvas.laneToRight")}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            height: 22,
-            padding: "0 var(--sp-2)",
-            borderRadius: "var(--r-1)",
-            border: `1px solid ${laneSide === "right" ? "var(--accent)" : "transparent"}`,
-            color: laneSide === "right" ? "var(--accent)" : "var(--ink-faint)",
-          }}
-        >
-          {Icon.sliders}
-        </button>
-        <button
-          data-star-filter
-          onClick={() => useUi.getState().setLaneStarOnly(!starOnly)}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 3,
-            height: 22,
-            padding: "0 var(--sp-2)",
-            borderRadius: "var(--r-1)",
-            border: `1px solid ${starOnly ? "var(--warn)" : "transparent"}`,
-            color: starOnly ? "var(--warn)" : "var(--ink-faint)",
-            fontSize: "var(--text-2xs)",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {starOnly ? Icon.star12On : Icon.star12}
-          {/* ★거르는 중에는 개수를 안 적는다 — 「전체 보기 (3)」 은 3장이 전부라는 말로 읽힌다 */}
-          {starOnly ? t("canvas.starAll") : `${t("canvas.starOnly")} (${starCount})`}
-        </button>
       </div>
 
       <div
@@ -642,32 +607,29 @@ export function SceneLane() {
           ...(setDrop.active ? { zIndex: 31, background: "var(--bg)" } : {}),
         }}
       >
-      {/* ★줄 머리 크기 손잡이. 머리는 시작 쪽에 붙어 있으므로(sticky) 손잡이는
+      {/* ★줄 머리 크기 손잡이. 머리는 왼쪽에 붙어 있으므로(sticky left:0) 손잡이는
           스크롤과 무관하게 늘 같은 자리에 선다.
-          ★세로 모드에서는 머리가 **위**에 있으므로 손잡이도 가로로 눕고 위아래로 끈다. */}
+          ★★**세로 모드에서는 여기 두지 않는다** (사용자 지적 2026-08-22: 손잡이가 실제
+            머리와 다른 데 있었다). 세로 모드의 머리는 카드 배너 아래에서 시작하고 그
+            배너는 같이 굴러가므로, 줄 상자 기준의 고정 좌표로는 절대 안 맞는다.
+            대신 **머리의 아래 모서리 안쪽**에 둔다 (`SceneRow`) — 붙어 다니니 어긋날 수 없다. */}
+      {!vert && (
       <div
-        data-head-grip={vert ? "row" : "col"}
+        data-head-grip="col"
         onPointerDown={(e) => {
           (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-          grip.current = { x: vert ? e.clientY : e.clientX, w: headw };
+          grip.current = { x: e.clientX, w: headw };
         }}
         onPointerMove={(e) => {
           const g = grip.current;
           if (!g) return;
-          const next = g.w + ((vert ? e.clientY : e.clientX) - g.x);
-          if (vert) useUi.getState().setLaneHeadH(next);
-          else useUi.getState().setLaneHeadW(next);
+          useUi.getState().setLaneHeadW(g.w + (e.clientX - g.x));
         }}
         onPointerUp={() => { grip.current = null; useUi.getState().commitLayout(); }}
         onPointerCancel={() => { grip.current = null; }}
-        style={{
-          position: "absolute",
-          zIndex: 6,
-          ...(vert
-            ? { top: headw - 3, left: 0, right: 0, height: 7, cursor: "row-resize" }
-            : { left: headw - 3, top: 0, bottom: 0, width: 7, cursor: "col-resize" }),
-        }}
+        style={{ position: "absolute", left: headw - 3, top: 0, bottom: 0, width: 7, zIndex: 6, cursor: "col-resize" }}
       />
+      )}
       {/* ★★씬 세트 카드는 **이 줄이 받는다** (사용자 지시 2026-08-19).
           예전에는 캔버스에 고정 크기 판을 띄웠는데, 씬이 사는 자리와 다른 데다 받는 넓이가
           화면 크기에 매여 있었다. 이제 **씬 줄 그대로가 받는 자리**다 — 줄이 늘고 줄면 받는
@@ -733,8 +695,6 @@ export function SceneLane() {
                 headw={headw}
                 base={base}
                 ws={ws}
-                isStarred={isStarred}
-                onStar={toggleStar}
                 onPatch={(patch) => setCard(tab.id, card.id, patch)}
                 onRemove={() => removeCard(tab.id, card.id)}
                 onAddScene={() => addSlot(tab.id, { cardId: card.id })}
@@ -1070,8 +1030,6 @@ type GroupProps = {
   headw: number;
   base: string;
   ws: string;
-  isStarred: (f: string) => boolean;
-  onStar: (f: string) => void;
   onPatch: (patch: Partial<SceneCard>) => void;
   onRemove: () => void;
   onAddScene: () => void;
@@ -1130,6 +1088,41 @@ function CardGroup(p: GroupProps) {
     onDrop: (d) =>
       d.img && askThumb({ type: "scene-card", tabId: p.tabId, cardId: p.card.id, img: d.img }),
   });
+  /** 「씬 추가」 한 줄 — **한 번만 만들고 자리만 가른다.**
+   *  ★세로 모드에서는 **카드 맨 위**(배너 바로 아래)에 둔다 (사용자 지적 2026-08-22):
+   *    카드가 세로로 꽉 차서 아래쪽 끝이 화면 밖이라 단추가 안 보였다.
+   *  ★두 벌로 적지 말 것 — 한쪽만 고쳐진 채로 남는다 (실제로 이 자리를 옮기다 아래 모드의
+   *    단추를 통째로 잃었다). */
+  const addScene = (
+      <div
+        style={{
+          /* ★★세로 모드에서는 **카드 맨 위**(배너 바로 아래)에 둔다 (사용자 지적 2026-08-22).
+             카드가 세로로 꽉 차서 아래쪽 끝은 화면 밖이라 단추가 안 보였다. */
+          ...(p.vert
+            ? { borderBottom: "1px dashed var(--line)", width: "100%", flexShrink: 0 }
+            : { borderTop: "1px dashed var(--line)", minWidth: "100%" }),
+        }}
+      >
+        <button
+          data-add-scene={p.card.id}
+          onClick={p.onAddScene}
+          style={{
+            // ★세로 모드에서는 카드가 가로로 안 굴러가므로 붙들 필요가 없다
+            ...(p.vert ? null : { position: "sticky" as const, left: 0 }),
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "var(--sp-2)",
+            padding: "var(--sp-3) var(--sp-5)",
+            color: "var(--ink-faint)",
+            fontSize: "var(--text-2xs)",
+          }}
+        >
+          {Icon.plus}
+          {t("scenes.addScene")}
+        </button>
+      </div>
+  );
+
   /** 이 카드 안에서 씬이 놓일 자리 (없으면 null) */
   const sceneAt =
     p.drop?.kind === "scene" && p.drop.cardId === p.card.id ? p.drop.index : null;
@@ -1347,6 +1340,7 @@ function CardGroup(p: GroupProps) {
       {/* ★공통 접두는 **걷었다** (사용자 지시 2026-08-21). 프롬프트에 실려 나가는 값이
           카드 머리에 한 줄로만 보여서, 어느 씬에 무엇이 붙는지 화면에서 따라가기 어려웠다.
           같은 것을 붙이려면 **베이스 프롬프트의 블록**을 쓴다 (창구가 하나가 된다). */}
+{p.vert && addScene}
       {/* ★세로 모드에서는 씬이 **오른쪽으로** 늘어선다 (기둥 하나가 씬 하나) */}
       <div
         style={
@@ -1362,30 +1356,7 @@ function CardGroup(p: GroupProps) {
           </Fragment>
         ))}
       </div>
-      <div
-        style={{
-          borderTop: "1px dashed var(--line)",
-          ...(p.vert ? { width: "100%", flexShrink: 0 } : { minWidth: "100%" }),
-        }}
-      >
-        <button
-          data-add-scene={p.card.id}
-          onClick={p.onAddScene}
-          style={{
-            // ★세로 모드에서는 카드가 가로로 안 굴러가므로 붙들 필요가 없다
-            ...(p.vert ? null : { position: "sticky" as const, left: 0 }),
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "var(--sp-2)",
-            padding: "var(--sp-3) var(--sp-5)",
-            color: "var(--ink-faint)",
-            fontSize: "var(--text-2xs)",
-          }}
-        >
-          {Icon.plus}
-          {t("scenes.addScene")}
-        </button>
-      </div>
+      {!p.vert && addScene}
       </>
       )}
       {/* 이 카드의 **끝**에 놓을 때. ★접혀 있으면 줄이 없어 **언제나 끝**이라, 접힌 카드에도
@@ -1412,6 +1383,8 @@ function SceneRow(
   /** ★★이 칸의 블록 — **하나뿐**이다 (`slotBlock`). 여럿이 든 옛 카드를 얹었으면
    *  켜진 것들을 이어 붙여 보여 준다. */
   const blk = slotBlock(c.blocks, c.id);
+  /** 세로 모드의 머리 높이 손잡이를 잡은 자리 */
+  const headGrip = useRef<{ y: number; h: number } | null>(null);
   /** ★줄은 **최신이 왼쪽**이다 (사용자 지시 2026-08-14, 싱글 히스토리 줄과 같은 규칙).
    *  방금 나온 것을 찾아 눈이 끝까지 갈 이유가 없다. 대기 칸도 같은 규칙이라
    *  **새로 넣은 큐가 맨 왼쪽**이고, 지금 만드는 중인 것은 결과 바로 옆에 선다.
@@ -1485,7 +1458,38 @@ function SceneRow(
           overflow: "hidden",
         }}
       >
-        <span style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+        {/* ★★세로 모드의 머리 크기 손잡이는 **여기**다 (사용자 지적 2026-08-22).
+            줄 상자 기준의 고정 좌표로 두면 카드 배너 높이만큼 어긋나고, 배너는 같이
+            굴러가므로 어떤 값으로도 안 맞는다. 머리에 붙여 두면 어긋날 수가 없다. */}
+        {p.vert && (
+          <div
+            data-head-grip="row"
+            onPointerDown={(e) => {
+              (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+              headGrip.current = { y: e.clientY, h: p.headw };
+            }}
+            onPointerMove={(e) => {
+              const g = headGrip.current;
+              if (!g) return;
+              useUi.getState().setLaneHeadH(g.h + (e.clientY - g.y));
+            }}
+            onPointerUp={() => { headGrip.current = null; useUi.getState().commitLayout(); }}
+            onPointerCancel={() => { headGrip.current = null; }}
+            onClick={(e) => e.stopPropagation()}
+            style={{ position: "absolute", left: 0, right: 0, bottom: -3, height: 7, zIndex: 3, cursor: "row-resize" }}
+          />
+        )}
+        {/* ★★세로 모드에서는 머리가 좁다 — **줄바꿈을 허용**하고 이름은 줄여서 넣는다
+            (사용자 지적 2026-08-22: 글자가 머리 밖으로 튀어나갔다). */}
+        <span
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+            minWidth: 0,
+            ...(p.vert ? { flexWrap: "wrap" as const, rowGap: 2 } : null),
+          }}
+        >
           <span
             {...p.grip}
             onClick={(e) => e.stopPropagation()}
@@ -1740,28 +1744,7 @@ function SceneRow(
                 >
                   {t("scenes.unsaved")}
                 </span>
-              ) : (
-                <span
-                  data-take-star={r.file}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    p.onStar(r.file);
-                  }}
-                  style={{
-                    position: "absolute",
-                    right: 1,
-                    top: 0,
-                    display: "grid",
-                    color: p.isStarred(r.file) ? "var(--warn)" : "rgba(255,255,255,0.8)",
-                    opacity: p.isStarred(r.file) ? 1 : 0,
-                    filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.7))",
-                  }}
-                  className="thumb-star"
-                >
-                  {/* ★썸네일 위라 12px 은 작았다 → 18px (사용자 지시 2026-08-18) */}
-                  {p.isStarred(r.file) ? Icon.star18On : Icon.star18}
-                </span>
-              )}
+              ) : null}
             </button>
           );
         })}

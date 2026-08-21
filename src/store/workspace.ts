@@ -182,7 +182,7 @@ export type Spec = {
    *    덱의 캐릭터 카드(`cards.short.characters`). */
   chars?: WsChar[];
   activeChar?: string;
-  selection: { deleted: string[]; starred: string[] };
+  selection: { deleted: string[] };
 };
 
 export type WsInfo = { name: string; id?: string | null; updatedAt?: string | null };
@@ -209,14 +209,12 @@ type S = {
 
   /** ★비파괴 선별 — 파일을 지우지 않고 목록에만 넣는다 (PeroPixfy 의 deletions 방식).
    *  원본이 살아 있어야 되돌릴 수 있다. */
-  setSelection: (kind: "deleted" | "starred", files: string[], on: boolean) => void;
+  setSelection: (kind: "deleted", files: string[], on: boolean) => void;
   /** 선별을 되돌린다 (Ctrl+Z). ★되돌릴 것이 없으면 false 를 준다 —
    *  부르는 쪽이 그때만 브라우저 기본 동작에 넘길 수 있게. */
   undoSelection: () => boolean;
   canUndoSelection: () => boolean;
-  toggleStar: (file: string) => void;
   toggleDeleted: (file: string) => void;
-  isStarred: (file: string) => boolean;
   /** 「새 탭으로 복제」 — 그림 한 장을 **씬 하나짜리 새 탭**으로 옮긴다 (원본은 그대로).
    *  돌려주는 것은 그림이 앉은 자리(새 파일 · 그 씬의 id). 만들 수 없으면 null.
    *
@@ -335,7 +333,7 @@ const newSpec = (name: string): Spec => ({
   //   달라서 첫 탭만 「탭 1」이었다. 이름을 짓는 말은 하나면 된다 (`chars.newName`).
   chars: [{ id: "ch_1", name: t("chars.newName"), prompt: freshPrompt() }],
   activeChar: "ch_1",
-  selection: { deleted: [], starred: [] },
+  selection: { deleted: [] },
 });
 
 /** 옛 워크스페이스를 새 구조로 옮긴다 — **탭에 프롬프트가 없으면 spec.prompt 를 씨앗으로.**
@@ -429,12 +427,12 @@ function migrate(spec: Spec): Spec {
  *
  *  ★spec 안에 넣지 않는 이유: spec 은 통째로 서버에 PUT 되는 것이라, 되돌리기 이력이
  *    끼면 워크스페이스 파일이 이력으로 불어난다. 되돌리기는 이 세션의 것이다.
- *  ★범위는 **선별(숨김·별표)뿐이다** (사용자 결정 2026-08-03). 태그 입력·슬롯 삭제·탭 닫기는
+ *  ★범위는 **숨김(휴지통)뿐이다** (사용자 결정 2026-08-03; 별표는 걷었다 2026-08-22). 태그 입력·슬롯 삭제·탭 닫기는
  *    안 들어간다 — 입력칸에 커서가 있으면 Ctrl+Z 를 브라우저에 넘겨 글자 되돌리기가 살아 있게 한다.
  *  워크스페이스를 옮기면 비운다 (다른 워크스페이스의 파일을 되살리면 안 된다). */
 /** 되돌림 한 칸. ★`trashed` 가 있으면 **파일도** 제자리로 돌려야 한다 (지우기였다는 뜻) */
 type SelUndo = {
-  kind: "deleted" | "starred";
+  kind: "deleted";
   before: string[];
   trashed?: { file: string; at: string }[];
 };
@@ -721,16 +719,12 @@ export const useWs = create<S>((set, get) => ({
     set({ records: cur.map((x, i) => (i === at ? r : x)) });
     const spec = get().spec;
     if (!spec) return;
-    const { deleted, starred } = spec.selection;
-    if (!deleted.includes(r.file) && !starred.includes(r.file)) return;
+    const { deleted } = spec.selection;
+    if (!deleted.includes(r.file)) return;
     set({
       spec: {
         ...spec,
-        selection: {
-          ...spec.selection,
-          deleted: deleted.filter((f) => f !== r.file),
-          starred: starred.filter((f) => f !== r.file),
-        },
+        selection: { ...spec.selection, deleted: deleted.filter((f) => f !== r.file) },
       },
     });
     queueSave(get);
@@ -775,15 +769,9 @@ export const useWs = create<S>((set, get) => ({
 
   canUndoSelection: () => undoStack.length > 0,
 
-  toggleStar(file) {
-    get().setSelection("starred", [file], !get().isStarred(file));
-  },
-
   toggleDeleted(file) {
     get().setSelection("deleted", [file], !get().isDeleted(file));
   },
-
-  isStarred: (file) => !!get().spec?.selection.starred.includes(file),
 
   /** 「새 탭으로 복제」 — 그림 한 장과 **그 그림의 설정**만 담은 새 탭을 만들고 그리로 옮긴다.
    *
