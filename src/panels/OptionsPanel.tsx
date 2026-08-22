@@ -11,16 +11,8 @@ import { flashStyle, useFlash, useUi } from "../store/ui";
 
 const SAMPLERS = ["k_euler_ancestral", "k_euler", "k_dpmpp_2m", "k_dpmpp_2m_sde", "k_dpmpp_2s_ancestral", "k_dpmpp_sde"];
 const SCHEDULERS = ["karras", "native", "exponential", "polyexponential"];
-/** 퀄리티 프리셋 이름 — ★키를 조립하지 않는다 (i18n 검사가 리터럴만 센다).
- *  ★목록 자체는 **모델이 정한다** (`lib/naiModels.ts` 의 `quality_presets`). */
-const QP_LABEL: Record<string, string> = {
-  standard: "options.qpStandard",
-  light: "options.qpLight",
-  none: "options.qpNone",
-};
-// ★v2 와 같은 5종. `Furry Focus` 는 ucPreset 숫자표에 없어 0(Heavy)으로 떨어지지만
-//   프리셋 **태그 문자열**은 자기 것을 쓴다 — v2 와 같은 동작이다 (nai.py 참조).
-const UC_PRESETS = ["Heavy", "Light", "Human Focus", "Furry Focus", "None"];
+/* ★프리셋 이름표(`QP_LABEL`)와 UC 프리셋 목록은 **`panels/PromptOpts`** 로 옮겼다 —
+   그 컨트롤이 프롬프트 칸 하단으로 갔기 때문이다 (2026-08-23). */
 
 /** 우측 패널 — 생성 파라미터. */
 /** 생성 옵션 — ★**왼쪽 프롬프트 아래**에 산다 (사용자 지시 2026-08-16).
@@ -73,41 +65,22 @@ export function OptionsPanel() {
                   onChange={(v) => set("model", v)}
                 />
               </Group>
-              <Group label={t("options.ucPreset")}>
-                <Select value={p.uc_preset} options={UC_PRESETS} onChange={(v) => set("uc_preset", v)} />
-              </Group>
 
               {/* ★시드는 여기 없다 — **생성 버튼 옆 하나**로 옮겼다 (사용자 지시 2026-08-04).
                   매번 만지는 유일한 옵션이라 생성 버튼 곁이 맞고, 두 곳에 두면 어느 쪽이
                   진짜인지 흐려진다 (하나의 정보에는 하나의 창구). → `GenerateFooter` */}
-              {/* ★★공홈과 같은 **드롭다운**이다 (2026-08-21). 예전에는 켬/끔 하나였는데
-                  V5 에서 `light` 가 생겨 셋이 됐다 — 켬/끔으로는 표현할 수가 없다.
-                  ★고를 수 있는 값은 **모델이 정한다**. 없는 것을 고른 채 모델을 바꾸면
-                    서버가 `standard` 로 내린다 (`nai.quality_preset_id`). */}
-              <Group label={t("options.qualityPreset")}>
-                <Select
-                  value={cap.quality_presets.includes(p.quality_preset) ? p.quality_preset : "standard"}
-                  options={cap.quality_presets.map((id) => [id, t(QP_LABEL[id])] as [string, string])}
-                  onChange={(v) => set("quality_preset", v)}
-                />
-              </Group>
-              <Group label={t("options.misc")}>
-                {/* ★V5 에는 Variety+ 자체가 없다 (`cfgDelay` 거짓) — 서버가 값을 지운다 */}
-                {cap.cfg_delay && (
+              {/* ★★퀄리티 프리셋·UC 프리셋·투명 배경·퍼리 모드는 **여기 없다**
+                  (사용자 지시 2026-08-23). 넷 다 서버에서 **프롬프트 문자열이 되는** 것이라
+                  글을 적는 칸 하단으로 옮겼다 — 공홈도 그 자리에 둔다 (`panels/PromptOpts`).
+                  ★같은 값을 두 곳에서 만지게 되돌리지 말 것. */}
+              {/* ★V5 에는 Variety+ 자체가 없다 (`cfgDelay` 거짓) — 서버가 값을 지운다.
+                  ★그러면 묶음도 **통째로 안 낸다** — 넷이 빠져 나가면서 이 묶음에 남은 것이
+                    Variety+ 하나뿐이라, 이름표만 선 빈 칸이 된다 */}
+              {cap.cfg_delay && (
+                <Group label={t("options.misc")}>
                   <Check label={t("options.varietyPlus")} checked={p.variety_plus} onChange={(v) => set("variety_plus", v)} />
-                )}
-                {/* ★투명 배경은 V5 부터다. 프롬프트에 `transparent background` 를 넣고
-                    알파를 살려 받는다 (공홈 문구도 같은 설명이다) */}
-                {cap.transparency && (
-                  <Check
-                    label={t("options.transparentBg")}
-                    help={t("options.transparentBgHint")}
-                    checked={p.transparent_bg}
-                    onChange={(v) => set("transparent_bg", v)}
-                  />
-                )}
-                <Check label={t("options.furryMode")} checked={p.furry_mode} onChange={(v) => set("furry_mode", v)} />
-              </Group>
+                </Group>
+              )}
         </div>
       </Category>
 

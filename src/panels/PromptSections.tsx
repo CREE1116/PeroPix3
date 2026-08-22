@@ -21,6 +21,7 @@ import { BANNER_BG, BANNER_CUT, BANNER_IMG_W, BANNER_STEP, bannerEmptyFill } fro
 import type { Block } from "../lib/blocks";
 import type { CharCard, StyleCard } from "../store/cards";
 import { pickStyleOpts, styleOptsPatch } from "../lib/styleOpts";
+import { PromptOptsBar } from "./PromptOpts";
 
 /** 프롬프트 섹션들 — 스타일(공통) 하나 + 캐릭터 여럿.
  *  NAI 요청 구조 그대로다: 공통 `prompt/uc` 한 벌 + `characterPrompts[]`. */
@@ -186,6 +187,9 @@ export function StyleSection({ onThumb }: SectionProps) {
         uc={baseUc}
         onPrompt={(b) => update("base", () => b)}
         onUc={(b) => update("baseUc", () => b)}
+        /* ★★프롬프트가 되는 설정들은 **글 칸 하단**에 붙는다 (`PromptOpts` 의 ★주) —
+           공홈과 같은 자리이고, 스타일 카드가 담는 것도 이 넷이다 (`lib/styleOpts`). */
+        footer={(showUc) => <PromptOptsBar uc={showUc} />}
       />
     </SectionCard>
   );
@@ -502,12 +506,15 @@ export function SectionBody({
   uc,
   onPrompt,
   onUc,
+  footer,
 }: {
   id: string;
   prompt: Block[];
   uc: Block[];
   onPrompt: (b: Block[]) => void;
   onUc: (b: Block[]) => void;
+  /** 글 칸 **아래에 붙는 줄**. 지금 보고 있는 탭을 받아 내용을 고른다 (스타일 섹션의 프리셋 띠) */
+  footer?: (showUc: boolean) => React.ReactNode;
 }) {
   const t = useI18n((s) => s.t);
   /** `Prompt`/`UC` 중 무엇을 보고 있나 — **저장되는 작업 상태**다 (`useUi.view.tab`) */
@@ -533,6 +540,7 @@ export function SectionBody({
         onChange={showUc ? onUc : onPrompt}
         libZone={`${id}-${showUc ? "uc" : "p"}`}
       />
+      {footer?.(showUc)}
     </>
   );
 }
