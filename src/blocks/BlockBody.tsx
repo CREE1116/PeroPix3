@@ -3,32 +3,14 @@ import { useI18n } from "../i18n";
 import { caretAfterTag, parseSegs, serializeBlock, type Block } from "../lib/blocks";
 import { Chip } from "./Chip";
 import { pushUndo } from "../lib/undo";
+import { toEdit, toStore } from "../lib/softWrap";
 import { t as tr } from "../i18n";
 import { useTagSuggest } from "./TagSuggest";
 
-/** ★★**태그 안의 빈칸은 안 깨지는 빈칸(NBSP)으로** 둔다 — 글 상자도 칩처럼 **쉼표에서만**
- *  접히게 하려는 것이다 (사용자 지시 2026-08-22).
- *
- *  칩은 통째로 접혀 태그가 두 줄에 걸칠 일이 없는데, 글 상자는 빈칸이면 어디서든 접혀
- *  `looking at viewer` 가 둘로 쪼개졌다. CSS 로는 못 막는다 — `word-break: keep-all`·
- *  `overflow-wrap`·`text-wrap` 을 다 대 봤지만 여섯 판 모두 쪼개졌다 (실측).
- *  ★폭이 같다: 보통 빈칸 3.64px · NBSP 3.64px, `word-spacing: 11px` 에서도 둘 다 14.64px.
- *    그래서 맞춰 둔 흐름이 흐트러지지 않는다.
- *  ★**길이가 안 바뀌는 치환**이라 커서 자리가 안 밀린다 (한 글자를 한 글자로).
- *  ★한 태그가 줄보다 길면 그때는 그래도 쪼개진다 (글 상자의 기본 동작) — 칩은 그 경우
- *    말줄임으로 자른다. 줄보다 긴 태그는 드물어 그대로 둔다. */
-const NBSP = "\u00a0";
-/** 안 깨지는 붙임표 — ★폭이 보통 붙임표와 **똑같다** (실측 4.52px 대 4.52px) */
-const NBHY = "\u2011";
-/** 고칠 때의 글 — 접힐 자리를 **쉼표 뒤 하나만** 남긴다.
- *
- *  ★빈칸(U+0020)과 붙임표(U+002D) 둘 다 접힐 자리다. `close-up` 이 `close-` / `up` 으로
- *    끊기던 것이 붙임표 쪽이다 (사용자 지적 2026-08-22).
- *  ★한 글자를 한 글자로 바꾸므로 **길이가 안 변한다** — 커서 자리가 안 밀린다. */
-const toEdit = (t: string) =>
-  t.replace(/[ -]/g, (m, i: number) => (m === "-" ? NBHY : t[i - 1] === "," ? " " : NBSP));
-/** 밖으로 나가는 글 — **반드시 되돌린다** (저장·NAI 로 이 글자들이 새면 안 된다) */
-const toStore = (t: string) => t.replace(/\u00a0/g, " ").replace(/\u2011/g, "-");
+/* ★★글 상자가 화면에서만 쓰는 글자 바꾸기는 `lib/softWrap` 에 있다 — **자동완성도 같은 것을
+     본다.** 자동완성은 화면의 날것 값을 읽어 낱말을 자르는데, 되돌리지 않고 읽으면
+     `close‑`(U+2011)로 사전을 뒤져 아무것도 안 걸린다 (사용자 지적 2026-08-22:
+     *"close-up 검색할때 중간에 - 이거 입력하는 순간 자동완성이 중단됨"*). 까닭은 그 파일 머리에. */
 
 /** 칩 끌기 손잡이 — 목록이 들고 있는 것을 이 블록 몫만 받는다 (`useTagDrag`) */
 export type TagDrag = {

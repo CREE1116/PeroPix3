@@ -26,6 +26,20 @@ const EXTRA: TagEntry[] = ["very_aesthetic", "masterpiece", "no_text", "best_qua
   (label) => ({ label, value: label, count: 8_000_000, type: "meta", category: 5 }),
 );
 
+/** ★`nsfw`·`sfw` — 단부루 덤프(`tags.json`)에는 **없다** (실측 2026-08-22: 별칭까지 봐도 없음).
+ *  등급은 단부루에서 태그가 아니라 따로 붙는 값이라 덤프에 안 들어간다. 그런데 NAI 프롬프트에는
+ *  그대로 쓰는 낱말이라 자주 친다 (사용자 지시 2026-08-22: *"자동완성에 nsfw 랑 sfw 추가해줘"*).
+ *  ★`count` 는 0 이다 — 사용량 자료가 없다. 지어내지 않는다 (V5 태그와 같은 규약). */
+EXTRA.push(
+  ...["nsfw", "sfw"].map((label) => ({
+    label,
+    value: label,
+    count: 0,
+    type: "meta",
+    category: 5,
+  })),
+);
+
 /** ★NAI Diffusion **V5 에서 새로 생긴 태그** (NAI 공지 2026-08-21, 사용자 전달).
  *
  *  ★★근거는 **공지문뿐**이다. 공홈 번들에는 태그 사전이 없다 — 자동완성을 서버

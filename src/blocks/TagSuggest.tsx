@@ -11,6 +11,7 @@ import {
 } from "../lib/tagData";
 import { useWildcards } from "../store/wildcards";
 import { useUi } from "../store/ui";
+import { toStore } from "../lib/softWrap";
 
 /** 자동완성이 붙을 수 있는 입력칸 — 여러 줄(블록·슬롯)과 한 줄(공통 접두) 둘 다 */
 type Field = HTMLTextAreaElement | HTMLInputElement;
@@ -61,13 +62,22 @@ export function useTagSuggest(
     if (!useUi.getState().tagSuggest) return close();
     const ta = ref.current;
     if (!ta) return;
+    /* ★★**날것 값을 그대로 읽지 않는다** (사용자 지적 2026-08-22: *"close-up 검색할때 중간에
+         - 이거 입력하는 순간 자동완성이 중단됨"*).
+       글 상자는 접힘을 막으려고 빈칸을 NBSP 로, 붙임표를 U+2011 로 바꿔 들고 있다
+       (`lib/softWrap`). 그대로 읽으면 `close‑` 로 사전을 뒤져 **아무것도 안 걸린다.**
+       ★딸림값(`value`)을 대신 쓸 수는 없다 — 이 함수는 50ms 뒤에 도는 타이머가 부르는데,
+         그 타이머가 붙든 `run` 은 **바뀌기 전 렌더의 것**이라 한 글자 뒤처진다. 화면을 읽되
+         되돌리는 것이 맞다.
+       ★길이가 안 바뀌는 치환이라 아래 자리 계산(`at`)이 전부 그대로 맞는다. */
+    const raw = toStore(ta.value);
     // ★input 의 selectionStart 는 null 일 수 있다 (여러 줄 칸에는 늘 숫자가 온다)
-    const at = ta.selectionStart ?? ta.value.length;
+    const at = ta.selectionStart ?? raw.length;
 
     // ★**와일드카드 이름이 태그 검색보다 먼저다** (v2 `index.html:20450`).
     //   `(?<![A-Za-z0-9_])` 는 앞에 낱말이 붙은 `#` 을 흘려보낸다 (NAI 액션 태그 `source#tag`).
     //   ★사전을 안 기다린다: 풀 이름은 우리 문서에서 오므로 `tags.json` 과 무관하다.
-    const wc = ta.value.substring(0, at).match(/(?<![A-Za-z0-9_])#([A-Za-z0-9_]*)$/);
+    const wc = raw.substring(0, at).match(/(?<![A-Za-z0-9_])#([A-Za-z0-9_]*)$/);
     if (wc) {
       const q = wc[1].toLowerCase();
       const pools = useWildcards.getState().pools;
@@ -93,8 +103,8 @@ export function useTagSuggest(
 
     if (!tagsLoaded()) return;
     // 공백 두 번이면 낱말이 끝난 것으로 본다
-    if (at >= 2 && ta.value.substring(at - 2, at) === "  ") return close();
-    const { word } = currentWord(ta.value, at);
+    if (at >= 2 && raw.substring(at - 2, at) === "  ") return close();
+    const { word } = currentWord(raw, at);
     // ★표기를 여기서 바꾸지 않는다 — 밑줄·띄어쓰기를 같게 보는 자리는 `searchTags` 하나다
     //   (예전에는 여기서 띄어쓰기를 밑줄로 바꿔, 띄어쓰기 표기의 태그가 안 걸렸다)
     if (word.length < 2) return close();
