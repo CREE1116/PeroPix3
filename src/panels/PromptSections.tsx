@@ -20,6 +20,7 @@ import { DropVeil } from "../cards/DropVeil";
 import { BANNER_BG, BANNER_CUT, BANNER_IMG_W, BANNER_STEP, bannerEmptyFill } from "../cards/banner";
 import type { Block } from "../lib/blocks";
 import type { CharCard, StyleCard } from "../store/cards";
+import { pickStyleOpts, styleOptsPatch } from "../lib/styleOpts";
 
 /** 프롬프트 섹션들 — 스타일(공통) 하나 + 캐릭터 여럿.
  *  NAI 요청 구조 그대로다: 공통 `prompt/uc` 한 벌 + `characterPrompts[]`. */
@@ -71,6 +72,17 @@ export function StyleSection({ onThumb }: SectionProps) {
         uc: c.uc,
         thumb: thumbFromCard(c.thumb),
       });
+      /* ★★프롬프트가 되는 넷도 함께 건다 (`lib/styleOpts` 의 ★주) — 이것이 카드 밖에
+         남아 있으면 **같은 카드가 다른 그림을 낸다.** 옛 카드에는 없으니 그때는 안 바뀐다.
+         ★바뀐 것이 있으면 그 자리를 **펴고 강조한다** — 프롬프트 밖의 값이 함께 바뀌는 것이라
+           안 알리면 「왜 갑자기 퀄리티 태그가 붙었지」가 된다 (`applyMetaParams` 와 같은 방식).
+           ★데려가지는 않는다: 카드를 놓는 것은 프롬프트를 보면서 하는 일이다. */
+      const cur = useGen.getState().params;
+      const patch = styleOptsPatch(cur, c.opts);
+      if (Object.keys(patch).length) {
+        useGen.setState({ params: { ...cur, ...patch } });
+        useUi.getState().reveal("left", "params", false);
+      }
     },
   });
   const img = useThumbDrop("base", (di) => onThumb("base", di));
@@ -161,7 +173,9 @@ export function StyleSection({ onThumb }: SectionProps) {
         startDrag(e, {
           dir: "save",
           kind: "styles",
-          card: { id: style.ref ?? "", name: style.name, color: style.color, base, uc: baseUc },
+          // ★프롬프트가 되는 넷을 함께 담는다 (`lib/styleOpts`)
+          card: { id: style.ref ?? "", name: style.name, color: style.color, base, uc: baseUc,
+                  opts: pickStyleOpts(useGen.getState().params) },
           thumb: style.thumb,
         }, undefined, () => toggleFold("base"))
       }

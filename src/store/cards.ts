@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api, type TrashEntry } from "../lib/backend";
 import type { Block } from "../lib/blocks";
+import type { StyleOpts } from "../lib/styleOpts";
 import { slotBlocks } from "./workspace";
 import { t } from "../i18n";
 import { toast, undoToast } from "./toast";
@@ -30,7 +31,9 @@ type Common = {
    *  **같은 종류·같은 폴더 안에서 이름이 겹칠 수 없다** — 폴더가 다르면 겹쳐도 된다. */
   folder?: string;
 };
-export type StyleCard = Common & { base: Block[]; uc: Block[] };
+/** ★스타일 카드는 **프롬프트가 되는 생성 옵션**도 함께 든다 (`lib/styleOpts` 의 ★주,
+ *  사용자 결정 2026-08-23). 옛 카드에는 없으므로 **선택 항목**이고, 없으면 안 건드린다. */
+export type StyleCard = Common & { base: Block[]; uc: Block[]; opts?: StyleOpts };
 export type CharCard = Common & { prompt: Block[]; uc: Block[] };
 /** 포즈세트 카드 — 칸마다 **블록 목록**을 든다 (슬롯과 같은 자료형, 2026-08-07).
  *  ★옛 카드는 `tags` 문자열을 들고 있다. `load()` 가 읽을 때 한 번 옮긴다. */
