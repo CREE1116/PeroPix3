@@ -35,6 +35,8 @@ export function stepTake(d: 1 | -1): boolean {
   if (at < 0) return false;
   const next = list[at + d];
   if (!next) return false;
+  /* ★방향키는 고른 것을 **안 푼다** — 푸는 것은 「그냥 좌클릭」과 `Esc` 뿐이다
+     (사용자 지시 2026-08-22). 고른 목록이 그 자체로 정본이라, 훑고 지나가도 안 불어난다. */
   useSceneFocus.getState().focus(cell, next.file);
   return true;
 }
@@ -67,11 +69,12 @@ export function pickAfterRemoving(cellId: string, file: string | string[]): stri
  *  @returns 실제로 보낸 파일 (없으면 빈 배열) */
 export function removeTakes(): string[] {
   const f = useSceneFocus.getState();
-  const many = f.selected();
-  const target = many.length ? many : f.file ? [f.file] : [];
+  // ★고른 것이 있으면 **그것 전부**, 없으면 지금 보고 있는 한 장
+  const target = f.picked.length ? [...f.picked] : f.file ? [f.file] : [];
   if (!target.length) return [];
   const next = pickAfterRemoving(f.cell, target);   // ★지우기 **전에** 정한다
+  useSceneFocus.getState().setPicked([]);           // ★없어진 파일을 고른 채로 두지 않는다
   void useWs.getState().deleteFiles(target);
-  useSceneFocus.getState().focus(f.cell, next);     // ★`focus` 가 고른 것도 함께 푼다
+  useSceneFocus.getState().focus(f.cell, next);
   return target;
 }

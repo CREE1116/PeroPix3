@@ -167,8 +167,7 @@ function SceneActions() {
   const file = useSceneFocus((s) => s.file);
   /** 지금 지우면 몇 장이 가나 — ★**구독해서 읽는다.** 씬 줄에서 고른 것이 늘고 줄면
    *  이 줄의 안내도 따라 바뀌어야 한다 (`getState()` 로만 읽으면 다시 안 그린다). */
-  const picked = useSceneFocus((s) => s.picked);
-  const many = picked.length ? useSceneFocus.getState().selected().length : 0;
+  const many = useSceneFocus((s) => s.picked).length;
   const previews = usePreviews((s) => s.items);
   const [enhance, setEnhance] = useState<string[] | null>(null);
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);

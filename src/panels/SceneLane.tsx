@@ -118,11 +118,7 @@ export function SceneLane() {
   /** 손으로 고른 것 — ★**스토어에 산다** (`store/sceneFocus`). 큰 그림 아래 삭제 단추도
    *  같은 것을 봐야 해서 올렸다 (사용자 지시 2026-08-22). 규칙(`selected`·풀기)도 거기 있다. */
   const picked = useSceneFocus((s) => s.picked);
-  const selected = useMemo(
-    () => new Set(useSceneFocus.getState().selected()),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [picked, focus.file],
-  );
+  const selected = useMemo(() => new Set(picked), [picked]);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   /** ★★펼치면서 **곧장 치려는** 것인가 (사용자 지시 2026-08-19: 한 번 눌러 바로 친다).
@@ -548,17 +544,25 @@ export function SceneLane() {
   const pick = (file: string, cellId: string, range: boolean) => {
     const f = useSceneFocus.getState();
     const next = new Set(f.picked);
-    if (!range) {
-      next.has(file) ? next.delete(file) : next.add(file);
-      return f.setPicked([...next]);
+    /* ★★**처음 고를 때는 보고 있던 장도 함께 담는다** — 하나만 골라도 「그것과 지금 보는 것」
+       둘이다 (사용자 지시 2026-08-22). 예전에는 이것을 **쓸 때** 더했는데(`selected`),
+       이제 **고른 장이 큰 자리로 올라오므로** 그때 더하면 보던 장이 밀려나 사라진다.
+       담는 시점을 여기로 옮기면 목록이 곧 정본이 되어, 뺄 때(토글)도 어긋나지 않는다. */
+    if (!next.size && f.file) next.add(f.file);
+    if (!range) next.has(file) ? next.delete(file) : next.add(file);
+    else {
+      const list = visibleTakes(cellId).filter((r) => !r.preview).map((r) => r.file);
+      const to = list.indexOf(file);
+      const from = f.cell === cellId && f.file ? list.indexOf(f.file) : -1;
+      if (to < 0) return;
+      if (from < 0) next.add(file);
+      else for (let i = Math.min(from, to); i <= Math.max(from, to); i++) next.add(list[i]);
     }
-    const list = visibleTakes(cellId).filter((r) => !r.preview).map((r) => r.file);
-    const to = list.indexOf(file);
-    const from = f.cell === cellId && f.file ? list.indexOf(f.file) : -1;
-    if (to < 0) return;
-    if (from < 0) next.add(file);
-    else for (let i = Math.min(from, to); i <= Math.max(from, to); i++) next.add(list[i]);
     f.setPicked([...next]);
+    /* ★★**마지막에 누른 장을 큰 자리에 띄운다** (사용자 지시 2026-08-22). 여러 장을 고르는
+       중에도 방금 누른 것이 보여야 무엇을 담고 있는지 눈으로 따라갈 수 있다.
+       ★`focus` 는 고른 것을 **안 푼다** (`store/sceneFocus` 의 ★주) — 그래서 여기서 부를 수 있다. */
+    f.focus(cellId, file);
   };
 
   /** 이름 칸을 열고 닫는다 — ★닫는 쪽은 **자기 것일 때만** 닫는다.
@@ -942,28 +946,9 @@ export function SceneLane() {
       {setDrop.active && <DropVeil over={setDrop.over} label={t("scenes.addCard")} name="set" />}
       </div>
 
-      {/* ★★고른 것이 있을 때 **몇 장인지만** 말한다 (사용자 지시 2026-08-22:
-          *"다중선택하면 나오는 인핸스, 숨김, 해제 ui 없애줘"*).
-          단추 셋을 걷은 자리다 — 지우는 것은 **큰 그림 아래 삭제 단추**(와 `Del` 키)가
-          고른 것 전부에 걸리고, 푸는 것은 **그냥 한 장을 누르면** 된다. 같은 일을 하는
-          단추를 두 군데 두지 않는다. */}
-      {selected.size > 0 && (
-        <div
-          data-sel-bar
-          style={{
-            flexShrink: 0,
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--sp-3)",
-            padding: "var(--sp-2) var(--sp-4)",
-            borderTop: "1px solid var(--warn)",
-            fontSize: "var(--text-2xs)",
-            color: "var(--warn)",
-          }}
-        >
-          <span data-sel-count>{t("slots.picked", { n: selected.size })}</span>
-        </div>
-      )}
+      {/* ★★고른 것을 알리는 **막대는 없다** (사용자 지시 2026-08-22:
+          *"n장 선택 이 ui 자체를 없애"*). 무엇을 골랐는지는 칸의 테두리가 말하고,
+          지우면 몇 장이 가는지는 삭제 단추의 안내가 말한다. */}
 
       {/* 커서를 따라오는 잔상 — **무엇을 들고 있나**. 놓일 자리는 `DropLine` 이 따로 말한다.
           ★줄을 통째로 띄우지 않는다 (v2 는 슬롯이 짧아 그럴 수 있었다). 씬 한 줄은 화면 폭만큼
@@ -1879,7 +1864,14 @@ function SceneRow(
                   //   버리는 것도 저장하는 것도 큰 그림 아래 줄에서 한다 (`SceneActions`)
                   if (!un && (e.ctrlKey || e.metaKey)) p.onPick(r.file, c.id, false);
                   else if (!un && e.shiftKey) p.onPick(r.file, c.id, true);
-                  else p.onFocus({ cell: c.id, file: r.file });
+                  else {
+                    /* ★★**그냥 누르면 여러 장 고르기가 풀린다** (사용자 지시 2026-08-22).
+                       ★푸는 것은 **여기서** 한다 — 수식키가 없다는 것을 아는 자리가 여기뿐이다.
+                         스토어의 `focus` 에 넣었더니 씬 줄의 click(수식키와 무관하게 올라온다)이
+                         Ctrl·Shift 클릭 직후에 그것을 불러 **고르자마자 풀렸다.** */
+                    useSceneFocus.getState().setPicked([]);
+                    p.onFocus({ cell: c.id, file: r.file });
+                  }
                 };
                 if (un) return tap();
                 e.stopPropagation();
