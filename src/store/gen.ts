@@ -224,6 +224,7 @@ export const useGen = create<S>((set, get) => ({
 
   async init() {
     set({ base: await backendUrl() });
+    watchTabParams();   // ★탭마다 다른 생성 옵션 (위 ★★주 — 최상위에서 매달면 죽는다)
   },
 
   async generate(cell, extra) {
@@ -455,6 +456,41 @@ export function clampCharsToModel() {
  *  `params` 를 직접 갈아 끼운다. 한 곳만 잡으면 나머지가 조용히 안 담긴다.
  *  ★250ms 미룬다 — 숫자칸을 타이핑하면 글자마다 바뀐다. */
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
+/** ★★**생성 옵션은 탭마다 따로다** (사용자 지시 2026-08-22).
+ *
+ *  예전에는 앱 전역이라, 다른 탭에서 만지다 돌아오면 **앞 탭의 값을 물고 있어** 같은 탭인데
+ *  결과가 달라졌다. 프롬프트는 이미 탭이 들고 있었는데 수치만 전역이었다.
+ *
+ *  ★담고 꺼내는 것을 **여기서** 한다: `workspace.ts` 는 이 파일을 값으로 못 부른다 (순환) —
+ *    거기에는 담아 두는 칸(`CanvasTab.gen`)과 그 칸에 쓰는 길(`stashGen`)만 뒀다.
+ *  ★★**최상위에서 매달지 말 것.** 두 파일이 서로를 부르므로, 모듈이 실릴 때 매달면
+ *    `useWs` 가 아직 만들어지기 전이라 **앱이 죽는다**
+ *    (실측 2026-08-22: `Cannot access 'useWs' before initialization`).
+ *    부팅에서 한 번(`init`) 매단다 — 그때는 두 파일이 다 실려 있다.
+ *  ★**떠날 때 담고, 와서 꺼낸다.** 담아 둔 것이 없는 탭(옛 워크스페이스·새 탭)은 지금 값을
+ *    그대로 쓰고, 처음 떠날 때 담긴다 — 갑자기 값이 바뀌지 않는다.
+ *  ★localStorage 는 **새 탭의 출발값**으로 남는다 (마지막으로 쓰던 값). */
+let watching = false;
+let lastSpot: string | null = null;
+function watchTabParams() {
+  if (watching) return;
+  watching = true;
+  useWs.subscribe((s) => {
+    const spec = s.spec;
+    const id = spec?.activeTab;
+    // ★워크스페이스 이름까지 묶는다 — 다른 워크스페이스의 같은 탭 id 에 담으면 안 된다
+    const spot = spec && id ? `${s.current ?? ""}::${id}` : null;
+    if (spot === lastSpot) return;
+    const prev = lastSpot;
+    lastSpot = spot;
+    if (prev && prev.split("::")[0] === (s.current ?? "")) {
+      useWs.getState().stashGen(prev.split("::").slice(1).join("::"), useGen.getState().params);
+    }
+    const tab = spec?.tabs.find((t) => t.id === id);
+    if (tab?.gen) useGen.setState({ params: { ...DEFAULT_PARAMS, ...tab.gen } });
+  });
+}
+
 useGen.subscribe((s, prev) => {
   if (s.params === prev.params) return;
   // ★모델이 바뀌면 상한도 바뀐다 — 줄어든 쪽이면 그 자리에서 초과분을 끈다

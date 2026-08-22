@@ -7,6 +7,8 @@ import { makeBlock, parseSegs, type Block } from "../lib/blocks";
 import { convertSingleTab, wrapSetTabInCard } from "../lib/sceneCards";
 export { takesOf, takesOfScene, type Rec } from "../lib/takes";
 import type { Rec } from "../lib/takes";
+// ★**형만** 가져온다 — `gen.ts` 가 이 파일을 부르므로 값으로 가져오면 순환이 된다
+import type { GenParams } from "./gen";
 
 /** 워크스페이스 = 작업 상태 + 생성 이미지 저장소의 단위 (schema.md).
  *  카드·블록 저장소는 공용이라 여기 없다. */
@@ -104,7 +106,7 @@ export type SceneCard = {
 };
 
 export type CanvasTab =
-  | { id: string; kind: "single"; name: string; prompt?: TabPrompt; idOnly?: boolean }
+  | { id: string; kind: "single"; name: string; prompt?: TabPrompt; idOnly?: boolean; gen?: GenParams }
   | {
       id: string;
       kind: "set";
@@ -130,6 +132,12 @@ export type CanvasTab =
        *  ★**탭에 하나뿐이다** (사용자 결정 2026-08-11): 카드마다 두지 않는다. 캐릭터가 둘인
        *    것은 "한 이미지에 두 사람"이지 "카드마다 다른 사람"이 아니다. */
       sceneDest?: string;
+      /** ★★**그 탭의 생성 옵션** (사용자 지시 2026-08-22). 모델·크기·steps·cfg·시드·프리셋…
+       *  전부 여기 담긴다. 예전에는 앱 전역이라, 다른 탭에서 만지다 돌아오면 **앞 탭의 값을
+       *  물고 있어 같은 탭인데 결과가 달라졌다.**
+       *  ★담고 꺼내는 것은 `store/gen` 이 한다 (거기 ★★주) — 이 파일은 칸만 든다.
+       *  ★없으면 지금 값을 그대로 쓴다 (옛 워크스페이스·새 탭). 처음 떠날 때 담긴다. */
+      gen?: GenParams;
     };
 
 /** ★워크스페이스의 묶음 층 — 프롬프트(생김새·그림체)를 든다 (사용자 결정 2026-08-04).
@@ -247,6 +255,8 @@ type S = {
   isDeleted: (file: string) => boolean;
   activeTab: () => CanvasTab | undefined;
   setActiveTab: (id: string) => void;
+  /** 그 탭의 생성 옵션을 담아 둔다 (`store/gen` 이 부른다) */
+  stashGen: (tabId: string, params: GenParams) => void;
   /** 셀은 이름만(빈 태그) 또는 이름+태그로 준다 — 포즈세트 카드가 후자다 */
   addSetTab: (name: string, cells: (string | { name: string; tags?: string; blocks?: Block[] })[]) => void;
   closeTab: (id: string) => void;
@@ -931,6 +941,14 @@ export const useWs = create<S>((set, get) => ({
   isDeleted: (file) => !!get().spec?.selection.deleted.includes(file),
 
   activeTab: () => get().spec?.tabs.find((t) => t.id === get().spec!.activeTab),
+
+  /** 그 탭의 생성 옵션을 담아 둔다 — 부르는 쪽은 `store/gen` 의 구독 하나뿐이다 */
+  stashGen(tabId, params) {
+    const spec = get().spec;
+    if (!spec) return;
+    set({ spec: { ...spec, tabs: spec.tabs.map((t) => (t.id === tabId ? { ...t, gen: params } : t)) } });
+    queueSave(get);
+  },
 
   setActiveTab(id) {
     const spec = get().spec;
