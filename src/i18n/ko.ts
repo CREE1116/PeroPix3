@@ -427,7 +427,7 @@ export const ko: Dict = {
     cloneName: "복제",
     add: "탭 추가",
     rename: "더블클릭하면 이름을 바꿉니다",
-    remove: "탭 삭제 (씬 세트도 함께 사라집니다 · 그림 파일은 남습니다)",
+    remove: "탭 삭제 (씬 세트와 그림도 함께 사라집니다)",
     removeConfirm: "「{name}」 탭을 지웁니다 (세트 {t}개 · 그림 {n}장)",
     lastOne: "마지막 탭은 지울 수 없습니다.",
   },

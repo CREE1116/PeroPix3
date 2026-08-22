@@ -413,7 +413,7 @@ export const en = {
     cloneName: "Copy",
     add: "Add tab",
     rename: "Double-click to rename",
-    remove: "Delete tab (its scene sets go too; image files stay)",
+    remove: "Delete tab (its scene sets and images go too)",
     removeConfirm: 'Delete the tab "{name}"? ({t} sets, {n} images)',
     lastOne: "The last tab cannot be deleted.",
   },

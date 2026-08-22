@@ -1095,7 +1095,9 @@ export const useWs = create<S>((set, get) => ({
     const chars = (spec.chars ?? []).filter((c) => c.id !== id);
     // ★마지막 캐릭터는 지우지 않는다 — 멀티에 설 자리가 없어진다
     if (!chars.length) return;
-    // 그 캐릭터의 포즈세트도 함께 사라진다 (그림 파일은 그대로 남는다)
+    // 그 탭의 포즈세트도 함께 사라진다.
+    // ★그림 파일은 **부르는 쪽**(`CanvasTabs` 의 탭 닫기)이 먼저 휴지통으로 보낸다 —
+    //   여기서 보내면 어느 그림이 그 탭 것이었는지 묶어 줄 화면 정보가 이미 없다
     const tabs = spec.tabs.filter((x) => !(x.kind === "set" && x.charId === id));
     const nextChar = spec.activeChar === id ? chars[0].id : spec.activeChar;
     const mine = tabs.filter((x) => x.kind === "set" && x.charId === nextChar);

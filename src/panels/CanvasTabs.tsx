@@ -270,25 +270,41 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                     /* ★★**생성물이 화면에서 사라지는 삭제는 전부 묻는다** (사용자 지시 2026-08-19:
                        "무슨 탭이든 상관없어. 생성된게 지워지는 상황이면 다 확인 팝업 띄워").
                        탭 하나에 세트가 여럿 달리므로 여기서 사라지는 범위가 세트 닫기보다 넓다 —
-                       그런데 예전에는 이쪽만 아무것도 안 묻고 지웠다 (조작 테스트에서 잡았다). */
+                       그런데 예전에는 이쪽만 아무것도 안 묻고 지웠다 (조작 테스트에서 잡았다).
+                     ★★**그림도 함께 휴지통으로 보낸다** (사용자 지적 2026-08-22: *"탭을 지워도
+                       이미지가 그대로 output에 남아있음. 휴지통으로 안감."*). 세트 닫기는 먼저
+                       그리로 갔는데 **범위가 더 넓은 이쪽만 빠져 있었다** — 그래서 파일만 남고
+                       앱에서 볼 길이 없는, 관리가 안 되는 그림이 쌓였다. */
                     onClick={(e) => {
                       e.stopPropagation();
                       const sets = spec.tabs.filter((x) => x.kind === "set" && x.charId === c.id);
-                      const n = sets.reduce(
-                        (sum, t) => sum + takesOf(records, t, undefined).filter((r) => !isDeleted(r.file)).length,
-                        0,
+                      // ★한 탭에 달린 **세트 전부**의 그림을 모은다 — 묶는 키는 세트 닫기와 같은
+                      //   `tab_id` 다 (폴더는 세트 이름으로 짓기 때문에 폴더로 지우면 같은 이름의
+                      //   다른 세트 그림까지 지운다, 위 ★주)
+                      const mine = sets.flatMap((t) =>
+                        takesOf(records, t, undefined)
+                          .filter((r) => !isDeleted(r.file))
+                          .map((r) => r.file),
                       );
-                      if (!n) return removeChar(c.id);
+                      if (!mine.length) return removeChar(c.id);
                       void (async () => {
                         if (
                           await ask({
-                            title: tr("chars.removeConfirm", { name: c.name, t: sets.length, n }),
+                            title: tr("chars.removeConfirm", {
+                              name: c.name,
+                              t: sets.length,
+                              n: mine.length,
+                            }),
                             body: tr("tabs.closeConfirmBody"),
                             ok: tr("common.delete"),
                             cancel: tr("common.cancel"),
                           })
-                        )
+                        ) {
+                          // ★그림을 **먼저** 보낸다 — 탭이 사라진 뒤에는 어느 그림이 그 탭 것이었는지
+                          //   화면이 더는 묶어 주지 못한다 (세트 닫기와 같은 순서)
+                          await deleteFiles(mine);
                           removeChar(c.id);
+                        }
                       })();
                     }}
                     data-tip={tr("chars.remove")}

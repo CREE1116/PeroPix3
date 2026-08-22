@@ -411,7 +411,7 @@ export const ja: Dict = {
     cloneName: "複製",
     add: "タブを追加",
     rename: "ダブルクリックで名前変更",
-    remove: "タブを削除（シーンセットも消えます）",
+    remove: "タブを削除（シーンセットも画像も消えます）",
     removeConfirm: "「{name}」タブを削除します (セット {t}件・画像 {n}枚)",
     lastOne: "最後のタブは削除できません。",
   },
