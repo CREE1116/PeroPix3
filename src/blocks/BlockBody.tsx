@@ -102,15 +102,20 @@ export function BlockBody({
   const caretKeep = useRef<{ s: number; e: number } | null>(null);
   const ac = useTagSuggest(
     toStore(text),
-    (v) => {
+    (v, caretPlaced) => {
       /* ★★**커서 자리를 적어 둔다** (사용자 지적 2026-08-22: *"단어 중간에 띄어쓰기를 하면
            갑자기 편집 커서가 맨 뒤로 이동함"*).
          `toEdit` 이 빈칸을 NBSP 로, 붙임표를 U+2011 로 바꾸면 글이 **브라우저가 방금 만든
          것과 달라져서**, 리액트가 `value` 를 다시 써 넣는다. 글 상자의 `value` 에 대입하면
          커서는 **맨 뒤로** 간다 (실측: 가운데 3 자리에서 쳤는데 15 로 튐).
          보통 글자는 치환이 없어 값이 같고, 그래서 멀쩡했다 — 빈칸·붙임표에서만 났다. */
+      /* ★★자동완성이 **자리를 잡았으면 건드리지 않는다** (사용자 지적 2026-08-22:
+           *"태그 완성했을 때 커서가 완성된 태그 뒤의 쉼표 뒤로 가야하는데, 그냥 그자리에
+           멈춰있음"*). 그때는 넣은 태그의 쉼표 뒤가 맞는 자리이고, 여기서 되돌리면
+           **치기 전 자리로 도로 끌려온다.** 훅이 먼저 등록돼 저쪽이 먼저 돌기 때문에,
+           우리가 나중에 덮어쓰는 모양이었다. */
       const el = ta.current;
-      if (el) caretKeep.current = { s: el.selectionStart, e: el.selectionEnd };
+      caretKeep.current = !caretPlaced && el ? { s: el.selectionStart, e: el.selectionEnd } : null;
       setText(toEdit(v));
     },
     ta,
@@ -425,6 +430,14 @@ export function BlockBody({
                 const tags = block.tags.slice();
                 tags[i] = { ...tag, w };
                 onChange({ ...block, tags });
+              }}
+              /* ★★가중치도 되돌릴 수 있어야 한다 (사용자 지시 2026-08-22).
+                 ★칩이 **한 차례 조절에 한 번만** 불러 준다 — 휠 눈금마다 담으면 원래대로
+                   돌아가려고 Ctrl+Z 를 수십 번 눌러야 한다.
+                 ★되돌리는 방법은 칩 지우기와 같다: 「이 블록을 지금 모습으로」 하나면 된다. */
+              onWeightStart={() => {
+                const before = block;
+                pushUndo(tr("common.undoWeight"), () => onChange(before));
               }}
               onRemove={() => {
                 // ★★확인 없이 사라지는 자리라 **되돌릴 길**을 함께 담는다 (`Ctrl+Z`).

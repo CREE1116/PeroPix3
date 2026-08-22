@@ -29,7 +29,10 @@ const WC_TYPE = "wildcard";
  *  ★가중치 조작(Alt+휠·드래그)은 안 가져왔다 — 여기서는 **칩 휠**이 그 일을 한다. */
 export function useTagSuggest(
   value: string,
-  setValue: (v: string) => void,
+  /** ★`caretPlaced` 는 **이쪽이 커서를 옮겼다**는 뜻이다 (완성해서 넣은 자리).
+   *  받는 쪽은 그때 자기 커서 되돌리기를 건너뛴다 — 안 그러면 넣자마자 도로 끌려온다
+   *  (사용자 지적 2026-08-22: *"태그 완성했을 때 … 그냥 그자리에 멈춰있음"*). */
+  setValue: (v: string, caretPlaced?: boolean) => void,
   ref: React.RefObject<Field | null>,
   /** ★와일드카드 **정의 편집기**용 (v2 `dataset.noTagComma`). 한 줄에 한 후보라 쉼표를 안 붙인다 */
   opt?: { noComma?: boolean },
@@ -139,7 +142,7 @@ export function useTagSuggest(
     const next = value.substring(0, tokenStart) + text + value.substring(end);
     caret.current = tokenStart + text.length;
     last.current = next;
-    setValue(next);
+    setValue(next, true);
     close();
   };
 
@@ -155,7 +158,7 @@ export function useTagSuggest(
     const next = value.substring(0, fullStart) + text + value.substring(end);
     caret.current = fullStart + text.length;
     last.current = next;
-    setValue(next);
+    setValue(next, true);   // ★자리는 아래 useLayoutEffect 가 잡는다 (위 주)
     close();
   };
 

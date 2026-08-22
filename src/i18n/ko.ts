@@ -713,6 +713,7 @@ export const ko: Dict = {
      *  여럿이라, 무엇이 돌아왔는지 안 알리면 사용자가 화면에서 그것을 찾아 헤맨다. */
     undone: "되돌렸습니다 — {what}",
     undoTag: "칩 지우기",
+    undoWeight: "가중치",
     undoText: "글 편집",
     undoImages: "그림 지우기",
     undoHidden: "그림 숨기기",

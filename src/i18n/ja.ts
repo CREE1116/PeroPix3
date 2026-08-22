@@ -690,6 +690,7 @@ export const ja: Dict = {
     undo: "元に戻す",
     undone: "元に戻しました — {what}",
     undoTag: "チップ削除",
+    undoWeight: "重み変更",
     undoText: "テキスト編集",
     undoImages: "画像削除",
     undoHidden: "画像を隠す",

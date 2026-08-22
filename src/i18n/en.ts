@@ -692,6 +692,7 @@ export const en = {
     undo: "Undo",
     undone: "Undone — {what}",
     undoTag: "chip removal",
+    undoWeight: "weight change",
     undoText: "text edit",
     undoImages: "image deletion",
     undoHidden: "hiding images",

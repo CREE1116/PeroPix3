@@ -55,6 +55,7 @@ export function Chip({
   dragProps,
   dragging,
   onWeight,
+  onWeightStart,
   onRemove,
   readOnly,
 }: {
@@ -67,6 +68,10 @@ export function Chip({
   dragProps?: React.HTMLAttributes<HTMLSpanElement> & { style?: React.CSSProperties };
   dragging?: boolean;
   onWeight: (w: number | null) => void;
+  /** ★가중치를 **만지기 시작했다** — 부르는 쪽이 되돌리기 한 칸을 그때 담는다.
+   *  ★한 차례 조절(휠을 몇 번 돌리든)에 **한 번만** 온다. 눈금마다 오면 Ctrl+Z 를
+   *    수십 번 눌러야 원래대로 돌아간다. 가운데 버튼의 초기화도 한 차례로 친다. */
+  onWeightStart?: () => void;
   onRemove: () => void;
 }) {
   /** 가중치 강조를 켜 두나 (설정) — 끄면 **평범한 칩**으로 보인다 (겹침 표시는 남는다) */
@@ -109,6 +114,8 @@ export function Chip({
    *  ★★배지에 `minWidth` 로 **자리를 미리 비워 두지 말 것** (사용자 지적 2026-08-22) —
    *    숫자 왼쪽에 빈칸이 남고, 그것이 고정 풀릴 때에야 사라져 **반응이 느린 것처럼** 보였다.
    *  ★★푸는 때는 **커서가 칩을 벗어날 때뿐**이다 (사용자 지시 2026-08-21·22).
+   *    ★그 손은 **네이티브로, 언제나** 매달려 있다 (아래 ★★주) — 리액트 쪽에 조건부로 달면
+   *      얼린 직후 곧바로 손을 뺐을 때 떠나는 이벤트를 놓친다.
    *    ~~마지막 휠에서 얼마 지나면 스스로 푸는 안전장치~~를 뒀다가 걷었다 — 손만 멈추면
    *    커서가 그대로 위에 있는데도 몇 초 뒤 줄이 바뀌어 버렸다. 다시 넣지 말 것.
    *    안 풀린 채로 남아도 손해는 칩이 몇 px 넓은 것뿐이고, 다음에 커서가 지나가면 풀린다.
@@ -120,6 +127,8 @@ export function Chip({
     pinning.current = false;
     setPin(null);
   };
+  const onStartRef = useRef(onWeightStart);
+  onStartRef.current = onWeightStart;
 
   useEffect(() => {
     const el = ref.current;
@@ -129,6 +138,7 @@ export function Chip({
       e.preventDefault();
       if (!pinning.current) {
         pinning.current = true;
+        onStartRef.current?.();               // ★되돌릴 한 칸은 **한 차례에 한 번** (위 주)
         setPin(pinWidth(el, wRef.current));   // ★바꾸기 **전에** 얼린다 (위 ★★주)
       }
       const step = e.shiftKey ? 0.1 : 0.05;
@@ -136,8 +146,18 @@ export function Chip({
       const next = Math.round((cur + (e.deltaY < 0 ? step : -step)) * 100) / 100;
       onWeightRef.current(next === 1 ? null : next);
     };
+    /* ★★**푸는 손은 여기 네이티브로, 언제나 매달아 둔다** (사용자 지시 2026-08-22:
+         *"커서가 칩을 떠났을때 즉시 편집 종료되게"*).
+       예전에는 리액트 쪽에 `onPointerLeave={pin != null ? release : undefined}` 로 달아서,
+       **얼린 뒤 다시 그려진 다음에야** 손이 생겼다. 마지막 눈금을 굴리고 곧바로 손을 빼면
+       그 사이에 떠나는 이벤트가 지나가 버려 **얼린 폭이 그대로 남았다.**
+       이제 조절이 시작되기 전부터 매달려 있으므로 놓칠 자리가 없다. */
     el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
+    el.addEventListener("pointerleave", release);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("pointerleave", release);
+    };
   }, [readOnly]);
 
   // 강조 수준 → 배경·테두리 세기. 음수는 붉은 계열로 갈린다.
@@ -161,7 +181,6 @@ export function Chip({
       data-chip
       {...dragProps}
       ref={ref}
-      onPointerLeave={pin != null ? release : undefined}
       onMouseDown={(e) => {
         // 가운데 버튼의 브라우저 기본 동작(자동 스크롤)을 막는다
         if (e.button === 1) e.preventDefault();
@@ -169,7 +188,8 @@ export function Chip({
       onAuxClick={(e) => {
         if (readOnly || e.button !== 1) return;
         e.preventDefault();
-        onWeight(null); // 가중치 초기화
+        onWeightStart?.();   // ★이것도 가중치를 만지는 것이다 — 되돌릴 수 있어야 한다
+        onWeight(null);      // 가중치 초기화
       }}
       onContextMenu={(e) => {
         if (readOnly) return;
