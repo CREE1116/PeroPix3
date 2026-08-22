@@ -758,7 +758,7 @@ export const en = {
    *  word "tab" out of this group (2026-08-18). */
   tabs: {
     closeConfirm: "Close set \"{name}\" ({n} images)",
-    closeConfirmBody: "The image files go to the trash too (recoverable for 24 hours).",
+    closeConfirmBody: "The image files stay in the trash. Items older than 24 hours are cleared on app start.",
     closeTab: "Close set",
     newSet: "New set",
     newSetTab: "New scene set",

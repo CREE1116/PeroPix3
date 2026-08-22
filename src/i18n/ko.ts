@@ -777,7 +777,7 @@ export const ko: Dict = {
    *  (2026-08-18). 이 그룹의 문구에 「탭」을 되살리지 말 것. */
   tabs: {
     closeConfirm: "「{name}」 세트를 닫습니다 (그림 {n}장)",
-    closeConfirmBody: "그림 파일도 휴지통으로 함께 보냅니다 (24시간 안에 되돌릴 수 있습니다).",
+    closeConfirmBody: "그림 파일은 휴지통에 남습니다. 앱을 켤 때 24시간 지난 것부터 비웁니다.",
     closeTab: "세트 닫기",
     newSet: "새 세트",
     newSetTab: "새 씬 세트",
