@@ -457,6 +457,9 @@ export function clampCharsToModel() {
  *  ★250ms 미룬다 — 숫자칸을 타이핑하면 글자마다 바뀐다. */
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 /** ★★**생성 옵션은 탭마다 따로다** (사용자 지시 2026-08-22).
+ *  ★여기서 「탭」은 **위 줄의 `새 탭`**(`spec.chars`·`activeChar`)이지, 캔버스 바로 위의
+ *    「세트」(`spec.tabs`·`activeTab`)가 아니다. 정본은 `CLAUDE.md` 「워크스페이스 탭」 절.
+ *    한 탭 아래의 세트들은 같은 인물의 다른 포즈 묶음이라 수치를 같이 쓴다.
  *
  *  예전에는 앱 전역이라, 다른 탭에서 만지다 돌아오면 **앞 탭의 값을 물고 있어** 같은 탭인데
  *  결과가 달라졌다. 프롬프트는 이미 탭이 들고 있었는데 수치만 전역이었다.
@@ -477,7 +480,7 @@ function watchTabParams() {
   watching = true;
   useWs.subscribe((s) => {
     const spec = s.spec;
-    const id = spec?.activeTab;
+    const id = spec?.activeChar;
     // ★워크스페이스 이름까지 묶는다 — 다른 워크스페이스의 같은 탭 id 에 담으면 안 된다
     const spot = spec && id ? `${s.current ?? ""}::${id}` : null;
     if (spot === lastSpot) return;
@@ -486,7 +489,7 @@ function watchTabParams() {
     if (prev && prev.split("::")[0] === (s.current ?? "")) {
       useWs.getState().stashGen(prev.split("::").slice(1).join("::"), useGen.getState().params);
     }
-    const tab = spec?.tabs.find((t) => t.id === id);
+    const tab = spec?.chars?.find((c) => c.id === id);
     if (tab?.gen) useGen.setState({ params: { ...DEFAULT_PARAMS, ...tab.gen } });
   });
 }

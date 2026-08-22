@@ -106,7 +106,7 @@ export type SceneCard = {
 };
 
 export type CanvasTab =
-  | { id: string; kind: "single"; name: string; prompt?: TabPrompt; idOnly?: boolean; gen?: GenParams }
+  | { id: string; kind: "single"; name: string; prompt?: TabPrompt; idOnly?: boolean }
   | {
       id: string;
       kind: "set";
@@ -132,12 +132,6 @@ export type CanvasTab =
        *  ★**탭에 하나뿐이다** (사용자 결정 2026-08-11): 카드마다 두지 않는다. 캐릭터가 둘인
        *    것은 "한 이미지에 두 사람"이지 "카드마다 다른 사람"이 아니다. */
       sceneDest?: string;
-      /** ★★**그 탭의 생성 옵션** (사용자 지시 2026-08-22). 모델·크기·steps·cfg·시드·프리셋…
-       *  전부 여기 담긴다. 예전에는 앱 전역이라, 다른 탭에서 만지다 돌아오면 **앞 탭의 값을
-       *  물고 있어 같은 탭인데 결과가 달라졌다.**
-       *  ★담고 꺼내는 것은 `store/gen` 이 한다 (거기 ★★주) — 이 파일은 칸만 든다.
-       *  ★없으면 지금 값을 그대로 쓴다 (옛 워크스페이스·새 탭). 처음 떠날 때 담긴다. */
-      gen?: GenParams;
     };
 
 /** ★워크스페이스의 묶음 층 — 프롬프트(생김새·그림체)를 든다 (사용자 결정 2026-08-04).
@@ -148,7 +142,22 @@ export type CanvasTab =
  *  프롬프트가 포즈세트마다 따로면 인물을 고칠 때마다 세트 수만큼 고쳐야 한다
  *  (페로픽스파이 `Character.base` 와 같은 자리).
  *  ★싱글은 그대로 **탭이** 프롬프트를 갖는다 — 거기엔 캐릭터 층이 없다. */
-export type WsChar = { id: string; name: string; prompt?: TabPrompt };
+/** 화면 이름 「탭」 (`Spec.chars` 주석 참조 — 식별자만 `char` 로 남는다).
+ *
+ *  ★★프롬프트도 생성 옵션도 **이 층이 든다** (사용자 지시 2026-08-22). 세트가 아니다 —
+ *    한 탭 아래의 세트들은 같은 인물의 다른 포즈 묶음이라, 세트마다 수치가 갈리면
+ *    인물을 손볼 때 세트 수만큼 같은 값을 고쳐야 한다. */
+export type WsChar = {
+  id: string;
+  name: string;
+  prompt?: TabPrompt;
+  /** ★★**그 탭의 생성 옵션** (사용자 지시 2026-08-22). 모델·크기·steps·cfg·시드·프리셋…
+   *  전부 여기 담긴다. 예전에는 앱 전역이라, 다른 탭에서 만지다 돌아오면 **앞 탭의 값을
+   *  물고 있어 같은 탭인데 결과가 달라졌다.**
+   *  ★담고 꺼내는 것은 `store/gen` 이 한다 (거기 ★★주) — 이 파일은 칸만 든다.
+   *  ★없으면 지금 값을 그대로 쓴다 (옛 워크스페이스·새 탭). 처음 떠날 때 담긴다. */
+  gen?: GenParams;
+};
 
 /** 세트 탭의 **모든 씬** — 카드 순서대로 편다.
  *  ★`tab.cells` 를 직접 읽던 자리는 전부 이걸로 온다. 카드 층이 생겨도 "이 탭의 씬 목록"이
@@ -255,8 +264,8 @@ type S = {
   isDeleted: (file: string) => boolean;
   activeTab: () => CanvasTab | undefined;
   setActiveTab: (id: string) => void;
-  /** 그 탭의 생성 옵션을 담아 둔다 (`store/gen` 이 부른다) */
-  stashGen: (tabId: string, params: GenParams) => void;
+  /** 그 탭(`chars`)의 생성 옵션을 담아 둔다 (`store/gen` 이 부른다) */
+  stashGen: (charId: string, params: GenParams) => void;
   /** 셀은 이름만(빈 태그) 또는 이름+태그로 준다 — 포즈세트 카드가 후자다 */
   addSetTab: (name: string, cells: (string | { name: string; tags?: string; blocks?: Block[] })[]) => void;
   closeTab: (id: string) => void;
@@ -942,11 +951,12 @@ export const useWs = create<S>((set, get) => ({
 
   activeTab: () => get().spec?.tabs.find((t) => t.id === get().spec!.activeTab),
 
-  /** 그 탭의 생성 옵션을 담아 둔다 — 부르는 쪽은 `store/gen` 의 구독 하나뿐이다 */
-  stashGen(tabId, params) {
+  /** 그 탭(`chars`, 화면 이름 「탭」)의 생성 옵션을 담아 둔다.
+   *  부르는 쪽은 `store/gen` 의 구독 하나뿐이다. */
+  stashGen(charId, params) {
     const spec = get().spec;
-    if (!spec) return;
-    set({ spec: { ...spec, tabs: spec.tabs.map((t) => (t.id === tabId ? { ...t, gen: params } : t)) } });
+    if (!spec?.chars) return;
+    set({ spec: { ...spec, chars: spec.chars.map((c) => (c.id === charId ? { ...c, gen: params } : c)) } });
     queueSave(get);
   },
 
