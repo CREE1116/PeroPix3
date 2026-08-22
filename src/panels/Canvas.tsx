@@ -384,6 +384,8 @@ function ScenePreview() {
   const { records, activeTab, isDeleted } = useWs();
   const cell = useSceneFocus((s) => s.cell);
   const file = useSceneFocus((s) => s.file);
+  /** ★만들어지는 중인 칸을 골랐나 — 그때는 **빈 화면**이다 (안내 문구도 안 띄운다) */
+  const pendingSel = useSceneFocus((s) => s.pending);
   const previews = usePreviews((s) => s.items);
 
   /* ★캐릭터 배치 — 큰 그림 위에 판을 겹친다 (`CharPositioner` 머리 주석).
@@ -481,7 +483,10 @@ function ScenePreview() {
             fontSize: "var(--text-md)",
           }}
         >
-          {tr("scenes.pickOne")}
+          {/* ★★만들어지는 중인 칸을 골랐으면 **빈 화면**이다 (사용자 지시 2026-08-22) —
+              「골라 주세요」를 띄우면 안 고른 것처럼 보인다. 골라 둔 자리가 맞다는 것은
+              씬 칸 쪽의 표시가 말해 준다. */}
+          {pendingSel ? null : tr("scenes.pickOne")}
         </div>
       )}
 

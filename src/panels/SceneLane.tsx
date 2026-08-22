@@ -359,13 +359,30 @@ export function SceneLane() {
    *  ★세로는 요소로 한다 (줄 자체는 언제나 그려진다). */
   const focusCell = focus.cell;
   const focusFile = focus.file;
+  /* ★★골라 둔 **대기 칸이 다 만들어지면** 고른 것을 놓는다 (안 그러면 빈 화면에 갇힌다).
+       ★놓기만 한다 — 나온 장으로 옮겨 가지 않는다. 그것은 「생성이 끝나면 화면이 저 혼자
+         움직인다」가 되어, 방금 걷어낸 강제 스크롤과 같은 종류의 성가심이 된다. */
+  const focusPending = focus.pending;
+  useEffect(() => {
+    if (!focusPending) return;
+    if (pending.some((q) => q.id === focusPending)) return;
+    useSceneFocus.getState().focus(useSceneFocus.getState().cell, null);
+  }, [focusPending, pending]);
+
+  /* ★★**고른 것이 바뀔 때만** 굴린다 (사용자 지시 2026-08-22).
+       예전에는 `pending`·`laneSize`·`headw` 도 딸림값이라, **생성이 끝나 큐가 줄기만 해도**
+       줄이 저 혼자 굴러갔다 (*"생성 완료시 슬롯을 강제 스크롤"*).
+       나머지 값은 굴릴 이유가 아니라 **자리를 셈할 재료**일 뿐이므로 ref 로 읽는다. */
+  const scrollBits = useRef({ pending, headw, laneSize, vert, tabId: tab?.id });
+  scrollBits.current = { pending, headw, laneSize, vert, tabId: tab?.id };
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || !focusCell || !focusFile) return;
+    const { pending, headw, laneSize, vert, tabId } = scrollBits.current;
     const list = visibleTakes(focusCell);
     const at = list.findIndex((r) => r.file === focusFile);
     if (at < 0) return;
-    const waiting = pending.filter((p) => p.tabId === tab?.id && p.cellId === focusCell).length;
+    const waiting = pending.filter((p) => p.tabId === tabId && p.cellId === focusCell).length;
     const cw = Math.min(LANE_MAX, Math.max(LANE_MIN, laneSize));
     const step = cw + GAP;
     const lead = headw + 8 + (waiting + at) * step;
@@ -394,9 +411,12 @@ export function SceneLane() {
         else if (r.bottom > b.bottom) el.scrollTop += r.bottom - b.bottom;
       }
     }
-  }, [focusCell, focusFile, headw, laneSize, pending, tab?.id, vert]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusCell, focusFile]);
 
-  // 탭을 옮기면 고른 것을 놓는다 — 다른 탭의 파일을 고른 채로 두면 안 된다
+  /* ★★탭을 옮기면 **그 탭 몫으로 담아 두고**, 돌아오면 그대로 되살린다
+       (사용자 지시 2026-08-22). 예전에는 비웠는데, 돌아왔을 때 보던 장을 다시 찾아
+       눌러야 했다. 담고 되살리는 규칙은 `store/sceneFocus` 하나에 있다. */
   const tabId = tab?.id;
   /** ★★**처음 뜰 때는 놓지 않는다** (사용자 지적 2026-08-19: 인페인트에 들어갔다 나오면
    *  고른 것이 풀려 있었다). 마스크 편집기는 캔버스 자리를 통째로 차지해서 이 줄이 **언마운트**
@@ -405,9 +425,10 @@ export function SceneLane() {
   const lastTab = useRef(tabId);
   useEffect(() => {
     if (lastTab.current === tabId) return;
+    const prev = lastTab.current;
     lastTab.current = tabId;
     setPicked(new Set());
-    useSceneFocus.getState().clear();
+    useSceneFocus.getState().switchTab(prev, tabId);
     clearTagUndo();   // ★없어진 블록을 되살리려 들면 안 된다
   }, [tabId]);
 
@@ -828,6 +849,7 @@ export function SceneLane() {
                 picked={selected}
                 onFocus={setFocus}
                 onPick={pick}
+                onPickPending={(cellId, id) => useSceneFocus.getState().focusPending(cellId, id)}
                 takes={takesOfCell}
                 queuedOf={(cellId) => queued.filter((p) => p.cellId === cellId)}
                 firstWaiting={running ? (queued[0]?.id ?? null) : null}
@@ -1174,11 +1196,13 @@ type GroupProps = {
   only: boolean;
   w: number;
   h: number;
-  focus: { cell: string; file: string | null };
+  focus: { cell: string; file: string | null; pending: string | null };
   picked: Set<string>;
   onFocus: (f: { cell: string; file: string | null }) => void;
   /** 여러 장 고르기 — `range` 면 **지금 보는 장부터 이 장까지** (`SceneLane` 의 `pick`) */
   onPick: (file: string, cellId: string, range: boolean) => void;
+  /** ★만들어지는 중인 칸을 고른다 — 프리뷰는 빈 화면이 된다 */
+  onPickPending: (cellId: string, id: string) => void;
   takes: (c: Slot) => Rec[];
   queuedOf: (cellId: string) => { id: string }[];
   firstWaiting: string | null;
@@ -1809,26 +1833,36 @@ function SceneRow(
             폭을 그대로 채워야 스크롤 길이와 눈금이 안 어긋난다. flex 의 gap 때문에
             빈 자리 하나가 간격 하나를 더 만들므로 그만큼 뺀다. */}
         {lead > 0 && <div style={{ ...(p.vert ? { height: lead } : { width: lead }), flexShrink: 0 }} />}
-        {waits.slice(from, to).map((q) => (
-          <div
-            key={q.id}
-            data-pending-cell
-            style={{
-              flexShrink: 0,
-              width: p.w,
-              height: p.h,
-              borderRadius: "var(--r-1)",
-              border: `2px dashed ${q.id === p.firstWaiting ? "var(--accent)" : "var(--line)"}`,
-              background: "var(--bg)",
-              display: "grid",
-              placeItems: "center",
-              fontSize: 11,
-              color: q.id === p.firstWaiting ? "var(--accent)" : "var(--ink-faint)",
-            }}
-          >
-            {q.id === p.firstWaiting ? t("slots.running") : t("slots.queued")}
-          </div>
-        ))}
+        {waits.slice(from, to).map((q) => {
+          /* ★★**만들어지는 중인 칸도 고를 수 있다** (사용자 지시 2026-08-22).
+               나올 자리를 미리 잡아 두고 기다리기 위한 것이다. 고르면 프리뷰는 **빈 화면**이고,
+               파일이 있어야 하는 단추 줄은 아예 안 뜬다 (`SceneActions` 가 `file` 로 갈린다).
+             ★고른 표시는 **테두리를 채운 선으로** 낸다 — 점선은 「아직 없다」는 뜻으로 남긴다. */
+          const on = p.focus.pending === q.id;
+          const run = q.id === p.firstWaiting;
+          return (
+            <button
+              key={q.id}
+              data-pending-cell={q.id}
+              onClick={() => p.onPickPending(c.id, q.id)}
+              style={{
+                flexShrink: 0,
+                width: p.w,
+                height: p.h,
+                borderRadius: "var(--r-1)",
+                border: `2px ${on ? "solid" : "dashed"} ${on || run ? "var(--accent)" : "var(--line)"}`,
+                background: on ? "var(--accent-bg)" : "var(--bg)",
+                display: "grid",
+                placeItems: "center",
+                fontSize: 11,
+                cursor: "pointer",
+                color: on || run ? "var(--accent)" : "var(--ink-faint)",
+              }}
+            >
+              {run ? t("slots.running") : t("slots.queued")}
+            </button>
+          );
+        })}
         {takes.slice(Math.max(0, from - waits.length), Math.max(0, to - waits.length)).map((r) => {
           const sel = p.picked.has(r.file);
           const cur = p.focus.cell === c.id && p.focus.file === r.file;
