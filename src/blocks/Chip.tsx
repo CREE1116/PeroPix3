@@ -221,10 +221,12 @@ export function Chip({
       )}
       <span
         style={{
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          maxWidth: "22em",
+          /* ★★**태그를 줄이지 않는다** (사용자 지적 2026-08-22). 예전에는 22em 을 넘으면
+               말줄임으로 잘랐는데, 글 상자 쪽은 안 자르므로 **같은 태그가 두 모습에서 다르게**
+               보였다 (그리고 잘린 뒷부분은 아예 읽을 수 없었다).
+             ★줄보다 긴 태그는 **칩 안에서 접는다** — 칩 하나로 보이는 것은 그대로이고,
+               칩 사이에서 갈라지는 일도 없다. 밖으로 넘쳐 잘리는 것보다 낫다. */
+          overflowWrap: "anywhere",
         }}
       >
         {tag.t}
