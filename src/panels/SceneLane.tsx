@@ -7,7 +7,6 @@ import { LANE_MAX, LANE_MIN, useUi } from "../store/ui";
 import { allCells, useWs, takesOfScene, type Rec, type SceneCard, type Slot } from "../store/workspace";
 import { newestFirst } from "../lib/takes";
 import { imgUrl, thumbUrlOf } from "../lib/imgUrl";
-import { EnhanceDialog } from "./EnhanceDialog";
 import { Icon } from "../components/Icon";
 import { Ratio, RATIO_LANDSCAPE, RATIO_PORTRAIT } from "../components/Ratio";
 import { kindColor } from "../cards/kindColor";
@@ -21,7 +20,7 @@ import { useThumbView } from "./PromptSections";
 import { DragGhost } from "../cards/DragGhost";
 import { useLaneReorder, type LaneDrop } from "../lib/useReorder";
 import { useSceneFocus } from "../store/sceneFocus";
-import { pickAfterRemoving, stepTake, visibleTakes } from "../lib/sceneTakes";
+import { removeTakes, stepTake, visibleTakes } from "../lib/sceneTakes";
 import { clearUndo, undoLast } from "../lib/undo";
 // ★`t` 는 **모듈 것**을 쓴다 — 이 파일 안에서 `t` 는 이벤트 대상 이름으로 자주 가려진다
 import { t as tr } from "../i18n";
@@ -57,7 +56,7 @@ const GAP = 6;
 export function SceneLane() {
   const t = useI18n((s) => s.t);
   const base = useGen((g) => g.base);
-  const { records, current: ws, activeTab, isDeleted, deleteFiles,
+  const { records, current: ws, activeTab, isDeleted,
     setTab, setCard, addCard, removeCard, addSlot, moveScene, moveCard } = useWs();
   const pending = useQueue((s) => s.pending);
   // ★구독해서 읽는다. `getState()` 로 읽으면 진행이 바뀌어도 다시 그리지 않아
@@ -116,18 +115,14 @@ export function SceneLane() {
     if (f.file && takes.some((r) => r.file === f.file)) return focus.focus(f.cell, f.file);
     focus.focus(f.cell, takes[0]?.file ?? null);
   };
-  /** 손으로 고른 것 — ★실제로 걸리는 것은 아래 `selected` 다 (지금 보는 장이 더해진다) */
-  const [picked, setPicked] = useState<Set<string>>(() => new Set());
-  /** ★★실제로 걸리는 목록 — **지금 보고 있는 장이 언제나 든다** (사용자 지시 2026-08-22).
-   *  손으로 하나만 골라도 「그것과 지금 보는 것」 둘이다. 그래야 견줄 두 장을 한 번에 다룬다.
-   *  ★아직 아무것도 안 골랐으면 **빈 것**이다 — 그냥 보고 있는 것만으로 선택 막대가 뜨면
-   *    큰 그림 아래 줄(`SceneActions`)과 하는 말이 겹친다. */
-  const selected = useMemo(() => {
-    if (!picked.size) return picked;
-    const s = new Set(picked);
-    if (focus.file) s.add(focus.file);
-    return s;
-  }, [picked, focus.file]);
+  /** 손으로 고른 것 — ★**스토어에 산다** (`store/sceneFocus`). 큰 그림 아래 삭제 단추도
+   *  같은 것을 봐야 해서 올렸다 (사용자 지시 2026-08-22). 규칙(`selected`·풀기)도 거기 있다. */
+  const picked = useSceneFocus((s) => s.picked);
+  const selected = useMemo(
+    () => new Set(useSceneFocus.getState().selected()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [picked, focus.file],
+  );
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   /** ★★펼치면서 **곧장 치려는** 것인가 (사용자 지시 2026-08-19: 한 번 눌러 바로 친다).
@@ -166,8 +161,8 @@ export function SceneLane() {
   /** 이름을 그 자리에서 고치는 중인 씬 — ★**줄이 아니라 여기**가 들고 있다.
    *  Tab 으로 다음 씬의 이름 칸으로 건너뛰려면 누가 열려 있는지를 한 곳이 알아야 한다. */
   const [editingName, setEditingName] = useState<string | null>(null);
-  /** 고른 것을 한 번에 강화 — 창에 **목록**을 넘긴다 (`EnhanceDialog` 가 배치를 안다) */
-  const [enhance, setEnhance] = useState<string[] | null>(null);
+  /* ★「고른 것을 한 번에 강화」는 걷었다 (사용자 지시 2026-08-22) — 강화는 큰 그림 아래
+     줄에서 **보고 있는 한 장**에 건다 (`Canvas` 의 `SceneActions`). */
   const scrollRef = useRef<HTMLDivElement>(null);
   /** PIP 가 그 안에서만 움직이도록 가두는 상자 (줄 영역) */
   const boxRef = useRef<HTMLDivElement>(null);
@@ -430,7 +425,7 @@ export function SceneLane() {
     if (lastTab.current === tabId) return;
     const prev = lastTab.current;
     lastTab.current = tabId;
-    setPicked(new Set());
+    // ★고른 것은 `switchTab` 이 함께 푼다 (`store/sceneFocus`)
     useSceneFocus.getState().switchTab(prev, tabId);
     clearUndo();   // ★없어진 블록·그림을 되살리려 들면 안 된다
   }, [tabId]);
@@ -440,25 +435,14 @@ export function SceneLane() {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
       if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
-      if (e.key === "Escape" && picked.size) return setPicked(new Set());
+      if (e.key === "Escape" && picked.length) return useSceneFocus.getState().setPicked([]);
       if (e.key === "Delete" || e.key === "Backspace") {
-        if (picked.size) {
-          e.preventDefault();
-          void deleteFiles([...selected]);
-          setPicked(new Set());
-          return;
-        }
-        // ★★고른 **한 장**도 Del 로 지운다 (사용자 지시 2026-08-19). 지운 뒤에는
-        //   **오른쪽 장**으로 옮겨 간다 (없으면 왼쪽, 그것도 없으면 아무것도 안 고른 상태) —
-        //   줄은 최신이 왼쪽이라, 오른쪽이 '그 다음으로 옛것'이다.
-        const cur = useSceneFocus.getState();
-        if (!cur.file) return;
-        e.preventDefault();
-        // ★규칙은 `lib/sceneTakes` 하나다 — 프리뷰의 삭제 단추도 같은 것을 쓴다.
-        //   ★어디로 갈지는 **지우기 전에** 정한다 (지운 뒤엔 자리를 잃는다)
-        const next = pickAfterRemoving(cur.cell, cur.file);
-        void deleteFiles([cur.file]);
-        useSceneFocus.getState().focus(cur.cell, next);
+        /* ★★고른 **한 장**도 Del 로 지운다 (사용자 지시 2026-08-19), 여러 장을 골랐으면
+           **전부**. 지운 뒤에는 **오른쪽 장**으로 옮겨 간다 (없으면 왼쪽) — 줄은 최신이
+           왼쪽이라 오른쪽이 '그 다음으로 옛것'이다.
+           ★규칙은 `lib/sceneTakes.removeTakes` **하나**다 — 큰 그림 아래 삭제 단추도 같은
+             것을 부른다. 나눠 적었더니 키와 단추의 동작이 갈렸다 (사용자 지적 2026-08-21). */
+        if (removeTakes().length) e.preventDefault();
         return;
       }
       /* ★★고른 장이 있으면 **방향키로 장을 넘긴다** (사용자 지시 2026-08-21).
@@ -488,7 +472,7 @@ export function SceneLane() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [picked, selected, deleteFiles]);
+  }, [picked]);
 
   if (tab?.kind !== "set") return null;
 
@@ -562,19 +546,19 @@ export function SceneLane() {
    *    눈에 보이는 사이의 것과 실제로 들어가는 것이 갈린다.
    *  ★미저장(파일 없는 그림)은 뺀다 — 고른 것에 걸리는 일이 전부 파일 경로를 보낸다. */
   const pick = (file: string, cellId: string, range: boolean) => {
-    const next = new Set(picked);
+    const f = useSceneFocus.getState();
+    const next = new Set(f.picked);
     if (!range) {
       next.has(file) ? next.delete(file) : next.add(file);
-      return setPicked(next);
+      return f.setPicked([...next]);
     }
     const list = visibleTakes(cellId).filter((r) => !r.preview).map((r) => r.file);
-    const f = useSceneFocus.getState();
     const to = list.indexOf(file);
     const from = f.cell === cellId && f.file ? list.indexOf(f.file) : -1;
     if (to < 0) return;
     if (from < 0) next.add(file);
     else for (let i = Math.min(from, to); i <= Math.max(from, to); i++) next.add(list[i]);
-    setPicked(next);
+    f.setPicked([...next]);
   };
 
   /** 이름 칸을 열고 닫는다 — ★닫는 쪽은 **자기 것일 때만** 닫는다.
@@ -958,7 +942,11 @@ export function SceneLane() {
       {setDrop.active && <DropVeil over={setDrop.over} label={t("scenes.addCard")} name="set" />}
       </div>
 
-      {/* 고른 것이 있을 때만 뜨는 줄 (멀티 무대의 선택 막대와 같은 자리) */}
+      {/* ★★고른 것이 있을 때 **몇 장인지만** 말한다 (사용자 지시 2026-08-22:
+          *"다중선택하면 나오는 인핸스, 숨김, 해제 ui 없애줘"*).
+          단추 셋을 걷은 자리다 — 지우는 것은 **큰 그림 아래 삭제 단추**(와 `Del` 키)가
+          고른 것 전부에 걸리고, 푸는 것은 **그냥 한 장을 누르면** 된다. 같은 일을 하는
+          단추를 두 군데 두지 않는다. */}
       {selected.size > 0 && (
         <div
           data-sel-bar
@@ -974,33 +962,6 @@ export function SceneLane() {
           }}
         >
           <span data-sel-count>{t("slots.picked", { n: selected.size })}</span>
-          <span style={{ flex: 1 }} />
-          {/* ★고른 것을 **한 번에 강화**한다 (v2 「슬롯 전체 인핸스」). 창이 이미 강화한 것을
-              걸러 내고, 못 쓰는 배율은 장마다 낮춘다 (`EnhanceDialog`) */}
-          <button
-            data-sel-enhance
-            onClick={() => setEnhance([...selected])}
-            style={{ border: "1px solid currentColor", borderRadius: "var(--r-1)", padding: "1px var(--sp-3)" }}
-          >
-            {t("enhance.button")}
-          </button>
-          <button
-            data-sel-hide
-            onClick={() => {
-              void deleteFiles([...selected]);
-              setPicked(new Set());
-            }}
-            style={{ border: "1px solid currentColor", borderRadius: "var(--r-1)", padding: "1px var(--sp-3)" }}
-          >
-            {t("slots.hide")}
-          </button>
-          <button
-            data-sel-clear
-            onClick={() => setPicked(new Set())}
-            style={{ border: "1px solid currentColor", borderRadius: "var(--r-1)", padding: "1px var(--sp-3)" }}
-          >
-            {t("slots.clearSel")}
-          </button>
         </div>
       )}
 
@@ -1107,7 +1068,6 @@ export function SceneLane() {
         </DragGhost>
       )}
 
-      {enhance && <EnhanceDialog files={enhance} onClose={() => setEnhance(null)} />}
     </div>
   );
 }

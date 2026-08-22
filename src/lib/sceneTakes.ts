@@ -39,13 +39,39 @@ export function stepTake(d: 1 | -1): boolean {
   return true;
 }
 
-/** 이 장을 지우면 **어디로 갈지** — 오른쪽(그 다음으로 옛것) → 없으면 왼쪽 → 없으면 `null`.
+/** 이 장(들)을 지우면 **어디로 갈지** — 오른쪽(그 다음으로 옛것) → 없으면 왼쪽 → 없으면 `null`.
  *
  *  ★★**지우기 전에** 부른다. 지운 뒤에 부르면 그 장이 목록에서 빠져 자리를 잃는다 —
  *    지금은 `deleteFiles` 가 비동기라 뒤에 불러도 우연히 맞지만, 그 우연에 기대지 않는다.
- *  ★지우는 것은 부르는 쪽이 한다 — 여기는 **어디로 갈지**만 정한다. */
-export function pickAfterRemoving(cellId: string, file: string): string | null {
+ *  ★지우는 것은 부르는 쪽이 한다 — 여기는 **어디로 갈지**만 정한다.
+ *  ★여러 장을 지울 때는 **함께 사라지는 것을 건너뛴다.** 안 그러면 방금 지운 장을 가리켜
+ *    큰 자리가 텅 빈다 (한 장짜리와 같은 결함이 여러 장에서 되살아난다). */
+export function pickAfterRemoving(cellId: string, file: string | string[]): string | null {
+  const gone = new Set(Array.isArray(file) ? file : [file]);
   const list = visibleTakes(cellId);
-  const at = list.findIndex((r) => r.file === file);
-  return at < 0 ? null : (list[at + 1]?.file ?? list[at - 1]?.file ?? null);
+  const at = list.findIndex((r) => gone.has(r.file));
+  if (at < 0) return null;
+  for (let i = at + 1; i < list.length; i++) if (!gone.has(list[i].file)) return list[i].file;
+  for (let i = at - 1; i >= 0; i--) if (!gone.has(list[i].file)) return list[i].file;
+  return null;
+}
+
+/** 고른 것을 **휴지통으로** 보낸다 — 여러 장 고른 상태면 **전부**, 아니면 보고 있는 한 장.
+ *
+ *  ★★창구가 하나여야 한다: `Del` 키와 큰 그림 아래 **삭제 단추**가 같은 일을 한다.
+ *    나눠 적었더니 키로 지우면 옆 장으로 넘어가는데 단추로 지우면 아무것도 안 골라진
+ *    상태가 됐다 (사용자 지적 2026-08-21). 이번에 「여러 장 지우기」가 늘면서 갈라질 자리가
+ *    하나 더 생겼으므로 아예 여기로 모은다 (사용자 지시 2026-08-22).
+ *  ★**고른 것을 먼저 푼다.** 지워진 파일을 고른 채로 두면 그 뒤의 `Ctrl+Z` 로 되살아나기
+ *    전까지 없는 파일을 가리킨다.
+ *  @returns 실제로 보낸 파일 (없으면 빈 배열) */
+export function removeTakes(): string[] {
+  const f = useSceneFocus.getState();
+  const many = f.selected();
+  const target = many.length ? many : f.file ? [f.file] : [];
+  if (!target.length) return [];
+  const next = pickAfterRemoving(f.cell, target);   // ★지우기 **전에** 정한다
+  void useWs.getState().deleteFiles(target);
+  useSceneFocus.getState().focus(f.cell, next);     // ★`focus` 가 고른 것도 함께 푼다
+  return target;
 }

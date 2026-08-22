@@ -21,6 +21,17 @@ type Spot = {
 type S = Spot & {
   /** 탭 id → 그 탭에서 마지막으로 보던 자리 */
   memo: Record<string, Spot>;
+  /** ★★**손으로 여러 장 고른 것** (`Ctrl`·`Shift` 클릭). 씬 줄의 컴포넌트 상태였는데,
+   *  큰 그림 아래 **삭제 단추**도 이것을 봐야 해서 여기로 올렸다 (사용자 지시 2026-08-22:
+   *  *"다중 선택 상태에서 이미지 삭제버튼 누르면 전부 삭제"*). 두 컴포넌트가 형제라
+   *  한쪽 상태로는 다른 쪽이 못 본다 (이 스토어가 생긴 것과 같은 사정이다). */
+  picked: string[];
+  setPicked: (files: string[]) => void;
+  /** ★**실제로 걸리는 목록** — 손으로 고른 것에 **지금 보고 있는 장**을 더한다
+   *  (사용자 지시 2026-08-22: 하나만 골라도 「그것과 지금 보는 것」 둘이다).
+   *  ★아무것도 안 골랐으면 **빈 것**이다 — 그냥 보고 있는 것만으로 「여러 장」이 되면
+   *    큰 그림 아래 줄이 하는 말과 겹친다. */
+  selected: () => string[];
   focus: (cell: string, file: string | null) => void;
   /** 만들어지는 중인 칸을 고른다 */
   focusPending: (cell: string, id: string) => void;
@@ -31,17 +42,29 @@ type S = Spot & {
 
 const EMPTY: Spot = { cell: "", file: null, pending: null };
 
-export const useSceneFocus = create<S>((set) => ({
+export const useSceneFocus = create<S>((set, get) => ({
   ...EMPTY,
   memo: {},
-  focus: (cell, file) => set({ cell, file, pending: null }),
-  focusPending: (cell, id) => set({ cell, file: null, pending: id }),
-  clear: () => set({ ...EMPTY }),
+  picked: [],
+  setPicked: (files) => set({ picked: files }),
+  selected: () => {
+    const { picked, file } = get();
+    if (!picked.length) return [];
+    return file && !picked.includes(file) ? [...picked, file] : [...picked];
+  },
+  /* ★★**그냥 한 장을 고르면 여러 장 고르기가 풀린다** (사용자 지시 2026-08-22:
+     *"다중선택 상태에서 그냥 좌클릭으로 다른 이미지 선택하면 다중선택 해제"*).
+     ★푸는 자리를 **이 창구 하나**로 둔다 — 클릭한 자리에서만 풀면 방향키로 장을 넘길 때
+       고른 것이 남고, `selected` 가 지나는 장마다 **말없이 불어난다.** */
+  focus: (cell, file) => set({ cell, file, pending: null, picked: [] }),
+  focusPending: (cell, id) => set({ cell, file: null, pending: id, picked: [] }),
+  clear: () => set({ ...EMPTY, picked: [] }),
   switchTab: (from, to) =>
     set((s) => {
       const memo = { ...s.memo };
       if (from) memo[from] = { cell: s.cell, file: s.file, pending: s.pending };
-      /* ★가는 탭에 담아 둔 것이 없으면 **빈 자리**로 시작한다 (예전과 같다) */
-      return { memo, ...(to ? memo[to] ?? EMPTY : EMPTY) };
+      /* ★가는 탭에 담아 둔 것이 없으면 **빈 자리**로 시작한다 (예전과 같다)
+         ★고른 것은 **안 담아 둔다** — 탭을 옮겼다 오면 풀려 있는 것이 맞다 */
+      return { memo, picked: [], ...(to ? memo[to] ?? EMPTY : EMPTY) };
     }),
 }));

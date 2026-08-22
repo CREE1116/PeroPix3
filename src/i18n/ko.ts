@@ -759,8 +759,6 @@ export const ko: Dict = {
   slots: {
     blockTags: "태그",
     picked: "{n}장 선택",
-    hide: "숨김",
-    clearSel: "해제",
     enhanceSkip: "고른 것 중 아직 강화 안 한 것만 돌립니다",
     cardLabel: "POSE SET",
     numberHint: "파일 이름 앞에 붙는 번호입니다 (001_001.png)",

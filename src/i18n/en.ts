@@ -738,8 +738,6 @@ export const en = {
   slots: {
     blockTags: "Tags",
     picked: "{n} selected",
-    hide: "Hide",
-    clearSel: "Clear",
     enhanceSkip: "Only the ones not enhanced yet",
     cardLabel: "POSE SET",
     numberHint: "Prefixes the saved file name (001_001.png)",

@@ -5,7 +5,7 @@ import { useGen } from "../store/gen";
 import { useWs, takesOfScene, allCells, allScenes, type ShotEnv } from "../store/workspace";
 import { SceneLane, takeSrc } from "./SceneLane";
 import { useSceneFocus } from "../store/sceneFocus";
-import { pickAfterRemoving } from "../lib/sceneTakes";
+import { removeTakes } from "../lib/sceneTakes";
 import { useUi } from "../store/ui";
 import { CanvasTabs } from "./CanvasTabs";
 import { imgUrl } from "../lib/imgUrl";
@@ -163,8 +163,12 @@ function SceneStage() {
 function SceneActions() {
   const tr = useI18n((s) => s.t);
   const { base } = useGen();
-  const { current: ws, records, addRecord, deleteFiles } = useWs();
+  const { current: ws, records, addRecord } = useWs();
   const file = useSceneFocus((s) => s.file);
+  /** 지금 지우면 몇 장이 가나 — ★**구독해서 읽는다.** 씬 줄에서 고른 것이 늘고 줄면
+   *  이 줄의 안내도 따라 바뀌어야 한다 (`getState()` 로만 읽으면 다시 안 그린다). */
+  const picked = useSceneFocus((s) => s.picked);
+  const many = picked.length ? useSceneFocus.getState().selected().length : 0;
   const previews = usePreviews((s) => s.items);
   const [enhance, setEnhance] = useState<string[] | null>(null);
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
@@ -336,16 +340,17 @@ function SceneActions() {
             ) : (
               <button
                 data-scene-delete
-                onClick={() => {
-                  // ★★`Del` 키와 **같은 규칙**으로 옆 장을 고른다 (`lib/sceneTakes`).
-                  //   전에는 여기서만 `null` 로 비워서, 단추로 지우면 큰 자리가 텅 비었다
-                  //   (사용자 지적 2026-08-21). 규칙은 한 곳에만 둔다.
-                  const cell = useSceneFocus.getState().cell;
-                  const next = pickAfterRemoving(cell, file);   // ★지우기 **전에** 정한다
-                  void deleteFiles([file]);
-                  useSceneFocus.getState().focus(cell, next);
-                }}
-                data-tip={`${tr("common.delete")} — ${tr("canvas.hideHint")}`}
+                /* ★★**여러 장 골랐으면 전부 지운다** (사용자 지시 2026-08-22).
+                     씬 줄의 「숨김」 단추를 걷은 자리가 여기다 — 지우는 창구를 하나로 모은다.
+                   ★★`Del` 키와 **같은 규칙**으로 옆 장을 고른다 (`lib/sceneTakes.removeTakes`).
+                     전에는 여기서만 `null` 로 비워서, 단추로 지우면 큰 자리가 텅 비었다
+                     (사용자 지적 2026-08-21). 규칙은 한 곳에만 둔다. */
+                onClick={() => removeTakes()}
+                data-tip={
+                  many > 1
+                    ? `${tr("common.delete")} — ${tr("slots.picked", { n: many })}`
+                    : `${tr("common.delete")} — ${tr("canvas.hideHint")}`
+                }
                 style={{ ...rowBtn, color: "var(--danger, var(--err))", minWidth: 28, justifyContent: "center" }}
               >
                 {Icon.trash}

@@ -736,8 +736,6 @@ export const ja: Dict = {
   slots: {
     blockTags: "タグ",
     picked: "{n}枚選択",
-    hide: "非表示",
-    clearSel: "解除",
     enhanceSkip: "まだ強化していないものだけ",
     cardLabel: "POSE SET",
     numberHint: "保存ファイル名の先頭に付く番号 (001_001.png)",
