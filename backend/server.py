@@ -154,6 +154,29 @@ def _tidy_ws_root() -> None:
 
 _tidy_ws_root()
 
+
+def _split_records() -> None:
+    """색인에 섞여 있는 무거운 것을 곁파일로 옮긴다 (사용자 결정 2026-08-22).
+
+    ★**요청을 받기 전**에 돈다 — 옮기는 도중에 새 그림이 끼어들 수 없다. 그래서 사용자가
+      생성 중이어도 앱을 다시 켜기만 하면 되고, 미리 멈출 필요가 없다.
+    ★한 워크스페이스가 실패해도 앱은 뜬다 — 남겨 두고 다음 부팅에 다시 시도한다
+      (`_tidy_ws_root` 와 같은 규약).
+    ★두 번째 부팅부터는 옮길 것이 없어 아무 일도 안 한다."""
+    for ws_dir in list(WS_ROOT.iterdir()) if WS_ROOT.is_dir() else []:
+        if not ws_dir.is_dir():
+            continue
+        try:
+            n = store.split_records(ws_dir.name)
+        except OSError as e:
+            print(f"[레코드] {ws_dir.name} 을 못 쪼갰습니다 ({e}) — 다음에 다시 시도합니다")
+            continue
+        if n:
+            print(f"[레코드] {ws_dir.name}: {n}줄의 무거운 값을 records-env.jsonl 로 옮김")
+
+
+_split_records()
+
 for _line in migrate_thumbs.run(cards, store, pins):
     print(f"[썸네일 이전] {_line}")
 
@@ -803,7 +826,9 @@ async def list_workspaces():
     return {"items": store.list()}
 
 
-#: 목록에서 빼는 무거운 항목 — 화면은 목록에서 이것들을 안 읽는다
+#: 목록에서 빼는 무거운 항목 — 화면은 목록에서 이것들을 안 읽는다.
+#: ★2026-08-22 부터 이 값들은 애초에 색인에 없다 (`workspace.ENV_NAME`). 여기는 **안전망**으로
+#:   남긴다 — 쪼개기 전에 적힌 줄이나 옛 백업을 되돌린 파일이 섞여도 화면으로 새지 않는다.
 HEAVY_REC = ("resolved", "env")
 
 
@@ -871,11 +896,8 @@ async def gallery_env(ws: str, file: str):
 
     ★없을 수 있다 — 이 기능이 생기기 전(2026-08-19)에 만든 그림은 안 남겼다.
       그때는 화면이 **그 그림이 나온 탭**에서 가져간다 (`cloneToNewTab` 의 폴백)."""
-    rec = next(
-        (r for r in reversed(store.records(ws, limit=100000)) if r.get("file") == file),
-        None,
-    )
-    return {"env": (rec or {}).get("env")}
+    # ★무거운 것은 곁파일에 있다 (`workspace.ENV_NAME` 머리 주석) — 색인을 훑지 않는다
+    return {"env": store.heavy_of(ws, file).get("env")}
 
 
 @app.post("/api/workspaces/{ws}/copy")
@@ -1287,9 +1309,9 @@ async def upscale_image(body: UpscaleBody):
     path.write_bytes(png)
     rel = store.rel(body.workspace, path)
 
-    # ★뒤에서부터 500줄만 보는 기본값으로는 **옛 그림을 못 찾는다** — 넉넉히 읽는다
+    # ★색인은 통째로 읽는다 — 무거운 것을 곁파일로 뺀 뒤로 줄당 211B 라 싸다
     rec = next(
-        (r for r in store.records(body.workspace, limit=100000) if r.get("file") == body.file),
+        (r for r in store.records(body.workspace) if r.get("file") == body.file),
         None,
     )
     new_rec = {
@@ -1667,11 +1689,8 @@ def _sent_from_record(ws: str, file: str) -> dict:
       본문을 손대 놓았으면 언제나 None 이 됐다 (사용자 지적 2026-08-21).
     ★우리 워크스페이스 그림은 보낸 페이로드를 통째로 기록해 두므로 짐작할 이유가 없다.
       밖에서 가져온 그림에는 기록이 없어 예전처럼 짐작한다."""
-    rec = next(
-        (r for r in reversed(store.records(ws, limit=100000)) if r.get("file") == file),
-        None,
-    )
-    res = (rec or {}).get("resolved") or {}
+    # ★무거운 것은 곁파일에 있다 (`workspace.ENV_NAME` 머리 주석)
+    res = store.heavy_of(ws, file).get("resolved") or {}
     par = res.get("parameters") or {}
     out: dict = {}
     m = res.get("model")
@@ -1699,11 +1718,8 @@ def _model_from_record(ws: str, file: str) -> str:
     ★우리는 보낸 페이로드를 통째로 기록해 두므로 **우리 워크스페이스 그림은** 되살릴 수 있다.
       밖에서 가져온 그림은 기록이 없어 여전히 빈 값이다 — 그때는 화면 값이 유지된다.
     ★인페인트 결과는 `model` 이 인페인팅 id 라 원본으로 되돌려 준다 (`nai.base_model`)."""
-    rec = next(
-        (r for r in reversed(store.records(ws, limit=100000)) if r.get("file") == file),
-        None,
-    )
-    m = ((rec or {}).get("resolved") or {}).get("model")
+    # ★무거운 것은 곁파일에 있다 (`workspace.ENV_NAME` 머리 주석)
+    m = (store.heavy_of(ws, file).get("resolved") or {}).get("model")
     return nai.base_model(m) if isinstance(m, str) else ""
 
 

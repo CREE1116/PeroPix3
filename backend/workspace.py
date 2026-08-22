@@ -23,6 +23,23 @@ import trash
 
 SPEC_NAME = "workspace.json"
 RECORDS_NAME = "records.jsonl"
+#: ★★**무거운 것은 따로 둔다** (사용자 결정 2026-08-22).
+#:
+#:  `records.jsonl` 은 화면이 워크스페이스를 열 때마다 통째로 읽는 **색인**인데, 한 줄에
+#:  `resolved`(그때 NAI 로 나간 페이로드 — 바이브·베이스 그림의 base64)와 `env`(그때의 화면
+#:  구조)가 같이 들어 있어 **줄당 평균 15.9KB · 883줄에 13.7MB** 였다 (실측 2026-08-22).
+#:  화면이 실제로 쓰는 것은 줄당 **211B** 뿐이라 99%가 읽고 버리는 값이었고, 그래서
+#:  「마지막 500줄만 읽는다」는 제한이 걸려 있었다 — 그 제한 때문에 **한 세트가 500칸의
+#:  대부분을 먹으면 다른 세트의 그림이 화면에서 사라졌다** (사용자 지적).
+#:
+#:  ★그림 폴더에는 **아무것도 안 만든다.** 그림 한 장에 파일 하나씩 붙이면 탐색기로 그림을
+#:    보는 자리가 지저분해진다 (사용자 지적) — 워크스페이스당 파일 **하나**만 는다.
+#:  ★성질은 그대로 append-only JSONL 이다: 사람이 읽을 수 있고, 쓰다 죽어도 앞줄은 온전하다.
+ENV_NAME = "records-env.jsonl"
+#: 색인에서 빼고 곁파일로 보내는 필드
+HEAVY_KEYS = ("resolved", "env")
+#: 쪼개기 전 원본을 한 번 남긴다 (지워도 앱은 돈다 — 되살릴 때만 쓴다)
+PRESPLIT_NAME = "records-before-split.jsonl"
 WORK_DIR = "work"      # ★옛 경로 (읽기 전용)
 OUT_DIR = "output"     # 생성물이 사는 곳 (사용자 결정 2026-08-08)
 # 파생 썸네일 캐시 — 원본에서 자동으로 굽는다. 지워도 다시 생긴다 (thumbs.py 참조)
@@ -233,23 +250,112 @@ class Store:
         return self.rel(ws, path)
 
     def append_record(self, ws: str, rec: dict) -> None:
+        """레코드 한 줄. ★무거운 것은 **곁파일로 갈라** 적는다 (`ENV_NAME` 머리 주석).
+
+        ★순서가 안전장치다: **곁파일을 먼저** 적는다. 거꾸로 하면 그 사이에 죽었을 때
+          색인에는 있는데 무거운 것이 없는 그림이 생긴다 (「새 탭으로 복제」가 조용히 빈손이 된다).
+          반대로 곁파일만 남는 것은 해가 없다 — 아무도 안 찾는 줄일 뿐이다."""
         d = self.dir_of(ws)
         d.mkdir(parents=True, exist_ok=True)
+        heavy = {k: rec[k] for k in HEAVY_KEYS if rec.get(k) is not None}
+        if heavy:
+            with (d / ENV_NAME).open("a", encoding="utf-8") as f:
+                f.write(json.dumps({"file": rec.get("file"), **heavy}, ensure_ascii=False) + "\n")
+        light = {k: v for k, v in rec.items() if k not in HEAVY_KEYS}
         with (d / RECORDS_NAME).open("a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            f.write(json.dumps(light, ensure_ascii=False) + "\n")
 
-    def records(self, ws: str, limit: int = 500) -> list[dict]:
+    def records(self, ws: str, limit: int = 0) -> list[dict]:
+        """색인 전체. ★**제한이 없다** (사용자 결정 2026-08-22) — 무거운 것을 곁파일로 뺀 뒤로
+        줄당 211B 라 전부 읽어도 싸다. `limit` 은 옛 부르는 쪽을 위해 남겨 둔 것이다.
+
+        ★쪼개지기 전에 적힌 줄이 섞여 있을 수 있다 (마이그레이션 전 · 옛 백업을 되돌린 경우).
+          그 줄에는 무거운 것이 그대로 들어 있으므로 **여기서 걷어 낸다** — 부르는 쪽은
+          언제나 가벼운 줄만 본다."""
         p = self.dir_of(ws) / RECORDS_NAME
         if not p.exists():
             return []
         lines = p.read_text(encoding="utf-8").splitlines()
+        if limit > 0:
+            lines = lines[-limit:]
         out = []
-        for ln in lines[-limit:]:
+        for ln in lines:
             try:
-                out.append(json.loads(ln))
+                r = json.loads(ln)
             except Exception:
                 continue  # 깨진 줄은 건너뛴다 — 인덱스일 뿐이다
+            for k in HEAVY_KEYS:
+                r.pop(k, None)
+            out.append(r)
         return out
+
+    def heavy_of(self, ws: str, file: str) -> dict:
+        """그 그림의 **무거운 것**(`resolved`·`env`). 없으면 빈 것.
+
+        ★찾는 자리는 곁파일이고, **뒤에서부터** 본다 (같은 경로가 여러 번 적혔으면 마지막 것).
+        ★파싱하기 전에 **경로 문자열이 그 줄에 있는지**부터 본다 — 줄 하나가 수십 KB 라
+          전부 파싱하면 느리다.
+        ★곁파일에 없으면 색인의 옛 줄을 되짚는다 (쪼개지기 전에 적힌 그림)."""
+        d = self.dir_of(ws)
+        for name in (ENV_NAME, RECORDS_NAME):
+            p = d / name
+            if not p.exists():
+                continue
+            for ln in reversed(p.read_text(encoding="utf-8").splitlines()):
+                if file not in ln:
+                    continue
+                try:
+                    r = json.loads(ln)
+                except Exception:
+                    continue
+                if r.get("file") != file:
+                    continue
+                got = {k: r[k] for k in HEAVY_KEYS if r.get(k) is not None}
+                if got:
+                    return got
+        return {}
+
+    def split_records(self, ws: str) -> int:
+        """색인에 남아 있는 무거운 것을 곁파일로 옮긴다. 옮긴 줄 수를 돌려준다.
+
+        ★**한 번만 돈다.** 무거운 것이 든 줄이 하나도 없으면 아무 일도 안 한다.
+        ★원본을 `records-before-split.jsonl` 로 한 번 남긴다 — 이 앱은 사용자 그림 기록을
+          잃은 적이 있어(CLAUDE.md) 되돌릴 자리를 둔다. 지워도 앱은 돈다.
+        ★임시 파일에 쓰고 rename 한다 — 쓰다 죽어도 옛 파일이 온전하다.
+        ★부르는 자리는 **서버가 요청을 받기 전**이다 (`server.py` 부팅) — 그래서 옮기는 도중에
+          새 그림이 끼어들 수 없다. 생성 중이어도 앱을 다시 켜기만 하면 된다."""
+        d = self.dir_of(ws)
+        p = d / RECORDS_NAME
+        if not p.exists():
+            return 0
+        lines = p.read_text(encoding="utf-8").splitlines()
+        heavy_lines, light_lines, moved = [], [], 0
+        for ln in lines:
+            try:
+                r = json.loads(ln)
+            except Exception:
+                light_lines.append(ln)   # 깨진 줄은 손대지 않고 그대로 둔다
+                continue
+            heavy = {k: r[k] for k in HEAVY_KEYS if r.get(k) is not None}
+            if heavy:
+                moved += 1
+                heavy_lines.append(
+                    json.dumps({"file": r.get("file"), **heavy}, ensure_ascii=False))
+                r = {k: v for k, v in r.items() if k not in HEAVY_KEYS}
+            light_lines.append(json.dumps(r, ensure_ascii=False))
+        if not moved:
+            return 0
+
+        (d / PRESPLIT_NAME).write_text("\n".join(lines) + "\n", encoding="utf-8")
+        env_tmp = d / (ENV_NAME + ".tmp")
+        # ★이미 곁파일이 있으면 **앞에 잇는다** — 새로 적힌 줄이 뒤에 와야 마지막 것이 이긴다
+        old_env = (d / ENV_NAME).read_text(encoding="utf-8").splitlines() if (d / ENV_NAME).exists() else []
+        env_tmp.write_text("\n".join(heavy_lines + old_env) + "\n", encoding="utf-8")
+        env_tmp.replace(d / ENV_NAME)
+        idx_tmp = d / (RECORDS_NAME + ".tmp")
+        idx_tmp.write_text("\n".join(light_lines) + "\n", encoding="utf-8")
+        idx_tmp.replace(p)
+        return moved
 
     def thumb_path(self, ws: str, rel: str) -> Path | None:
         """생성물의 **파생 썸네일**. 히스토리 줄·셀 그리드가 이걸 쓴다.
