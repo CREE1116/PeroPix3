@@ -100,6 +100,27 @@ export function BlockBody({
      ★치는 동안에도 유지한다 — 새로 친 빈칸·붙임표도 곧바로 안 깨지는 짝으로 바뀐다. */
   /** ★★치기 직전의 커서 자리 — 값이 갈아 끼워진 뒤 여기로 돌려놓는다 (아래 ★★주) */
   const caretKeep = useRef<{ s: number; e: number } | null>(null);
+
+  /** ★★**글 상자 안의 되돌리기는 우리가 든다** (사용자 지적 2026-08-22:
+   *  *"태그 자동완성을 사용한 순간부터 undo가 안됨."*).
+   *
+   *  자동완성은 값을 **직접 갈아 끼운다.** 글 상자의 `value` 에 대입하면 브라우저가 들고 있던
+   *  **자기 되돌리기 이력이 통째로 죽어서**, 그때부터 상자 안의 `Ctrl+Z` 가 아무 일도 안 한다.
+   *  전역 로그(`lib/undo`)는 **확정한 뒤**의 것이라 상자 안에서는 돌지 않는다.
+   *  ★그래서 상자가 열려 있는 동안의 글을 여기 쌓고, 상자 안의 `Ctrl+Z` 를 직접 받는다.
+   *  ★**치는 것은 뭉쳐서** 담는다 (400ms). 한 글자마다 담으면 한 낱말을 물리려고 열 번을
+   *    눌러야 한다. 자동완성처럼 한 번에 갈아 끼우는 것은 **언제나** 한 칸으로 담는다.
+   *  ★상자를 열 때 비운다 — 지난 판의 글로 돌아가면 안 된다. */
+  const textUndo = useRef<{ text: string; at: number }[]>([]);
+  const lastPushAt = useRef(0);
+  const pushTextUndo = (before: string, force: boolean) => {
+    const now = performance.now();
+    if (!force && now - lastPushAt.current < 400) return;
+    lastPushAt.current = now;
+    const el = ta.current;
+    textUndo.current.push({ text: before, at: el?.selectionStart ?? before.length });
+    if (textUndo.current.length > 50) textUndo.current.shift();
+  };
   const ac = useTagSuggest(
     toStore(text),
     (v, caretPlaced) => {
@@ -116,6 +137,8 @@ export function BlockBody({
            우리가 나중에 덮어쓰는 모양이었다. */
       const el = ta.current;
       caretKeep.current = !caretPlaced && el ? { s: el.selectionStart, e: el.selectionEnd } : null;
+      // ★자동완성이 갈아 끼운 것은 **언제나** 한 칸으로 (뭉치면 그 한 번을 못 물린다)
+      pushTextUndo(text, !!caretPlaced);
       setText(toEdit(v));
     },
     ta,
@@ -211,6 +234,8 @@ export function BlockBody({
     skipBlur.current = false;
     live.current.dropped = false;
     caretAt.current = at ?? null;
+    textUndo.current = [];   // ★지난 판의 글로 돌아가면 안 된다
+    lastPushAt.current = 0;
     setText(toEdit(txt ?? serializeBlock(block)));
     setEditing(true);
     onOpen?.();
@@ -296,6 +321,17 @@ export function BlockBody({
             onKeyDown={(e) => {
               // ★자동완성이 떠 있으면 Enter·Esc·방향키는 **그쪽 것**이다
               if (ac.onKeyDown(e)) return;
+              /* ★★**상자 안의 되돌리기는 우리 이력으로 돈다** (위 `textUndo` 의 ★★주).
+                 브라우저에 맡기면 자동완성이 값을 갈아 끼운 순간부터 먹통이 된다. */
+              if ((e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z")) {
+                const prev = textUndo.current.pop();
+                if (!prev) return;   // 담아 둔 것이 없으면 브라우저에 맡긴다
+                e.preventDefault();
+                caretKeep.current = { s: prev.at, e: prev.at };
+                lastPushAt.current = 0;   // 되돌린 직후의 타이핑은 새 칸으로 담는다
+                setText(prev.text);
+                return;
+              }
               if (e.key === "Tab" && onTab) {
                 e.preventDefault();
                 commitNow();
