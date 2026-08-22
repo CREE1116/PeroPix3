@@ -98,7 +98,23 @@ export function BlockBody({
        뒤져 하이픈 든 태그가 하나도 안 걸린다. 길이가 안 변하는 치환이라 **커서 자리가 그대로**여서
        그 안의 자리 계산이 전부 그대로 맞는다.
      ★치는 동안에도 유지한다 — 새로 친 빈칸·붙임표도 곧바로 안 깨지는 짝으로 바뀐다. */
-  const ac = useTagSuggest(toStore(text), (v) => setText(toEdit(v)), ta);
+  /** ★★치기 직전의 커서 자리 — 값이 갈아 끼워진 뒤 여기로 돌려놓는다 (아래 ★★주) */
+  const caretKeep = useRef<{ s: number; e: number } | null>(null);
+  const ac = useTagSuggest(
+    toStore(text),
+    (v) => {
+      /* ★★**커서 자리를 적어 둔다** (사용자 지적 2026-08-22: *"단어 중간에 띄어쓰기를 하면
+           갑자기 편집 커서가 맨 뒤로 이동함"*).
+         `toEdit` 이 빈칸을 NBSP 로, 붙임표를 U+2011 로 바꾸면 글이 **브라우저가 방금 만든
+         것과 달라져서**, 리액트가 `value` 를 다시 써 넣는다. 글 상자의 `value` 에 대입하면
+         커서는 **맨 뒤로** 간다 (실측: 가운데 3 자리에서 쳤는데 15 로 튐).
+         보통 글자는 치환이 없어 값이 같고, 그래서 멀쩡했다 — 빈칸·붙임표에서만 났다. */
+      const el = ta.current;
+      if (el) caretKeep.current = { s: el.selectionStart, e: el.selectionEnd };
+      setText(toEdit(v));
+    },
+    ta,
+  );
   /** 편집을 열 때 커서를 놓을 자리. `null` 이면 맨 뒤 */
   const caretAt = useRef<number | null>(null);
   /** Enter·Esc 로 넘어갈 때 뒤따르는 blur 이 한 번 더 반영하지 않게 */
@@ -119,6 +135,20 @@ export function BlockBody({
     el.style.height = `${el.scrollHeight}px`;
   };
   useLayoutEffect(fit, [text, editing]);
+
+  /** ★★값이 갈아 끼워진 **바로 뒤에** 커서를 제자리로 (위 `caretKeep` 의 ★★주).
+   *  ★치환은 한 글자를 한 글자로 바꿔 **길이가 안 변하므로** 자리 숫자가 그대로 맞는다.
+   *  ★`useLayoutEffect` 여야 한다 — 그려지기 전에 되돌려야 커서가 튀는 것이 안 보인다.
+   *  ★적어 둔 것이 있을 때만 손댄다. 편집을 **열 때** 커서를 놓는 자리(`caretAt`)와 겹치면
+   *    안 되기 때문이다 — 그쪽은 여기에 아무것도 안 적는다. */
+  useLayoutEffect(() => {
+    const el = ta.current;
+    const keep = caretKeep.current;
+    caretKeep.current = null;
+    if (!el || !keep) return;
+    if (el.selectionStart !== keep.s || el.selectionEnd !== keep.e)
+      el.setSelectionRange(keep.s, keep.e);
+  }, [text]);
   useEffect(() => {
     const el = ta.current?.parentElement;
     if (!editing || !el) return;
