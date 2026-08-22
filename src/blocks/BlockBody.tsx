@@ -17,10 +17,17 @@ import { useTagSuggest } from "./TagSuggest";
  *  ★한 태그가 줄보다 길면 그때는 그래도 쪼개진다 (글 상자의 기본 동작) — 칩은 그 경우
  *    말줄임으로 자른다. 줄보다 긴 태그는 드물어 그대로 둔다. */
 const NBSP = "\u00a0";
-/** 고칠 때의 글 — 쉼표 **뒤**의 빈칸만 남기고 나머지 빈칸을 NBSP 로 */
-const toEdit = (t: string) => t.replace(/ /g, (_m, i: number) => (t[i - 1] === "," ? " " : NBSP));
-/** 밖으로 나가는 글 — **반드시 되돌린다** (저장·NAI 로 NBSP 가 새면 안 된다) */
-const toStore = (t: string) => t.replace(/\u00a0/g, " ");
+/** 안 깨지는 붙임표 — ★폭이 보통 붙임표와 **똑같다** (실측 4.52px 대 4.52px) */
+const NBHY = "\u2011";
+/** 고칠 때의 글 — 접힐 자리를 **쉼표 뒤 하나만** 남긴다.
+ *
+ *  ★빈칸(U+0020)과 붙임표(U+002D) 둘 다 접힐 자리다. `close-up` 이 `close-` / `up` 으로
+ *    끊기던 것이 붙임표 쪽이다 (사용자 지적 2026-08-22).
+ *  ★한 글자를 한 글자로 바꾸므로 **길이가 안 변한다** — 커서 자리가 안 밀린다. */
+const toEdit = (t: string) =>
+  t.replace(/[ -]/g, (m, i: number) => (m === "-" ? NBHY : t[i - 1] === "," ? " " : NBSP));
+/** 밖으로 나가는 글 — **반드시 되돌린다** (저장·NAI 로 이 글자들이 새면 안 된다) */
+const toStore = (t: string) => t.replace(/\u00a0/g, " ").replace(/\u2011/g, "-");
 
 /** 칩 끌기 손잡이 — 목록이 들고 있는 것을 이 블록 몫만 받는다 (`useTagDrag`) */
 export type TagDrag = {
@@ -86,8 +93,11 @@ export function BlockBody({
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState("");
   const ta = useRef<HTMLTextAreaElement>(null);
-  // ★치는 동안에도 유지한다 — 새로 친 빈칸도 곧바로 NBSP 가 된다 (자리는 안 밀린다)
-  const ac = useTagSuggest(text, (v) => setText(toEdit(v)), ta);
+  /* ★★자동완성에는 **평범한 글**을 준다 (`toStore`). 안 그러면 사전을 `close‑up`(U+2011)로
+       뒤져 하이픈 든 태그가 하나도 안 걸린다. 길이가 안 변하는 치환이라 **커서 자리가 그대로**여서
+       그 안의 자리 계산이 전부 그대로 맞는다.
+     ★치는 동안에도 유지한다 — 새로 친 빈칸·붙임표도 곧바로 안 깨지는 짝으로 바뀐다. */
+  const ac = useTagSuggest(toStore(text), (v) => setText(toEdit(v)), ta);
   /** 편집을 열 때 커서를 놓을 자리. `null` 이면 맨 뒤 */
   const caretAt = useRef<number | null>(null);
   /** Enter·Esc 로 넘어갈 때 뒤따르는 blur 이 한 번 더 반영하지 않게 */

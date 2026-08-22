@@ -755,7 +755,7 @@ export const ja: Dict = {
   /** ★下段は「セット」。上段が「タブ」になったので、このグループの文言に「タブ」を戻さないこと (2026-08-18)。 */
   tabs: {
     closeConfirm: "セット「{name}」を閉じます (画像 {n} 枚)",
-    closeConfirmBody: "画像ファイルは残りますが、画面からは一緒に消えます。",
+    closeConfirmBody: "画像ファイルもゴミ箱へ送ります (24時間以内なら戻せます)。",
     closeTab: "セットを閉じる",
     newSet: "新しいセット",
     newSetTab: "新しいシーンセット",

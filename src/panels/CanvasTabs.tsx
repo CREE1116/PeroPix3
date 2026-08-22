@@ -30,7 +30,7 @@ import { Icon } from "../components/Icon";
  *    「탭」을 되살리지 말 것. 두 줄이 같은 이름이 되면 구별이 안 된다. */
 export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) {
   const { spec, setActiveTab, closeTab, renameTab, addSetTab,
-    switchChar, addChar, renameChar, removeChar, records, isDeleted } = useWs();
+    switchChar, addChar, renameChar, removeChar, records, isDeleted, deleteFiles } = useWs();
   const tr = useI18n((s) => s.t);
   const [editing, setEditing] = useState<string | null>(null);
   const [editingChar, setEditingChar] = useState<string | null>(null);
@@ -129,22 +129,36 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
             {/* ★**마지막 하나는 못 닫는다** — 닫으면 이 캐릭터에 탭이 없어진다 (`closeTab` 주석) */}
             {inGroup.length > 1 && (
               <button
-                /* ★★그림이 든 탭은 **묻고 닫는다** (사용자 지시 2026-08-19) — 파일은 남지만
-                   그 탭의 결과가 화면에서 통째로 사라진다 (묶는 키가 `tab_id` 다). */
+                /* ★★그림이 든 탭은 **묻고 닫으며, 그림도 함께 지운다**
+                     (사용자 지시 2026-08-19 묻기 · 2026-08-22 함께 지우기).
+                   ★★옛 원칙(`backend/workspace.py` 머리: *"생성물 = 원본. 앱이 자동으로
+                     지우지 않는다"*)을 사용자가 뒤집었다 — *"앱에서 다시는 확인할 수 없는
+                     형태로 사라지면 원 파일도 지운다"*. 파일만 남고 앱에서 볼 길이 없으면
+                     **관리가 안 되기** 때문이다.
+                   ★**휴지통을 지난다** (`deleteFiles`). 24시간 유예가 있어 되살릴 수 있고,
+                     이 앱에서 지우는 창구는 전부 그리로 가기로 되어 있다 (`backend/trash.py`).
+                   ★**묶는 키는 `tab_id`** 다. 폴더는 **탭 이름**으로 짓기 때문에
+                     (`workspace.out_dir`), 폴더를 지우면 같은 이름의 다른 탭 그림까지 지운다. */
                 onClick={(e) => {
                   e.stopPropagation();
-                  const n = takesOf(records, t, undefined).filter((r) => !isDeleted(r.file)).length;
-                  if (!n) return closeTab(t.id);
+                  const mine = takesOf(records, t, undefined)
+                    .filter((r) => !isDeleted(r.file))
+                    .map((r) => r.file);
+                  if (!mine.length) return closeTab(t.id);
                   void (async () => {
                     if (
                       await ask({
-                        title: tr("tabs.closeConfirm", { name: t.name, n }),
+                        title: tr("tabs.closeConfirm", { name: t.name, n: mine.length }),
                         body: tr("tabs.closeConfirmBody"),
                         ok: tr("common.delete"),
                         cancel: tr("common.cancel"),
                       })
-                    )
+                    ) {
+                      // ★그림을 먼저 보낸다 — 탭이 사라진 뒤에는 어느 그림이 그 탭 것이었는지
+                      //   화면이 더는 묶어 주지 못한다
+                      await deleteFiles(mine);
                       closeTab(t.id);
+                    }
                   })();
                 }}
                 data-tip={tr("tabs.closeTab")}
