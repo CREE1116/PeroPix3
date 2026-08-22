@@ -66,48 +66,7 @@ export function GalleryMeta() {
   return (
     <Frame>
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "0 var(--sp-4) var(--sp-4)" }}>
-        <Grid>
-          {meta.seed !== undefined && <Field k={t("gallery.fieldSeed")} v={String(meta.seed)} mono />}
-          {meta.steps !== undefined && <Field k={t("gallery.fieldSteps")} v={String(meta.steps)} mono />}
-          {meta.cfg !== undefined && <Field k={t("gallery.fieldCfg")} v={String(meta.cfg)} mono />}
-          {meta.width !== undefined && (
-            <Field k={t("gallery.fieldSize")} v={`${meta.width}×${meta.height}`} mono />
-          )}
-          {meta.sampler && <Field k={t("gallery.fieldSampler")} v={meta.sampler} />}
-          {meta.scheduler && <Field k={t("gallery.fieldScheduler")} v={meta.scheduler} />}
-        </Grid>
-        {(meta.source || meta.nai_model) && (
-          <Field k={t("gallery.fieldModel")} v={meta.source || meta.nai_model!} />
-        )}
-
-        <Text label={t("gallery.fieldPrompt")} body={meta.prompt} mark="prompt" />
-        <Text label={t("gallery.fieldNegative")} body={meta.negative} dim mark="negative" />
-
-        {!!meta.characters?.length && (
-          <>
-            <Label>{t("gallery.fieldCharacters")}</Label>
-            {meta.characters.map((c, i) => (
-              <div
-                key={i}
-                style={{
-                  marginBottom: "var(--sp-2)",
-                  padding: "var(--sp-2) var(--sp-3)",
-                  borderRadius: "var(--r-2)",
-                  background: "var(--surface2)",
-                  fontSize: "var(--text-2xs)",
-                  color: "var(--ink-dim)",
-                  lineHeight: 1.5,
-                  wordBreak: "break-word",
-                }}
-              >
-                {c.prompt || "—"}
-                {c.negative && (
-                  <div style={{ marginTop: 2, color: "var(--ink-faint)" }}>− {c.negative}</div>
-                )}
-              </div>
-            ))}
-          </>
-        )}
+        <MetaBody m={meta} />
       </div>
 
       <div
@@ -384,6 +343,57 @@ function Frame({ children }: { children: React.ReactNode }) {
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, paddingTop: "var(--sp-3)" }}>
       {children}
     </div>
+  );
+}
+
+/** 읽어 낸 메타데이터를 **보여 주는 몸통** — 값 표 · 프롬프트 · 네거티브 · 캐릭터.
+ *
+ *  ★★**보는 자리가 둘이라 여기 하나로 뒀다**: 갤러리의 그림 정보 패널과, 밖에서 떨군 그림의
+ *    가져오기 시트(`app/DropImport`). v2 이식 계획이 못 박은 자리다
+ *    (`docs/v2-feature-catalog.md`: *"드롭 가져오기 시트도 같은 컴포넌트를 재사용하면 창구가
+ *    하나가 된다"*). 두 벌이면 한쪽에만 새 칸이 붙어 같은 그림이 자리마다 달리 보인다.
+ *  ★스크롤과 여백은 **부르는 쪽**이 정한다 — 패널과 시트는 담기는 틀이 다르다. */
+export function MetaBody({ m }: { m: ImageMeta }) {
+  const t = useI18n((s) => s.t);
+  return (
+    <>
+      <Grid>
+        {m.seed !== undefined && <Field k={t("gallery.fieldSeed")} v={String(m.seed)} mono />}
+        {m.steps !== undefined && <Field k={t("gallery.fieldSteps")} v={String(m.steps)} mono />}
+        {m.cfg !== undefined && <Field k={t("gallery.fieldCfg")} v={String(m.cfg)} mono />}
+        {m.width !== undefined && <Field k={t("gallery.fieldSize")} v={`${m.width}×${m.height}`} mono />}
+        {m.sampler && <Field k={t("gallery.fieldSampler")} v={m.sampler} />}
+        {m.scheduler && <Field k={t("gallery.fieldScheduler")} v={m.scheduler} />}
+      </Grid>
+      {(m.source || m.nai_model) && <Field k={t("gallery.fieldModel")} v={m.source || m.nai_model!} />}
+
+      <Text label={t("gallery.fieldPrompt")} body={m.prompt} mark="prompt" />
+      <Text label={t("gallery.fieldNegative")} body={m.negative} dim mark="negative" />
+
+      {!!m.characters?.length && (
+        <>
+          <Label>{t("gallery.fieldCharacters")}</Label>
+          {m.characters.map((c, i) => (
+            <div
+              key={i}
+              style={{
+                marginBottom: "var(--sp-2)",
+                padding: "var(--sp-2) var(--sp-3)",
+                borderRadius: "var(--r-2)",
+                background: "var(--surface2)",
+                fontSize: "var(--text-2xs)",
+                color: "var(--ink-dim)",
+                lineHeight: 1.5,
+                wordBreak: "break-word",
+              }}
+            >
+              {c.prompt || "—"}
+              {c.negative && <div style={{ marginTop: 2, color: "var(--ink-faint)" }}>− {c.negative}</div>}
+            </div>
+          ))}
+        </>
+      )}
+    </>
   );
 }
 

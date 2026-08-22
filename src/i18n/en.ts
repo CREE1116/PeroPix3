@@ -314,6 +314,18 @@ export const en = {
     vibeFileBad: "That is not a NAI vibe file.",
   },
 
+  /** Importing an image dropped from outside (`app/DropImport`) */
+  drop: {
+    title: "Import",
+    hint: "Drop here to choose what to do with this image",
+    apply: "Apply settings",
+    applyHint: "Puts this image's prompt, characters, settings, seed and vibes into the current tab",
+    noMeta: "This image has no generation settings left. You can still use it as a base image or a vibe.",
+    onlyOne: "Only one file at a time. Opened the first one.",
+    vibeCached: "The encoding is included, so no Anlas is spent",
+    vibeRaw: "No encoding — it will be encoded on generate (2 Anlas per vibe)",
+  },
+
   focus: {
     auto: "The image is large, so Focused Inpainting was turned on. The result keeps its original size.",
     help: "On: only the rectangle is cropped, sent upscaled to 1MP, and pasted back in place. Off: the whole image is sent at the request resolution",

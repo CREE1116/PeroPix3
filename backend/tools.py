@@ -197,6 +197,9 @@ def read_meta(root: Path, it: Item) -> dict:
         kind     형식 배지 (nai · peropix · comfyui · vibe · custom)
         preview  줄인 그림 — 앱에는 경로만 와서 화면이 원본을 가리킬 주소가 없다
         extra    우리가 다른 칸으로 안 보여 주는 tEXt 청크 (v2 「Raw Metadata」)
+
+    ★`full` 을 켜면 **원본 바이트**(`data`)와 바이브 인코딩(`vibe.data`)도 얹는다 —
+      드롭 가져오기가 그것으로 베이스 이미지·바이브를 만든다.
     """
     data, _ = _read(root, it)
     raw = meta_mod.read_raw(data)
@@ -220,6 +223,17 @@ def read_meta(root: Path, it: Item) -> dict:
             "strength": str(info.get("strength") or ""),
             "info_extracted": str(info.get("info_extracted") or ""),
         }
+    # ★★`full` 은 **드롭 가져오기**가 켠다 (EXIF 리더는 안 켠다).
+    #   앱(Tauri)에는 경로만 와서 화면에 원본 바이트가 없는데, 떨군 그림을 베이스 이미지나
+    #   바이브로 넣으려면 그 바이트가 있어야 한다. `preview` 는 320px JPEG 이라 못 쓴다.
+    #   ★재인코딩하지 않고 **파일 그대로** 준다 (v2 `fileToBase64` 와 같다) — 다시 구우면
+    #     바이브 캐시 키가 달라져 이미 구워 둔 인코딩을 못 알아본다.
+    if it.get("full"):
+        out["data"] = base64.b64encode(data).decode("ascii")
+        # ★바이브 캐시 PNG 는 tEXt 에 **인코딩 자체**를 들고 있다 — 그것을 그대로 쓰면
+        #   다시 굽지 않아 Anlas 가 안 나간다 (`vibe.py` 의 `put`).
+        if out["kind"] == "vibe":
+            out["vibe"]["data"] = str(info.get("vibe_data") or "")
     # ★500자에서 자른다 — 화면에 통째로 쏟으면 읽을 수 없다 (v2 도 같은 자리에서 잘랐다)
     out["extra"] = {k: str(v)[:500] for k, v in info.items() if k not in SHOWN_CHUNKS}
     return out

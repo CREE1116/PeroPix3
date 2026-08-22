@@ -1,7 +1,8 @@
 import { useI18n } from "../i18n";
 import { Category } from "./Category";
 import { useEffect, useState } from "react";
-import { DEFAULT_MODEL, MODELS, NAI_MAX, SIZE_PRESETS, alignTo64, modelCaps, useGen } from "../store/gen";
+import { DEFAULT_MODEL, MODELS, NAI_MAX, SIZE_PRESETS, alignTo64, modelCaps, useGen, type GenParams } from "../store/gen";
+import { pushUndo } from "../lib/undo";
 import { Icon } from "../components/Icon";
 import { Ratio } from "../components/Ratio";
 import { Help } from "../components/Tip";
@@ -30,6 +31,20 @@ export function OptionsPanel() {
   const p = useGen((s) => s.params);
   const set = useGen((s) => s.set);
   const t = useI18n((s) => s.t);
+  /** 값 하나를 **되돌릴 수 있게** 바꾼다 (사용자 지시 2026-08-22:
+   *  *"생성옵션 패널에 있는 숫자, 텍스트 입력은 전부 undo 리스트에 들어가야함"*).
+   *
+   *  ★★`useGen.set` 안에 넣지 않는다. 그 창구는 **사람이 안 만진 변경**도 지난다 —
+   *    설정 불러오기·베이스 그림에 해상도 맞추기·시드 굴리기가 전부 거기로 간다.
+   *    거기 담으면 `Ctrl+Z` 한 번이 사람이 한 적 없는 것을 되돌린다.
+   *  ★**이름을 함께 담는다** — 되돌린 것이 무엇인지 토스트가 말한다 (`lib/undo` 의 ★주).
+   *  ★안 바뀌었으면 안 담는다. 칸만 열고 닫아도 쌓이면 `Ctrl+Z` 가 몇 번씩 헛돈다. */
+  const setUndo = <K extends keyof GenParams>(k: K, v: GenParams[K], label: string) => {
+    const before = useGen.getState().params[k];
+    if (before === v) return;
+    pushUndo(label, () => useGen.getState().set(k, before));
+    set(k, v);
+  };
   /** ★★**이 모델에서 되는 것만 보여 준다** (사용자 지시 2026-08-21).
    *
    *  V5 는 스케줄러·Variety+ 가 아예 없다 — 서버가 무시하는 컨트롤을 남겨 두면 사용자는
@@ -108,9 +123,9 @@ export function OptionsPanel() {
           {/* ★직접 입력 — NAI 는 64 배수만 받는다. 입력을 떠날 때 올려 맞추고 그 값을 보여 준다
               (서버도 같은 정렬을 하지만, 무엇이 갈지 지금 보여야 한다) */}
           <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
-            <NumBox data-size="w" value={p.width} onCommit={(v) => set("width", alignTo64(v))} />
+            <NumBox data-size="w" value={p.width} onCommit={(v) => setUndo("width", alignTo64(v), t("options.resolution"))} />
             <span style={{ color: "var(--ink-faint)", fontSize: "var(--text-2xs)" }}>×</span>
-            <NumBox data-size="h" value={p.height} onCommit={(v) => set("height", alignTo64(v))} />
+            <NumBox data-size="h" value={p.height} onCommit={(v) => setUndo("height", alignTo64(v), t("options.resolution"))} />
           </div>
         </div>
       </Category>
@@ -118,14 +133,14 @@ export function OptionsPanel() {
       <Category id="opt-gen" label={t("options.catGeneration")} defaultFolded flashKey="params">
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}>
               <Group label={t("options.steps")} help={t("options.stepsHint")}>
-                <Num value={p.steps} min={1} max={NAI_MAX.steps} onChange={(v) => set("steps", v)} />
+                <Num value={p.steps} min={1} max={NAI_MAX.steps} onChange={(v) => setUndo("steps", v, t("options.steps"))} />
               </Group>
               <Group label={t("options.cfg")}>
-                <Num value={p.cfg} min={1} max={NAI_MAX.cfg} step={0.1} onChange={(v) => set("cfg", v)} />
+                <Num value={p.cfg} min={1} max={NAI_MAX.cfg} step={0.1} onChange={(v) => setUndo("cfg", v, t("options.cfg"))} />
               </Group>
               {cap.cfg_rescale && (
                 <Group label={t("options.cfgRescale")}>
-                  <Num value={p.cfg_rescale} min={0} max={1} step={0.02} onChange={(v) => set("cfg_rescale", v)} />
+                  <Num value={p.cfg_rescale} min={0} max={1} step={0.02} onChange={(v) => setUndo("cfg_rescale", v, t("options.cfgRescale"))} />
                 </Group>
               )}
               <Group label={t("options.sampler")}>
@@ -151,7 +166,7 @@ export function OptionsPanel() {
                     onChange={(v) => set("save_format", v)}
                   />
                   {p.save_format !== "png" && (
-                    <NumBox value={p.jpg_quality} onCommit={(v) => set("jpg_quality", Math.min(100, Math.max(1, v)))} />
+                    <NumBox value={p.jpg_quality} onCommit={(v) => setUndo("jpg_quality", Math.min(100, Math.max(1, v)), t("options.saveOptions"))} />
                   )}
                 </div>
                 {/* ★그림을 공유할 때만 쓴다 — 지우면 그 그림으로 재생성할 수 없다 */}

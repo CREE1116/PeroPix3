@@ -35,6 +35,7 @@ import { SaveDialog, type SaveAsk } from "./cards/SaveDialog";
 import { useSub } from "./store/sub";
 import { BlockDrawer } from "./blocks/BlockDrawer";
 import { WildcardModal } from "./panels/WildcardModal";
+import { DropImport } from "./app/DropImport";
 import { useWildcards } from "./store/wildcards";
 import { ThumbDialog } from "./cards/ThumbDialog";
 import { saveCardWithThumb } from "./cards/saveCard";
@@ -393,6 +394,11 @@ export function App() {
       {/* ★모달이라 어느 모드에서나 한 자리에 매단다. 확인 창(`AskDialog`)보다 **위에**
           두지 않는다. 닫을 때 저장 여부를 묻는 창이 이 위에 떠야 한다 */}
       <WildcardModal />
+      {/* ★★밖에서 떨군 그림 가져오기 — **생성·갤러리에서만** 매단다.
+          자동검열과 보조 도구에는 자기 드롭존이 이미 있고 그쪽도 창 전체로 받아서
+          (`ExifTool` 의 `wide`), 여기까지 두면 한 번 떨군 것을 둘이 잡는다
+          (v2 도 같은 자리에서 갈랐다: `!isInCensorMode() && !isInUtilityMode()`). */}
+      {(mode === "generate" || mode === "gallery") && <DropImport />}
       <AskDialog />
       <Toasts />
       {/* 툴팁 층 — 화면 아무 데나 `data-tip` 을 달면 여기서 뜬다 (`components/Tip`) */}

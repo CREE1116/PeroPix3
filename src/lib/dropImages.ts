@@ -81,15 +81,20 @@ const readAsData = (f: File) =>
     r.readAsDataURL(f);
   });
 
-export function useImageDrop(onDrop: (items: Dropped[]) => void, wide = false) {
+/** @param accept 받을 확장자. ★기본은 그림뿐이다 — 드롭 가져오기만 `.naiv4vibe` 를 더한다
+ *   (그 파일은 그림이 아니라 인코딩이 든 JSON 이다, `lib/naiVibeFile`). */
+export function useImageDrop(onDrop: (items: Dropped[]) => void, wide = false, accept = IMG) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [over, setOver] = useState(false);
   const cb = useRef(onDrop);
   cb.current = onDrop;
+  /** ★정규식은 **처음 것을 붙들어 둔다.** 부르는 쪽이 리터럴을 그 자리에 쓰면 렌더마다 새
+   *  객체라, 그대로 딸림값에 넣으면 창 리스너가 렌더마다 붙었다 떨어진다. */
+  const acc = useRef(accept);
 
   useTauriDrop(
     ref,
-    IMG,
+    acc.current,
     (paths) => cb.current(paths.map((x) => ({ name: x.split(/[\\/]/).pop() || x, path: x }))),
     setOver,
     wide,
@@ -112,7 +117,7 @@ export function useImageDrop(onDrop: (items: Dropped[]) => void, wide = false) {
       if (!mine(e)) return;
       e.preventDefault();
       setOver(false);
-      const fs = [...(e.dataTransfer?.files ?? [])].filter((f) => IMG.test(f.name));
+      const fs = [...(e.dataTransfer?.files ?? [])].filter((f) => acc.current.test(f.name));
       if (!fs.length) return;
       cb.current(await Promise.all(fs.map(async (f) => ({ name: f.name, data: await readAsData(f) }))));
     };
@@ -140,7 +145,7 @@ export function useImageDrop(onDrop: (items: Dropped[]) => void, wide = false) {
     onDrop: async (e: React.DragEvent) => {
       e.preventDefault();
       setOver(false);
-      const fs = [...e.dataTransfer.files].filter((f) => IMG.test(f.name));
+      const fs = [...e.dataTransfer.files].filter((f) => acc.current.test(f.name));
       if (!fs.length) return;
       cb.current(await Promise.all(fs.map(async (f) => ({ name: f.name, data: await readAsData(f) }))));
     },

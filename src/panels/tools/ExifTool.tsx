@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useI18n } from "../../i18n";
 import { api } from "../../lib/backend";
 import { useImageDrop, type Dropped } from "../../lib/dropImages";
+import { KIND_LABEL } from "../../lib/dropImport";
 import { toast } from "../../store/toast";
 import { Icon } from "../../components/Icon";
 
@@ -50,14 +51,8 @@ type Meta = {
   extra?: Record<string, string>;
 };
 
-/** 배지에 쓸 이름 — ★i18n 키를 문자열로 이어 만들지 않는다 (회귀 테스트가 잡는다) */
-const KIND_LABEL: Record<string, string> = {
-  nai: "NAI",
-  peropix: "PeroPix",
-  comfyui: "ComfyUI",
-  vibe: "Vibe Cache",
-  custom: "Custom",
-};
+/** ★배지 이름은 `lib/dropImport` **하나**가 든다 — 드롭 가져오기 시트도 같은 배지를 단다.
+ *  두 벌이면 같은 그림이 EXIF 리더와 드롭에서 다른 형식으로 보인다. */
 
 /** ★★**읽은 결과는 탭을 옮겨도 남는다** (사용자 지시 2026-08-21).
  *

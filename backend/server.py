@@ -1999,6 +1999,9 @@ class ToolItem(BaseModel):
     path: str | None = None
     rel: str | None = None
     data: str | None = None
+    #: ★`/api/tools/meta` 에서만 뜻이 있다 — 켜면 **원본 바이트**(base64)와 바이브 인코딩까지
+    #  함께 준다. 드롭 가져오기가 켠다 (`tools.read_meta` 의 ★주). EXIF 리더는 안 켠다.
+    full: bool = False
 
 
 class ToolConvert(BaseModel):
