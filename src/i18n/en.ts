@@ -690,12 +690,17 @@ export const en = {
     removed: "Deleted.",
     restored: "Restored.",
     undo: "Undo",
+    undone: "Undone — {what}",
+    undoTag: "chip removal",
+    undoText: "text edit",
+    undoImages: "image deletion",
+    undoHidden: "hiding images",
   },
 
   scenes: {
     removeConfirm: "Delete scene \"{name}\" ({n} images)",
     removeCardConfirm: "Remove the card \"{name}\"? ({c} scenes, {n} images)",
-    removeConfirmBody: "The image files stay on disk, but they disappear from this view.",
+    removeConfirmBody: "The image files stay in the trash. Items older than 24 hours are cleared on app start.",
     lockCard: "Lock card. Its scenes are skipped",
     pickOne: "Pick a take below to see it here",
     title: "Scenes",

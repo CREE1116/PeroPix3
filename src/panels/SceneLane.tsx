@@ -22,7 +22,10 @@ import { DragGhost } from "../cards/DragGhost";
 import { useLaneReorder, type LaneDrop } from "../lib/useReorder";
 import { useSceneFocus } from "../store/sceneFocus";
 import { pickAfterRemoving, stepTake, visibleTakes } from "../lib/sceneTakes";
-import { clearTagUndo, undoTagEdit } from "../lib/tagUndo";
+import { clearUndo, undoLast } from "../lib/undo";
+// ★`t` 는 **모듈 것**을 쓴다 — 이 파일 안에서 `t` 는 이벤트 대상 이름으로 자주 가려진다
+import { t as tr } from "../i18n";
+import { toast } from "../store/toast";
 import { useRename } from "../components/useRename";
 import { ask } from "../store/ask";
 import { usePreviews, withPreviews } from "../store/previews";
@@ -55,7 +58,7 @@ export function SceneLane() {
   const t = useI18n((s) => s.t);
   const base = useGen((g) => g.base);
   const { records, current: ws, activeTab, isDeleted, deleteFiles,
-    undoSelection, setTab, setCard, addCard, removeCard, addSlot, moveScene, moveCard } = useWs();
+    setTab, setCard, addCard, removeCard, addSlot, moveScene, moveCard } = useWs();
   const pending = useQueue((s) => s.pending);
   // ★구독해서 읽는다. `getState()` 로 읽으면 진행이 바뀌어도 다시 그리지 않아
   //   「생성 중」이 영영 안 뜬다 (사용자 지적 2026-08-14)
@@ -429,7 +432,7 @@ export function SceneLane() {
     lastTab.current = tabId;
     setPicked(new Set());
     useSceneFocus.getState().switchTab(prev, tabId);
-    clearTagUndo();   // ★없어진 블록을 되살리려 들면 안 된다
+    clearUndo();   // ★없어진 블록·그림을 되살리려 들면 안 된다
   }, [tabId]);
 
   // Del = 숨김(휴지통) · Ctrl+Z = 되돌리기 · Esc = 선택 해제 (멀티 무대의 규칙 그대로)
@@ -470,15 +473,22 @@ export function SceneLane() {
         return;
       }
       if ((e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z")) {
-        // ★★되돌릴 것이 둘이다 — **칩 지우기**(더 최근의 일)를 먼저 본다.
-        //   전역 키 임자를 여기 하나로 두는 이유: 두 곳에서 window 에 매달면 등록 순서에
-        //   따라 **둘 다** 돌아 선별까지 함께 되돌아간다.
-        if (undoTagEdit() || undoSelection()) e.preventDefault();
+        /* ★★**로그 하나만 본다** (사용자 지시 2026-08-22: *"컨트롤+z를 했을 때 사용자의
+             기대는 마지막에 수정한 걸 되돌리는거임"*). 예전에는 스택이 둘이라 `칩 || 선별`
+             순서로 물었고, 그래서 방금 그림을 지웠어도 **칩이 먼저** 되돌아갔다.
+           ★전역 키 임자는 여기 하나다 — 두 곳에서 window 에 매달면 등록 순서에 따라
+             **둘 다** 돌아 두 걸음이 한 번에 되돌아간다.
+           ★되돌린 것의 **이름을 알린다** — 갈래가 여럿이라 안 알리면 무엇이 돌아왔는지 모른다. */
+        const what = undoLast();
+        if (what) {
+          e.preventDefault();
+          toast(tr("common.undone", { what }));
+        }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [picked, selected, deleteFiles, undoSelection]);
+  }, [picked, selected, deleteFiles]);
 
   if (tab?.kind !== "set") return null;
 
@@ -1507,21 +1517,30 @@ function CardGroup(p: GroupProps) {
               data-card-remove={p.card.id}
               /* ★★**생성물이 화면에서 사라지는 삭제는 전부 묻는다** (사용자 지시 2026-08-19).
                  카드를 빼면 그 안의 씬이 통째로 빠지므로, 씬 하나를 지우는 것보다 범위가 넓다.
-                 ★`Ctrl+Z` 로 되돌아가는 자리여도 묻는다 — 되돌릴 수 있다는 것이 안 묻는 이유가
-                 되면, 사라진 줄 모르고 지나가는 일이 그대로 남는다. */
+               ★★**그림도 함께 휴지통으로 보내고, 되돌리기는 주지 않는다**
+                 (사용자 지시 2026-08-22: *"카드 삭제도 마찬가지. … 카드는 들고있는게 많아서
+                 그냥 지우면 복구 안해주는 쪽으로 처리."*).
+                 예전에는 파일이 남아 **앱에서 볼 길이 없는 그림**이 쌓였고, 게다가 지운 뒤
+                 `Ctrl+Z` 를 누르면 카드가 아니라 **엉뚱한 것**이 되살아났다
+                 (사용자 지적: *"카드 말고 다른 슬롯에서 지운 이미지가 복구됨"*).
+                 그래서 로그를 비운다 — 되돌릴 수 없는 일 뒤에 로그가 남아 있으면 그런 일이 난다. */
               onClick={() => {
-                const n = p.card.cells.reduce((sum, c) => sum + p.takes(c).length, 0);
-                if (!n) return p.onRemove();
+                const mine = p.card.cells.flatMap((c) => p.takes(c).map((r) => r.file));
+                if (!mine.length) return p.onRemove();
                 void (async () => {
                   if (
                     await ask({
-                      title: t("scenes.removeCardConfirm", { name: p.card.name, c: p.card.cells.length, n }),
+                      title: t("scenes.removeCardConfirm", { name: p.card.name, c: p.card.cells.length, n: mine.length }),
                       body: t("scenes.removeConfirmBody"),
                       ok: t("common.delete"),
                       cancel: t("common.cancel"),
                     })
-                  )
+                  ) {
+                    // ★그림을 **먼저** 보낸다 — 카드가 사라진 뒤엔 어느 그림이 그 카드 것인지 못 묶는다
+                    await useWs.getState().deleteFiles(mine);
                     p.onRemove();
+                    clearUndo();
+                  }
                 })();
               }}
               data-tip={t("scenes.removeCard")}
@@ -1740,22 +1759,29 @@ function SceneRow(
           {!p.only && (
             <button
               data-scene-remove={c.id}
-              /* ★★그림이 든 씬은 **묻고 지운다** (사용자 지시 2026-08-19). 씬을 지워도 파일은
-                 남지만, 그 그림들이 화면에서 통째로 사라지는 것은 같다 (묶는 키가 `cell_id` 다). */
+              /* ★★그림이 든 씬은 **묻고 지우며, 그림도 함께 휴지통으로 보낸다**
+                 (사용자 지시 2026-08-19 묻기 · 2026-08-22 함께 지우기: *"씬 삭제하면 거기에있는
+                 이미지도 삭제"*). 묶는 키는 `cell_id` 다.
+                 ★되돌리기는 주지 않는다 — 카드 삭제와 같다 (위 ★★주). 그래서 로그를 비운다. */
               onClick={(e) => {
                 e.stopPropagation();
-                const n = takes.length;
-                if (!n) return p.onPatch({ cells: p.card.cells.filter((x) => x.id !== c.id) });
+                const drop = () => p.onPatch({ cells: p.card.cells.filter((x) => x.id !== c.id) });
+                const mine = takes.map((r) => r.file);
+                if (!mine.length) return drop();
                 void (async () => {
                   if (
                     await ask({
-                      title: t("scenes.removeConfirm", { name: c.name, n }),
+                      title: t("scenes.removeConfirm", { name: c.name, n: mine.length }),
                       body: t("scenes.removeConfirmBody"),
                       ok: t("common.delete"),
                       cancel: t("common.cancel"),
                     })
-                  )
-                    p.onPatch({ cells: p.card.cells.filter((x) => x.id !== c.id) });
+                  ) {
+                    // ★그림을 **먼저** 보낸다 — 씬이 사라진 뒤엔 어느 그림이 그 씬 것인지 못 묶는다
+                    await useWs.getState().deleteFiles(mine);
+                    drop();
+                    clearUndo();
+                  }
                 })();
               }}
               data-tip={t("slots.remove")}

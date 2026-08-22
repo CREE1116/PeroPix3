@@ -2,7 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { caretAfterTag, parseSegs, serializeBlock, type Block } from "../lib/blocks";
 import { Chip } from "./Chip";
-import { pushTagUndo } from "../lib/tagUndo";
+import { pushUndo } from "../lib/undo";
+import { t as tr } from "../i18n";
 import { useTagSuggest } from "./TagSuggest";
 
 /** ★★**태그 안의 빈칸은 안 깨지는 빈칸(NBSP)으로** 둔다 — 글 상자도 칩처럼 **쉼표에서만**
@@ -197,6 +198,16 @@ export function BlockBody({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoEdit]);
 
+  /** ★★고친 글도 **되돌리기 로그에 남긴다** (사용자 지적 2026-08-22:
+   *  *"텍스트 편집을 했을 때, 엔터 눌러서 확정하면 취소가 안됨"*).
+   *  글 상자 **안**에서는 브라우저 기본 되돌리기가 살아 있지만, 확정하고 나면 그것이 사라진다 —
+   *  확정이야말로 "마지막에 수정한 것"이므로 로그가 받아야 한다.
+   *  ★안 바뀌었으면 담지 않는다. 그냥 눌렀다 나온 것까지 쌓이면 `Ctrl+Z` 가 헛돈다. */
+  const logTextEdit = (before: Block, after: Block) => {
+    if (before.src === after.src) return;
+    pushUndo(tr("common.undoText"), () => onChange(before));
+  };
+
   const commitText = () => {
     if (skipBlur.current) {
       skipBlur.current = false;
@@ -206,7 +217,9 @@ export function BlockBody({
        칩으로 쪼개 다시 조립하면 줄바꿈·간격이 바뀌어 나가는데, 글 상자는 사용자가
        글자를 직접 다루는 자리라 그 글자가 그대로 NAI 로 가야 한다. */
     const out = toStore(text);
-    onChange({ ...block, tags: parseSegs(out), src: out });
+    const after = { ...block, tags: parseSegs(out), src: out };
+    logTextEdit(block, after);
+    onChange(after);
     setEditing(false);
   };
 
@@ -216,6 +229,7 @@ export function BlockBody({
     setEditing(false);
     const out = toStore(text);
     const b = { ...block, tags: parseSegs(out), src: out };
+    logTextEdit(block, b);
     onChange(b);
     return b;
   };
@@ -263,7 +277,10 @@ export function BlockBody({
                 if (e.shiftKey && onEnter) {
                   skipBlur.current = true;
                   setEditing(false);
-                  onEnter({ ...block, tags: parseSegs(toStore(text)), src: toStore(text) });
+                  const out = toStore(text);
+                  const b = { ...block, tags: parseSegs(out), src: out };
+                  logTextEdit(block, b);   // ★이 길도 **확정**이다 — 로그가 빠지면 안 된다
+                  onEnter(b);
                 } else if (onDone) {
                   commitNow();
                   onDone();
@@ -383,7 +400,7 @@ export function BlockBody({
                 // ★★확인 없이 사라지는 자리라 **되돌릴 길**을 함께 담는다 (`Ctrl+Z`).
                 //   되돌리는 방법은 「이 블록을 지금 모습으로 되돌린다」 하나면 된다.
                 const before = block;
-                pushTagUndo(() => onChange(before));
+                pushUndo(tr("common.undoTag"), () => onChange(before));
                 onChange({ ...block, tags: block.tags.filter((_, j) => j !== i) });
               }}
             />

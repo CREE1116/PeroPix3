@@ -3,6 +3,7 @@ import { api, type TrashEntry } from "../lib/backend";
 import { usePrompt, defaultBase, defaultUc, type Char, type Thumb } from "./prompt";
 import { t } from "../i18n";
 import { toast, undoToast } from "./toast";
+import { clearUndo, pushUndo } from "../lib/undo";
 import { makeBlock, parseSegs, type Block } from "../lib/blocks";
 import { convertSingleTab, wrapSetTabInCard } from "../lib/sceneCards";
 export { takesOf, takesOfScene, type Rec } from "../lib/takes";
@@ -227,10 +228,16 @@ type S = {
   /** ★비파괴 선별 — 파일을 지우지 않고 목록에만 넣는다 (PeroPixfy 의 deletions 방식).
    *  원본이 살아 있어야 되돌릴 수 있다. */
   setSelection: (kind: "deleted", files: string[], on: boolean) => void;
-  /** 선별을 되돌린다 (Ctrl+Z). ★되돌릴 것이 없으면 false 를 준다 —
-   *  부르는 쪽이 그때만 브라우저 기본 동작에 넘길 수 있게. */
-  undoSelection: () => boolean;
-  canUndoSelection: () => boolean;
+  /** 선별을 그때 상태로 되돌린다 — **되돌리기 로그가 담아 둔 길**이다 (`lib/undo`).
+   *  화면에서 직접 부르지 않는다.
+   *  ★옛 이름은 `undoSelection` 이었다. 그때는 이 파일이 자기 스택을 들고 있었는데,
+   *    스택이 둘이면 부르는 쪽이 순서를 정하게 되고 그것이 곧 엉뚱한 것이 되살아나는 길이었다
+   *    (사용자 지시 2026-08-22 로 전역 로그 하나가 됐다 — `lib/undo` 머리 ★★주). */
+  restoreSelection: (
+    kind: "deleted",
+    before: string[],
+    trashed?: { file: string; at: string }[],
+  ) => void;
   toggleDeleted: (file: string) => void;
   /** 「새 탭으로 복제」 — 그림 한 장을 **씬 하나짜리 새 탭**으로 옮긴다 (원본은 그대로).
    *  돌려주는 것은 그림이 앉은 자리(새 파일 · 그 씬의 id). 만들 수 없으면 null.
@@ -449,14 +456,9 @@ function migrate(spec: Spec): Spec {
  *  ★범위는 **숨김(휴지통)뿐이다** (사용자 결정 2026-08-03; 별표는 걷었다 2026-08-22). 태그 입력·슬롯 삭제·탭 닫기는
  *    안 들어간다 — 입력칸에 커서가 있으면 Ctrl+Z 를 브라우저에 넘겨 글자 되돌리기가 살아 있게 한다.
  *  워크스페이스를 옮기면 비운다 (다른 워크스페이스의 파일을 되살리면 안 된다). */
-/** 되돌림 한 칸. ★`trashed` 가 있으면 **파일도** 제자리로 돌려야 한다 (지우기였다는 뜻) */
-type SelUndo = {
-  kind: "deleted";
-  before: string[];
-  trashed?: { file: string; at: string }[];
-};
-let undoStack: SelUndo[] = [];
-const UNDO_MAX = 50;
+/* ★★옛 전용 스택은 걷어냈다 — 되돌리기는 `lib/undo` 하나로 모였다 (사용자 지시 2026-08-22).
+     스택이 둘이면 부르는 쪽이 순서를 정하게 되고, 그 순서가 곧 **엉뚱한 것이 되살아나는** 길이
+     된다 (`lib/undo` 머리 ★★주). */
 
 /** 슬롯 id 에서 번호를 읽는다 (`c3` -> 3). 발급기가 없는 옛 탭을 이어 받을 때만 쓴다. */
 function maxCellNum(cells: Slot[]): number {
@@ -583,7 +585,7 @@ export const useWs = create<S>((set, get) => ({
   /** 열어 둔 워크스페이스가 하나도 없는 상태로 (마지막 탭을 닫았거나 지웠을 때).
    *  ★돌아갈 첫 화면은 없다 — 앱이 빈 셸 + 고르기 모달을 띄운다. */
   close() {
-    undoStack = [];
+    clearUndo();
     saveActive("");
     set({ current: "", spec: null, records: [] });
   },
@@ -608,7 +610,7 @@ export const useWs = create<S>((set, get) => ({
       `/api/workspaces/${encodeURIComponent(name)}`,
     );
     const spec = migrate(r.spec ?? newSpec(name));
-    undoStack = []; // ★다른 워크스페이스의 파일을 되살리면 안 된다
+    clearUndo(); // ★다른 워크스페이스의 파일·블록을 되살리면 안 된다
     const tabs = get().openWs.includes(name) ? get().openWs : [...get().openWs, name];
     saveTabs(tabs);
     saveActive(name); // 켤 때 여기로 돌아온다
@@ -762,31 +764,28 @@ export const useWs = create<S>((set, get) => ({
       ? [...cur, ...files.filter((f) => !cur.includes(f))]
       : cur.filter((f) => !touched.has(f));
     if (next.length === cur.length && on) return;
-    undoStack.push({ kind, before: cur });
-    if (undoStack.length > UNDO_MAX) undoStack.shift();
+    // ★되돌리는 방법을 **그때 만들어** 로그에 담는다 (`lib/undo`)
+    pushUndo(t("common.undoHidden"), () => get().restoreSelection(kind, cur));
     set({ spec: { ...spec, selection: { ...spec.selection, [kind]: next } } });
     queueSave(get);
   },
 
-  undoSelection() {
+  /** 선별을 그때 상태로 되돌린다 — 로그가 담아 둔 길이다 (직접 부르지 않는다).
+   *  @param trashed 지운 것이면 **파일도 제자리로** 돌린다 (표시만 되돌리면 깨진 칸이 된다) */
+  restoreSelection(kind, before, trashed) {
     const spec = get().spec;
-    const last = undoStack.pop();
-    if (!spec || !last) return false;
-    set({ spec: { ...spec, selection: { ...spec.selection, [last.kind]: last.before } } });
+    if (!spec) return;
+    set({ spec: { ...spec, selection: { ...spec.selection, [kind]: before } } });
     queueSave(get);
-    // ★지운 것이면 **파일도 제자리로** 돌린다 (표시만 되돌리면 깨진 칸이 된다)
-    if (last.trashed?.length) {
+    if (trashed?.length) {
       const ws = get().current;
       void api(`/api/workspaces/${encodeURIComponent(ws)}/restore`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entries: last.trashed }),
+        body: JSON.stringify({ entries: trashed }),
       }).catch(() => undefined);
     }
-    return true;
   },
-
-  canUndoSelection: () => undoStack.length > 0,
 
   toggleDeleted(file) {
     get().setSelection("deleted", [file], !get().isDeleted(file));
@@ -941,8 +940,7 @@ export const useWs = create<S>((set, get) => ({
     );
     // ★목록에서도 뺀다 — 파일은 없어졌지만 레코드는 남아 있어서, 표시를 안 하면 깨진 칸이 된다
     const cur = spec.selection.deleted;
-    undoStack.push({ kind: "deleted", before: cur, trashed: r.moved });
-    if (undoStack.length > UNDO_MAX) undoStack.shift();
+    pushUndo(t("common.undoImages"), () => get().restoreSelection("deleted", cur, r.moved));
     const next = [...new Set([...cur, ...files])];
     set({ spec: { ...spec, selection: { ...spec.selection, deleted: next } } });
     queueSave(get);

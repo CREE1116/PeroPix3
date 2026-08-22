@@ -688,12 +688,17 @@ export const ja: Dict = {
     removed: "削除しました。",
     restored: "元に戻しました。",
     undo: "元に戻す",
+    undone: "元に戻しました — {what}",
+    undoTag: "チップ削除",
+    undoText: "テキスト編集",
+    undoImages: "画像削除",
+    undoHidden: "画像を隠す",
   },
 
   scenes: {
     removeConfirm: "シーン「{name}」を削除します (画像 {n} 枚)",
     removeCardConfirm: "カード「{name}」を外します (シーン {c}件・画像 {n}枚)",
-    removeConfirmBody: "画像ファイルは残りますが、画面からは一緒に消えます。",
+    removeConfirmBody: "画像ファイルはゴミ箱に入ります。アプリ起動時に24時間経過したものから削除されます。",
     lockCard: "カードごとロックします。このカードのシーンは生成から外れます",
     pickOne: "下でカットを選ぶとここに大きく出ます",
     title: "シーン",

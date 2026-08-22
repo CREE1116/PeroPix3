@@ -709,12 +709,19 @@ export const ko: Dict = {
     removed: "지웠습니다.",
     restored: "되돌렸습니다.",
     undo: "되돌리기",
+    /** ★★되돌린 것의 **이름을 말해 준다** (사용자 지시 2026-08-22). 되돌릴 수 있는 갈래가
+     *  여럿이라, 무엇이 돌아왔는지 안 알리면 사용자가 화면에서 그것을 찾아 헤맨다. */
+    undone: "되돌렸습니다 — {what}",
+    undoTag: "칩 지우기",
+    undoText: "글 편집",
+    undoImages: "그림 지우기",
+    undoHidden: "그림 숨기기",
   },
 
   scenes: {
     removeConfirm: "「{name}」 씬을 지웁니다 (그림 {n}장)",
     removeCardConfirm: "「{name}」 카드를 뺍니다 (씬 {c}개 · 그림 {n}장)",
-    removeConfirmBody: "그림 파일은 남지만 화면에서는 함께 사라집니다.",
+    removeConfirmBody: "그림 파일은 휴지통에 남습니다. 앱을 켤 때 24시간 지난 것부터 비웁니다.",
     lockCard: "카드째 잠급니다. 이 카드의 씬은 생성에서 빠집니다",
     pickOne: "씬 칸에서 장을 고르면 여기 크게 뜹니다",
     title: "씬",
