@@ -7,6 +7,7 @@ import { useTagDrag, type Spot } from "./useTagDrag";
 import { TagDragLayer } from "./TagDragLayer";
 import { BlockRow } from "./BlockRow";
 import { itemToBlock, useBlockLib } from "../store/blockLib";
+import { dropUndo, pushUndo } from "../lib/undo";
 import { useDragSource, useDropZone } from "../cards/dragStore";
 import { DragGhost } from "../cards/DragGhost";
 
@@ -83,7 +84,10 @@ export function BlockList({
       if (!libZone || !d.item) return;
       const got = itemToBlock(d.item);
       // ★`single` 은 블록을 더할 수 없다 — 태그를 **뒤에 붙인다**
-      if (!single) return onChange([...blocks, got]);
+      if (!single) {
+        pushUndo(t("common.undoBlockAdd"), () => onChange(blocks));
+        return onChange([...blocks, got]);
+      }
       const b = blocks[0];
       if (b) onChange([{ ...b, tags: [...b.tags, ...got.tags] }]);
     },
@@ -121,6 +125,8 @@ export function BlockList({
       return;
     }
     const nb = makeBlock(t("block.newBlock"), [], { open: true, color: b.color });
+    // ★이것도 블록이 하나 느는 것이다. ★Esc 로 물러나면 `cancelAt` 이 이 칸을 도로 버린다
+    pushUndo(t("common.undoBlockAdd"), () => onChange(blocks));
     auto.current.add(nb.id);
     const n = blocks.slice();
     n[i] = b;
@@ -135,6 +141,9 @@ export function BlockList({
     const b = blocks[i];
     if (!auto.current.has(b.id) || b.tags.length) return;
     auto.current.delete(b.id);
+    /* ★★담아 둔 「블록 추가」 칸을 **도로 버린다** — 그 블록은 지금 사라지므로, 남겨 두면
+         `Ctrl+Z` 가 없어진 그것을 되살린다. 이 길은 사용자가 물러난 것이라 되돌릴 일이 없다. */
+    dropUndo();
     onChange(blocks.filter((_, j) => j !== i));
   };
 
@@ -204,8 +213,17 @@ export function BlockList({
               dup={dup}
               dragging={dragIdx === i}
               autoEdit={editId === b.id || (!!single && !!autoEdit)}
-              onChange={(nb) => replace(i, nb)}
-              onRemove={() => onChange(blocks.filter((_, j) => j !== i))}
+              /* ★★**켜고끄기만** 담는다 (사용자 지시 2026-08-22). 이 길은 칩 편집·가중치도
+                 함께 지나는데, 그것들은 `BlockBody` 가 이미 담고 있어 두 번 담기면 `Ctrl+Z` 를
+                 두 번 눌러야 한 걸음이 물러난다. */
+              onChange={(nb) => {
+                if (nb.on !== b.on) pushUndo(t("common.undoBlockOn"), () => onChange(blocks));
+                replace(i, nb);
+              }}
+              onRemove={() => {
+                pushUndo(t("common.undoBlockRemove"), () => onChange(blocks));
+                onChange(blocks.filter((_, j) => j !== i));
+              }}
               onEnter={(nb) => enterAt(i, nb)}
               onCancel={() => cancelAt(i)}
               onDone={onDone}
@@ -237,7 +255,10 @@ export function BlockList({
           <div style={{ display: "flex", gap: "var(--sp-2)", marginLeft: 16, marginTop: 6 }}>
             <button
               data-block-add
-              onClick={() => onChange([...blocks, makeBlock(t("block.newBlock"), [], { open: true })])}
+              onClick={() => {
+                pushUndo(t("common.undoBlockAdd"), () => onChange(blocks));
+                onChange([...blocks, makeBlock(t("block.newBlock"), [], { open: true })]);
+              }}
               style={addBtn}
             >
               {t("block.add")}

@@ -42,6 +42,13 @@ export function undoLast(): string | null {
   return e.label;
 }
 
+/** 방금 담은 칸을 **도로 버린다** — 담아 둔 일이 저절로 취소됐을 때.
+ *  ★쓰는 자리: `Esc` 로 물러나 갓 만든 빈 블록이 스스로 사라지는 길(`BlockList` 의 `cancelAt`).
+ *    그 칸을 남겨 두면 `Ctrl+Z` 가 **없어진 그 블록을 되살린다.** */
+export function dropUndo(): void {
+  stack.pop();
+}
+
 export function canUndo(): boolean {
   return stack.length > 0;
 }
