@@ -5,7 +5,7 @@ import { fitSizeToBase, useGen } from "../store/gen";
 import { useImageInput } from "../store/imageInput";
 import { useUi } from "../store/ui";
 import { toast } from "../store/toast";
-import { applyMeta, applyMetaParams, applyMetaVibes } from "./GalleryMeta";
+import { applyMeta, applyMetaParams, applyMetaVibes, applyRecordedBase } from "./GalleryMeta";
 import { usePrompt } from "../store/prompt";
 import type { ShotEnv } from "../store/workspace";
 import { api } from "../lib/backend";
@@ -29,6 +29,7 @@ export function ImageActions({
   seed,
   loadMeta,
   loadEnv,
+  loadBase,
   ensureFile,
   hideSettings,
   dims,
@@ -61,6 +62,8 @@ export function ImageActions({
   ensureFile?: () => Promise<string | null>;
   /** 생성할 때 남겨 둔 **그때 구조** (`gen.ts` 의 `env`). 있으면 설정 불러오기가 이걸 먼저 쓴다 */
   loadEnv?: () => Promise<ShotEnv | null>;
+  /** 그 그림을 뽑을 때의 **베이스 이미지**(i2i·인페인트). 워크스페이스 그림에만 있다 */
+  loadBase?: () => Promise<Parameters<typeof applyRecordedBase>[0]>;
   /** ★갤러리에서는 「설정 불러오기」를 안 띄운다 (사용자 지시 2026-08-19) — 거기서 되돌리는
    *  창구는 **「새 탭으로 복제」 하나**다. 보고 있던 탭이 조용히 갈리는 길을 남기지 않는다. */
   hideSettings?: boolean;
@@ -136,6 +139,8 @@ export function ImageActions({
    *  「프롬프트만」은 적용이 아니라 **보는 것**이라, 아래 `프롬프트 보기`로 갈라 나갔다. */
   /** 이 그림의 설정을 지금 화면으로 가져온다.
    *
+   *  ★★**베이스 이미지도 되살린다** (사용자 지시 2026-08-22). i2i·인페인트로 뽑은 그림은
+   *    그때 쓴 베이스가 기록에 남아 있는데(`resolved.parameters.image`) 읽는 창구가 없었다.
    *  ★★**블록 구조를 지킨다** (사용자 지적 2026-08-19: 한 뭉텅이로 왔다).
    *    메타데이터에는 **합쳐진 문자열**만 남아서, 그것만으로 되돌리면 블록이 한 덩어리가 되고
    *    캐릭터가 `#1`·`#2` 로 다시 만들어진다. 그래서 생성할 때 남겨 둔 **그때 구조**(`env`)를
@@ -155,6 +160,9 @@ export function ImageActions({
         applyMetaParams(m);
         applyMetaVibes(m);
       } else applyMeta(m, "all");
+      // ★베이스 이미지는 **그림에 안 남는다** — 기록에서 가져온다 (`applyRecordedBase` 의 ★주).
+      //   ★구조를 못 찾은 옛 그림에도 건다: 베이스가 기록에 남는 것과 구조가 남는 것은 별개다
+      if (loadBase) await applyRecordedBase(await loadBase().catch(() => null), name);
       toast(t("act.applied"));
     } catch (e) {
       toast(String(e), "warn");

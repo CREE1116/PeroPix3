@@ -289,6 +289,17 @@ function SceneActions() {
                   )
                 ).env
         }
+        /* ★★베이스 이미지도 **그때 것**을 되살린다 (사용자 지시 2026-08-22). 그림에는 안 남고
+             보낸 페이로드 기록에만 있다 (`GalleryMeta` 의 `applyRecordedBase` ★주).
+           ★미저장 그림에는 레코드가 없어 가져올 것도 없다 — `loadEnv` 와 같은 규칙이다. */
+        loadBase={
+          un
+            ? undefined
+            : async () =>
+                await api<{ image?: string }>(
+                  `/api/workspaces/${encodeURIComponent(ws)}/base?file=${encodeURIComponent(file)}`,
+                )
+        }
         onClone={cloneToNewTab}
         dims={dims}
         /* ★미저장이면 누를 때 저장하고 그 경로로 연다 (`revealPath` 는 함수도 받는다) */

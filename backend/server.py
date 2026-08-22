@@ -900,6 +900,37 @@ async def gallery_env(ws: str, file: str):
     return {"env": store.heavy_of(ws, file).get("env")}
 
 
+@app.get("/api/workspaces/{ws}/base")
+async def gallery_base(ws: str, file: str):
+    """그 그림을 뽑을 때의 **베이스 이미지**(i2i·인페인트). 없으면 전부 빈 값.
+
+    ★★그림에는 안 남는다 — NAI 가 돌려주는 PNG 의 Comment 에 베이스 그림은 없다.
+      우리는 보낸 페이로드를 통째로 기록해 두므로(`resolved`) 거기서 꺼낸다
+      (사용자 지시 2026-08-22: 「설정 불러오기」가 되살리게 해 달라).
+    ★**전처리된 그림**이다 — 해상도에 맞춰 리샘플·레터박스된 것이지 원본 파일이 아니다.
+      그대로 다시 뽑으면 같은 결과가 나오고, 그게 이 기능의 목적이다.
+    ★따로 낸 까닭: base64 라 무겁다. 「설정 불러오기」를 누를 때만 한 번 가져간다 —
+      `/meta` 나 `/env` 에 얹으면 목록을 훑을 때마다 딸려 온다.
+    ★강도·노이즈는 페이로드의 **본이름 그대로** 읽는다 (`strength`·`noise`).
+      인페인트는 마스크가 함께 있어야 그 모드로 돌아간다."""
+    par = (store.heavy_of(ws, file).get("resolved") or {}).get("parameters") or {}
+    img = par.get("image")
+    if not isinstance(img, str) or not img:
+        return {"image": ""}
+    mask = par.get("mask")
+    mask = mask if isinstance(mask, str) else ""
+    out = {"image": img, "mask": mask, "mode": "inpaint" if mask else "img2img"}
+    # ★★슬라이더가 **둘**이다 (`nai.py` 의 인페인트 절): `strength` 는 img2img 슬라이더,
+    #   `inpaintImg2ImgStrength` 는 인페인트 슬라이더. 한 값으로 합치지 말 것.
+    #   ★인페인트는 `noise` 를 0 으로 눌러 보내므로 그 값을 되살려도 화면 값이 안 어긋난다.
+    for key, name in (("strength", "strength"), ("noise", "noise"),
+                      ("inpaintImg2ImgStrength", "inpaint_strength")):
+        v = par.get(key)
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            out[name] = float(v)
+    return out
+
+
 @app.post("/api/workspaces/{ws}/copy")
 async def copy_to_tab(ws: str, body: CopyBody):
     """그림 한 장을 **탭 하나에** 복사한다 (원본은 그대로).

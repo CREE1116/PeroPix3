@@ -72,6 +72,17 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
     ? allScenes(setTab).filter((x) => !x.cell.locked && !x.card.locked).length
     : 1;
   const count = slots * perSlot;
+  /** ★★**생성할 씬이 없으면 그 자리에서 말해 준다** (사용자 지시 2026-08-22:
+   *  *"씬카드 없어서 생성불가능할때 생성 버튼쪽에도 경고 띄워줘"*).
+   *
+   *  문구는 세 로케일에 **이미 있었는데 아무도 안 쓰고 있었다** — 그래서 씬 카드가 없으면
+   *  버튼을 눌러도 조용히 아무 일도 안 일어났다 (v2 `index.html:15905` 가 막던 자리다).
+   *  ★두 갈래를 가른다: 씬이 **아예 없는 것**과, 있는데 **전부 잠긴 것**. 화면에서 보이는
+   *    모습이 달라서(빈 줄 대 자물쇠 붙은 줄) 같은 말로 묶으면 무엇을 하라는 건지 흐려진다.
+   *  ★씬 세트 탭에서만 본다 — 그 밖의 자리는 씬이라는 것이 없어 언제나 한 장이다. */
+  const noScenes = !!setTab && allScenes(setTab).length === 0;
+  const allLocked = !!setTab && !noScenes && slots === 0;
+  const cantGen = noScenes || allLocked;
   /** ★★인페인트도 **이 버튼이 만든다** (사용자 지시 2026-08-19).
    *
    *  예전에는 여기를 잠그고 마스크 편집 화면 안에 실행 버튼을 따로 뒀다. 지금 인페인트는
@@ -130,7 +141,9 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
    *  데려간다. 지금까지는 검사가 없어 눌러 놓고 실패를 기다려야 했다 (감사 C5). */
   const noToken = !useHasToken();
   const openSettings = useUi((s) => s.openSettings);
-  const off = busy || blocked || firing;
+  /** ★생성할 씬이 없으면 **버튼도 막는다** — 눌러도 아무 일이 없는 것이 가장 나쁘다.
+   *  ★토큰 없음(`noToken`)은 안 막는다. 그 버튼은 「만들기」가 아니라 「넣으러 가기」다. */
+  const off = busy || blocked || firing || cantGen;
   /** 이 버튼이 지금 하는 일 — 토큰이 없으면 「만들기」가 아니라 「넣으러 가기」다 */
   const fire = () => {
     if (noToken) return openSettings("general");
@@ -208,13 +221,17 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
       disabled={off}
       /* ★펼쳐 놓았을 때는 **단축키를 알려 준다** — 있는 줄 모르면 없는 것과 같다 */
       data-tip={t(
-        blocked
-          ? "gen.overLimit"
-          : noToken
-            ? "gen.needToken"
-            : compact
-                ? "canvas.generate"
-                : "canvas.generateShortcut",
+        noScenes
+          ? "gen.noScenes"
+          : allLocked
+            ? "gen.allLocked"
+            : blocked
+              ? "gen.overLimit"
+              : noToken
+                ? "gen.needToken"
+                : compact
+                    ? "canvas.generate"
+                    : "canvas.generateShortcut",
         { a: MAX_PER_IMAGE },
       )}
       style={{
@@ -303,6 +320,26 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
       }}
     >
       {error && <span style={{ fontSize: "var(--text-2xs)", color: "var(--err)" }}>{error}</span>}
+
+      {/* ★★생성할 씬이 없으면 **누르기 전에** 말해 준다 (사용자 지시 2026-08-22).
+          툴팁만으로는 마우스를 올려야 보이므로, 토큰 안내와 **같은 모양의 줄**로 낸다.
+          ★누를 데가 없어 단추가 아니다 — 씬 카드는 가운데 줄에서 더한다. */}
+      {cantGen && (
+        <div
+          data-gen-noscenes
+          style={{
+            textAlign: "left",
+            fontSize: "var(--text-2xs)",
+            color: "var(--warn)",
+            lineHeight: 1.5,
+            border: "1px solid var(--warn)",
+            borderRadius: "var(--r-2)",
+            padding: "var(--sp-2) var(--sp-3)",
+          }}
+        >
+          {t(noScenes ? "gen.noScenes" : "gen.allLocked")}
+        </div>
+      )}
 
       {/* ★토큰이 없으면 **누르기 전에** 말해 준다 — 눌러야 알 수 있으면 그건 안내가 아니다.
           누르면 설정 ▸ 일반으로 데려간다 (버튼도 같은 자리로 간다). */}

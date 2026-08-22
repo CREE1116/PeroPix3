@@ -282,6 +282,48 @@ export function applyMetaVibes(m: ImageMeta) {
   }
 }
 
+/** 그 그림을 뽑을 때의 **베이스 이미지**(i2i·인페인트)를 되살린다.
+ *
+ *  ★★그림에는 안 남는다 — NAI 가 돌려주는 PNG 에 베이스 그림은 없다. 우리는 보낸 페이로드를
+ *    통째로 기록해 두므로 서버가 거기서 꺼내 준다 (`/api/workspaces/{ws}/base`).
+ *    사용자 지시 2026-08-22: 「설정 불러오기」가 되살리게 해 달라.
+ *  ★**없으면 비운다** — 바이브와 같은 규칙이다 (위 `applyMetaVibes` 의 ★주). 안 비우면 이
+ *    그림에 없던 베이스가 섞인 채로 생성돼 「이 그림을 재현한다」가 어긋난다.
+ *  ★되살아나는 것은 **전처리된 그림**이다 (해상도에 맞춰 리샘플·레터박스된 것). 그대로 다시
+ *    뽑으면 같은 결과가 나오고, 그게 이 기능의 목적이다.
+ *  ★강도 슬라이더는 **둘**이다 (`backend/nai.py` 의 인페인트 절) — 한 값으로 합치지 말 것. */
+export async function applyRecordedBase(
+  got: {
+    image?: string;
+    mask?: string;
+    mode?: string;
+    strength?: number;
+    noise?: number;
+    inpaint_strength?: number;
+  } | null,
+  name: string,
+) {
+  const im = useImageInput.getState();
+  if (!got?.image) {
+    if (im.baseImage) im.clearBase();
+    return;
+  }
+  im.setBase(got.image, name);
+  // ★`setBase` 가 마스크를 비우므로 **그 뒤에** 넣는다
+  im.patchBase({
+    baseMode: got.mode === "inpaint" ? "inpaint" : "img2img",
+    baseMask: got.mask ?? "",
+    ...(got.strength !== undefined ? { baseStrength: got.strength } : null),
+    ...(got.noise !== undefined ? { baseNoise: got.noise } : null),
+    ...(got.inpaint_strength !== undefined
+      ? { baseInpaintStrength: got.inpaint_strength }
+      : null),
+  });
+  // ★그림이 들어간 자리를 펴고 강조한다 — 접혀 있으면 무엇이 바뀌었는지 알 길이 없다.
+  //   ★데려가지는 않는다 (불러오기는 여러 자리가 한꺼번에 바뀌는 자리다)
+  useUi.getState().reveal("left", "base", false);
+}
+
 /** @param what `prompt` = 프롬프트만 · `all` = 설정·시드·이미지 입력까지 (그 그림을 재현한다) */
 export function applyMeta(m: ImageMeta, what: "prompt" | "all" = "all") {
   // ★★**보던 자리를 고정한다** (사용자 지시 2026-08-21). 불러오면 좌측 패널에서 여러 가지가
