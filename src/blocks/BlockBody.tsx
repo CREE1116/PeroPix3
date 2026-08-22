@@ -5,6 +5,23 @@ import { Chip } from "./Chip";
 import { pushTagUndo } from "../lib/tagUndo";
 import { useTagSuggest } from "./TagSuggest";
 
+/** ★★**태그 안의 빈칸은 안 깨지는 빈칸(NBSP)으로** 둔다 — 글 상자도 칩처럼 **쉼표에서만**
+ *  접히게 하려는 것이다 (사용자 지시 2026-08-22).
+ *
+ *  칩은 통째로 접혀 태그가 두 줄에 걸칠 일이 없는데, 글 상자는 빈칸이면 어디서든 접혀
+ *  `looking at viewer` 가 둘로 쪼개졌다. CSS 로는 못 막는다 — `word-break: keep-all`·
+ *  `overflow-wrap`·`text-wrap` 을 다 대 봤지만 여섯 판 모두 쪼개졌다 (실측).
+ *  ★폭이 같다: 보통 빈칸 3.64px · NBSP 3.64px, `word-spacing: 11px` 에서도 둘 다 14.64px.
+ *    그래서 맞춰 둔 흐름이 흐트러지지 않는다.
+ *  ★**길이가 안 바뀌는 치환**이라 커서 자리가 안 밀린다 (한 글자를 한 글자로).
+ *  ★한 태그가 줄보다 길면 그때는 그래도 쪼개진다 (글 상자의 기본 동작) — 칩은 그 경우
+ *    말줄임으로 자른다. 줄보다 긴 태그는 드물어 그대로 둔다. */
+const NBSP = "\u00a0";
+/** 고칠 때의 글 — 쉼표 **뒤**의 빈칸만 남기고 나머지 빈칸을 NBSP 로 */
+const toEdit = (t: string) => t.replace(/ /g, (_m, i: number) => (t[i - 1] === "," ? " " : NBSP));
+/** 밖으로 나가는 글 — **반드시 되돌린다** (저장·NAI 로 NBSP 가 새면 안 된다) */
+const toStore = (t: string) => t.replace(/\u00a0/g, " ");
+
 /** 칩 끌기 손잡이 — 목록이 들고 있는 것을 이 블록 몫만 받는다 (`useTagDrag`) */
 export type TagDrag = {
   handle: (chipIndex: number, label: string) => React.HTMLAttributes<HTMLSpanElement>;
@@ -69,7 +86,8 @@ export function BlockBody({
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState("");
   const ta = useRef<HTMLTextAreaElement>(null);
-  const ac = useTagSuggest(text, setText, ta);
+  // ★치는 동안에도 유지한다 — 새로 친 빈칸도 곧바로 NBSP 가 된다 (자리는 안 밀린다)
+  const ac = useTagSuggest(text, (v) => setText(toEdit(v)), ta);
   /** 편집을 열 때 커서를 놓을 자리. `null` 이면 맨 뒤 */
   const caretAt = useRef<number | null>(null);
   /** Enter·Esc 로 넘어갈 때 뒤따르는 blur 이 한 번 더 반영하지 않게 */
@@ -116,7 +134,10 @@ export function BlockBody({
   useEffect(
     () => () => {
       const l = live.current;
-      if (l.editing && !l.dropped) l.onChange({ ...l.block, tags: parseSegs(l.text), src: l.text });
+      if (l.editing && !l.dropped) {
+        const out = toStore(l.text);
+        l.onChange({ ...l.block, tags: parseSegs(out), src: out });
+      }
     },
     [],
   );
@@ -144,7 +165,7 @@ export function BlockBody({
     skipBlur.current = false;
     live.current.dropped = false;
     caretAt.current = at ?? null;
-    setText(txt ?? serializeBlock(block));
+    setText(toEdit(txt ?? serializeBlock(block)));
     setEditing(true);
     onOpen?.();
   };
@@ -174,7 +195,8 @@ export function BlockBody({
     /* ★★친 글이 **그대로 새 원문**이 된다 (`lib/blocks` 의 `Block.src`).
        칩으로 쪼개 다시 조립하면 줄바꿈·간격이 바뀌어 나가는데, 글 상자는 사용자가
        글자를 직접 다루는 자리라 그 글자가 그대로 NAI 로 가야 한다. */
-    onChange({ ...block, tags: parseSegs(text), src: text });
+    const out = toStore(text);
+    onChange({ ...block, tags: parseSegs(out), src: out });
     setEditing(false);
   };
 
@@ -182,7 +204,8 @@ export function BlockBody({
   const commitNow = (): Block => {
     skipBlur.current = true;
     setEditing(false);
-    const b = { ...block, tags: parseSegs(text), src: text };
+    const out = toStore(text);
+    const b = { ...block, tags: parseSegs(out), src: out };
     onChange(b);
     return b;
   };
@@ -230,7 +253,7 @@ export function BlockBody({
                 if (e.shiftKey && onEnter) {
                   skipBlur.current = true;
                   setEditing(false);
-                  onEnter({ ...block, tags: parseSegs(text), src: text });
+                  onEnter({ ...block, tags: parseSegs(toStore(text)), src: toStore(text) });
                 } else if (onDone) {
                   commitNow();
                   onDone();
@@ -265,25 +288,25 @@ export function BlockBody({
               //   한때 고정폭이었다 — `::` 와 숫자를 세로로 맞춰 보려던 것인데, 프롬프트는
               //   숫자표가 아니라 **읽는 글**이라 본문 글꼴이 낫다.
               //   ★가중치 숫자만은 칩에서처럼 고정폭이다 (`Chip` 의 `<b>`).
-              fontFamily: "var(--font-sans)",
+              fontFamily: '"WideSep", var(--font-sans)',
               /* ★★★**칩 줄과 같은 자리에 흐르도록 맞춘 값 셋** (사용자 지시 2026-08-22).
                *
                *  칩을 누르면 줄이 통째로 글 상자로 바뀌는데 두 모습의 흐름이 달라
-               *  **같은 태그가 다른 줄에 있었다** — 그것이 「누를 때 튄다」의 정체다.
-               *  헤드리스로 태그마다 자리를 맞대어 재면서 조인 값이다 (표본 4벌 · 태그 41개).
+               *  **같은 태그가 다른 줄에** 있었다 — 그것이 「누를 때 튄다」의 정체다.
+               *  헤드리스로 태그마다 줄 번호를 맞대어 세면서 조였다 (표본 4벌 · 태그 41개).
                *
-               *  ① 낱말 사이 11px — 칩은 태그마다 **20px** 을 더 쓴다 (안여백 7+7 · 테두리 1+1 ·
-               *     사이 4). 글에서 그 자리는 `, ` 한 조각(≈6.5px)뿐이라 글이 한 줄에 더 담겼다.
-               *     그 차이를 **빈칸으로** 메운다.
-               *     ★쉼표 글자를 넓히는 길(`@font-face` 의 `size-adjust`)을 먼저 해 봤다가 걷었다 —
-               *       advance 만이 아니라 **글자 자체가 5배로 커져 쉼표가 슬래시처럼** 보였다.
-               *       빈칸은 잉크가 없어 넓혀도 안 보인다.
-               *     ★실측: 0px 일 때 줄이 다른 태그 16개 → **11px 에서 2개**.
-               *       5·9·13px 은 4~5개였고 15px 부터 다시 나빠진다.
-               *  ② 줄 간격 2.065 — 칩 줄의 걸음이 **26.85px**(칩 높이 + 사이 4)이다.
-               *     13px 글자 기준 26.85/13. 맞추기 전에는 줄마다 7.35px 씩 어긋나 쌓였다.
-               *  ③ 안여백 — 아래 ★★주. */
-              wordSpacing: 11,
+               *  ① **구분자 빈칸만 넓힌다** (`WideSep`, `styles/fonts.css`). 칩은 태그마다
+               *     20px 을 더 쓰는데(안여백 7+7 · 테두리 1+1 · 사이 4) 글에서 그 자리는
+               *     `, ` 한 조각뿐이라 글이 한 줄에 더 담겼다.
+               *     ★`word-spacing` 으로 하면 **태그 안의 빈칸까지** 넓어져 여러 낱말 태그가
+               *       그만큼 길어진다 — 그래서 태그 안은 NBSP 로 두고(위 `toEdit`) U+0020 에만
+               *       거는 면을 쓴다. 낱말 수와 무관하게 태그마다 **일정하게** 더해진다.
+               *     ★쉼표 글자를 넓히는 길도 해 봤다가 걷었다 — 글자 자체가 커져 슬래시처럼 보였다.
+               *  ② **줄 간격 2.065** — 칩 줄의 걸음이 26.85px(칩 높이 + 사이 4)이다.
+               *     맞추기 전에는 줄마다 7.35px 씩 어긋나 쌓였다.
+               *  ③ **안여백** — 아래 ★★주.
+               *
+               *  실측(줄이 다른 태그 / 태그 41개): 아무것도 안 했을 때 **16개** → 지금 **0개**. */
               fontSize: "var(--text-prompt)",
               lineHeight: 2.065,
               /* ★손잡이를 두지 않는다 — 높이는 **글이 정한다**. 손으로 줄여 놔도
