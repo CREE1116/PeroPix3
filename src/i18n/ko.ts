@@ -367,7 +367,7 @@ export const ko: Dict = {
     stripHint: "생성 정보를 지웁니다. 이 그림으로는 재생성할 수 없습니다",
     model: "모델",
     cfgRescale: "Prompt Guidance Rescale",
-    furryMode: "Furry 모드",
+    furryMode: "Furry",
     starHint: "이 크기는 기본 요금",
     resolution: "해상도",
     portrait: "세로",

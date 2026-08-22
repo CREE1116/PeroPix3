@@ -355,7 +355,7 @@ export const ja: Dict = {
     stripHint: "生成情報を消します。この画像から再生成はできません",
     model: "モデル",
     cfgRescale: "Prompt Guidance Rescale",
-    furryMode: "Furry モード",
+    furryMode: "Furry",
     starHint: "このサイズは基本料金",
     resolution: "解像度",
     portrait: "縦",

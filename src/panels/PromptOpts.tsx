@@ -52,7 +52,17 @@ export function PromptOptsBar({ uc }: { uc: boolean }) {
       }}
     >
       {uc ? (
-        <Pick label={t("options.ucPreset")} value={p.uc_preset} options={UC_PRESETS.map((v) => [v, v])} onChange={(v) => set("uc_preset", v)} />
+        <>
+          {/* ★`None` 이면 퀄리티와 같이 **꺼진 얼굴**로 낸다 (사용자 지시 2026-08-23) —
+              그 값일 때는 네거티브에 아무것도 안 붙는다 */}
+          <Pick
+            label={t("options.ucPreset")}
+            dim={p.uc_preset === "None"}
+            value={p.uc_preset}
+            options={UC_PRESETS.map((v) => [v, v])}
+            onChange={(v) => set("uc_preset", v)}
+          />
+        </>
       ) : (
         <>
           {/* ★투명 배경은 V5 부터다 — 못 하는 모델에서는 아예 안 낸다 */}
@@ -68,13 +78,13 @@ export function PromptOptsBar({ uc }: { uc: boolean }) {
               쓰고, 스위치를 프롬프트 영역에 둔다 (`hasFurryMode`, V4.5·V5 계열 전부 참이라
               우리 모델 목록에서는 언제나 뜬다). */}
           <Toggle label={t("options.furryMode")} on={p.furry_mode} onChange={(v) => set("furry_mode", v)} />
-          {/* ★고르기는 **오른쪽 끝**에 선다 (공홈과 같다) — 켬/끔 칩과 성질이 달라 섞어 두면
-              어느 것이 눌러 바뀌는 것인지 한눈에 안 들어온다 */}
-          <span style={{ flex: 1 }} />
           {/* ★고를 수 있는 값은 **모델이 정한다**. 없는 것을 고른 채 모델을 바꾸면
               서버가 `standard` 로 내린다 (`nai.quality_preset_id`). */}
+          {/* ★★`none` 이면 **꺼진 것처럼 어둡게** 보인다 (사용자 지시 2026-08-23) —
+              그 값일 때는 프롬프트에 아무것도 안 붙으므로, 켬/끔 칩이 꺼졌을 때와 같은 얼굴이다 */}
           <Pick
             label={t("options.qualityPreset")}
+            dim={p.quality_preset === "none"}
             value={cap.quality_presets.includes(p.quality_preset) ? p.quality_preset : "standard"}
             options={cap.quality_presets.map((id) => [id, t(QP_LABEL[id])] as [string, string])}
             onChange={(v) => set("quality_preset", v)}
@@ -106,25 +116,55 @@ function Pick({
   value,
   options,
   onChange,
+  dim,
 }: {
   label: string;
   value: string;
   options: [string, string][];
   onChange: (v: string) => void;
+  /** 이 값일 때는 **프롬프트에 아무것도 안 붙는다** — 꺼진 칩과 같은 얼굴로 낸다 */
+  dim?: boolean;
 }) {
   const shown = options.find(([v]) => v === value)?.[1] ?? value;
   return (
-    <label data-prompt-pick style={{ ...chip, position: "relative", color: "var(--ink-soft)", cursor: "pointer" }}>
+    /* ★★**오른쪽 끝**에 선다 (공홈과 같다) — 켬/끔 칩과 성질이 달라 섞어 두면 어느 것이 눌러
+       바뀌는 것인지 한눈에 안 들어온다. 탭을 오가도 같은 자리다 (사용자 지시 2026-08-23).
+       ★띄우는 것은 `margin` 이지 **빈 칸(spacer)이 아니다** — 칸이 좁아 줄이 넘어가면 빈 칸은
+         윗줄에 남고 고르기만 아랫줄 **왼쪽**으로 떨어진다 (실제로 그랬다). */
+    <label
+      data-prompt-pick
+      data-dim={dim ? "" : undefined}
+      style={{
+        ...chip,
+        marginLeft: "auto",
+        position: "relative",
+        color: dim ? "var(--ink-faint)" : "var(--ink-soft)",
+        cursor: "pointer",
+      }}
+    >
       <span>
-        {label}: <b style={{ fontWeight: "var(--w-semi)", color: "var(--ink)" }}>{shown}</b>
+        {label}:{" "}
+        <b style={{ fontWeight: "var(--w-semi)", color: dim ? "inherit" : "var(--ink)" }}>{shown}</b>
       </span>
       {Icon.chevronDown12}
       {/* ★진짜 `select` 는 칩 위에 투명하게 덮어 둔다 — 보이는 것은 우리 글자이고,
-          누르면 브라우저의 목록이 그대로 뜬다 (모양과 조작을 둘 다 지킨다) */}
+          누르면 브라우저의 목록이 그대로 뜬다 (모양과 조작을 둘 다 지킨다).
+          ★★**색을 반드시 준다.** 눌러서 뜨는 목록은 브라우저가 그리는데, 그때 쓰는 색이
+            **이 요소의 `background`·`color`** 다 (`opacity:0` 은 목록에 안 걸린다).
+            안 주면 배경이 비어 다크 테마에서 **하얀 목록**이 뜬다 (사용자 지적 2026-08-23).
+            ★앱에 `color-scheme` 선언이 없어서 네이티브 위젯이 밝은 쪽으로 떨어지는 것이
+              뿌리 원인이다 — 옛 옵션 패널의 `select` 도 `background` 를 줘서 피해 갔다. */}
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
+        style={{
+          position: "absolute",
+          inset: 0,
+          opacity: 0,
+          cursor: "pointer",
+          background: "var(--panel)",
+          color: "var(--ink)",
+        }}
       >
         {options.map(([v, name]) => (
           <option key={v} value={v}>

@@ -357,7 +357,7 @@ export const en = {
     stripHint: "Removes generation info; these images cannot be regenerated",
     model: "Model",
     cfgRescale: "Prompt Guidance Rescale",
-    furryMode: "Furry mode",
+    furryMode: "Furry",
     starHint: "Base rate at this size",
     resolution: "Resolution",
     portrait: "Portrait",
