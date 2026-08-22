@@ -76,8 +76,10 @@ export function PromptOptsBar({ uc }: { uc: boolean }) {
           )}
           {/* ★★퍼리 모드는 프롬프트 **맨 앞**에 `fur dataset, ` 를 붙인다 — 공홈도 같은 접두를
               쓰고, 스위치를 프롬프트 영역에 둔다 (`hasFurryMode`, V4.5·V5 계열 전부 참이라
-              우리 모델 목록에서는 언제나 뜬다). */}
-          <Toggle label={t("options.furryMode")} on={p.furry_mode} onChange={(v) => set("furry_mode", v)} />
+              우리 모델 목록에서는 언제나 뜬다).
+              ★★**켬/끔이 아니라 두 모드**다 (사용자 지시 2026-08-23: 아니메면 벚꽃, 퍼리면
+                발자국). v2 도 공홈도 그렇다 — 지금 어느 쪽인지를 **그림 하나**로 말한다. */}
+          <Mode furry={p.furry_mode} onChange={(v) => set("furry_mode", v)} />
           {/* ★고를 수 있는 값은 **모델이 정한다**. 없는 것을 고른 채 모델을 바꾸면
               서버가 `standard` 로 내린다 (`nai.quality_preset_id`). */}
           {/* ★★`none` 이면 **꺼진 것처럼 어둡게** 보인다 (사용자 지시 2026-08-23) —
@@ -173,6 +175,34 @@ function Pick({
         ))}
       </select>
     </label>
+  );
+}
+
+/** 아니메 / 퍼리 — ★**글자가 없다.** 지금 어느 쪽인지를 그림으로 말한다
+ *  (v2 `#modeToggle` 이 벚꽃↔발자국으로 갈렸고, 공홈도 아이콘 스위치다).
+ *  무엇인지는 툴팁이 말한다. ★그 자리에 **이모지 글자를 두지 않는다** — v2 는 그랬다
+ *  (CLAUDE.md ★절: 아이콘은 언제나 SVG).
+ *  ★켬/끔 칩과 **얼굴이 다르다** — 이쪽은 「꺼짐」이 없다. 아니메도 엄연한 한쪽이라
+ *    흐리게 두면 「안 켜진 것」으로 읽힌다. */
+function Mode({ furry, onChange }: { furry: boolean; onChange: (v: boolean) => void }) {
+  const t = useI18n((s) => s.t);
+  return (
+    <button
+      data-prompt-mode={furry ? "furry" : "anime"}
+      onClick={() => onChange(!furry)}
+      data-tip={t(furry ? "options.modeFurry" : "options.modeAnime")}
+      style={{
+        ...chip,
+        width: 32,
+        padding: 0,
+        justifyContent: "center",
+        borderColor: furry ? "var(--accent)" : "var(--line)",
+        background: furry ? "var(--accent-bg)" : "var(--panel)",
+        color: furry ? "var(--accent)" : "var(--ink-soft)",
+      }}
+    >
+      {furry ? Icon.paw12 : Icon.blossom12}
+    </button>
   );
 }
 
