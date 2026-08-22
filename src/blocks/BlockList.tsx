@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
-import { dupSet, makeBlock, type Block } from "../lib/blocks";
+import { dupSet, makeBlock, parseSegs, type Block } from "../lib/blocks";
 import { useReorder } from "../lib/useReorder";
 import { moveTo } from "../lib/moveTo";
 import { useTagDrag, type Spot } from "./useTagDrag";
@@ -116,20 +116,40 @@ export function BlockList({
   const tag = useTagDrag(moveTag);
   const replace = (i: number, b: Block) => onChange(blocks.map((x, j) => (j === i ? b : x)));
 
-  /** Enter — 이 블록을 반영하면서 **바로 뒤에** 새 블록을 만들고 거기로 넘어간다.
-   *  ★`single` 에서는 만들 자리가 없다 — 반영만 하고 **옆 칸**으로 넘긴다 (`onNext`). */
-  const enterAt = (i: number, b: Block) => {
+  /** Shift+Enter — 이 블록을 반영하면서 **바로 뒤에** 새 블록을 만들고 거기로 넘어간다.
+   *
+   *  ★★**커서 뒤의 글이 새 블록으로 옮겨 간다** (사용자 지시 2026-08-22:
+   *    *"해당 위치부터 뒤에있는 텍스트 전체를 새로 만든 블록으로 이동"*). 예전에는 통째로
+   *    반영하고 **빈** 블록을 만들었다 — 길게 친 프롬프트를 나중에 갈라 놓을 길이 없었다.
+   *  ★가르는 자리의 쉼표·빈칸은 **양쪽에서 떼어 낸다.** 그 쉼표는 두 태그를 잇던 것이라
+   *    갈라진 뒤에는 어느 쪽에도 속하지 않는다.
+   *  ★`single`(씬 칸)에서는 만들 자리가 없다 — **가르지 않고** 통째로 반영하고 옆 칸으로
+   *    넘긴다 (`onNext`). 여기서 갈랐다가는 뒤쪽 글이 갈 곳이 없어 통째로 사라진다.
+   *  ★되돌리기는 **여기서만** 담는다 (「그때의 목록으로」). 글 상자 쪽에서도 담으면 한 걸음에
+   *    두 칸이 쌓여 Ctrl+Z 를 두 번 눌러야 한다. */
+  const enterAt = (i: number, b: Block, splitAt?: number) => {
     if (single) {
+      pushUndo(t("common.undoText"), () => onChange(blocks));
       replace(i, b);
       onNext?.();
       return;
     }
-    const nb = makeBlock(t("block.newBlock"), [], { open: true, color: b.color });
+    const src = b.src ?? "";
+    const at = Math.min(Math.max(splitAt ?? src.length, 0), src.length);
+    const head = src.slice(0, at).replace(/[\s,]+$/, "");
+    const tail = src.slice(at).replace(/^[\s,]+/, "");
+    const nb = makeBlock(t("block.newBlock"), [], {
+      open: true,
+      color: b.color,
+      tags: parseSegs(tail),
+      src: tail,
+    });
     // ★이것도 블록이 하나 느는 것이다. ★Esc 로 물러나면 `cancelAt` 이 이 칸을 도로 버린다
+    //   (뒤쪽 글이 옮겨 왔으면 비지 않으므로 안 거둔다 — 그게 맞다)
     pushUndo(t("common.undoBlockAdd"), () => onChange(blocks));
     auto.current.add(nb.id);
     const n = blocks.slice();
-    n[i] = b;
+    n[i] = { ...b, tags: parseSegs(head), src: head };
     n.splice(i + 1, 0, nb);
     onChange(n);
     setEditId(nb.id);
@@ -224,7 +244,7 @@ export function BlockList({
                 pushUndo(t("common.undoBlockRemove"), () => onChange(blocks));
                 onChange(blocks.filter((_, j) => j !== i));
               }}
-              onEnter={(nb) => enterAt(i, nb)}
+              onEnter={(nb, at) => enterAt(i, nb, at)}
               onCancel={() => cancelAt(i)}
               onDone={onDone}
               onOpen={onOpen}

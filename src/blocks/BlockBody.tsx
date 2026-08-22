@@ -61,8 +61,13 @@ export function BlockBody({
   autoEdit?: boolean;
   /** 조작 테스트가 잡는 손잡이 — `data-block-text` 값 */
   mark?: string;
-  /** Shift+Enter — 고친 내용과 함께. **한 번에** 넘겨야 목록이 두 번 갈리지 않는다 */
-  onEnter?: (b: Block) => void;
+  /** Shift+Enter — 고친 내용과 **가를 자리**를 함께. 한 번에 넘겨야 목록이 두 번 갈리지 않는다.
+   *  ★★`splitAt` 뒤의 글은 **새 블록으로 옮겨 간다** (사용자 지시 2026-08-22:
+   *    *"쉬프트 엔터를 누를 경우에 해당 위치부터 뒤에있는 텍스트 전체를 새로 만든 블록으로 이동"*).
+   *    예전에는 통째로 반영하고 **빈** 블록을 만들었다.
+   *  ★가르는 일은 **목록(`BlockList`)이 한다.** 여기서 미리 잘라 보내면 블록을 못 만드는 자리
+   *    (씬 칸의 `single`)에서 뒤쪽 글이 통째로 사라진다 — 그래서 **자리만** 넘긴다. */
+  onEnter?: (b: Block, splitAt?: number) => void;
   /** Esc — 고치던 것을 버리고 나간다 */
   onCancel?: () => void;
   /** Enter 로 끝냈을 때 뒤따르는 일 (씬 칸은 줄을 접는다) */
@@ -329,11 +334,15 @@ export function BlockBody({
                 //   앞 호출의 결과를 못 보고 덮어쓴다 (둘 다 같은 목록을 들고 있다)
                 if (e.shiftKey && onEnter) {
                   skipBlur.current = true;
+                  // ★가를 자리는 **끄기 전에** 읽는다 — 끄면 글 상자가 사라진다
+                  const at = ta.current?.selectionStart ?? text.length;
                   setEditing(false);
                   const out = toStore(text);
                   const b = { ...block, tags: parseSegs(out), src: out };
-                  logTextEdit(block, b);   // ★이 길도 **확정**이다 — 로그가 빠지면 안 된다
-                  onEnter(b);
+                  /* ★되돌리기는 **목록이 담는다** — 여기서도 담으면 한 걸음에 두 칸이 쌓여
+                     Ctrl+Z 를 두 번 눌러야 한다. 목록 쪽 칸은 「그때의 목록으로」라 고친 글까지
+                     함께 되돌린다 (`BlockList` 의 `enterAt`). */
+                  onEnter(b, at);
                 } else if (onDone) {
                   commitNow();
                   onDone();

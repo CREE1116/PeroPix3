@@ -53,7 +53,8 @@ export function BlockRow({
    *  ★단추가 아니다: 넣는 것도 꺼내는 것도 같은 동작이라야 규칙이 하나로 남는다. */
   onSave?: (e: React.PointerEvent) => void;
   /** Enter — 고친 내용과 함께. **한 번에** 넘겨야 목록이 두 번 갈리지 않는다 */
-  onEnter?: (b: Block) => void;
+  /** Shift+Enter — 고친 내용과 **가를 자리** (`BlockBody` 의 같은 이름 주석) */
+  onEnter?: (b: Block, splitAt?: number) => void;
   /** Esc — 고치던 것을 버리고 나간다 */
   onCancel?: () => void;
   /** Enter 로 편집을 끝냈다 (씬 줄은 도로 접는다) */
