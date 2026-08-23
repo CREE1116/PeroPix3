@@ -1815,7 +1815,17 @@ function SceneRow(
             <button
               key={q.id}
               data-pending-cell={q.id}
-              onClick={() => p.onPickPending(c.id, q.id)}
+              /* ★★**클릭을 여기서 멈춘다** (사용자 지적 2026-08-23: *"생성 중인 이미지도
+                   선택 가능하게 고쳤다는데 선택이 안 된다"*). 고르기 자체는 되고 있었는데,
+                   그 click 이 씬 줄(`[data-scene]`)까지 올라가면 줄의 `onFocus` 가 뒤이어
+                   돌아 `focus(cell, null)` 로 **방금 고른 것을 그 자리에서 지웠다**
+                   (`store/sceneFocus` 의 `focus` 는 `pending: null` 을 함께 놓는다).
+                 ★같은 함정을 이 파일에서 세 번째 밟았다 — 칸을 새로 만들면 **줄까지
+                   올라가는 click 을 먼저 생각한다.** */
+              onClick={(e) => {
+                e.stopPropagation();
+                p.onPickPending(c.id, q.id);
+              }}
               style={{
                 flexShrink: 0,
                 width: p.w,
