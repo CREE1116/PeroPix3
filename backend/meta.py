@@ -31,7 +31,10 @@ import piexif.helper
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 
-# NAI 원본 PNG tEXt 청크 — 이걸 보존해야 NAI 공홈이 자기 이미지로 인식한다 (backend.py:506)
+# NAI 원본 PNG tEXt 청크 — PNG 로 낼 때 함께 옮겨 준다 (backend.py:506).
+# ★공홈이 **이걸 보고 가리는 것은 아니다** (`write` 의 ★★주, 2026-08-23 번들 확인) —
+#   읽는 쪽은 tEXt 전체 → EXIF UserComment → 알파 순서로 본다. 그림의 출처가 파일에
+#   남아 있게 하려고 옮기는 것이다.
 ND_PNG_TEXT_CHUNKS = ("Title", "Description", "Software", "Source", "Generation time")
 
 
@@ -747,8 +750,22 @@ def write(image_bytes: bytes, metadata: dict, fmt: str = "PNG", quality: int = 9
           extra_png_chunks: dict | None = None) -> bytes:
     """메타데이터를 박아 넣은 이미지 바이트를 돌려준다 (backend.py:509-582 이식).
 
-    ★PNG 는 EXIF 를 직접 지원하지 않아 tEXt 로만 넣는다. 그리고 **NAI 원본 청크를 보존**해야
-      (특히 `Source`) NAI 공홈이 자기 이미지로 인식한다."""
+    ★PNG 는 EXIF 를 직접 지원하지 않아 tEXt 로만 넣는다. NAI 원본 청크(`Source` 등)도 함께
+      옮겨 준다 — 그림이 어디서 나왔는지가 파일에 남아야 한다.
+
+    ★★**공홈이 무엇을 보고 읽는가** (번들 `chunks/9360` 의 `function l`, 2026-08-23 확인):
+
+          1) PNG tEXt 청크를 전부 읽는다
+          2) 없으면 **EXIF `UserComment`** 를 풀어 `JSON.parse`
+             (앞 8바이트가 `UNICODE\0` 면 UTF-16 · `ASCII\0\0\0` 나 전부 0 이면 떼고 UTF-8)
+          3) 그래도 없으면 **알파 채널**(stealth)
+
+      즉 **`Source` 를 보고 가리는 것이 아니다.** 그래서 우리가 낸 JPG·WebP 도 공홈이 읽는다 —
+      우리는 그 `UserComment` 에 같은 JSON 을 넣는다 (`piexif` 의 `UNICODE\0` + UTF-16BE,
+      공홈 풀이 규칙과 맞는 것을 실측했다).
+      ★한때 이 자리에 *"원본 청크를 보존해야 공홈이 자기 이미지로 인식한다"* 고 적혀 있었다.
+        그 문장을 근거로 「PNG 가 아니면 공홈이 못 읽는다」고 잘못 말한 적이 있다 —
+        읽는 쪽 코드를 보면 그렇지 않다."""
     try:
         js = json.dumps(metadata, ensure_ascii=False)
         img = Image.open(io.BytesIO(image_bytes))
