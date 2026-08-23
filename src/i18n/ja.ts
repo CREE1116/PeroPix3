@@ -389,6 +389,7 @@ export const ja: Dict = {
     varietyPlus: "Variety+",
     transparentBg: "透過背景",
     transparentBgHint: "プロンプトに transparent background を追加し、アルファを保持します。V5 のみ。",
+    transparentJpg: "JPG に透明はありません。このまま保存すると透明な背景が失われます — PNG か WebP をお使いください。",
   },
 
   pos: {
@@ -567,7 +568,7 @@ export const ja: Dict = {
     rename: "名前変更",
     renamePrompt: "新しい名前",
     reveal: "エクスプローラーで開く",
-    toConvert: "変換に送る",
+    toConvert: "一括リネーム",
     moved: "{n}枚を移動しました",
     deleteConfirm: "{n}枚を削除しますか?",
   },
@@ -606,6 +607,8 @@ export const ja: Dict = {
     steamAlpha: "濃さ",
     steamPeek: "のぞき見",
     steamPeekHint: "ボックスをドラッグしている間だけ覆いが薄くなり下が見えます。",
+    steamRough: "粗さ",
+    steamRoughHint: "雲の模様の大きさと輪郭の凹凸をまとめて決めます。他の方式の「ぼかし」と同じ値です。",
     tools: "ツール",
     t_select: "選択",
     t_add: "追加",

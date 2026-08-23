@@ -126,13 +126,18 @@ export function CensorStage() {
     } else {
       list[drag.i] = { ...list[drag.i], rotation: angleTo(drag.cx, drag.cy, p.x, p.y) };
     }
-    // ★끄는 동안에는 **미리보기를 다시 부르지 않는다** (putBoxes 를 안 쓴다).
-    //   한 프레임마다 서버를 때리면 끄는 손이 걸린다. 떼는 순간 한 번 그린다
     // ★가진 것은 `getState()` 로 읽는다. 한 프레임에 pointermove 가 여러 번 오면
     //   렌더 때 찍힌 값은 옛것이라, 다른 그림의 박스가 되살아날 수 있다
     const s = useCensor.getState();
     const cur = s.cur();
-    if (cur) s.set({ boxes: { ...s.boxes, [cur.id]: list } });
+    if (!cur) return;
+    s.set({ boxes: { ...s.boxes, [cur.id]: list } });
+    /* ★★**끄는 동안에도 덮개가 따라온다** (사용자 지적 2026-08-23: *"박스를 옮길때도 내부
+       내용물이 즉각 따라와야하는데 늦음"*). 예전에는 떼는 순간에야 한 번 그려서, 끄는 내내
+       덮개가 **옛 자리**에 남아 있었다.
+       ★한 프레임마다 서버를 때리는 것이 아니다 — `drawPreview` 가 **한 번에 하나만** 날리고
+         도는 사이의 것은 마지막 상태로 합친다 (그 함수의 ★주). 그래서 손이 안 걸린다. */
+    s.drawPreview();
   };
 
   const up = () => {

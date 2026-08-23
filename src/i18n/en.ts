@@ -391,6 +391,7 @@ export const en = {
     varietyPlus: "Variety+",
     transparentBg: "Transparent BG",
     transparentBgHint: "Adds \"transparent background\" to the prompt and keeps the alpha channel. V5 only.",
+    transparentJpg: "JPG has no transparency. Saving like this drops the transparent background — use PNG or WebP.",
   },
 
   pos: {
@@ -569,7 +570,7 @@ export const en = {
     rename: "Rename",
     renamePrompt: "New name",
     reveal: "Show in Explorer",
-    toConvert: "Send to convert",
+    toConvert: "Batch rename",
     moved: "Moved {n}",
     deleteConfirm: "Delete {n} images?",
   },
@@ -608,6 +609,8 @@ export const en = {
     steamAlpha: "Opacity",
     steamPeek: "Peek",
     steamPeekHint: "While you drag a box the cover fades so you can see underneath.",
+    steamRough: "Roughness",
+    steamRoughHint: "Sets both the cloud pattern size and how ragged the edge is. Same value as “Feather” in the other methods.",
     tools: "Tools",
     t_select: "Select",
     t_add: "Add",

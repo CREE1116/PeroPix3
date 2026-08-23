@@ -24,6 +24,19 @@ export const on: React.CSSProperties = {
   color: "var(--ink)",
 };
 
+/** 고르는 칩을 **마우스로** 누르면 포커스를 놓는다.
+ *
+ *  ★★사용자 지적 2026-08-23: *"검열방식을 선택할때마다 테두리가 생기는데 다른걸 선택해도
+ *    안사라짐"*. 고른 표시(`on`)와 포커스 고리(`button:focus-visible`)가 **둘 다 1px 강조색**
+ *    이라, 방금 누른 단추에 고리가 남으면 「옛 선택이 안 풀렸다」로 읽힌다.
+ *    ★검열 화면에는 `1 2 3` 단축키가 있어서, 키를 한 번 누른 뒤로는 브라우저가 키보드
+ *      조작 중으로 보고 **마우스 클릭에도** 고리를 그린다 (그래서 이 화면에서만 두드러진다).
+ *  ★**키보드는 안 건드린다** — `detail === 0` 이면 Enter·Space 로 누른 것이라 고리를 남긴다.
+ *    (그때는 고리가 「지금 여기 있다」는 유일한 표시다.) */
+export const dropFocus = (e: React.MouseEvent) => {
+  if (e.detail > 0) (e.currentTarget as HTMLElement).blur();
+};
+
 export const num: React.CSSProperties = {
   width: 28,
   textAlign: "right",

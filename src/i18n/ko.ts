@@ -401,6 +401,7 @@ export const ko: Dict = {
     varietyPlus: "Variety+",
     transparentBg: "Transparent BG",
     transparentBgHint: "프롬프트에 transparent background 를 넣고 알파를 살려 받는다. V5 부터 된다.",
+    transparentJpg: "JPG 에는 투명이 없습니다. 이대로 저장하면 투명 배경이 사라집니다 — PNG 나 WebP 를 쓰세요.",
   },
 
   /** 캐릭터 배치 판 (`panels/CharPositioner`) */
@@ -584,7 +585,7 @@ export const ko: Dict = {
     rename: "이름변경",
     renamePrompt: "새 이름",
     reveal: "탐색기에서 열기",
-    toConvert: "변환으로 보내기",
+    toConvert: "일괄 이름 변환",
     moved: "{n}장 옮겼습니다",
     deleteConfirm: "{n}장을 지울까요?",
   },
@@ -624,6 +625,8 @@ export const ko: Dict = {
     steamAlpha: "진하기",
     steamPeek: "들춰보기",
     steamPeekHint: "박스를 끌고 있는 동안만 덮개가 옅어져 아래가 보입니다.",
+    steamRough: "거칠기",
+    steamRoughHint: "구름 무늬의 크기와 윤곽의 요철을 함께 정합니다. 다른 방식의 「부드럽게」와 같은 값입니다.",
     tools: "도구",
     t_select: "고르기",
     t_add: "추가",

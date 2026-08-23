@@ -224,19 +224,22 @@ function Sheet({
                 }}
               />
             )}
+          </div>
+
+          <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto" }}>
+            {/* ★★파일 이름은 **정보 칸 머리**에 선다 (사용자 지시 2026-08-23). 썸네일 아래에
+                두면 긴 이름이 160px 칸에서 여러 줄로 접혀 그림보다 커진다. */}
             <div
+              data-drop-name
               style={{
-                marginTop: "var(--sp-2)",
-                fontSize: "var(--text-2xs)",
-                color: "var(--ink-faint)",
+                marginBottom: "var(--sp-2)",
+                fontSize: "var(--text-xs)",
+                color: "var(--ink)",
                 wordBreak: "break-all",
               }}
             >
               {name}
             </div>
-          </div>
-
-          <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto" }}>
             {vibeFile ? (
               <VibeInfo
                 strength={vibeFile.strength}
@@ -265,8 +268,12 @@ function Sheet({
           </div>
         </div>
 
-        {/* 무엇으로 쓸까 — ★**이 그림에 뜻이 있는 것만** 낸다. 눌러야 실패하는 단추를 두지 않는다 */}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sp-2)" }}>
+        {/* 무엇으로 쓸까 — ★**이 그림에 뜻이 있는 것만** 낸다. 눌러야 실패하는 단추를 두지 않는다.
+            ★★**「취소」는 없다** (사용자 지시 2026-08-23) — 머리의 `×` 와 하는 일이 같다.
+              같은 일을 두 자리에 두면 어느 것이 무엇인지 흐려진다.
+            ★★단추는 **오른쪽 아래**에 모으고, 「설정 적용」이 **맨 오른쪽**이다 — 눈이 마지막에
+              닿는 자리가 가장 흔히 누르는 것이어야 한다. */}
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: "var(--sp-2)" }}>
           {/* ★★프롬프트·설정을 **읽는 것**은 EXIF 리더의 일이다 (사용자 지시 2026-08-23).
               여기서는 보내기만 한다 — 이미 읽어 둔 것을 그대로 넘기므로 다시 안 물어본다. */}
           {canApply && (
@@ -280,17 +287,6 @@ function Sheet({
               style={btn}
             >
               {t("drop.exif")}
-            </button>
-          )}
-          {canApply && (
-            <button
-              data-drop-apply
-              disabled={busy}
-              onClick={applySettings}
-              data-tip={t("drop.applyHint")}
-              style={{ ...btn, background: "var(--accent)", color: "var(--accent-on)", borderColor: "var(--accent)" }}
-            >
-              {t("drop.apply")}
             </button>
           )}
           {/* ★바이브 파일은 그림이 아니다 — 베이스·레퍼런스로 못 쓴다.
@@ -311,10 +307,17 @@ function Sheet({
               {t("imgIn.ref")}
             </button>
           )}
-          <span style={{ flex: 1 }} />
-          <button data-drop-cancel onClick={onClose} style={{ ...btn, color: "var(--ink-faint)" }}>
-            {t("common.cancel")}
-          </button>
+          {canApply && (
+            <button
+              data-drop-apply
+              disabled={busy}
+              onClick={applySettings}
+              data-tip={t("drop.applyHint")}
+              style={{ ...btn, background: "var(--accent)", color: "var(--accent-on)", borderColor: "var(--accent)" }}
+            >
+              {t("drop.apply")}
+            </button>
+          )}
         </div>
       </div>
     </div>

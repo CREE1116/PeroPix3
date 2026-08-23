@@ -13,9 +13,15 @@
  */
 import type { OpusUsage } from "../store/sub";
 
-/** 화면에 쓸 남은 비율 (0~100). 빚진 상태면 0 이다 (공홈 `$0`) */
-export const usagePercent = (u: OpusUsage): number =>
-  u.isNegative ? 0 : Math.min(100, Math.max(0, u.percent));
+/** 화면에 **적을** 남은 비율. 빚진 상태면 0 이다 (공홈 `$0`).
+ *
+ *  ★★**100 을 넘으면 넘은 대로 적는다** (사용자 지적 2026-08-23: *"opus 할당량이 100%를
+ *    초과할수도 있는데 앱에서는 100%로만 보임"*). 값은 서버가 `/user/subscription` 의
+ *    `usage` 를 **그대로** 실어 온다 — 못 가져온 것이 아니라 여기서 `Math.min(100, …)` 으로
+ *    눌러 놓고 있었다. 눌러 두면 「가득 찼다」와 「가득 넘겼다」가 화면에서 같아 보인다.
+ *  ★아래끝의 0 은 그대로 둔다 — 음수는 `isNegative` 가 이미 말한다. */
+export const usagePercent = (u: OpusUsage): number => (u.isNegative ? 0 : Math.max(0, u.percent));
+
 
 /** 경고해야 하는 상태인가 — 바닥났거나 5% 미만 (공홈 `S3`) */
 export const usageLow = (u: OpusUsage): boolean => u.isNegative || u.percent < 5;
@@ -26,10 +32,13 @@ export const usageRefillPerHour = (u: OpusUsage): number =>
 
 /** 100% 가 되기까지 남은 **초** (공홈 `OH`).
  *  ★빚진 상태면 `percent` 가 음수라 `+100` 을 해서 되갚는 몫까지 센다 */
-export const usageFullInSeconds = (u: OpusUsage): number =>
-  u.timeUntilNextPercent <= 0
-    ? 0
-    : (u.isNegative ? u.percent + 100 : 100 - u.percent) * u.timeUntilNextPercent;
+export const usageFullInSeconds = (u: OpusUsage): number => {
+  if (u.timeUntilNextPercent <= 0) return 0;
+  const left = u.isNegative ? u.percent + 100 : 100 - u.percent;
+  // ★★이미 100 을 넘겼으면 **채울 것이 없다** — 0 을 준다. 예전에는 `100 - percent` 가 음수가
+  //   되어 「-3분 남음」 같은 말이 나왔다 (넘긴 값을 그대로 적게 되면서 드러난 자리).
+  return left <= 0 ? 0 : left * u.timeUntilNextPercent;
+};
 
 /** 초 → `3h 20m` 꼴. ★분 미만은 올려서 **1m** 으로 — `0m` 은 다 됐다는 뜻으로 읽힌다 */
 export function usageDuration(seconds: number): string {

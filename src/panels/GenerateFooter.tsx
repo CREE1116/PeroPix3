@@ -554,10 +554,15 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
         {usage && (
           <span
             data-opus-usage={Math.round(usagePercent(usage))}
-            data-tip={`${t("gen.opusUsageHint")}\n${t("gen.opusRefill", {
-              r: String(usageRefillPerHour(usage)),
-              f: usageDuration(usageFullInSeconds(usage)),
-            })}`}
+            /* ★가득(또는 그 이상)이면 **회복 줄을 안 적는다** — 채울 것이 없다 */
+            data-tip={
+              usageFullInSeconds(usage) > 0
+                ? `${t("gen.opusUsageHint")}\n${t("gen.opusRefill", {
+                    r: String(usageRefillPerHour(usage)),
+                    f: usageDuration(usageFullInSeconds(usage)),
+                  })}`
+                : t("gen.opusUsageHint")
+            }
             style={{
               color: usageLow(usage) ? "var(--warn)" : "var(--ink-faint)",
               fontVariantNumeric: "tabular-nums",

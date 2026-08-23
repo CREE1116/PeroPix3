@@ -1,7 +1,7 @@
 import { useI18n } from "../../i18n";
 import { Icon } from "../../components/Icon";
 import { useCensor, type Tool } from "../../store/censor";
-import { card, box, on, num, Hint, Line, Sec } from "./ui";
+import { card, box, on, num, dropFocus, Hint, Line, Sec } from "./ui";
 
 /** 오른쪽 기둥. **탭마다 다른 것을 묻는다** (v2 `censor-side-panel`).
  *
@@ -132,6 +132,7 @@ export function CensorSide() {
                     <button
                       key={m}
                       data-censor-box-method={m}
+                      onClickCapture={dropFocus}
                       onClick={() => c.setBoxMethod(c.sel, m)}
                       style={{ ...box, ...((sel.method ?? c.method) === m ? on : {}) }}
                     >
@@ -150,7 +151,10 @@ export function CensorSide() {
               <button
                 key={m}
                 data-censor-method={m}
-                onClick={() => c.tune({ method: m }, "draw")}
+                onClick={(e) => {
+                  dropFocus(e);
+                  c.setMethod(m);
+                }}
                 style={{ ...box, ...(c.method === m ? on : {}) }}
               >
                 {t(key)}
@@ -207,6 +211,16 @@ export function CensorSide() {
                   onChange={(e) => c.tune({ steamOpacity: Number(e.target.value) })} style={{ flex: 1 }} />
                 <span style={num}>{c.steamOpacity}</span>
               </Line>
+              {/* ★★스팀에서 이 값은 **구름의 거칠기**다 (사용자 지적 2026-08-23: 러프 수치가
+                  없어졌다). 값은 다른 방식의 「부드럽게」와 **같은 하나**인데(`feather`),
+                  스팀에서는 하는 일이 다르다 — 무늬 크기(1~3배)와 윤곽 요철(100~20%)을
+                  함께 정한다 (`backend/censor._steam_texture`, v2 `generateSteamTexture`).
+                  ★값을 따로 두지 않는다 — 이름만 자리에 맞게 부른다 (하나의 정보에 하나의 창구). */}
+              <Line label={t("censor.steamRough")} help={t("censor.steamRoughHint")}>
+                <input type="range" data-censor-steam-rough min={0} max={50} value={c.feather}
+                  onChange={(e) => c.tune({ feather: Number(e.target.value) }, "draw")} style={{ flex: 1 }} />
+                <span style={num}>{c.feather}</span>
+              </Line>
             </>
           )}
           <Line label={t("censor.expand")}>
@@ -214,11 +228,14 @@ export function CensorSide() {
               onChange={(e) => c.tune({ expand: Number(e.target.value) }, "draw")} style={{ flex: 1 }} />
             <span style={num}>{c.expand}</span>
           </Line>
-          <Line label={t("censor.feather")}>
-            <input type="range" min={0} max={50} value={c.feather}
-              onChange={(e) => c.tune({ feather: Number(e.target.value) }, "draw")} style={{ flex: 1 }} />
-            <span style={num}>{c.feather}</span>
-          </Line>
+          {/* ★스팀에서는 위에 「거칠기」로 이미 서 있다 — 같은 값을 두 줄로 두지 않는다 */}
+          {c.method !== "steam" && (
+            <Line label={t("censor.feather")}>
+              <input type="range" min={0} max={50} value={c.feather}
+                onChange={(e) => c.tune({ feather: Number(e.target.value) }, "draw")} style={{ flex: 1 }} />
+              <span style={num}>{c.feather}</span>
+            </Line>
+          )}
         </Sec>
 
         {editable && (

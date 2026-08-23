@@ -190,12 +190,19 @@ type S = Saved & {
   removeBox: (i: number) => void;
   toggleBox: (i: number) => void;
   setBoxMethod: (i: number, m: string) => void;
+  /** 검열 방식을 바꾼다 — ★**검열 중·후에는 지금 그림의 박스 전부**에 건다 */
+  setMethod: (m: string) => void;
   drawPreview: () => void;
 };
 
 /** 미리보기는 마지막 요청만 그린다. 슬라이더를 끄는 동안 응답이 뒤엉킨다 */
 let drawSeq = 0;
-let drawTimer: ReturnType<typeof setTimeout> | null = null;
+/** 미리보기가 **도는 중인가** — 한 번에 하나만 날린다 (`drawPreview` 의 ★주) */
+let drawing = false;
+/** 도는 동안 또 만졌나 — 돌아오면 마지막 상태로 한 번 더 그린다 */
+let drawDirty = false;
+/** 만지는 동안 그리는 크기 (긴 변). ★덮개는 화면 폭으로 늘려 깔리므로 눈에는 같다 */
+const DRAFT_SIDE = 1024;
 let scanTimer: ReturnType<typeof setTimeout> | null = null;
 let scanSeq = 0;
 
@@ -537,8 +544,44 @@ export const useCensor = create<S>((set, get) => ({
     s.putBoxes(s.curBoxes().map((b, n) => (n === i ? { ...b, method: m } : b)));
   },
 
-  /** 가린 모습을 서버에 그려 달라고 한다. ★마지막 요청만 그린다.
+  /** ★★방식을 바꾸면 **지금 있는 박스에 전부 걸린다** (사용자 지시 2026-08-23).
    *
+   *  박스는 만들 때의 방식을 **자기가 들고 있다** (`addBox` — 박스마다 다르게 할 수 있어야
+   *  하므로). 그래서 예전에는 검열 중에 방식을 바꿔도 **다음에 그릴 박스에만** 반영돼,
+   *  화면은 그대로인 채 단추만 옮겨 갔다.
+   *  ★검열 전 탭에서는 안 건다 — 거기 박스는 아직 「찾은 것」이고, 방식은 다음 검열의 값이다.
+   *  ★박스마다 따로 고르는 길은 그대로다 (`setBoxMethod`) — 전체를 바꾼 뒤에 하나만 달리 둘 수 있다. */
+  setMethod(m) {
+    const s = get();
+    if (s.tab === "processing") {
+      /* ★★검열 중이면 **모든 그림**의 박스에 건다 (v2 `censorMethod.onchange`, 카탈로그 5039).
+         지금 그림만 바꾸면 앞서 찾아 둔 나머지는 **옛 방식으로 저장된다** — 저장하고 나서야
+         드러나는 조용한 회귀라, 카탈로그가 그 함정을 따로 적어 두었다. */
+      const next: Record<string, Box[]> = { ...s.boxes };
+      for (const im of s.images) {
+        const cur = next[im.id];
+        if (cur?.length) next[im.id] = cur.map((b) => ({ ...b, method: m }));
+      }
+      set({ boxes: next });
+    } else if (s.tab === "after" && s.cur()) {
+      // ★검열 후에는 **지금 그림만** — 이미 저장된 다른 장을 건드릴 이유가 없다 (v2 와 같다)
+      s.putBoxes(s.curBoxes().map((b) => ({ ...b, method: m })));
+    }
+    // ★검열 전 탭에서는 박스에 안 건다 — 거기 박스는 「찾은 것」이고 방식은 다음 검열의 값이다
+    s.tune({ method: m }, "draw");
+  },
+
+  /** 가린 모습을 서버에 그려 달라고 한다.
+   *
+   *  ★★**기다리지 않고 바로 보낸다** (사용자 지적 2026-08-23: *"박스를 추가할 때 1초 정도
+   *    딜레이 후에 내용이 채워짐 · 박스를 옮길때도 내부 내용물이 늦게 따라와야하는데 늦음"*).
+   *    예전에는 260ms 를 세고 나서야 보냈다. 사람이 만질 때마다 그 시간이 통째로 얹혀서
+   *    「채워지는 데 1초」로 느껴졌다.
+   *  ★★대신 **한 번에 하나만** 날아간다 (`drawing`). 도는 동안 또 부르면 「다시 그려야 함」만
+   *    표시해 두고, 돌아오는 즉시 한 번 더 보낸다. 고정된 기다림 없이도 서버가 밀리지 않는다 —
+   *    빠르면 빠른 만큼 따라오고, 느리면 마지막 상태 한 번으로 수렴한다.
+   *  ★만지는 동안에는 **줄여서** 그린다. 덮개는 어차피 화면 폭으로 늘려 깔리므로 (`CensorStage`)
+   *    긴 변 1024 면 눈에 같고, 서버가 큰 그림을 통째로 칠하는 시간이 사라진다.
    *  ★덮개가 **옅어진 상태를 새 그림이 올 때까지** 유지한다 (`editing`). 손을 떼는 순간
    *    진하게 되돌리면, 아직 옛 자리를 가린 그림이 한 박자 동안 진하게 서 있어
    *    "안 따라왔다"로 보인다. */
@@ -549,22 +592,28 @@ export const useCensor = create<S>((set, get) => ({
     if (!im) return set({ preview: null, editing: false });
     const boxes = liveBoxes(s.boxes[im.id] ?? []);
     if (!boxes.length) return set({ preview: null, editing: false });
-    if (drawTimer) clearTimeout(drawTimer);
+    if (drawing) return void (drawDirty = true);   // 도는 중 — 돌아오면 한 번 더
+    drawing = true;
+    drawDirty = false;
     const mine = ++drawSeq;
-    drawTimer = setTimeout(() => {
-      void (async () => {
-        try {
-          const r = await post<{ image: string }>("/api/censor/preview", {
-            ...sourceOf(im),
-            boxes,
-            ...coverArgs(get()),
-          });
-          if (mine === drawSeq && get().cur()?.id === im.id) set({ preview: r.image, editing: false });
-        } catch (e) {
-          if (mine === drawSeq) set({ error: String(e), editing: false });
-        }
-      })();
-    }, 260);
+    void (async () => {
+      try {
+        const r = await post<{ image: string }>("/api/censor/preview", {
+          ...sourceOf(im),
+          boxes,
+          ...coverArgs(get()),
+          // ★만지는 동안만 줄인다 — 손을 떼면 마지막 한 장이 원래 크기로 다시 온다
+          max_side: get().editing ? DRAFT_SIDE : undefined,
+        });
+        if (mine === drawSeq && get().cur()?.id === im.id) set({ preview: r.image, editing: false });
+      } catch (e) {
+        if (mine === drawSeq) set({ error: String(e), editing: false });
+      } finally {
+        drawing = false;
+        // ★도는 사이에 또 만졌으면 **마지막 상태**로 한 번 더 (중간 상태는 건너뛴다)
+        if (drawDirty) get().drawPreview();
+      }
+    })();
   },
 }));
 
