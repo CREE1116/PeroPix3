@@ -546,6 +546,18 @@ const saveActive = (v: string) => {
   }
 };
 
+/** 워크스페이스를 갈아 끼우기 **직전**에 부를 것들.
+ *
+ *  ★★`gen.ts` 가 여기에 「지금 탭의 생성 옵션을 담기」를 매단다. 스토어 구독으로는 못 한다 —
+ *    구독은 `spec` 이 **이미 갈린 뒤**에 돌아서, 담으려는 순간에는 담을 자리(옛 spec)가 없다.
+ *    그래서 워크스페이스를 옮기면 떠나는 탭의 수치가 통째로 사라졌다 (2026-08-23).
+ *  ★두 파일이 서로를 부르므로(순환) `workspace.ts` 는 `gen.ts` 를 **값으로 못 부른다**.
+ *    이름을 등록해 두고 부르는 이 길이 그 제약을 지나는 방법이다. */
+const beforeWsSwitch: (() => void)[] = [];
+export const onBeforeWsSwitch = (fn: () => void) => {
+  beforeWsSwitch.push(fn);
+};
+
 export const useWs = create<S>((set, get) => ({
   list: [],
   current: "",
@@ -604,6 +616,8 @@ export const useWs = create<S>((set, get) => ({
 
   async open(name) {
     if (get().current === name) return;
+    // ★떠나기 **전에** 지금 탭의 생성 옵션을 담는다 (`onBeforeWsSwitch` 의 ★★주)
+    for (const fn of beforeWsSwitch) fn();
     await flushSave(get); // ★밀린 편집을 먼저 쓴다 (아래 flushSave 주석)
     set({ loading: true });
     const r = await api<{ spec: Spec | null; records: Rec[] }>(

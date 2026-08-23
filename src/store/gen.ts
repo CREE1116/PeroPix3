@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { compileBlocks } from "../lib/blocks";
 import { api, backendUrl } from "../lib/backend";
 import { usePrompt } from "./prompt";
-import { allCells, allScenes, useWs } from "./workspace";
+import { allCells, allScenes, onBeforeWsSwitch, useWs } from "./workspace";
 import { localTs } from "../lib/takes";
 import { useQueue } from "./queue";
 import { useImageInput } from "./imageInput";
@@ -478,6 +478,16 @@ let lastSpot: string | null = null;
 function watchTabParams() {
   if (watching) return;
   watching = true;
+
+  /* ★★**워크스페이스를 옮기기 직전**에 지금 탭에 담는다 (사용자 지시 2026-08-23:
+     *"워크스페이스는 각각이 개별 작업공간임"*). 아래 구독으로는 못 담는다 — 그때는
+     `spec` 이 이미 새 워크스페이스 것으로 갈려 있어서, 담으면 **남의 탭에** 쓰게 된다.
+     그래서 예전에는 아예 건너뛰었고, 옮겼다 돌아오면 고친 수치가 사라져 있었다. */
+  onBeforeWsSwitch(() => {
+    const id = useWs.getState().spec?.activeChar;
+    if (id) useWs.getState().stashGen(id, useGen.getState().params);
+  });
+
   useWs.subscribe((s) => {
     const spec = s.spec;
     const id = spec?.activeChar;
@@ -486,11 +496,26 @@ function watchTabParams() {
     if (spot === lastSpot) return;
     const prev = lastSpot;
     lastSpot = spot;
-    if (prev && prev.split("::")[0] === (s.current ?? "")) {
+    const sameWs = !!prev && prev.split("::")[0] === (s.current ?? "");
+    if (sameWs) {
       useWs.getState().stashGen(prev.split("::").slice(1).join("::"), useGen.getState().params);
     }
     const tab = spec?.chars?.find((c) => c.id === id);
-    if (tab?.gen) useGen.setState({ params: { ...DEFAULT_PARAMS, ...tab.gen } });
+    if (tab?.gen) {
+      useGen.setState({ params: { ...DEFAULT_PARAMS, ...tab.gen } });
+    } else if (!sameWs) {
+      /* ★★**워크스페이스가 바뀌었는데 담아 둔 것이 없으면 기본값으로 간다**
+         (사용자 지시 2026-08-23: *"생성 옵션 쪽은 워크스페이스 간에 연동되는 게 하나도
+         없어야 한다"*). 예전에는 지금 값을 그대로 썼는데, 그러면 시드·시드 모드·모델·
+         해상도가 통째로 따라와 다른 작업 공간의 값으로 생성이 나갔다.
+         ★같은 워크스페이스 안에서 탭을 옮길 때는 **그대로 둔다** — 거기서는 값이 갑자기
+           바뀌지 않는 것이 맞다 (새 탭은 하던 값으로 시작한다). */
+      useGen.setState({ params: { ...DEFAULT_PARAMS } });
+    }
+    if (!sameWs) {
+      // ★베이스 그림·바이브·레퍼런스도 워크스페이스를 안 넘는다 (같은 이유)
+      useImageInput.getState().resetAll();
+    }
   });
 }
 

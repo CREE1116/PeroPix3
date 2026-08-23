@@ -108,6 +108,10 @@ type S = {
   startEdit: () => void;
   endEdit: () => void;
   clearBase: () => void;
+  /** 그림 입력을 **통째로** 비운다 (베이스·바이브·레퍼런스·마스크).
+   *  ★워크스페이스를 옮길 때 부른다 — 워크스페이스는 서로 다른 작업 공간이라
+   *    한쪽에서 넣어 둔 베이스 그림이 다른 쪽 생성에 실려 나가면 안 된다. */
+  resetAll: () => void;
   patchBase: (p: Partial<Pick<S, "baseMode" | "baseStrength" | "baseInpaintStrength" | "baseNoise" | "baseMask">>) => void;
 
   /** ★생성 요청에 실을 조각. **단발·큐 두 경로가 같은 것을 쓴다** (하나의 정보에는 하나의 창구) */
@@ -279,6 +283,11 @@ export const useImageInput = create<S>((set, get) => ({
   clearBase: () =>
     set({ baseImage: "", baseName: "", baseMask: "", baseMode: "img2img",
           baseSize: null, tileRect: null, focused: false, editing: false }),
+  resetAll: () =>
+    set({ baseImage: "", baseName: "", baseMask: "", baseMode: "img2img",
+          baseStrength: 0.7, baseInpaintStrength: 1, baseNoise: 0,
+          baseSize: null, tileRect: null, focused: false, editing: false,
+          vibeOn: false, vibes: [], normalizeVibe: true, refOn: false, refs: [] }),
   setTileRect: (r) => set({ tileRect: r }),
 
   setFocused: (v) => {

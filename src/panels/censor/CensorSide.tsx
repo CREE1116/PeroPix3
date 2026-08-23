@@ -106,6 +106,8 @@ export function CensorSide() {
                   <button
                     key={id}
                     data-censor-tool={id}
+                    // ★도구 칩도 같다 — `1 2 3` 단축키와 같은 자리라 고리가 특히 잘 남는다
+                    onMouseDown={dropFocus}
                     onClick={() => c.set({ tool: id, sel: -1 })}
                     style={{
                       ...box,
@@ -132,7 +134,7 @@ export function CensorSide() {
                     <button
                       key={m}
                       data-censor-box-method={m}
-                      onClickCapture={dropFocus}
+                      onMouseDown={dropFocus}
                       onClick={() => c.setBoxMethod(c.sel, m)}
                       style={{ ...box, ...((sel.method ?? c.method) === m ? on : {}) }}
                     >
@@ -151,10 +153,9 @@ export function CensorSide() {
               <button
                 key={m}
                 data-censor-method={m}
-                onClick={(e) => {
-                  dropFocus(e);
-                  c.setMethod(m);
-                }}
+                // ★마우스로는 포커스가 안 가게 막는다 (`dropFocus` 의 ★★주). 누른 뒤에 떼지 않는다
+                onMouseDown={dropFocus}
+                onClick={() => c.setMethod(m)}
                 style={{ ...box, ...(c.method === m ? on : {}) }}
               >
                 {t(key)}

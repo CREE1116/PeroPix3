@@ -23,6 +23,26 @@ export const CURSORS: Record<Handle, string> = {
   rotate: "grab",
 };
 
+/** 손잡이가 **화면에서 가리키는 방향** (도, 시계 방향, 오른쪽이 0). 회전 전 기준 */
+const HANDLE_ANGLE: Record<Exclude<Handle, "rotate">, number> = {
+  e: 0, se: 45, s: 90, sw: 135, w: 180, nw: 225, n: 270, ne: 315,
+};
+
+/** 그 손잡이에 맞는 커서 — **박스가 돌아간 만큼 방향도 돌려서** 고른다.
+ *
+ *  ★★사용자 지적 2026-08-23: *"박스를 회전시켰을 때 리사이즈 핸들에 커서를 올리면 지금
+ *    회전 상태가 커서 방향에 반영되지 않는다. 회전 때문에 좌우로 늘리는 건데 커서는 상하"*.
+ *    잡는 자리는 이미 역회전해서 맞추고 있었는데(`hitHandle`), **커서만 손잡이 이름으로**
+ *    골라서 90도 돌린 박스에서 위아래·좌우가 통째로 뒤바뀌어 보였다.
+ *  ★늘리는 커서는 **양방향**이라 180도 주기다. 그래서 [0,180) 으로 접고 45도 칸에 맞춘다. */
+export function cursorFor(h: Handle, rotation = 0): string {
+  if (h === "rotate") return CURSORS.rotate;
+  const deg = HANDLE_ANGLE[h] + (rotation * 180) / Math.PI;
+  const fold = ((deg % 180) + 180) % 180;
+  const bucket = Math.round(fold / 45) % 4;
+  return ["ew-resize", "nwse-resize", "ns-resize", "nesw-resize"][bucket];
+}
+
 /** 회전 손잡이가 박스 위로 떨어지는 거리 (그림 좌표) */
 export const ROTATE_GAP = 25;
 

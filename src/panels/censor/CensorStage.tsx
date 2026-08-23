@@ -3,7 +3,7 @@ import { useI18n } from "../../i18n";
 import { coverOf, liveBoxes, useCensor, passes, type Box } from "../../store/censor";
 import {
   HANDLES,
-  CURSORS,
+  cursorFor,
   ROTATE_GAP,
   anchorOf,
   angleTo,
@@ -352,7 +352,8 @@ function BoxShape({
             const s = (h.length === 2 ? 8 : 6) / scale;
             return (
               <rect key={h} x={p.x - s / 2} y={p.y - s / 2} width={s} height={s} fill={stroke}
-                style={{ cursor: CURSORS[h] }} />
+                // ★커서는 **돌아간 방향**으로 고른다 (`cursorFor` 의 ★★주)
+                style={{ cursor: cursorFor(h, b.rotation ?? 0) }} />
             );
           })}
         </>

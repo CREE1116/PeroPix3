@@ -587,7 +587,7 @@ export const ja: Dict = {
     confHint: "右の数字がその種類のしきい値です",
     floor: "低信頼度を隠す",
     floorHint: "表示だけを絞ります。実際に隠すかは上の種類別しきい値が決めます。",
-    method: "隠し方",
+    method: "検閲方式",
     m_steam: "湯気",
     m_mosaic: "モザイク",
     m_blur: "ぼかし",

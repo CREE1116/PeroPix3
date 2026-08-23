@@ -10,6 +10,7 @@ import { useSub } from "./sub";
 import { useAnlasMeter } from "./anlasMeter";
 import { localTs } from "../lib/takes";
 import type { Block } from "../lib/blocks";
+import { useSceneFocus } from "./sceneFocus";
 import { allCells, useWs } from "./workspace";
 import { useUi } from "./ui";
 import { toast } from "./toast";
@@ -534,7 +535,20 @@ function consumePending(m: Record<string, any>, set: Setter, get: () => S) {
   const at = pend.findIndex(
     (p) => p.tabId === (m.tab_id ?? null) && p.cellId === (m.cell_id ?? null),
   );
-  if (at >= 0) set({ pending: pend.filter((_, i) => i !== at) });
+  if (at < 0) return;
+  const gone = pend[at];
+  set({ pending: pend.filter((_, i) => i !== at) });
+
+  /* ★★**그 칸을 골라 두고 기다리던 것이면, 나온 그림으로 옮겨 간다** (사용자 지적
+     2026-08-23: *"생성 중인 거 클릭했는데 생성 완료되면 클릭이 풀림"*).
+     대기 칸을 고르는 것은 **나올 자리를 미리 잡아 두는 일**이라, 나왔는데 놓아 버리면
+     그 목적이 통째로 무너진다 (한때는 「놓기만 한다」로 두었다).
+     ★화면이 저 혼자 굴러가는 것과는 다른 이야기다 — 그쪽은 **스크롤**이고 여기는
+       **고른 것**이다. 고르지 않고 있었으면 아무 일도 일어나지 않는다. */
+  const f = useSceneFocus.getState();
+  if (f.pending && f.pending === gone.id && m.file) {
+    f.focus(gone.cellId ?? f.cell, String(m.file));
+  }
 }
 
 /** 한 장을 화면(워크스페이스 records)에 반영한다. ★같은 seq 는 두 번 반영하지 않는다. */

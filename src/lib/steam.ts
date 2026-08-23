@@ -65,9 +65,13 @@ export function plate(key: PlateKey): Plate {
   const lobeScale = 0.32 + soft * 0.4;
   const wispScale = lobeScale * 0.32;
   const wispMix = 0.45 - soft * 0.22;
-  const lumScale = 0.7;
-  const warpScale = 0.9;
-  const warpAmt = 0.18;
+  /* ★★**무늬(밝기)는 v2 원문 그대로다** (사용자 지시 2026-08-23: *"새로 바뀐 스팀 텍스처가
+     더 이상함. 원래 걸로 복구"*). 한때 도메인 워프를 건 5옥타브로 바꿔 봤는데, 안쪽에
+     회색 결이 生겨 「연기」가 아니라 「얼룩」으로 보였다. 옛것은 **거의 흰색**이고 흔들림이
+     13계조뿐이라 그게 이 그림의 성격에 맞는다.
+     ★되돌린 것은 **무늬뿐이다.** 덮는 범위(둥근 사각형 + 바깥으로만 부푸는 윤곽)는 그대로
+       둔다 — 박스가 다 안 가려지던 것이 원래 고치려던 문제다. */
+  const lumScale = Math.max(halfPW, halfPH) * (1 + soft * 2);
 
   /* ★★바탕 모양을 **박스보다 한 겹 키우고 모서리를 크게 둥글린다.** 박스에 딱 맞춰
      두면 구름이 「털 난 네모」로 보인다. 키운 만큼(`grow`) 여유가 생기므로 반지름을
@@ -98,27 +102,18 @@ export function plate(key: PlateKey): Plate {
       cover[i] = Math.round(255 * (1 - smoothstep(0, margin * 0.2, d)));
 
       // ── 구름의 두께 ────────────────────────────────────────
-      // ★★**도메인 워프**를 건다. 노이즈 좌표 자체를 다른 노이즈로 흔드는 방법인데,
-      //   이것이 없으면 옥타브가 아무리 많아도 「얼룩덜룩한 잡티」로 보이고,
-      //   걸면 연기가 말려 올라가는 결이 생긴다.
-      const wx = fbm(nLum, dx / warpScale, dy / warpScale, 3);
-      const wy = fbm(nLum, dx / warpScale + 5.2, dy / warpScale + 1.3, 3);
-      const v = fbm(
-        nLum,
-        (dx + wx * warpAmt) / lumScale,
-        (dy + wy * warpAmt) / lumScale,
-        5,
-      ) * 0.5 + 0.5;
-      lum[i] = Math.round(255 * Math.min(1, Math.max(0, Math.pow(v, 0.85))));
+      // ★v2 `generateSteamTexture` 그대로: 3옥타브(1 · 0.5 · 0.25)를 0.5~1 로 편다
+      const v = fbm(nLum, dx / lumScale, dy / lumScale, 3, 2, 0.5);
+      lum[i] = Math.round(255 * (0.5 + ((v + 1) / 2) * 0.5));
     }
   }
   return { cover, lum, pw, ph, margin };
 }
 
-/** 밝기 0..100 일 때 구름의 회색 범위. ★옛것은 230 을 바탕으로 **25 단계**만 흔들어서
- *  통짜 회색으로 보였다 (사용자 지적: *"스팀 텍스쳐도 자연스럽지가 않음"*). */
-const GRAY_BASE = 228;
-const GRAY_RANGE = 60;
+/** 회색 범위 — **v2 원문 그대로** (`floor(b*230) + floor(bright * floor(b*25))`).
+ *  ★230 을 바탕으로 25 단계만 흔든다. 거의 흰색이고, 그것이 이 구름의 원래 성격이다. */
+const GRAY_BASE = 230;
+const GRAY_RANGE = 25;
 
 /** 무늬 판에 **밝기·진하기**를 입혀 RGBA 로 만든다. 픽셀당 곱셈이라 슬라이더가 안 걸린다.
  *
@@ -130,10 +125,10 @@ export function plateRGBA(
   const rgba = out && out.length === n * 4 ? out : new Uint8ClampedArray(n * 4);
   const b = Math.min(100, Math.max(0, brightness)) / 100;
   const a = Math.min(100, Math.max(0, alpha)) / 100;
-  const base = GRAY_BASE * b;
-  const range = GRAY_RANGE * b;
+  const base = Math.floor(GRAY_BASE * b);
+  const range = Math.floor(GRAY_RANGE * b);
   for (let i = 0; i < n; i++) {
-    const g = base + (p.lum[i] / 255 - 0.5) * range;
+    const g = base + Math.floor((p.lum[i] / 255) * range);
     const o = i * 4;
     rgba[o] = g;
     rgba[o + 1] = g;

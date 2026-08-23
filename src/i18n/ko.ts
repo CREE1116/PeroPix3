@@ -605,7 +605,7 @@ export const ko: Dict = {
     confHint: "오른쪽 숫자가 그 종류의 문턱입니다",
     floor: "낮은 신뢰도 숨김",
     floorHint: "보이는 것만 거릅니다. 실제로 가릴지는 위의 종류별 문턱이 정합니다.",
-    method: "가리는 방법",
+    method: "검열 방식",
     m_steam: "스팀",
     m_mosaic: "모자이크",
     m_blur: "흐리기",

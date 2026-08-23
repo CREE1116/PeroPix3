@@ -589,7 +589,7 @@ export const en = {
     confHint: "The number on the right is that class's threshold",
     floor: "Hide low confidence",
     floorHint: "This only filters what you see. What gets covered is set by the per class thresholds above.",
-    method: "How to cover",
+    method: "Censor method",
     m_steam: "Steam",
     m_mosaic: "Mosaic",
     m_blur: "Blur",
