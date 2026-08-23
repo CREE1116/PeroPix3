@@ -483,7 +483,7 @@ class CharPrompt:
 class GenRequest:
     prompt: str = ""
     negative_prompt: str = ""
-    model: str = "nai-diffusion-4-5-full"
+    model: str = "nai-diffusion-5-full"
     width: int = 832
     height: int = 1216
     steps: int = 28

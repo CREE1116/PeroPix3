@@ -331,7 +331,7 @@ class GenBody(BaseModel):
     characters: list[dict] = []
     # ★vibe 강도 정규화 — 공홈 기본 켜짐. 사용자 토글이라 하드코딩하지 않는다
     normalize_reference_strength: bool = True
-    model: str = "nai-diffusion-4-5-full"
+    model: str = "nai-diffusion-5-full"
     width: int = 832
     height: int = 1216
     steps: int = 28
@@ -377,7 +377,7 @@ class GenBody(BaseModel):
 class VibeCheckBody(BaseModel):
     """이미 구워 둔 인코딩이 있는지 묻는다. `items` 는 `{image, info_extracted}` 목록."""
 
-    model: str = "nai-diffusion-4-5-full"
+    model: str = "nai-diffusion-5-full"
     items: list[dict] = []
 
 

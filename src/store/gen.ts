@@ -126,10 +126,12 @@ export async function fitSizeToBase(b64: string): Promise<void> {
   toast(t("imgIn.sizeFitted", { w: String(next.width), h: String(next.height) }));
 }
 
-/** ★목록에 없는 모델을 만났을 때 되돌릴 값. **목록의 첫 줄이 아니다** —
- *  드롭다운 순서는 「새것이 위」라 바뀌는데, 폴백은 바뀌면 안 된다
- *  (옛 워크스페이스가 조용히 다른 모델로 옮겨 간다). */
-export const DEFAULT_MODEL = "nai-diffusion-4-5-full";
+/** 처음 시작할 때의 모델이자, 목록에 없는 모델을 만났을 때 되돌릴 값.
+ *
+ *  ★**목록의 첫 줄을 가리키지 않는다** — 드롭다운 순서는 「새것이 위」라 바뀌는데,
+ *    거기에 매어 두면 새 모델이 나올 때마다 폴백이 조용히 따라 움직인다.
+ *  ★V5 Full (사용자 지시 2026-08-23). 그전에는 V4.5 Full 이었다. */
+export const DEFAULT_MODEL = "nai-diffusion-5-full";
 
 /** 캐릭터에 좌표 사용 여부를 실어 준다.
  *
