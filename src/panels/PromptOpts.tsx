@@ -1,6 +1,7 @@
 import { useI18n } from "../i18n";
 import { Icon } from "../components/Icon";
 import { modelCaps, useGen } from "../store/gen";
+import type { StyleOpts } from "../lib/styleOpts";
 
 /** 프롬프트 칸 **하단에 붙는 띠** — 프롬프트의 일부가 되는 설정들.
  *
@@ -32,11 +33,24 @@ const QP_LABEL: Record<string, string> = {
 //   프리셋 **태그 문자열**은 자기 것을 쓴다 — v2 와 같은 동작이다 (nai.py 참조).
 const UC_PRESETS = ["Heavy", "Light", "Human Focus", "Furry Focus", "None"];
 
-export function PromptOptsBar({ uc }: { uc: boolean }) {
+/** 카드 안의 값을 만질 때 쓰는 짝 — 없으면 지금 생성 설정을 만진다.
+ *
+ *  ★★스타일 카드는 이 넷을 **자기가 들고 다닌다** (`lib/styleOpts`). 그러니 덱에서 카드를
+ *    열어 고칠 때도 같은 띠가 떠야 한다 (사용자 지적 2026-08-23: *"기존 스타일 카드에는
+ *    투명 bg 체크가 있는데 새로 만든 스타일 카드엔 없음"*) — 카드 편집기가 이 띠를 안 붙여서,
+ *    프롬프트에 꺼내 놓았을 때만 보이고 덱에서는 보이지도 고칠 수도 없었다. */
+export type OptsTarget = { value: StyleOpts; onChange: (patch: StyleOpts) => void };
+
+export function PromptOptsBar({ uc, target }: { uc: boolean; target?: OptsTarget }) {
   const t = useI18n((s) => s.t);
-  const p = useGen((s) => s.params);
-  const set = useGen((s) => s.set);
-  const cap = modelCaps(p.model);
+  const live = useGen((s) => s.params);
+  const setLive = useGen((s) => s.set);
+  /* ★카드를 고칠 때도 **고를 수 있는 값은 지금 모델이 정한다** — 카드는 모델을 안 들고
+     다니기 때문이다 (모델은 카드의 관심사가 아니다). */
+  const cap = modelCaps(live.model);
+  const p = target ? { ...live, ...target.value } : live;
+  const set = <K extends keyof StyleOpts>(k: K, v: StyleOpts[K]) =>
+    target ? target.onChange({ [k]: v } as StyleOpts) : setLive(k, v as never);
 
   return (
     <div

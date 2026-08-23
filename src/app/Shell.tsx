@@ -61,8 +61,9 @@ export function Shell({
   ai?: ReactNode;
 }) {
   const {
-    leftWidth,
-    rightWidth,
+    leftWidth: leftWidths,
+    rightWidth: rightWidths,
+    mode,
     leftCollapsed,
     rightCollapsed,
     setLeftWidth,
@@ -75,6 +76,10 @@ export function Shell({
     setAiWidth,
     toggleAi,
   } = useUi();
+  /* ★양옆 폭은 **모드마다 따로**다 (`store/ui` 의 `PanelWidths` ★★주). 같은 자리에
+     다른 것이 놓이므로 알맞은 폭도 다르다 — 갤러리의 폴더 트리와 생성의 옵션 패널. */
+  const leftWidth = leftWidths[mode];
+  const rightWidth = rightWidths[mode];
   const t = useI18n((s) => s.t);
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>

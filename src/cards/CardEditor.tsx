@@ -4,6 +4,7 @@ import { SectionCard } from "../blocks/SectionCard";
 import { BlockList } from "../blocks/BlockList";
 import { slotBlock, slotBlocksOf } from "../lib/blocks";
 import { SectionBody, useThumbView } from "../panels/PromptSections";
+import { PromptOptsBar } from "../panels/PromptOpts";
 import { useCards, type AnyCard, type CardKind, type CharCard, type PoseCard, type StyleCard } from "../store/cards";
 import { normThumb, type Thumb } from "../store/prompt";
 import { Icon } from "../components/Icon";
@@ -153,6 +154,25 @@ export function CardEditor({
                   patch((kind === "styles" ? { base: b } : { prompt: b }) as Partial<AnyCard>)
                 }
                 onUc={(b) => patch({ uc: b } as Partial<AnyCard>)}
+                /* ★★스타일 카드는 **프롬프트가 되는 넷**을 자기가 들고 다닌다
+                   (`lib/styleOpts`) — 그러니 여기서도 만질 수 있어야 한다
+                   (사용자 지적 2026-08-23: 투명 BG 체크가 카드에는 없었다).
+                   ★인물 카드에는 안 붙인다 — 그 넷은 그림 전체에 걸리는 것이라
+                     인물 하나가 들고 다닐 값이 아니다. */
+                footer={
+                  kind === "styles"
+                    ? (showUc) => (
+                        <PromptOptsBar
+                          uc={showUc}
+                          target={{
+                            value: (draft as StyleCard).opts ?? {},
+                            onChange: (o) =>
+                              patch({ opts: { ...(draft as StyleCard).opts, ...o } } as Partial<AnyCard>),
+                          }}
+                        />
+                      )
+                    : undefined
+                }
               />
             )}
           </SectionCard>

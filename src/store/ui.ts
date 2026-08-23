@@ -38,12 +38,21 @@ export function applyFont(id: FontId) {
   );
 }
 
+/** 양옆 패널의 폭 — **모드마다 따로**다.
+ *
+ *  ★★사용자 지적 2026-08-23: *"갤러리 좌측 폴더 트리 너비가 생성의 생성 옵션 패널 너비랑
+ *    동기화되어 있음. 독립적으로 작동하게"*. 두 모드가 같은 자리에 **다른 것**을 놓는다 —
+ *    왼쪽이 생성에서는 프롬프트·생성 옵션이고 갤러리에서는 폴더 트리다. 알맞은 폭도 서로
+ *    다른데 값을 하나로 두어, 한쪽에서 넓히면 다른 쪽도 따라 넓어졌다.
+ *  ★AI 패널은 **모드와 무관하게 늘 같은 것**이라 하나로 둔다 (`aiWidth`). */
+export type PanelWidths = Record<ModeId, number>;
+
 type Persisted = {
-  leftWidth: number;
+  leftWidth: PanelWidths;
   /** AI 채팅 패널 — ★**기본은 접힌 레일**이다 (ui-guide 7절: LLM 은 선택 사항) */
   aiWidth: number;
   aiCollapsed: boolean;
-  rightWidth: number;
+  rightWidth: PanelWidths;
   leftCollapsed: boolean;
   rightCollapsed: boolean;
   /** 무대에 한 줄로 몇 장을 놓나. ★**1이면 라이트박스**가 된다 — 한 장이 무대를 다 쓴다.
@@ -116,11 +125,15 @@ type Persisted = {
   laneWidth: number;
 };
 
+/** 모드마다 같은 값으로 시작한다. 넓히기 시작하면 그때부터 갈린다 */
+const widths = (n: number): PanelWidths =>
+  Object.fromEntries(MODES.map((m) => [m.id, n])) as PanelWidths;
+
 const DEFAULTS: Persisted = {
-  leftWidth: 380,
+  leftWidth: widths(380),
   aiWidth: 320,
   aiCollapsed: true,
-  rightWidth: 260,
+  rightWidth: widths(260),
   leftCollapsed: false,
   rightCollapsed: false,
   cols: 4,
@@ -153,7 +166,15 @@ export const COLS_MAX = 12;
 function load(): Persisted {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
+    if (raw) {
+      const got = JSON.parse(raw);
+      /* ★옛 저장본은 숫자 하나였다 — 모드마다 그 값으로 채워 시작한다.
+         화면이 갑자기 달라지지 않으면서 그때부터 따로 움직인다. */
+      for (const k of ["leftWidth", "rightWidth"] as const) {
+        if (typeof got[k] === "number") got[k] = widths(got[k]);
+      }
+      return { ...DEFAULTS, ...got };
+    }
   } catch {}
   return DEFAULTS;
 }
@@ -256,13 +277,14 @@ export const useUi = create<S>((set, get) => ({
     set({ laneSide: v });
     get().commitLayout();
   },
-  setLeftWidth: (w) => set({ leftWidth: w }),
+  // ★지금 보고 있는 모드의 몫만 바꾼다 (`PanelWidths` 의 ★★주)
+  setLeftWidth: (w) => set({ leftWidth: { ...get().leftWidth, [get().mode]: w } }),
   setAiWidth: (w) => set({ aiWidth: w }),
   toggleAi: () => {
     set({ aiCollapsed: !get().aiCollapsed });
     get().commitLayout();
   },
-  setRightWidth: (w) => set({ rightWidth: w }),
+  setRightWidth: (w) => set({ rightWidth: { ...get().rightWidth, [get().mode]: w } }),
   setCols: (n) => {
     set({ cols: Math.min(COLS_MAX, Math.max(COLS_MIN, Math.round(n))) });
     get().commitLayout();
