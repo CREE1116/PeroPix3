@@ -39,8 +39,15 @@ export type PlateKey = { seed: number; feather: number; aspect: number };
 export const bucketAspect = (w: number, h: number) =>
   Math.max(0.05, Math.round((w / Math.max(h, 1e-6)) * 20) / 20);
 
-/** 짧은 변 대비 구름이 밖으로 번지는 폭. 「부드럽게」가 이것을 정한다 */
-export const marginOf = (feather: number) => 0.22 + Math.min(50, Math.max(0, feather)) / 50 * 0.38;
+/** 짧은 변 대비 구름이 밖으로 번지는 폭. **고정값이다.**
+ *
+ *  ★★사용자 지적 2026-08-23: *"덮는 범위도 이상함. 부드럽게를 높이면 스팀 영역이 넓어짐"*.
+ *    한때 이 값이 「부드럽게」에 따라 커졌는데, 그러면 **가려지는 범위 자체가 바뀐다** —
+ *    가장자리를 부드럽게 하려고 만진 슬라이더가 덮는 넓이를 흔드는 셈이라, 어디까지
+ *    가려질지 예측할 수 없다. 이제 「부드럽게」는 **가장자리가 얼마나 완만한지만** 정하고
+ *    구름이 닿는 끝은 언제나 같다. */
+export const MARGIN = 0.3;
+export const marginOf = (_feather?: number) => MARGIN;
 
 /** 무늬 판 하나를 만든다. ★비싸다 — 부르는 쪽이 캐시한다 (`censorRender`). */
 export function plate(key: PlateKey): Plate {
@@ -60,14 +67,14 @@ export function plate(key: PlateKey): Plate {
   const nEdge = makeNoise(seed * 2 + 1);
   const nLum = makeNoise(seed * 2 + 977);
 
-  // ★「부드럽게」를 올리면 덩어리가 커지고 잔가지가 잦아든다. 그래서 이름대로 부드러워진다
+  // ★「부드럽게」를 올리면 덩어리가 커지고 잔가지가 잦아든다 (닿는 끝은 안 변한다)
   const soft = Math.min(50, Math.max(0, feather)) / 50;
   const lobeScale = 0.32 + soft * 0.4;
   const wispScale = lobeScale * 0.32;
   const wispMix = 0.45 - soft * 0.22;
   /* ★★**무늬(밝기)는 v2 원문 그대로다** (사용자 지시 2026-08-23: *"새로 바뀐 스팀 텍스처가
      더 이상함. 원래 걸로 복구"*). 한때 도메인 워프를 건 5옥타브로 바꿔 봤는데, 안쪽에
-     회색 결이 生겨 「연기」가 아니라 「얼룩」으로 보였다. 옛것은 **거의 흰색**이고 흔들림이
+     회색 결이 생겨 「연기」가 아니라 「얼룩」으로 보였다. 옛것은 **거의 흰색**이고 흔들림이
      13계조뿐이라 그게 이 그림의 성격에 맞는다.
      ★되돌린 것은 **무늬뿐이다.** 덮는 범위(둥근 사각형 + 바깥으로만 부푸는 윤곽)는 그대로
        둔다 — 박스가 다 안 가려지던 것이 원래 고치려던 문제다. */
@@ -76,10 +83,17 @@ export function plate(key: PlateKey): Plate {
   /* ★★바탕 모양을 **박스보다 한 겹 키우고 모서리를 크게 둥글린다.** 박스에 딱 맞춰
      두면 구름이 「털 난 네모」로 보인다. 키운 만큼(`grow`) 여유가 생기므로 반지름을
      그보다 크게 잡아도 **박스 네 모서리는 여전히 안쪽**이다 (R < grow·3.41 이면 성립).
-     ★남은 여백을 부풀림(0.40)과 사라짐(0.30)이 나눠 쓴다. 셋을 더하면 정확히 1 이라
-       구름이 판 밖으로 잘리지 않는다. */
-  const grow = margin * 0.35;
+     ★키운 폭(`grow`)까지 합쳐 판의 여백(`margin`)을 넘지 않는다 — 넘으면 구름이
+       네모나게 잘린다. */
+  const grow = margin * 0.25;
   const radius = Math.min(grow * 2.2, hw + grow, hh + grow);
+  /* ★★남은 폭(`reach`)을 **완만함(`fade`)과 굴곡(`solid`)이 나눠 쓴다.** 둘을 더하면
+     언제나 `reach` 라, 「부드럽게」를 아무리 올려도 구름이 닿는 끝은 그대로다.
+       부드럽게 0   좁은 fade + 큰 solid  → 윤곽이 또렷하고 울퉁불퉁하다
+       부드럽게 50  넓은 fade + 작은 solid → 윤곽이 뭉개지며 아지랑이처럼 흐려진다 */
+  const reach = margin - grow;
+  const fade = reach * (0.15 + soft * 0.8);
+  const solid = reach - fade;
 
   const cover = new Uint8Array(pw * ph);
   const lum = new Uint8Array(pw * ph);
@@ -98,8 +112,8 @@ export function plate(key: PlateKey): Plate {
       const wisp = fbm(nEdge, dx / wispScale + 31.7, dy / wispScale + 11.3, 4) * 0.5 + 0.5;
       // ★덩어리에 굴곡을 준다 — 고르게 부풀면 윤곽이 그대로라 바탕 모양이 드러난다
       const bulge = smoothstep(0.15, 0.85, lobe) * (1 - wispMix) + wisp * wispMix;
-      const d = sd - bulge * margin * 0.45;
-      cover[i] = Math.round(255 * (1 - smoothstep(0, margin * 0.2, d)));
+      const d = sd - bulge * solid;
+      cover[i] = Math.round(255 * (1 - smoothstep(0, fade, d)));
 
       // ── 구름의 두께 ────────────────────────────────────────
       // ★v2 `generateSteamTexture` 그대로: 3옥타브(1 · 0.5 · 0.25)를 0.5~1 로 편다

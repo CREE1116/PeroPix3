@@ -583,4 +583,7 @@ const iconBtn: React.CSSProperties = {
   padding: "3px var(--sp-2)",
 };
 
-const onSt: React.CSSProperties = { borderColor: "var(--accent)", background: "var(--accent-bg)", color: "var(--ink)" };
+/** 고른 칩. ★★**`border` 를 통째로 준다** — 낱개(`borderColor`)만 덮으면, 선택이 풀릴 때
+ *  리액트가 그 낱개를 지우면서 아래의 줄임 속성에 실린 색까지 함께 빠져 **테두리가 글자색으로
+ *  남는다** (검열 방식 칩에서 실측하고 고친 것과 같은 함정, `panels/censor/ui.tsx` 의 ★★주). */
+const onSt: React.CSSProperties = { border: "1px solid var(--accent)", background: "var(--accent-bg)", color: "var(--ink)" };
