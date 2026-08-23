@@ -352,7 +352,9 @@ class GenBody(BaseModel):
     straight_alpha: bool = True
     furry_mode: bool = False
     # 저장 옵션 (v2 Save Options)
-    save_format: str = "png"          # png | jpg | webp
+    #: png | webp — ★**둘뿐**이다 (사용자 결정 2026-08-23). WebP 는 무손실로 쓴다
+    save_format: str = "png"
+    #: ★옛 설정 호환으로 남긴다. 지금 내는 둘은 품질 값을 안 쓴다 (PNG · 무손실 WebP)
     jpg_quality: int = 95
     strip_metadata: bool = False
     #: 끄면 **파일로 안 남기고 미리보기만** 돌려준다 (v2 `auto_save`)
@@ -1232,8 +1234,10 @@ async def _generate_one(body: GenBody) -> dict:
             tile_src.close()
 
     # 저장 자리·이름은 `store.store_output` 하나가 정한다 (그 메서드 주석)
+    # ★옛 워크스페이스가 `jpg` 를 들고 있으면 **PNG 로 떨어뜨린다** — 조용히 투명을
+    #   잃는 형식으로 저장하지 않는다 (사용자 결정 2026-08-23)
     fmt = body.save_format.lower()
-    if fmt not in ("png", "jpg", "webp"):
+    if fmt not in ("png", "webp"):
         fmt = "png"
 
     # ★NAI 응답 PNG 에는 원본 tEXt 청크(Source 등)가 들어 있다. 포맷을 바꾸거나 메타데이터를
@@ -1412,8 +1416,9 @@ async def save_preview(body: SavePreviewBody):
     if not data:
         raise HTTPException(400, "미리보기 데이터가 비어 있습니다")
 
+    # ★같은 규칙이다 — 내는 형식은 PNG·WebP 둘뿐 (`GenBody.save_format` 의 ★주)
     fmt = body.fmt.lower()
-    if fmt not in ("png", "jpg", "webp"):
+    if fmt not in ("png", "webp"):
         fmt = "png"
 
     rel = store.store_output(body.workspace, body.tab, body.cell, body.cell_no, body.char,

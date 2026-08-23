@@ -132,27 +132,15 @@ export function OptionsPanel() {
       <Category id="opt-save" label={t("options.catSave")} defaultFolded>
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}>
               <Group label={t("options.saveOptions")}>
-                <div style={{ display: "flex", gap: "var(--sp-2)" }}>
-                  <Select
-                    value={p.save_format}
-                    options={[["png", "PNG"], ["jpg", "JPG"], ["webp", "WebP"]]}
-                    onChange={(v) => set("save_format", v)}
-                  />
-                  {p.save_format !== "png" && (
-                    <NumBox value={p.jpg_quality} onCommit={(v) => setUndo("jpg_quality", Math.min(100, Math.max(1, v)), t("options.saveOptions"))} />
-                  )}
-                </div>
-                {/* ★★**투명 배경으로 뽑는데 JPG 면 투명이 말없이 사라진다** (사용자 지시
-                    2026-08-23 검토). JPG 에는 알파 채널이 없어서 서버가 RGB 로 눌러 저장한다
-                    (`backend/meta.write`). 형식을 대신 바꾸지는 않는다 — 저장 형식은 사용자가
-                    고른 것이다. 대신 **그렇게 된다는 것을 말한다.**
-                    ★PNG 는 원본 그대로 저장되고(알파·메타데이터 둘 다 그대로), WebP 는 알파는
-                      살지만 NAI 원본 tEXt 청크는 EXIF 로 옮겨진다. */}
-                {p.transparent_bg && p.save_format === "jpg" && (
-                  <span data-transparent-jpg style={{ fontSize: "var(--text-2xs)", color: "var(--warn)" }}>
-                    {t("options.transparentJpg")}
-                  </span>
-                )}
+                {/* ★★내는 형식은 **PNG·WebP 둘뿐**이다 (사용자 결정 2026-08-23) — 공홈과 같다.
+                    JPG 는 투명이 없고 픽셀을 뭉개므로 **저장 형식에서 뺐다** (읽는 것은 그대로다).
+                    ★품질 칸도 함께 걷었다 — 둘 다 품질이라는 것이 없다 (PNG·**무손실** WebP).
+                      그래서 「투명이 사라진다」는 경고도 설 자리가 없어졌다. */}
+                <Select
+                  value={p.save_format === "webp" ? "webp" : "png"}
+                  options={[["png", "PNG"], ["webp", "WebP (Lossless)"]]}
+                  onChange={(v) => set("save_format", v)}
+                />
                 {/* ★그림을 공유할 때만 쓴다 — 지우면 그 그림으로 재생성할 수 없다 */}
                 <Check
                   label={t("options.stripMetadata")}

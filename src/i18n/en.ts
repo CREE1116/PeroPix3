@@ -391,7 +391,6 @@ export const en = {
     varietyPlus: "Variety+",
     transparentBg: "Transparent BG",
     transparentBgHint: "Adds \"transparent background\" to the prompt and keeps the alpha channel. V5 only.",
-    transparentJpg: "JPG has no transparency. Saving like this drops the transparent background — use PNG or WebP.",
   },
 
   pos: {
@@ -527,7 +526,6 @@ export const en = {
     convertDrop: "Drop images to convert",
     empty: "Nothing yet",
     format: "Format",
-    quality: "Quality",
     strip: "Strip metadata",
     stripHint: "Removes even what is hidden in the alpha channel. The image cannot be regenerated.",
     keepHint: "Carries the metadata over, so you can regenerate later.",

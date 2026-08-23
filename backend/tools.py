@@ -173,8 +173,10 @@ def convert(
     #   되므로 여기서 거절한다 (부르는 쪽이 갈래에 맞게 비워 보낸다).
     if dest and mode != "folder":
         raise ValueError("저장 폴더는 「저장 폴더 지정」에서만 씁니다")
+    # ★★내는 형식은 **PNG·WebP 둘뿐**이다 (사용자 결정 2026-08-23) — 공홈과 같다.
+    #   JPG 는 **읽기만** 한다 (밖에서 온 그림). 낼 때 쓰면 투명이 사라지고 픽셀이 뭉개진다.
     fmt = (fmt or "png").lower()
-    if fmt not in ("png", "jpg", "webp"):
+    if fmt not in ("png", "webp"):
         raise ValueError("지원하지 않는 형식입니다")
 
     out_dir: Path | None = None
@@ -220,7 +222,7 @@ def convert(
                 d = src.parent
             if d is None:
                 raise ValueError("저장할 폴더를 정해 주세요")
-            ext = "jpg" if fmt == "jpg" else fmt
+            ext = fmt
             if prefix is not None:
                 num = str(start + i).zfill(max(0, pad))
                 stem = f"{prefix}{num}"

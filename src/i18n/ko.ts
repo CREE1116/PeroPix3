@@ -401,7 +401,6 @@ export const ko: Dict = {
     varietyPlus: "Variety+",
     transparentBg: "Transparent BG",
     transparentBgHint: "프롬프트에 transparent background 를 넣고 알파를 살려 받는다. V5 부터 된다.",
-    transparentJpg: "JPG 에는 투명이 없습니다. 이대로 저장하면 투명 배경이 사라집니다 — PNG 나 WebP 를 쓰세요.",
   },
 
   /** 캐릭터 배치 판 (`panels/CharPositioner`) */
@@ -542,7 +541,6 @@ export const ko: Dict = {
     convertDrop: "바꿀 그림을 여기에 놓으세요",
     empty: "아직 없습니다",
     format: "형식",
-    quality: "품질",
     strip: "메타데이터 제거",
     stripHint: "알파 채널에 숨은 것까지 지웁니다. 그 그림으로는 재생성할 수 없습니다.",
     keepHint: "메타데이터를 그대로 옮깁니다. 나중에 재생성할 수 있습니다.",

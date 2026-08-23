@@ -389,7 +389,6 @@ export const ja: Dict = {
     varietyPlus: "Variety+",
     transparentBg: "透過背景",
     transparentBgHint: "プロンプトに transparent background を追加し、アルファを保持します。V5 のみ。",
-    transparentJpg: "JPG に透明はありません。このまま保存すると透明な背景が失われます — PNG か WebP をお使いください。",
   },
 
   pos: {
@@ -525,7 +524,6 @@ export const ja: Dict = {
     convertDrop: "変換する画像をドロップ",
     empty: "まだありません",
     format: "形式",
-    quality: "品質",
     strip: "メタデータを削除",
     stripHint: "アルファチャンネルに隠れたものまで消します。その画像から再生成はできません。",
     keepHint: "メタデータをそのまま引き継ぐので、あとで再生成できます。",

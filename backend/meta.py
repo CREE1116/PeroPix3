@@ -69,15 +69,40 @@ def _decode_stealth_pnginfo(img: Image.Image) -> dict | None:
             return None
         payload = np.packbits(bits[off : off + param_len]).tobytes()
         raw = gzip.decompress(payload).decode("utf-8") if compressed else payload.decode("utf-8")
-        outer = json.loads(raw)  # {Description, Software, Source, Comment, ...}
-        comment = outer.get("Comment")  # 내부 Comment(문자열 JSON)가 실제 NAI 메타데이터
-        if isinstance(comment, str):
-            return json.loads(comment)
-        if isinstance(comment, dict):
-            return comment
-        return outer or None
+        outer = json.loads(raw)  # ★바깥 봉투다 — `_unwrap_envelope` 가 여는 것과 같은 모양
+        return _unwrap_envelope(outer) or None
     except Exception:
         return None
+
+
+def _unwrap_envelope(d):
+    """NAI 의 **바깥 봉투**를 열어 안의 메타데이터를 꺼낸다. 봉투가 아니면 그대로 돌려준다.
+
+    ★★공홈이 파일에 넣는 것은 **두 겹**이다 (번들 `chunks/9360` 의 `function l` 과
+      그것을 쓰는 자리들, 2026-08-23 확인):
+
+          바깥 봉투  {Title, Description, Software, Source, Comment, "Generation time"}
+          그 안       Comment 에 **문자열로** 든 진짜 메타데이터 JSON (prompt·uc·steps…)
+
+      PNG 에서는 봉투의 칸 하나하나가 tEXt 청크라 `Comment` 만 집으면 됐다. 그런데
+      **WebP 에서는 봉투째 EXIF `UserComment` 한 칸에 들어간다** — 넣을 칸이 하나뿐이라
+      그렇다. 공홈 자신도 세 갈래(tEXt·UserComment·알파)를 전부 **봉투 모양**으로 맞춰
+      돌려주고, 부르는 쪽은 언제나 `r.Comment` 를 `JSON.parse` 한다.
+
+    ★사용자 지적 2026-08-23: *"nai 에서 만들어낸 무손실 webp 의 메타데이터를 못 읽는다"*.
+      봉투를 안 열고 그대로 내부 메타데이터로 삼으니 `prompt` 가 없어 「없음」이 됐다."""
+    if not isinstance(d, dict):
+        return d
+    c = d.get("Comment")
+    if isinstance(c, str) and c.strip().startswith("{"):
+        try:
+            inner = json.loads(c)
+        except Exception:
+            return d
+        return inner if isinstance(inner, dict) else d
+    if isinstance(c, dict):
+        return c
+    return d
 
 
 def read_raw(image_bytes: bytes) -> dict:
@@ -165,7 +190,7 @@ def read_raw(image_bytes: bytes) -> dict:
                             except Exception:
                                 pass
                     if uc:
-                        return json.loads(uc)
+                        return _unwrap_envelope(json.loads(uc))
         except Exception:
             pass
 
@@ -175,7 +200,7 @@ def read_raw(image_bytes: bytes) -> dict:
             if raw:
                 d = piexif.load(raw)
                 if "Exif" in d and piexif.ExifIFD.UserComment in d["Exif"]:
-                    return json.loads(piexif.helper.UserComment.load(d["Exif"][piexif.ExifIFD.UserComment]))
+                    return _unwrap_envelope(json.loads(piexif.helper.UserComment.load(d["Exif"][piexif.ExifIFD.UserComment])))
         except Exception:
             pass
 
@@ -183,7 +208,7 @@ def read_raw(image_bytes: bytes) -> dict:
         try:
             d = piexif.load(image_bytes)
             if "Exif" in d and piexif.ExifIFD.UserComment in d["Exif"]:
-                return json.loads(piexif.helper.UserComment.load(d["Exif"][piexif.ExifIFD.UserComment]))
+                return _unwrap_envelope(json.loads(piexif.helper.UserComment.load(d["Exif"][piexif.ExifIFD.UserComment])))
         except Exception:
             pass
 
@@ -211,8 +236,8 @@ def read_raw(image_bytes: bytes) -> dict:
     return meta
 
 
-#: 이 키가 하나라도 있으면 **우리가 아는 형식**이다 (NAI 원본 · PeroPix 확장)
-_META_HINTS = ("prompt", "uc", "peropix", "steps", "sampler", "seed")
+#: 이 키가 하나라도 있으면 **우리가 아는 형식**이다 (NAI 원본 · PeroPix 확장 · 바깥 봉투)
+_META_HINTS = ("prompt", "uc", "peropix", "steps", "sampler", "seed", "Comment")
 
 
 def _json_in_exif(img: Image.Image) -> dict | None:
@@ -264,7 +289,7 @@ def _json_in_exif(img: Image.Image) -> dict | None:
         except Exception:
             continue
         if isinstance(d, dict) and any(k in d for k in _META_HINTS):
-            return d
+            return _unwrap_envelope(d)
     return None
 
 
@@ -760,9 +785,9 @@ def write(image_bytes: bytes, metadata: dict, fmt: str = "PNG", quality: int = 9
              (앞 8바이트가 `UNICODE\0` 면 UTF-16 · `ASCII\0\0\0` 나 전부 0 이면 떼고 UTF-8)
           3) 그래도 없으면 **알파 채널**(stealth)
 
-      즉 **`Source` 를 보고 가리는 것이 아니다.** 그래서 우리가 낸 JPG·WebP 도 공홈이 읽는다 —
-      우리는 그 `UserComment` 에 같은 JSON 을 넣는다 (`piexif` 의 `UNICODE\0` + UTF-16BE,
-      공홈 풀이 규칙과 맞는 것을 실측했다).
+      즉 **`Source` 를 보고 가리는 것이 아니다.** 그래서 우리가 낸 WebP 도 공홈이 읽는다 —
+      단 **봉투째** 넣어야 한다 (`user_comment()` 의 ★★주). 세 갈래 모두 결과가 봉투 모양이고,
+      그것을 부르는 쪽은 언제나 `Comment` 를 다시 푼다.
       ★한때 이 자리에 *"원본 청크를 보존해야 공홈이 자기 이미지로 인식한다"* 고 적혀 있었다.
         그 문장을 근거로 「PNG 가 아니면 공홈이 못 읽는다」고 잘못 말한 적이 있다 —
         읽는 쪽 코드를 보면 그렇지 않다."""
@@ -771,6 +796,23 @@ def write(image_bytes: bytes, metadata: dict, fmt: str = "PNG", quality: int = 9
         img = Image.open(io.BytesIO(image_bytes))
         out = io.BytesIO()
         up = fmt.upper()
+
+        def user_comment() -> bytes:
+            """EXIF `UserComment` 한 칸에 넣을 것 — **바깥 봉투째** 넣는다.
+
+            ★★PNG 는 봉투의 칸마다 tEXt 청크를 하나씩 쓰지만, EXIF 에는 넣을 칸이 하나다.
+              공홈은 그 하나에 **봉투를 통째로** 넣고, 읽을 때 `Comment` 를 다시 푼다
+              (`_unwrap_envelope` 의 ★★주). 우리가 안쪽 JSON 만 넣으면 공홈이 `Comment` 를
+              못 찾아 *"no importable metadata"* 가 된다 — 우리 앱끼리는 되지만 공홈에서 막힌다.
+            ★`piexif` 의 `unicode` 는 `UNICODE` 접두 + UTF-16BE 다. 공홈 풀이 규칙과 맞는 것을 실측했다."""
+            envelope = {}
+            for name in ND_PNG_TEXT_CHUNKS:
+                v = (extra_png_chunks or {}).get(name)
+                if isinstance(v, str) and v:
+                    envelope[name] = v
+            envelope["Comment"] = js
+            return piexif.helper.UserComment.dump(
+                json.dumps(envelope, ensure_ascii=False), encoding="unicode")
 
         if up == "PNG":
             info = PngInfo()
@@ -784,7 +826,7 @@ def write(image_bytes: bytes, metadata: dict, fmt: str = "PNG", quality: int = 9
         elif up in ("JPEG", "JPG"):
             exif = piexif.dump({
                 "0th": {}, "GPS": {}, "1st": {}, "thumbnail": None,
-                "Exif": {piexif.ExifIFD.UserComment: piexif.helper.UserComment.dump(js, encoding="unicode")},
+                "Exif": {piexif.ExifIFD.UserComment: user_comment()},
             })
             if img.mode in ("RGBA", "P"):
                 img = img.convert("RGB")
@@ -792,9 +834,12 @@ def write(image_bytes: bytes, metadata: dict, fmt: str = "PNG", quality: int = 9
         elif up == "WEBP":
             exif = piexif.dump({
                 "0th": {}, "GPS": {}, "1st": {}, "thumbnail": None,
-                "Exif": {piexif.ExifIFD.UserComment: piexif.helper.UserComment.dump(js, encoding="unicode")},
+                "Exif": {piexif.ExifIFD.UserComment: user_comment()},
             })
-            img.save(out, format="WEBP", exif=exif, quality=quality)
+            # ★★**무손실이다** (사용자 결정 2026-08-23). 공홈도 `WebP (Lossless)` 하나만 낸다 —
+            #   생성물은 Anlas 가 든 원본이라 저장할 때 픽셀을 다시 뭉개지 않는다.
+            #   투명은 손실이든 무손실이든 살지만, 무손실이면 **PNG 와 같은 그림**이 된다.
+            img.save(out, format="WEBP", exif=exif, lossless=True)
         else:
             img.save(out, format=fmt)
         return out.getvalue()
@@ -825,7 +870,8 @@ def strip(image_bytes: bytes, fmt: str = "PNG", quality: int = 95) -> bytes:
     if up in ("JPEG", "JPG"):
         clean.save(out, format="JPEG", quality=quality, exif=b"")
     elif up == "WEBP":
-        clean.save(out, format="WEBP", quality=quality, exif=b"")
+        # ★쓰기와 같은 규칙 — 무손실 (위 `write` 의 ★★주)
+        clean.save(out, format="WEBP", lossless=True, exif=b"")
     else:
         clean.save(out, format="PNG", pnginfo=PngInfo())  # 빈 pnginfo 를 명시
     return out.getvalue()

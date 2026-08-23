@@ -41,7 +41,6 @@ export function ConvertTool() {
   const t = useI18n((s) => s.t);
   const { items, add } = useConvertQueue();
   const [fmt, setFmt] = useState("png");
-  const [quality, setQuality] = useState(95);
   const [strip, setStrip] = useState(false);
   const [ren, setRen] = useState(false);
   const [prefix, setPrefix] = useState("image");
@@ -148,7 +147,6 @@ export function ConvertTool() {
               body: JSON.stringify({
                 items: [items[i]],
                 fmt,
-                quality,
                 strip_metadata: strip,
                 prefix: ren ? prefix : null,
                 // ★번호는 화면이 정한다 — 한 장씩 보내므로 `start + i` 를 그때그때 싣는다
@@ -340,31 +338,17 @@ export function ConvertTool() {
       {/* 오른쪽 — 어떻게 */}
       <div style={{ width: 260, flexShrink: 0, display: "flex", flexDirection: "column", gap: "var(--sp-4)", overflowY: "auto" }}>
         <Section label={t("tools.format")}>
+          {/* ★★내는 형식은 **PNG·WebP 둘뿐**이다 (사용자 결정 2026-08-23) — 공홈과 같다.
+              JPG 는 투명이 없고 픽셀을 뭉개므로 뺐다. **읽는 것은 그대로다** — 밖에서 온
+              JPG 를 목록에 담아 PNG·WebP 로 바꿀 수 있다.
+              ★품질 슬라이더도 함께 걷었다: PNG 도 무손실 WebP 도 품질이라는 것이 없다. */}
           <div style={{ display: "flex", gap: "var(--sp-2)" }}>
-            {["png", "jpg", "webp"].map((f) => (
+            {[["png", "PNG"], ["webp", "WebP (Lossless)"]].map(([f, name]) => (
               <button key={f} data-fmt={f} onClick={() => setFmt(f)} style={{ ...box, flex: 1, ...(fmt === f ? onSt : {}) }}>
-                {f.toUpperCase()}
+                {name}
               </button>
             ))}
           </div>
-          {fmt !== "png" && (
-            <Line label={t("tools.quality")}>
-              <input
-                type="range"
-                min={1}
-                max={100}
-                value={quality}
-                onChange={(e) => setQuality(Number(e.target.value))}
-                style={{ flex: 1, minWidth: 0 }}
-              />
-              {/* ★★**세 자리가 들어가야 한다** (사용자 지적 2026-08-23: 100 을 고르면 글자가
-                  칸을 벗어났다). 24px 은 두 자리 기준이었다. `flexShrink: 0` 이 없으면
-                  슬라이더가 밀 때 이 칸부터 줄어든다. */}
-              <span style={{ width: 30, flexShrink: 0, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                {quality}
-              </span>
-            </Line>
-          )}
           <label style={lbl}>
             <input type="checkbox" data-strip checked={strip} onChange={(e) => setStrip(e.target.checked)} />
             {t("tools.strip")}
