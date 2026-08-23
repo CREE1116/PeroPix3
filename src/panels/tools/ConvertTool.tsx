@@ -40,7 +40,6 @@ type Row = { saved?: string; error?: string };
 export function ConvertTool() {
   const t = useI18n((s) => s.t);
   const { items, add } = useConvertQueue();
-  const tree = useFiles((s) => s.tree);
   const [fmt, setFmt] = useState("png");
   const [quality, setQuality] = useState(95);
   const [strip, setStrip] = useState(false);
@@ -64,7 +63,6 @@ export function ConvertTool() {
   /** ★경로를 모르는 그림(브라우저 드롭)은 원본 자리를 알 수 없다 — 폴더를 골라야 한다 */
   const noHome = items.some((i) => !i.path && !i.rel);
   const needDest = mode === "folder" || noHome;
-  const flat = flatten(tree);
 
   /** 썸네일·크기는 **목록이 바뀔 때 한 번** 물어본다. 순서만 바꾼 것은 화면에서 같이 옮긴다 */
   useEffect(() => {
@@ -112,6 +110,22 @@ export function ConvertTool() {
     setItems(next, np);
   };
   const { register, handleProps, dragIdx, overIdx, ghost } = useReorder(items.length, move);
+
+  /** 윈도우 폴더 찾기 — ★취소하면 **아무것도 안 바꾼다** (빈 값으로 지우지 않는다) */
+  const pickDest = async () => {
+    const first = items.find((i) => i.path || i.rel);
+    try {
+      const r = await api<{ dir: string | null }>("/api/files/pick-dir", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // ★윈도우 경로는 `\` 로 갈린다 — 둘 다 봐야 파일 이름을 떼고 **폴더**가 남는다
+        body: JSON.stringify({ start: first?.path ? first.path.replace(/[\\/][^\\/]*$/, "") : "" }),
+      });
+      if (r.dir) setDest(r.dir);
+    } catch (e) {
+      toast(String(e), "warn");
+    }
+  };
 
   const run = async () => {
     if (busy || !items.length) return;
@@ -341,9 +355,14 @@ export function ConvertTool() {
                 max={100}
                 value={quality}
                 onChange={(e) => setQuality(Number(e.target.value))}
-                style={{ flex: 1 }}
+                style={{ flex: 1, minWidth: 0 }}
               />
-              <span style={{ width: 24, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{quality}</span>
+              {/* ★★**세 자리가 들어가야 한다** (사용자 지적 2026-08-23: 100 을 고르면 글자가
+                  칸을 벗어났다). 24px 은 두 자리 기준이었다. `flexShrink: 0` 이 없으면
+                  슬라이더가 밀 때 이 칸부터 줄어든다. */}
+              <span style={{ width: 30, flexShrink: 0, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                {quality}
+              </span>
             </Line>
           )}
           <label style={lbl}>
@@ -388,39 +407,33 @@ export function ConvertTool() {
         </Section>
 
         <Section label={t("tools.dest")} help={t("tools.destHint")}>
-          {/* ★★세 갈래를 **먼저** 고르고, 폴더를 지정할 때만 목록이 뜬다.
-              「원본 옆에」는 걷었다 — 같은 폴더에 번호 붙은 사본이 쌓여 원본과 뒤섞였다. */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            {(["overwrite", "sub", "folder"] as const).map((m) => (
-              <button
-                key={m}
-                data-dest-mode={m}
-                onClick={() => setMode(m)}
-                disabled={noHome && m !== "folder"}
-                style={{
-                  ...box,
-                  textAlign: "left",
-                  opacity: noHome && m !== "folder" ? 0.4 : 1,
-                  ...(mode === m ? onSt : {}),
-                }}
-              >
-                {t(m === "overwrite" ? "tools.destOverwrite" : m === "sub" ? "tools.destSub" : "tools.destFolder")}
-              </button>
-            ))}
-          </div>
+          {/* ★★세 갈래는 **드롭다운 하나**다 (사용자 지시 2026-08-23) — 단추 셋을 세로로
+              늘어놓으면 오른쪽 기둥에서 세 줄을 먹는데, 한 번 정하고 잘 안 바꾸는 값이다.
+              ★「원본 옆에」는 걷었다 — 같은 폴더에 번호 붙은 사본이 쌓여 원본과 뒤섞였다. */}
+          <select
+            data-dest-mode
+            value={mode}
+            onChange={(e) => setMode(e.target.value as typeof mode)}
+            style={{ ...box, width: "100%" }}
+          >
+            {/* ★자리를 모르는 그림(브라우저 드롭)은 폴더를 골라야만 저장할 수 있다 */}
+            <option value="overwrite" disabled={noHome}>{t("tools.destOverwrite")}</option>
+            <option value="sub" disabled={noHome}>{t("tools.destSub")}</option>
+            <option value="folder">{t("tools.destFolder")}</option>
+          </select>
           {/* ★★덮어쓰기는 **원본이 자리를 내주는** 유일한 갈래다 — 무슨 일이 일어나는지 적는다.
               (지우지는 않는다: 옛 파일은 휴지통으로 간다, `backend/tools.convert`) */}
           {mode === "overwrite" && <Hint>{t("tools.destOverwriteHint")}</Hint>}
           {mode === "folder" && (
-            <select data-dest value={dest} onChange={(e) => setDest(e.target.value)} style={{ ...box, width: "100%" }}>
-              <option value="">{t("tools.destPick")}</option>
-              {flat.map((f) => (
-                <option key={f.path} value={f.path}>
-                  {"  ".repeat(f.depth)}
-                  {f.path}
-                </option>
-              ))}
-            </select>
+            <>
+              {/* ★★**윈도우 폴더 찾기**로 고른다 (사용자 지시 2026-08-23) — 목록에서 고르는
+                  방식은 아웃풋 루트 안으로만 갈 수 있었다. 창은 서버가 띄운다
+                  (`backend/files.pick_dir`) — 브라우저에는 폴더를 고르는 표준 길이 없다.
+                  ★맨 앞에 세울 자리는 **첫 그림이 있는 폴더**다. */}
+              <button data-dest-pick onClick={() => void pickDest()} style={{ ...box, width: "100%", textAlign: "left" }}>
+                {dest || t("tools.destPick")}
+              </button>
+            </>
           )}
           {/* ★남는 것은 **지금 막힌 이유**뿐이다 — 무엇을 하는 자리인지는 라벨 옆 `?` 에 있다 */}
           {needDest && !dest && <Hint>{t("tools.needDest")}</Hint>}
@@ -501,14 +514,8 @@ export function ConvertTool() {
 const fmtSize = (n: number) =>
   n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
 
-type Flat = { path: string; depth: number };
-function flatten(nodes: { path: string; children: unknown[] }[], depth = 0, out: Flat[] = []): Flat[] {
-  for (const n of nodes as { path: string; children: { path: string; children: unknown[] }[] }[]) {
-    out.push({ path: n.path, depth });
-    flatten(n.children, depth + 1, out);
-  }
-  return out;
-}
+/* ★폴더 트리를 펴서 목록으로 만들던 `flatten` 은 걷었다 — 저장 폴더를 **윈도우 폴더 찾기**로
+   고르게 되면서(2026-08-23) 아웃풋 루트 안의 목록을 그릴 이유가 없어졌다. */
 
 /** ★설명은 **라벨 옆 `?`** 로만 나온다 (사용자 지시 2026-08-19) */
 const Section = ({ label, help, children }: { label: string; help?: string; children: React.ReactNode }) => (

@@ -53,6 +53,18 @@ def _read(root: Path, it: Item) -> tuple[bytes, Path | None]:
     raise ValueError("그림이 비었습니다")
 
 
+def _src_of(root: Path, it: Item) -> Path | None:
+    """이 그림의 **원본 자리** (모르면 None). ★바이트를 안 읽는다 — 저장 폴더를 미리 정하는 데만 쓴다."""
+    try:
+        if it.get("rel"):
+            return files_mod.under(root, it["rel"])
+        if it.get("path"):
+            return Path(it["path"])
+    except Exception:
+        return None
+    return None
+
+
 def _thumb(data: bytes, max_side: int) -> str:
     """줄인 그림을 data URL 로. 못 읽으면 빈 문자열 (그림이 아니어도 예외로 만들지 않는다)."""
     try:
@@ -123,10 +135,10 @@ def _free(d: Path, stem: str, ext: str) -> Path:
 
 #: 저장 자리 — 화면의 「저장 위치」와 같은 세 갈래 (사용자 지시 2026-08-23)
 #:   overwrite  원본을 **대체**한다 (원본은 휴지통으로)
-#:   sub        원본 폴더 **아래 `output/`** 에
-#:   folder     고른 폴더에 모은다 (`dest`)
+#:   sub        **첫 그림이 있는 폴더 아래**에 `output/` 을 하나 만들어 전부 거기
+#:   folder     고른 폴더에 모은다 (`dest` — 윈도우 폴더 찾기로 고른 **절대 경로**일 수 있다)
 MODES = ("overwrite", "sub", "folder")
-#: 「하위 output 폴더에」가 만드는 폴더 이름
+#: 「첫 이미지 하위에 output 폴더를 만들어 저장」이 만드는 폴더 이름
 SUB_DIR = "output"
 
 
@@ -167,8 +179,19 @@ def convert(
 
     out_dir: Path | None = None
     if mode == "folder":
-        out_dir = files_mod.under(root, dest)
+        # ★★고른 경로가 **절대 경로**면 그대로 쓴다 — 윈도우 폴더 찾기로 고른 것이라
+        #   아웃풋 루트 밖일 수 있다 (`files.pick_dir` 의 ★주). 상대 경로는 예전대로 루트 아래.
+        p = Path(dest)
+        out_dir = p if p.is_absolute() else files_mod.under(root, dest)
         out_dir.mkdir(parents=True, exist_ok=True)
+    elif mode == "sub":
+        # ★★**첫 그림이 있는 폴더 아래에 하나만** 만든다 (사용자 지시 2026-08-23).
+        #   예전에는 그림마다 자기 폴더 밑에 `output/` 을 만들어서, 여러 폴더에서 고른 것을
+        #   한 번에 바꾸면 결과가 폴더마다 흩어졌다.
+        first = next((_src_of(root, it) for it in items if _src_of(root, it)), None)
+        if first is not None:
+            out_dir = first.parent / SUB_DIR
+            out_dir.mkdir(parents=True, exist_ok=True)
 
     results = []
     for i, it in enumerate(items):
@@ -192,8 +215,7 @@ def convert(
             elif src is None:
                 raise ValueError("저장할 폴더를 정해 주세요")
             elif mode == "sub":
-                d = src.parent / SUB_DIR
-                d.mkdir(parents=True, exist_ok=True)
+                d = out_dir  # 첫 그림 아래에 만들어 둔 그 폴더 (위)
             else:  # overwrite
                 d = src.parent
             if d is None:

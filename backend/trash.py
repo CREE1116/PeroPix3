@@ -1,6 +1,6 @@
 """휴지통 — **지우면 진짜 없어지되, 되돌릴 수는 있게** (사용자 결정 2026-08-05).
 
-    지움 →  <뿌리>/.trash/<지운 시각>/<원래 상대경로>
+    지움 →  <뿌리>/.trash/<파일 이름>   +  <뿌리>/.trash/index.jsonl 에 한 줄
     되돌림 → 원래 자리로 (그 사이 같은 이름이 생겼으면 번호를 붙인다)
     비움  →  **앱을 켤 때** 24시간 지난 것
 
@@ -8,7 +8,15 @@
   시작은 반드시 한 번 돈다.
 ★왜 유예를 두는가: 생성물은 Anlas 가 든 원본이다. "지우고 껐다 켰는데 필요했다" 를 한 번은
   살릴 수 있어야 한다. 파일 관리에서 `.trash` 를 열어 직접 꺼내거나 비울 수도 있다.
-★원래 상대경로를 **그대로** 유지한다 — 되돌릴 때 어디로 갈지가 경로에 적혀 있어야 한다.
+★★**파일은 평평하게, 경로는 장부에** (사용자 지시 2026-08-23).
+  예전에는 `<지운 시각>/<원래 상대경로>` 로 폴더를 통째로 다시 지어서, 휴지통을 열면
+  한 장을 보려고 폴더를 대여섯 겹 파고 들어가야 했다 — 윈도우 휴지통도 파일만 늘어놓고
+  원래 자리는 따로 적어 둔다. 우리도 그렇게 한다:
+    · 파일은 `.trash/` 바로 아래에 **원래 이름 그대로** (겹치면 번호를 붙인다)
+    · 원래 자리·지운 시각은 `index.jsonl` 한 줄에
+  ★★비우는 판정도 **장부의 시각**으로 한다 — 옮긴 파일은 mtime 이 **원본 시각 그대로**라
+    그것으로 세면 옛날에 만든 그림이 버리자마자 사라진다.
+  ★옛 묶음 폴더(`<지운 시각>/…`)도 그대로 되돌아가고 비워진다 — 이미 버려 둔 것이 있다.
 
 ★★**지우는 창구는 전부 여기를 지난다** (사용자 결정 2026-08-18, `docs/v2-port-audit.md` D7).
   예전에는 캔버스의 `Del` 만 휴지통을 썼고 파일 관리·갤러리·바이브 캐시는 바로 지웠다.
@@ -21,6 +29,7 @@
 """
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import time
@@ -28,6 +37,8 @@ from datetime import datetime
 from pathlib import Path
 
 TRASH = ".trash"
+#: 휴지통 장부 — 원래 자리와 지운 시각이 여기 적힌다 (머리 주석)
+INDEX = "index.jsonl"
 KEEP_HOURS = 24
 #: 묶음 폴더 이름 (`send_at` 이 찍는다). 옛 자리 이전이 이것으로 새 묶음을 가려낸다
 STAMP = re.compile(r"^\d{8}_\d{6}$")
@@ -62,22 +73,54 @@ def _free(dst: Path) -> Path:
 
 
 # ── 뿌리를 받는 본체 ──────────────────────────────────────────────
-def send_at(base: Path, rels: list[str]) -> dict:
-    """고른 것을 휴지통으로 **옮긴다**. 되돌릴 수 있게 (원래 경로, 휴지통 경로)를 돌려준다.
+def read_index(root: Path) -> list[dict]:
+    """휴지통 장부 — `{file(원래 자리), at(휴지통 안 이름), ts(지운 시각)}` 줄들.
+    ★깨진 줄은 건너뛴다. 장부가 없어도 빈 목록이다 (옛 휴지통은 장부가 없다)."""
+    f = root / INDEX
+    if not f.is_file():
+        return []
+    out = []
+    for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(row, dict) and row.get("at"):
+            out.append(row)
+    return out
 
-    ★파일도 폴더도 받는다. ★휴지통 자신은 못 지운다 — 지우면 되돌릴 자리가 사라진다."""
+
+def _write_index(root: Path, rows: list[dict]) -> None:
+    tmp = root / (INDEX + ".tmp")
+    tmp.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
+    tmp.replace(root / INDEX)
+
+
+def send_at(base: Path, rels: list[str]) -> dict:
+    """고른 것을 휴지통으로 **옮긴다**. 되돌릴 수 있게 (원래 경로, 휴지통 안 이름)을 돌려준다.
+
+    ★파일도 폴더도 받는다. ★휴지통 자신은 못 지운다 — 지우면 되돌릴 자리가 사라진다.
+    ★★평평하게 둔다 (머리 주석) — 원래 자리는 `index.jsonl` 이 기억한다."""
     root = trash_root(base)
-    batch = root / datetime.now().strftime("%Y%m%d_%H%M%S")
-    moved, missing = [], []
+    moved, missing, rows = [], [], []
+    now = datetime.now().isoformat(timespec="seconds")
     for rel in rels:
         src = _inside(base, rel)
         if src is None or not src.exists() or src == root.resolve() or root.resolve() in src.parents:
             missing.append(rel)
             continue
-        dst = _free(batch / rel)
-        dst.parent.mkdir(parents=True, exist_ok=True)
+        root.mkdir(parents=True, exist_ok=True)
+        # ★장부와 이름이 겹치면 장부를 덮어쓴다 — 그 한 이름만 비켜 간다
+        name = src.name if src.name != INDEX else f"_{src.name}"
+        dst = _free(root / name)
         shutil.move(str(src), str(dst))
-        moved.append({"file": rel, "at": dst.relative_to(root).as_posix()})
+        rows.append({"file": rel, "at": dst.name, "ts": now})
+        moved.append({"file": rel, "at": dst.name})
+    if rows:
+        _write_index(root, read_index(root) + rows)
     return {"moved": moved, "missing": missing}
 
 
@@ -88,6 +131,7 @@ def restore_at(base: Path, entries: list[dict]) -> dict:
       새 경로로 따라 보내려면 부르는 쪽이 짝을 알아야 한다."""
     root = trash_root(base)
     back, missing, pairs = [], [], []
+    taken: set[str] = set()
     for e in entries:
         rel = str(e.get("file", ""))
         at = _inside(root, str(e.get("at", "")))
@@ -101,27 +145,61 @@ def restore_at(base: Path, entries: list[dict]) -> dict:
         now = dst.relative_to(base.resolve()).as_posix()
         back.append(now)
         pairs.append({"file": rel, "to": now})
-        # 빈 껍데기는 치운다 (휴지통에 빈 폴더가 쌓이지 않게). 묶음 폴더와 휴지통 자신까지
-        # 올라가되, 비어 있지 않으면 그 자리에서 멈춘다
+        taken.add(str(e.get("at", "")))
+        # ★옛 묶음 폴더에서 꺼낸 것이면 **빈 껍데기를 치운다** (지금 것은 평평해서 껍데기가
+        #   없다). 묶음 폴더와 휴지통 자신까지 올라가되, 비어 있지 않으면 그 자리에서 멈춘다
         d, top = at.parent, root.resolve()
-        while d == top or top in d.parents:
+        while top in d.parents:
             try:
                 d.rmdir()
             except OSError:
                 break
             d = d.parent
+    if taken:
+        # ★되돌린 줄은 장부에서 뺀다 — 남겨 두면 비우기가 없는 파일을 찾아 헤맨다
+        rows = [r for r in read_index(root) if r.get("at") not in taken]
+        if root.is_dir():
+            _write_index(root, rows)
     return {"restored": back, "missing": missing, "pairs": pairs}
 
 
 def sweep_at(base: Path, hours: int = KEEP_HOURS) -> list[str]:
-    """그 뿌리의 휴지통에서 오래된 묶음을 비운다. 지운 묶음 이름을 돌려준다 (로그용)."""
+    """그 뿌리의 휴지통에서 오래된 것을 비운다. 지운 이름을 돌려준다 (로그용).
+
+    ★★판정은 **장부의 시각**이다 (머리 주석). 옮긴 파일의 mtime 은 **원본이 만들어진 때**라,
+      그것으로 세면 예전에 만든 그림이 버리자마자 사라진다.
+    ★장부에 없는 것은 안 건드린다 — 사람이 직접 넣어 둔 것일 수 있다.
+    ★옛 묶음 폴더(`<지운 시각>/…`)는 예전 규칙대로 폴더 시각으로 비운다."""
     root = trash_root(base)
     if not root.is_dir():
         return []
     cutoff = time.time() - hours * 3600
     gone = []
+
+    rows, keep = read_index(root), []
+    for r in rows:
+        try:
+            old = datetime.fromisoformat(str(r.get("ts", ""))).timestamp() <= cutoff
+        except Exception:
+            old = False
+        p = root / str(r.get("at", ""))
+        if not old:
+            keep.append(r)
+            continue
+        try:
+            if p.is_dir():
+                shutil.rmtree(p)
+            elif p.exists():
+                p.unlink()
+            gone.append(p.name)
+        except OSError:
+            keep.append(r)
+    if len(keep) != len(rows):
+        _write_index(root, keep)
+
+    # 옛 묶음 폴더 — 이름이 `20260823_101500` 꼴인 것만 (사람이 만든 폴더는 안 건드린다)
     for batch in root.iterdir():
-        if not batch.is_dir():
+        if not batch.is_dir() or not STAMP.match(batch.name):
             continue
         try:
             if batch.stat().st_mtime > cutoff:

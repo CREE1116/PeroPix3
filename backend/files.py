@@ -298,3 +298,30 @@ def open_dir(p: Path) -> None:
     넘길 때만 쓴다 (변환의 「완료 후 폴더 열기」). 사용자가 준 경로를 그대로 넣지 말 것."""
     if p.is_dir():
         _open(p, False)
+
+
+def pick_dir(start: str = "") -> str | None:
+    """윈도우 **폴더 찾기** 창을 띄우고 고른 경로를 돌려준다. 취소하면 `None`.
+
+    ★★**자식 프로세스로 띄운다.** Tk 는 자기 루프를 돌고 메인 스레드를 요구해서, 서버 안에서
+      열면 창이 뜨는 동안 서버가 통째로 멈춘다 (그 사이 화면의 다른 요청이 전부 밀린다).
+    ★★고른 경로는 **아웃풋 루트 밖일 수 있다** — 그게 이 창을 두는 이유다 (사용자 지시
+      2026-08-23: 드롭다운 말고 윈도우 폴더 찾기로). 그래서 `under()` 로 가두지 않는다.
+      대신 **사용자가 직접 고른 것만** 이 길로 들어온다 — 화면이 적어 보낸 문자열은 못 쓴다.
+    ★맨 앞에 세울 자리(`start`)는 부르는 쪽이 준다 (첫 그림이 있는 폴더)."""
+    code = "\n".join([
+        "import sys, tkinter as tk",
+        "from tkinter import filedialog",
+        # ★창 자체는 숨기고 대화상자만 띄운다. `-topmost` 가 없으면 앱 창 **뒤로** 열려
+        #   사용자에게는 그냥 멈춘 것처럼 보인다
+        "r = tk.Tk(); r.withdraw(); r.attributes('-topmost', True)",
+        "p = filedialog.askdirectory(initialdir=sys.argv[1] or None)",
+        "sys.stdout.write(p or '')",
+    ])
+    try:
+        r = subprocess.run([sys.executable, "-c", code, start or ""],
+                           capture_output=True, text=True, timeout=300)
+    except Exception:
+        return None
+    out = (r.stdout or "").strip()
+    return out or None

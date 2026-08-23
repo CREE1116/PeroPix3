@@ -2,21 +2,24 @@ import { useUi } from "../store/ui";
 import { useI18n } from "../i18n";
 import { ExifTool } from "./tools/ExifTool";
 import { FileManager } from "./tools/FileManager";
+import { ConvertTool } from "./tools/ConvertTool";
 
-/** 보조 도구 — **둘은 서로 다른 일**이다.
+/** 보조 도구 — **셋은 서로 다른 일**이다.
  *
- *      파일 관리   워크스페이스 폴더 트리를 그대로   옮기고 지우고 **이름을 바꾼다**
+ *      파일 관리   워크스페이스 폴더 트리를 그대로   옮기고 지우고
+ *      일괄 변환   형식·이름을 한 번에 바꾼다        원본은 그대로
  *      EXIF 리더   남의 그림이 어떻게 만들어졌나     읽기만
  *
- *  ★★**이름 변환은 탭이 아니다** (사용자 지시 2026-08-23). 파일 관리에서 고른 뒤
- *    「일괄 이름 변환」을 누르면 **그 자리에 패널로 열린다.** 예전에는 탭이 따로 있어
- *    고른 것을 옆 탭으로 보내고, 화면이 통째로 바뀌어 "무엇을 고른 것이었나"가 끊겼다.
+ *  ★★차례는 **자주 여는 것이 앞**이다 (사용자 지시 2026-08-23).
+ *  ★★「일괄 변환」은 **다시 탭이다** (사용자 지시 2026-08-23). 잠깐 파일 관리 안의 패널로
+ *    넣어 봤지만, 목록·트리·변환 설정이 한 화면에 셋이 되어 가로가 모자랐다.
+ *    ★넘기는 길은 그대로다 — 파일 관리에서 고른 것을 **「일괄 이름 변환」으로 보낸다**
+ *      (`useConvertQueue`). 보내면 이 탭으로 옮겨 온다.
  *  ★EXIF 리더는 **밖에서 떨군 그림**을 받는다 — 워크스페이스 안일 필요가 없다.
  */
-/** ★차례는 **파일 관리 → EXIF 리더** (사용자 지시 2026-08-23). 자주 여는 것이 앞이다.
- *  ★「이름 변환」 탭은 없다 — **파일 관리 안**으로 들어갔다 (고른 것을 그 자리에서 바꾼다). */
 const TABS = [
   { id: "files", key: "tools.files" },
+  { id: "convert", key: "tools.rename" },
   { id: "exif", key: "tools.exif" },
 ] as const;
 
@@ -53,7 +56,8 @@ export function Tools() {
         })}
       </div>
 
-      {tab === "files" && <FileManager />}
+      {tab === "files" && <FileManager onConvert={() => setTab("convert")} />}
+      {tab === "convert" && <ConvertTool />}
       {tab === "exif" && <ExifTool />}
     </div>
   );

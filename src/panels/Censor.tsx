@@ -7,6 +7,7 @@ import { fileMgrThumb } from "../lib/imgUrl";
 import { useImageDrop } from "../lib/dropImages";
 import { toast } from "../store/toast";
 import { Icon } from "../components/Icon";
+import { TreeRoot } from "../components/TreeRoot";
 import { onNearBottom } from "../lib/nearBottom";
 import { CensorStage } from "./censor/CensorStage";
 import { CensorSide } from "./censor/CensorSide";
@@ -315,6 +316,11 @@ export function Censor() {
         {c.tab === "before" && (
           <div style={{ width: 210, flexShrink: 0, display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
             <div style={{ ...card, flex: "0 0 38%", overflowY: "auto", padding: "var(--sp-2)" }}>
+              {/* ★★파일 관리와 **같은 머리글**이다 (`components/TreeRoot`, 사용자 지시
+                  2026-08-23). 여기는 아예 없어서 폴더 목록이 어디의 것인지 안 보였다.
+                  ★고르는 자리가 아니다 — 검열은 폴더를 옮겨 다니는 화면이 아니라
+                    **그림을 담는** 화면이라, 뿌리를 눌러 갈 일이 없다. */}
+              <TreeRoot label={t("files.root")} />
               {tree.map((n) => (
                 <Row key={n.path} node={n} depth={0} />
               ))}

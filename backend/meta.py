@@ -184,6 +184,21 @@ def read_raw(image_bytes: bytes) -> dict:
         except Exception:
             pass
 
+        # 6-1. EXIF **어느 칸이든** 훑는다
+        #
+        # ★★사용자 지적 2026-08-23: *"공홈에서 webp 를 골라도 exif 를 남겨주는데 우리 앱은
+        #   그 메타데이터를 못 읽음"*. 앞의 넷은 **UserComment 한 칸**만 본다 — 우리가 쓴
+        #   WebP 는 그 칸에 넣으니 왕복이 되는데(실측), 남이 쓴 것이 `ImageDescription` 같은
+        #   다른 칸에 넣으면 통째로 못 읽는다.
+        # ★칸 이름을 짐작해 하나 더 넣는 대신 **전부 훑고 내용으로 가린다** — 우리 형식으로
+        #   읽히는 것만 받아들이므로, 엉뚱한 글이 메타데이터로 둔갑하지 않는다.
+        try:
+            found = _json_in_exif(img)
+            if found:
+                return found
+        except Exception:
+            pass
+
         # 7. NAI stealth pnginfo — ★앞이 전부 실패했을 때만.
         stealth = _decode_stealth_pnginfo(img)
         if stealth:
@@ -191,6 +206,63 @@ def read_raw(image_bytes: bytes) -> dict:
     except Exception:
         pass
     return meta
+
+
+#: 이 키가 하나라도 있으면 **우리가 아는 형식**이다 (NAI 원본 · PeroPix 확장)
+_META_HINTS = ("prompt", "uc", "peropix", "steps", "sampler", "seed")
+
+
+def _json_in_exif(img: Image.Image) -> dict | None:
+    """EXIF 의 **모든 문자열 칸**에서 우리 형식의 JSON 을 찾는다 (`read_raw` 6-1 의 ★주).
+
+    ★칸을 짐작하지 않는다 — 훑고 **내용으로** 가린다. 우리 형식으로 읽히는 것만 받는다.
+    ★`UserComment` 는 앞에 인코딩 표시(`ASCII` 등) 8바이트가 붙는 규격이라 그것도 벗긴다."""
+    try:
+        exif = img.getexif()
+    except Exception:
+        return None
+    if not exif:
+        return None
+
+    def ifds():
+        yield exif
+        # ★★`get_ifd` 는 그 IFD 가 **없으면 KeyError 를 던진다** (PIL). 하나로 묶어 감싸면
+        #   첫 칸에서 터지면서 나머지도 통째로 못 보게 된다 — 실측으로 밟았다.
+        for tag in (0x8769, 0xA005):
+            try:
+                got = exif.get_ifd(tag)
+            except Exception:
+                continue
+            if got:
+                yield got
+
+    def texts():
+        for ifd in ifds():
+            for v in ifd.values():
+                if isinstance(v, str):
+                    yield v
+                elif isinstance(v, bytes):
+                    for enc in ("utf-8", "utf-16-be", "utf-16-le"):
+                        try:
+                            yield v.decode(enc)
+                        except Exception:
+                            pass
+                        try:
+                            yield v[8:].decode(enc)   # UserComment 규격의 머리 8바이트
+                        except Exception:
+                            pass
+
+    for txt in texts():
+        t = txt.strip().strip("")
+        if not t.startswith("{"):
+            continue
+        try:
+            d = json.loads(t)
+        except Exception:
+            continue
+        if isinstance(d, dict) and any(k in d for k in _META_HINTS):
+            return d
+    return None
 
 
 # ── 2. 정규화 ────────────────────────────────────────────────

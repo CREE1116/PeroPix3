@@ -2055,6 +2055,22 @@ async def tools_probe(body: ToolProbe):
     return tools_mod.probe(WS_ROOT, [i.model_dump() for i in body.items])
 
 
+class PickDir(BaseModel):
+    """폴더 찾기 창을 띄울 때 **맨 앞에 세울 자리** (첫 그림이 있는 폴더)"""
+
+    start: str = ""
+
+
+@app.post("/api/files/pick-dir")
+def files_pick_dir(body: PickDir):
+    """윈도우 **폴더 찾기** 창 (`files.pick_dir` 의 ★주).
+
+    ★`def` 다 (async 아님) — 창이 닫힐 때까지 기다리는 호출이라 스레드풀에서 돌아야
+      그동안 서버가 다른 요청을 받는다.
+    ★취소하면 `dir: null` — 그때는 부르는 쪽이 아무것도 안 바꾼다."""
+    return {"dir": files.pick_dir(body.start)}
+
+
 @app.post("/api/tools/read")
 async def tools_read(body: ToolItem):
     """앱 창에 떨군 파일 하나를 통째로 (`tools.read_dropped` 주석).

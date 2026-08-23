@@ -200,6 +200,7 @@ class Store:
         head = f"{prefix}_" if prefix else ""
         used = 0
         spots = [d]
+        names: list[str] = []
         if ws:
             base = self.dir_of(ws)
             try:
@@ -208,15 +209,29 @@ class Store:
                 rel = None
             if rel is not None:
                 troot = trash.trash_root(base)
+                # ★옛 묶음 폴더(`<지운 시각>/<원래 경로>`)가 아직 남아 있을 수 있다
                 if troot.is_dir():
                     spots += [b / rel for b in troot.iterdir() if b.is_dir()]
+                # ★★휴지통이 **평평해진 뒤**로는 원래 자리를 장부가 안다 (`trash` 머리 주석,
+                #   2026-08-23). 파일 이름만 보면 다른 폴더에서 버린 같은 이름까지 세므로
+                #   **적힌 원래 경로의 폴더가 여기와 같을 때만** 센다.
+                here = rel.as_posix()
+                for row in trash.read_index(troot):
+                    f = str(row.get("file") or "")
+                    at = f.rsplit("/", 1)
+                    if len(at) == 2 and at[0] == here:
+                        names.append(at[1])
         for spot in spots:
             if not spot.is_dir():
                 continue
-            for f in spot.glob(f"{head}*"):
-                part = f.stem[len(head):].split("_")[0]
-                if part.isdigit():
-                    used = max(used, int(part))
+            names += [f.name for f in spot.glob(f"{head}*")]
+        for name in names:
+            stem = name.rsplit(".", 1)[0]
+            if not stem.startswith(head):
+                continue
+            part = stem[len(head):].split("_")[0]
+            if part.isdigit():
+                used = max(used, int(part))
         return d / f"{head}{used + 1:03d}.{fmt}"
 
     def rel(self, ws: str, path: Path) -> str:
