@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { t } from "../i18n";
 import { api, backendUrl } from "../lib/backend";
+import { CensorRenderer, type CoverSettings, type RenderBox } from "../lib/censorRender.ts";
 import { fileMgrImg } from "../lib/imgUrl";
 import type { Dropped } from "../lib/dropImages";
 
@@ -13,8 +14,9 @@ import type { Dropped } from "../lib/dropImages";
  *      검열 후   다시 고친다          저장된 결과에 박스를 더해 다시 저장한다
  *
  *  ★찾기와 가리기는 **따로**다. 자동으로 바로 가려 버리면 잘못 찾은 것을 되돌릴 수 없다.
- *  ★가리는 일은 **서버 하나가** 한다 (`/api/censor/preview` · `/api/censor/apply`).
- *    v2 는 스팀만 화면 canvas 로 그려서, 확장·부드럽게를 준 미리보기와 저장본이 갈렸다.
+ *  ★★가리는 일은 **화면이** 한다 (`lib/censorRender.ts`). 렌더러는 한 벌뿐이고,
+ *    저장도 그 렌더러가 원본 크기로 구운 것을 올린다 (`/api/censor/apply`).
+ *    서버가 그리던 때에는 박스를 1px 옮길 때마다 왕복이 걸려 초당 3~4장이 천장이었다.
  *  ★모델은 **앱에 들어 있다**. 받아 오는 절차가 없다 (backend/censor.py 머리 주석).
  */
 export type Box = {
@@ -30,6 +32,9 @@ export type Box = {
   off?: boolean;
   /** 사람이 그린 것 */
   manual?: boolean;
+  /** ★구름 무늬의 씨앗. **박스마다 한 번 붙이고 안 바꾼다** — 옮겨도 같은 구름이 따라오게
+   *  (사용자 결정 2026-08-23). 옛것은 좌표로 씨앗을 만들어 1px 만 밀어도 모양이 통째로 바뀌었다 */
+  seed?: number;
 };
 
 export type CensorModel = { id: string; file: string; classes: string[]; bytes: number; imgsz: number };
@@ -71,7 +76,8 @@ type Saved = {
   blur: number;
   steamBright: number;
   steamAlpha: number;
-  steamOpacity: number;
+  /** 박스를 끄는 동안 덮개가 옅어지는 정도 — ★모든 방식 공통 (CensorSide 의 ★★주) */
+  peek: number;
   dest: string;
 };
 
@@ -91,14 +97,20 @@ const DEFAULTS: Saved = {
   blur: 20,
   steamBright: 100,
   steamAlpha: 100,
-  steamOpacity: 30,
+  peek: 30,
   dest: "",
 };
 
 function load(): Saved {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
+    if (raw) {
+      const got = JSON.parse(raw);
+      // ★옛 이름에서 옮겨 온다 — 스팀 전용이던 「들춰보기」가 공통이 되면서 이름이 바뀌었다
+      if (got.peek === undefined && typeof got.steamOpacity === "number") got.peek = got.steamOpacity;
+      delete got.steamOpacity;
+      return { ...DEFAULTS, ...got };
+    }
   } catch {}
   return DEFAULTS;
 }
@@ -120,7 +132,13 @@ function cacheGet(k: string) {
 function cacheSet(k: string, v: string) {
   srcCache.delete(k);
   srcCache.set(k, v);
-  while (srcCache.size > LRU_MAX) srcCache.delete(srcCache.keys().next().value!);
+  while (srcCache.size > LRU_MAX) {
+    const oldest = srcCache.keys().next().value!;
+    const url = srcCache.get(oldest);
+    srcCache.delete(oldest);
+    // ★blob 주소는 놓아 주지 않으면 메모리에 계속 남는다
+    if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+  }
 }
 
 const post = <T,>(path: string, body: unknown) =>
@@ -146,8 +164,10 @@ type S = Saved & {
   sizes: Record<string, { w: number; h: number }>;
   /** 지금 무대에 그릴 원본 주소 (떨군 그림은 서버에서 받아 온 data URL) */
   src: string | null;
-  /** 가린 모습 (검열 중·후 탭에서만) */
-  preview: string | null;
+  /** 지금 그림의 렌더러. ★무대가 이것으로 **직접 그린다** — 서버를 안 부른다 */
+  renderer: CensorRenderer | null;
+  /** 그릴 것이 바뀌었다는 표시. 무대가 이 숫자를 보고 다시 그린다 */
+  rev: number;
   tool: Tool;
   sel: number;
   /** 손잡이를 잡고 있는 동안. 가린 모습을 옅게 해 아래를 보여 준다 */
@@ -192,17 +212,14 @@ type S = Saved & {
   setBoxMethod: (i: number, m: string) => void;
   /** 검열 방식을 바꾼다 — ★**검열 중·후에는 지금 그림의 박스 전부**에 건다 */
   setMethod: (m: string) => void;
-  drawPreview: () => void;
+  /** 다시 그리라고 알린다. `heavy` 면 재료 캐시까지 버린다 (설정이 바뀌었을 때) */
+  bump: (heavy?: "layers" | "all") => void;
 };
 
-/** 미리보기는 마지막 요청만 그린다. 슬라이더를 끄는 동안 응답이 뒤엉킨다 */
-let drawSeq = 0;
-/** 미리보기가 **도는 중인가** — 한 번에 하나만 날린다 (`drawPreview` 의 ★주) */
-let drawing = false;
-/** 도는 동안 또 만졌나 — 돌아오면 마지막 상태로 한 번 더 그린다 */
-let drawDirty = false;
-/** 만지는 동안 그리는 크기 (긴 변). ★덮개는 화면 폭으로 늘려 깔리므로 눈에는 같다 */
-const DRAFT_SIDE = 1024;
+/** 박스마다 붙는 씨앗 번호. ★줄지 않는다 — 지운 자리를 물려주면 구름이 딸려 온다 */
+let boxSeq = 1;
+export const nextSeed = () => boxSeq++;
+
 let scanTimer: ReturnType<typeof setTimeout> | null = null;
 let scanSeq = 0;
 
@@ -217,7 +234,8 @@ export const useCensor = create<S>((set, get) => ({
   boxes: {},
   sizes: {},
   src: null,
-  preview: null,
+  renderer: null,
+  rev: 0,
   tool: "select",
   sel: -1,
   editing: false,
@@ -243,7 +261,7 @@ export const useCensor = create<S>((set, get) => ({
     const im = get().cur();
     if (!im) return;
     set({ boxes: { ...get().boxes, [im.id]: b } });
-    get().drawPreview();
+    get().bump();
   },
 
   async loadModels() {
@@ -273,7 +291,7 @@ export const useCensor = create<S>((set, get) => ({
 
   setTab(t) {
     if (t === get().tab) return;
-    set({ tab: t, sel: -1, tool: "select", preview: null, src: null, error: null });
+    set({ tab: t, sel: -1, tool: "select", renderer: null, src: null, error: null });
     const s = get();
     if (t === "after") s.select(s.afterIdx >= 0 ? s.afterIdx : 0);
     else s.select(s.idx >= 0 ? s.idx : 0);
@@ -283,7 +301,13 @@ export const useCensor = create<S>((set, get) => ({
     set(patch as S);
     save(get());
     if (redo === "scan" && get().tab === "before") void get().scan();
-    if (redo === "draw") get().drawPreview();
+    if (redo === "draw") {
+      /* ★버릴 캐시를 **바뀐 값에 맞춰** 고른다. 「부드럽게」만 구름 무늬까지 다시 만들고,
+         나머지는 재료만 다시 만든다. 이 구분이 슬라이더를 끄는 손맛을 정한다. */
+      const keys = Object.keys(patch);
+      const heavy = keys.includes("feather") ? "all" : "layers";
+      get().bump(heavy);
+    }
   },
 
   toggleTarget(label) {
@@ -349,33 +373,32 @@ export const useCensor = create<S>((set, get) => ({
     // ★인덱스를 한 번 -1 로 떨어뜨린 뒤 다시 고른다. 같은 번호에 다른 그림이 오면
     //   select 가 "이미 그 자리"라고 보고 아무것도 안 한다
     if (idx >= 0) get().select(idx);
-    else set({ src: null, preview: null, idx: -1 });
+    else set({ src: null, renderer: null, idx: -1 });
   },
 
   clearImages() {
     scanSeq++;
-    set({ images: [], idx: -1, src: null, preview: null, boxes: {}, scanning: false, staged: false, error: null });
+    set({ images: [], idx: -1, src: null, renderer: null, boxes: {}, scanning: false, staged: false, error: null });
   },
 
   select(i) {
     const s = get();
     const list = s.tab === "after" ? s.after : s.images;
-    if (i < 0 || i >= list.length) return set({ src: null, preview: null, sel: -1 });
+    if (i < 0 || i >= list.length) return set({ src: null, renderer: null, sel: -1 });
     const im = list[i];
     set(s.tab === "after" ? { afterIdx: i } : { idx: i });
-    set({ sel: -1, preview: null, error: null });
-    void resolveSrc(im).then(({ src, size }) => {
+    set({ sel: -1, renderer: null, error: null });
+    // ★그림을 **비트맵으로** 들여야 캔버스가 그린다. 주소만으로는 못 그린다
+    void loadRenderer(im).then(({ src, renderer, size }) => {
       // 넘기는 사이에 다른 장으로 갔으면 버린다
       if (get().cur()?.id !== im.id) return;
-      set({ src });
+      set({ src, renderer, rev: get().rev + 1 });
       if (size && !get().sizes[im.id]) set({ sizes: { ...get().sizes, [im.id]: size } });
+    }).catch((e) => {
+      if (get().cur()?.id === im.id) set({ error: String(e) });
     });
     prefetch(list, i);
-    if (s.tab === "before") {
-      if (!get().boxes[im.id]) void get().scan();
-    } else {
-      get().drawPreview();
-    }
+    if (s.tab === "before" && !get().boxes[im.id]) void get().scan();
   },
 
   step(d) {
@@ -409,7 +432,8 @@ export const useCensor = create<S>((set, get) => ({
           });
           if (mine !== scanSeq) return;
           set({
-            boxes: { ...get().boxes, [im.id]: r.detections },
+            // ★찾은 자리마다 씨앗을 하나씩 붙인다 (구름이 옮겨도 안 바뀌게)
+            boxes: { ...get().boxes, [im.id]: r.detections.map((d) => ({ ...d, seed: nextSeed() })) },
             sizes: { ...get().sizes, [im.id]: { w: r.width, h: r.height } },
             error: null,
           });
@@ -445,7 +469,7 @@ export const useCensor = create<S>((set, get) => ({
             default_conf: s.conf,
             return_all: true,
           });
-          boxes[im.id] = r.detections;
+          boxes[im.id] = r.detections.map((d) => ({ ...d, seed: nextSeed() }));
           sizes[im.id] = { w: r.width, h: r.height };
         }
         // 검열 중 탭에서 고칠 것이므로 지금 방식을 박스마다 박아 둔다 (박스별로 바꿀 수 있게)
@@ -471,11 +495,15 @@ export const useCensor = create<S>((set, get) => ({
     for (let i = 0; i < s.images.length; i++) {
       const im = s.images[i];
       try {
+        /* ★★**화면이 굽는다.** 지금 보고 있지 않은 장도 여기서 원본 크기로 한 장 그린다
+           (`renderOne`). 서버는 받은 바이트를 적기만 한다 — 렌더러가 한 벌이라
+           보고 있던 그림과 저장본이 갈릴 수 없다. */
+        const blob = await renderOne(im, liveBoxes(get().boxes[im.id] ?? []), coverOf(get()));
         const r = await post<{ file: string; name: string }>("/api/censor/apply", {
           ...sourceOf(im),
           name: im.name,
-          boxes: liveBoxes(get().boxes[im.id] ?? []),
-          ...coverArgs(get()),
+          dest: get().dest || undefined,
+          image: await blobToBase64(blob),
         });
         made.push({ id: `a${seq++}`, name: r.name, rel: r.file });
       } catch (e) {
@@ -496,11 +524,14 @@ export const useCensor = create<S>((set, get) => ({
     if (!boxes.length) return set({ error: t("censor.needBox") });
     set({ busy: true, error: null });
     try {
+      // ★지금 보고 있는 장이라 렌더러가 이미 있다. 그것으로 원본 크기 한 장을 굽는다
+      const r0 = s.renderer;
+      const blob = r0 ? await r0.renderFull(boxes, coverOf(s)) : await renderOne(im, boxes, coverOf(s));
       const r = await post<{ file: string; name: string }>("/api/censor/apply", {
         ...sourceOf(im),
         name: im.name,
-        boxes,
-        ...coverArgs(s),
+        dest: s.dest || undefined,
+        image: await blobToBase64(blob),
       });
       const made: CensorImage = { id: `a${seq++}`, name: r.name, rel: r.file };
       set({ after: [...get().after, made], boxes: { ...get().boxes, [im.id]: [] } });
@@ -513,7 +544,7 @@ export const useCensor = create<S>((set, get) => ({
   },
 
   cancelProcessing() {
-    set({ tab: "before", sel: -1, tool: "select", preview: null, staged: false, error: null });
+    set({ tab: "before", sel: -1, tool: "select", staged: false, error: null });
     get().select(get().idx >= 0 ? get().idx : 0);
   },
 
@@ -524,7 +555,7 @@ export const useCensor = create<S>((set, get) => ({
     const cur = s.boxes[im.id] ?? [];
     // ★`label` 은 **저장되는 값**이라 번역문을 넣지 않는다. 화면 글자는 `manual` 을 보고 고른다
     //   (`CensorStage`) — 여기 한국어를 박아 두면 세 언어 어디서나 그 글자가 뜬다.
-    s.putBoxes([...cur, { label: "manual", confidence: 1, box, manual: true, method: s.method }]);
+    s.putBoxes([...cur, { label: "manual", confidence: 1, box, manual: true, method: s.method, seed: nextSeed() }]);
     set({ sel: cur.length });
   },
 
@@ -571,49 +602,20 @@ export const useCensor = create<S>((set, get) => ({
     s.tune({ method: m }, "draw");
   },
 
-  /** 가린 모습을 서버에 그려 달라고 한다.
+  /** 다시 그리라고 알린다. 무대가 `rev` 를 보고 캔버스를 새로 그린다.
    *
-   *  ★★**기다리지 않고 바로 보낸다** (사용자 지적 2026-08-23: *"박스를 추가할 때 1초 정도
-   *    딜레이 후에 내용이 채워짐 · 박스를 옮길때도 내부 내용물이 늦게 따라와야하는데 늦음"*).
-   *    예전에는 260ms 를 세고 나서야 보냈다. 사람이 만질 때마다 그 시간이 통째로 얹혀서
-   *    「채워지는 데 1초」로 느껴졌다.
-   *  ★★대신 **한 번에 하나만** 날아간다 (`drawing`). 도는 동안 또 부르면 「다시 그려야 함」만
-   *    표시해 두고, 돌아오는 즉시 한 번 더 보낸다. 고정된 기다림 없이도 서버가 밀리지 않는다 —
-   *    빠르면 빠른 만큼 따라오고, 느리면 마지막 상태 한 번으로 수렴한다.
-   *  ★만지는 동안에는 **줄여서** 그린다. 덮개는 어차피 화면 폭으로 늘려 깔리므로 (`CensorStage`)
-   *    긴 변 1024 면 눈에 같고, 서버가 큰 그림을 통째로 칠하는 시간이 사라진다.
-   *  ★덮개가 **옅어진 상태를 새 그림이 올 때까지** 유지한다 (`editing`). 손을 떼는 순간
-   *    진하게 되돌리면, 아직 옛 자리를 가린 그림이 한 박자 동안 진하게 서 있어
-   *    "안 따라왔다"로 보인다. */
-  drawPreview() {
-    const s = get();
-    if (s.tab === "before") return set({ preview: null, editing: false });
-    const im = s.cur();
-    if (!im) return set({ preview: null, editing: false });
-    const boxes = liveBoxes(s.boxes[im.id] ?? []);
-    if (!boxes.length) return set({ preview: null, editing: false });
-    if (drawing) return void (drawDirty = true);   // 도는 중 — 돌아오면 한 번 더
-    drawing = true;
-    drawDirty = false;
-    const mine = ++drawSeq;
-    void (async () => {
-      try {
-        const r = await post<{ image: string }>("/api/censor/preview", {
-          ...sourceOf(im),
-          boxes,
-          ...coverArgs(get()),
-          // ★만지는 동안만 줄인다 — 손을 떼면 마지막 한 장이 원래 크기로 다시 온다
-          max_side: get().editing ? DRAFT_SIDE : undefined,
-        });
-        if (mine === drawSeq && get().cur()?.id === im.id) set({ preview: r.image, editing: false });
-      } catch (e) {
-        if (mine === drawSeq) set({ error: String(e), editing: false });
-      } finally {
-        drawing = false;
-        // ★도는 사이에 또 만졌으면 **마지막 상태**로 한 번 더 (중간 상태는 건너뛴다)
-        if (drawDirty) get().drawPreview();
-      }
-    })();
+   *  ★★여기서 **아무것도 계산하지 않는다.** 박스를 끄는 동안 일어나는 일은 숫자 하나가
+   *    오르는 것뿐이고, 실제 그리기는 무대가 `CensorRenderer` 로 그 자리에서 한다.
+   *  ★`heavy` 는 캐시를 어디까지 버릴지다:
+   *      (없음)   모양만 바뀌었다 — 재료를 그대로 쓴다 (가장 잦고, 가장 싸다)
+   *      layers   방식·모자이크·흐리기·색·넓히기가 바뀌었다 — 재료를 다시 만든다
+   *      all      「부드럽게」가 바뀌었다 — 구름 무늬까지 다시 만든다
+   */
+  bump(heavy) {
+    const r = get().renderer;
+    if (r && heavy === "all") r.invalidateAll();
+    else if (r && heavy === "layers") r.invalidate();
+    set({ rev: get().rev + 1 });
   },
 }));
 
@@ -631,60 +633,95 @@ function fillConf(cur: Record<string, number>, classes: string[], base: number) 
 
 function save(s: Saved) {
   const { model, targets, labelConf, conf, floor, method, color, expand, feather, mosaic,
-    mosaicOpacity, blur, steamBright, steamAlpha, steamOpacity, dest } = s;
+    mosaicOpacity, blur, steamBright, steamAlpha, peek, dest } = s;
   try {
     localStorage.setItem(KEY, JSON.stringify({ model, targets, labelConf, conf, floor, method,
-      color, expand, feather, mosaic, mosaicOpacity, blur, steamBright, steamAlpha, steamOpacity, dest }));
+      color, expand, feather, mosaic, mosaicOpacity, blur, steamBright, steamAlpha, peek, dest }));
   } catch {}
 }
 
-/** 실제로 가릴 박스만. 끈 것은 뺀다 */
-export const liveBoxes = (b: Box[]) =>
+/** 실제로 가릴 박스만. 끈 것은 뺀다.
+ *  ★씨앗이 없는 것(옛 자리에서 온 것)은 **자리로 만들지 않는다** — 그러면 옮길 때 또 바뀐다.
+ *    번호를 그 자리에서 새로 발급해 붙인다. */
+export const liveBoxes = (b: Box[]): RenderBox[] =>
   b
     .filter((x) => !x.off)
     .map((x) => ({
       box: x.box.map((v) => Math.round(v)) as [number, number, number, number],
       method: x.method,
       rotation: x.rotation ?? 0,
+      seed: x.seed ?? (x.seed = nextSeed()),
     }));
 
-/** 가리는 방법 한 벌. 미리보기와 저장이 **같은 값**을 보낸다 */
-function coverArgs(s: Saved) {
+/** 가리는 방법 한 벌. **화면과 저장이 같은 값을 지난다** (렌더러가 한 벌이므로) */
+export function coverOf(s: Saved): CoverSettings {
   return {
     method: s.method,
     color: s.color,
     expand: s.expand,
     feather: s.feather,
-    mosaic_strength: s.mosaic,
-    mosaic_opacity: s.mosaicOpacity,
-    blur_strength: s.blur,
-    steam_brightness: s.steamBright,
-    steam_alpha: s.steamAlpha,
-    dest: s.dest || undefined,
+    mosaic: s.mosaic,
+    mosaicOpacity: s.mosaicOpacity,
+    blur: s.blur,
+    steamBright: s.steamBright,
+    steamAlpha: s.steamAlpha,
   };
 }
 
 /** 무대에 그릴 주소. 아웃풋 안의 그림은 그대로 가리키고, 밖의 것은 서버에서 한 번 받는다.
  *
- *  ★밖의 그림은 **줄여서** 온다. 그래서 크기를 함께 받아 둔다. 화면이 `naturalWidth` 를
- *    믿으면 줄인 크기를 원본 크기로 알고, 박스 좌표가 통째로 어긋난다. */
+ *  ★떨군 그림은 **원본 그대로** 온다 (`/api/censor/image`). 줄여 받으면 저장할 때 그 크기로
+ *    구워져 원본보다 작은 그림이 나온다. */
 async function resolveSrc(im: CensorImage): Promise<{ src: string; size?: { w: number; h: number } }> {
   const hit = cacheGet(im.id);
   if (hit) return { src: hit, size: im.w && im.h ? { w: im.w, h: im.h } : undefined };
   if (im.rel) {
-    const src = fileMgrImg(await backendUrl(), im.rel);
+    /* ★★**바이트를 받아 `blob:` 주소로 쓴다.** 백엔드는 화면과 다른 오리진이라, 그 주소를
+       그대로 캔버스에 그리면 캔버스가 **오염**되어 `toBlob` 이 막힌다 — 즉 저장이 통째로
+       안 된다 (실측 2026-08-23). `crossOrigin="anonymous"` 로도 되지만, 같은 주소를
+       한쪽은 켜고 한쪽은 끄면 **브라우저 캐시가 어긋나 그림이 아예 안 뜬다** (이것도 실측).
+       blob 주소는 언제나 같은 오리진이라 그 함정이 처음부터 없다. */
+    const res = await fetch(fileMgrImg(await backendUrl(), im.rel));
+    if (!res.ok) throw new Error(`그림을 못 읽었습니다 (${res.status})`);
+    const src = URL.createObjectURL(await res.blob());
     cacheSet(im.id, src);
     return { src };
   }
-  // ★떨군 그림에는 **주소가 없다.** 가리기 0개짜리 미리보기가 곧 그 그림이다
-  const r = await post<{ image: string; width: number; height: number }>("/api/censor/preview", {
-    ...sourceOf(im),
-    boxes: [],
-  });
+  const r = await post<{ image: string; width: number; height: number }>("/api/censor/image", sourceOf(im));
   cacheSet(im.id, r.image);
   im.w = r.width;
   im.h = r.height;
   return { src: r.image, size: { w: r.width, h: r.height } };
+}
+
+/** 그 그림의 **렌더러**를 만든다 (비트맵을 들여야 캔버스가 그린다).
+ *
+ *  ★`decode()` 를 기다린다 — 안 기다리고 그리면 첫 프레임이 빈 캔버스로 나간다. */
+async function loadRenderer(im: CensorImage) {
+  const { src, size } = await resolveSrc(im);
+  const el = new Image();
+  el.src = src;
+  await el.decode();
+  const w = size?.w ?? el.naturalWidth;
+  const h = size?.h ?? el.naturalHeight;
+  return { src, size: { w, h }, renderer: new CensorRenderer(el, w, h) };
+}
+
+/** 저장할 때 쓰는 렌더러 — 일괄 저장은 **화면에 없는 장**도 구워야 한다.
+ *  ★들고 있지 않는다. 한 장 굽고 버린다 (수십 장의 비트맵을 동시에 쥐면 메모리가 는다). */
+export async function renderOne(im: CensorImage, boxes: RenderBox[], s: CoverSettings) {
+  const { renderer } = await loadRenderer(im);
+  return await renderer.renderFull(boxes, s);
+}
+
+/** 캔버스가 구운 것을 서버가 받을 수 있는 base64 로 */
+export async function blobToBase64(b: Blob): Promise<string> {
+  const buf = new Uint8Array(await b.arrayBuffer());
+  let bin = "";
+  for (let i = 0; i < buf.length; i += 0x8000) {
+    bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+  }
+  return btoa(bin);
 }
 
 /** 좌우 세 장을 미리 받아 둔다 (v2 `prefetchCensorImages`) */

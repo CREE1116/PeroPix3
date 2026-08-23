@@ -195,7 +195,7 @@ export function CensorSide() {
           )}
           {c.method === "steam" && (
             <>
-              {/* ★v2 의 슬라이더 셋 그대로 (`steamBrightness`·`steamAlpha`·`steamOpacity`) */}
+              {/* ★v2 의 슬라이더 둘 (`steamBrightness`·`steamAlpha`) — 스팀에만 뜻이 있다 */}
               <Line label={t("censor.steamBright")}>
                 <input type="range" data-censor-steam-bright min={0} max={100} value={c.steamBright}
                   onChange={(e) => c.tune({ steamBright: Number(e.target.value) }, "draw")} style={{ flex: 1 }} />
@@ -206,21 +206,6 @@ export function CensorSide() {
                   onChange={(e) => c.tune({ steamAlpha: Number(e.target.value) }, "draw")} style={{ flex: 1 }} />
                 <span style={num}>{c.steamAlpha}</span>
               </Line>
-              <Line label={t("censor.steamPeek")} help={t("censor.steamPeekHint")}>
-                <input type="range" data-censor-steam-peek min={0} max={100} value={c.steamOpacity}
-                  onChange={(e) => c.tune({ steamOpacity: Number(e.target.value) })} style={{ flex: 1 }} />
-                <span style={num}>{c.steamOpacity}</span>
-              </Line>
-              {/* ★★스팀에서 이 값은 **구름의 거칠기**다 (사용자 지적 2026-08-23: 러프 수치가
-                  없어졌다). 값은 다른 방식의 「부드럽게」와 **같은 하나**인데(`feather`),
-                  스팀에서는 하는 일이 다르다 — 무늬 크기(1~3배)와 윤곽 요철(100~20%)을
-                  함께 정한다 (`backend/censor._steam_texture`, v2 `generateSteamTexture`).
-                  ★값을 따로 두지 않는다 — 이름만 자리에 맞게 부른다 (하나의 정보에 하나의 창구). */}
-              <Line label={t("censor.steamRough")} help={t("censor.steamRoughHint")}>
-                <input type="range" data-censor-steam-rough min={0} max={50} value={c.feather}
-                  onChange={(e) => c.tune({ feather: Number(e.target.value) }, "draw")} style={{ flex: 1 }} />
-                <span style={num}>{c.feather}</span>
-              </Line>
             </>
           )}
           <Line label={t("censor.expand")}>
@@ -228,14 +213,25 @@ export function CensorSide() {
               onChange={(e) => c.tune({ expand: Number(e.target.value) }, "draw")} style={{ flex: 1 }} />
             <span style={num}>{c.expand}</span>
           </Line>
-          {/* ★스팀에서는 위에 「거칠기」로 이미 서 있다 — 같은 값을 두 줄로 두지 않는다 */}
-          {c.method !== "steam" && (
-            <Line label={t("censor.feather")}>
-              <input type="range" min={0} max={50} value={c.feather}
-                onChange={(e) => c.tune({ feather: Number(e.target.value) }, "draw")} style={{ flex: 1 }} />
-              <span style={num}>{c.feather}</span>
-            </Line>
-          )}
+          {/* ★★**모든 방식이 같은 한 줄을 쓴다** (사용자 지적 2026-08-23: *"거칠기라는 이름이
+              이상함. 올릴수록 부드러워짐"* · *"다른 옵션의 「부드럽기」라는 건 없는데?"*).
+              스팀에만 「거칠기」라는 딴 이름으로 서 있었는데, 값은 처음부터 **같은 하나**였고
+              (`feather`) 올릴수록 부드러워지므로 이름이 방향까지 거꾸로였다. 설명도 걷었다 —
+              이름이 방향을 말하면 설명이 필요 없다. */}
+          <Line label={t("censor.feather")}>
+            <input type="range" data-censor-feather min={0} max={50} value={c.feather}
+              onChange={(e) => c.tune({ feather: Number(e.target.value) }, "draw")} style={{ flex: 1 }} />
+            <span style={num}>{c.feather}</span>
+          </Line>
+          {/* ★★들춰보기도 **모든 방식 공통**이다 (사용자 지시 2026-08-23: *"박스 이동할때 뒤가
+              보이는건 모든 검열방식에 공통 스펙"*). 덮개를 옅게 하는 동작은 처음부터 방식을
+              가리지 않았는데(`CensorStage` 의 `opacity`), 슬라이더만 스팀 안에 갇혀 있어
+              다른 방식에서는 그 값을 만질 길이 없었다. */}
+          <Line label={t("censor.peek")} help={t("censor.peekHint")}>
+            <input type="range" data-censor-peek min={0} max={100} value={c.peek}
+              onChange={(e) => c.tune({ peek: Number(e.target.value) })} style={{ flex: 1 }} />
+            <span style={num}>{c.peek}</span>
+          </Line>
         </Sec>
 
         {editable && (

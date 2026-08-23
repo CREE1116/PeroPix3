@@ -1,0 +1,144 @@
+/** 스팀(구름) 텍스처 — **순수 계산**이다. 캔버스도 DOM 도 안 쓴다.
+ *
+ *  ★★**박스 안은 반드시 전부 덮인다** (사용자 지적 2026-08-23: *"실제 박스 범위랑 가려지는
+ *    범위가 오차가 있어서 쓰기가 좀 어렵다"*). 옛 구름은 **타원**이라
+ *    `√((x/(w/2))² + (y/(h/2))²)` 가 1.18 인 네 모서리를 **원리상 못 덮었고**, 변 가운데도
+ *    61% 만 덮었다. 여기서는 바탕 모양을 **둥근 사각형의 부호 있는 거리**로 잡고, 노이즈가
+ *    그 윤곽을 **바깥으로만** 밀게 했다. 그래서 박스가 곧 「반드시 가려지는 범위」이고,
+ *    구름은 그 밖으로만 번진다.
+ *
+ *  ★★계산을 **두 겹으로 나눈다**. 무늬(노이즈)는 비싸고 잘 안 바뀌지만, 밝기·진하기는
+ *    슬라이더라 매 프레임 바뀐다. 그래서 `plate()` 가 무늬만 만들어 캐시해 두고,
+ *    `plateRGBA()` 가 거기에 밝기·진하기를 곱한다 (픽셀당 곱셈 하나라 사실상 공짜다).
+ *    ★무늬는 **박스 짧은 변을 1 로 놓은 좌표**에서 만든다 — 박스 크기가 바뀌어도 다시 만들
+ *      필요가 없고, 늘려 쓰기만 하면 된다 (파이썬도 512 판을 만들어 늘려 썼다).
+ */
+import { fbm, makeNoise, sdRoundRect, smoothstep } from "./noise.ts";
+
+/** 무늬 판의 긴 변 (픽셀). ★비용이 여기 걸린다 — 픽셀마다 fBm 을 세 번 돈다.
+ *  320 이면 판 하나가 10만 픽셀이라 한 장에 수십 ms 이고, 캐시되므로 끄는 동안에는 0 이다. */
+const PLATE_MAX = 320;
+
+export type Plate = {
+  /** 덮는 정도 0..255. ★박스 안은 언제나 255 다 */
+  cover: Uint8Array;
+  /** 구름의 두께(밝기) 0..255. 밝기 슬라이더가 이 값을 편다 */
+  lum: Uint8Array;
+  /** 판의 픽셀 크기 */
+  pw: number;
+  ph: number;
+  /** 박스 짧은 변을 1 로 놓았을 때 판이 박스 밖으로 나가는 폭. 그릴 자리를 여기서 셈한다 */
+  margin: number;
+};
+
+/** 이 판이 무엇으로 만들어졌나 — 캐시 열쇠 */
+export type PlateKey = { seed: number; feather: number; aspect: number };
+
+/** 가로세로비를 **5% 단위로 뭉갠다.** 늘리는 동안 판을 다시 만들지 않기 위한 것이고,
+ *  5% 는 눈에 안 띈다 (판을 그 비율로 늘려 쓴다). */
+export const bucketAspect = (w: number, h: number) =>
+  Math.max(0.05, Math.round((w / Math.max(h, 1e-6)) * 20) / 20);
+
+/** 짧은 변 대비 구름이 밖으로 번지는 폭. 「부드럽게」가 이것을 정한다 */
+export const marginOf = (feather: number) => 0.22 + Math.min(50, Math.max(0, feather)) / 50 * 0.38;
+
+/** 무늬 판 하나를 만든다. ★비싸다 — 부르는 쪽이 캐시한다 (`censorRender`). */
+export function plate(key: PlateKey): Plate {
+  const { seed, feather } = key;
+  const aspect = Math.max(0.05, key.aspect);
+  // 짧은 변을 1 로 놓는다. 긴 쪽만 비율만큼 늘어난다
+  const hw = aspect >= 1 ? aspect / 2 : 0.5;
+  const hh = aspect >= 1 ? 0.5 : 1 / aspect / 2;
+  const margin = marginOf(feather);
+  const halfPW = hw + margin;
+  const halfPH = hh + margin;
+
+  const perUnit = PLATE_MAX / (2 * Math.max(halfPW, halfPH));
+  const pw = Math.max(8, Math.round(2 * halfPW * perUnit));
+  const ph = Math.max(8, Math.round(2 * halfPH * perUnit));
+
+  const nEdge = makeNoise(seed * 2 + 1);
+  const nLum = makeNoise(seed * 2 + 977);
+
+  // ★「부드럽게」를 올리면 덩어리가 커지고 잔가지가 잦아든다. 그래서 이름대로 부드러워진다
+  const soft = Math.min(50, Math.max(0, feather)) / 50;
+  const lobeScale = 0.32 + soft * 0.4;
+  const wispScale = lobeScale * 0.32;
+  const wispMix = 0.45 - soft * 0.22;
+  const lumScale = 0.7;
+  const warpScale = 0.9;
+  const warpAmt = 0.18;
+
+  /* ★★바탕 모양을 **박스보다 한 겹 키우고 모서리를 크게 둥글린다.** 박스에 딱 맞춰
+     두면 구름이 「털 난 네모」로 보인다. 키운 만큼(`grow`) 여유가 생기므로 반지름을
+     그보다 크게 잡아도 **박스 네 모서리는 여전히 안쪽**이다 (R < grow·3.41 이면 성립).
+     ★남은 여백을 부풀림(0.40)과 사라짐(0.30)이 나눠 쓴다. 셋을 더하면 정확히 1 이라
+       구름이 판 밖으로 잘리지 않는다. */
+  const grow = margin * 0.35;
+  const radius = Math.min(grow * 2.2, hw + grow, hh + grow);
+
+  const cover = new Uint8Array(pw * ph);
+  const lum = new Uint8Array(pw * ph);
+
+  for (let py = 0; py < ph; py++) {
+    const dy = (py + 0.5) / perUnit - halfPH;
+    for (let px = 0; px < pw; px++) {
+      const dx = (px + 0.5) / perUnit - halfPW;
+      const i = py * pw + px;
+
+      // ── 덮는 범위 ──────────────────────────────────────────
+      // ★`sd` 가 음수인 곳이 **박스 안**이다. 부풀리는 항은 언제나 0 이상이라
+      //   윤곽은 **밖으로만** 밀린다. 그래서 박스 안이 파이는 일이 없다.
+      const sd = sdRoundRect(dx, dy, hw + grow, hh + grow, radius);
+      const lobe = fbm(nEdge, dx / lobeScale, dy / lobeScale, 3) * 0.5 + 0.5;
+      const wisp = fbm(nEdge, dx / wispScale + 31.7, dy / wispScale + 11.3, 4) * 0.5 + 0.5;
+      // ★덩어리에 굴곡을 준다 — 고르게 부풀면 윤곽이 그대로라 바탕 모양이 드러난다
+      const bulge = smoothstep(0.15, 0.85, lobe) * (1 - wispMix) + wisp * wispMix;
+      const d = sd - bulge * margin * 0.45;
+      cover[i] = Math.round(255 * (1 - smoothstep(0, margin * 0.2, d)));
+
+      // ── 구름의 두께 ────────────────────────────────────────
+      // ★★**도메인 워프**를 건다. 노이즈 좌표 자체를 다른 노이즈로 흔드는 방법인데,
+      //   이것이 없으면 옥타브가 아무리 많아도 「얼룩덜룩한 잡티」로 보이고,
+      //   걸면 연기가 말려 올라가는 결이 생긴다.
+      const wx = fbm(nLum, dx / warpScale, dy / warpScale, 3);
+      const wy = fbm(nLum, dx / warpScale + 5.2, dy / warpScale + 1.3, 3);
+      const v = fbm(
+        nLum,
+        (dx + wx * warpAmt) / lumScale,
+        (dy + wy * warpAmt) / lumScale,
+        5,
+      ) * 0.5 + 0.5;
+      lum[i] = Math.round(255 * Math.min(1, Math.max(0, Math.pow(v, 0.85))));
+    }
+  }
+  return { cover, lum, pw, ph, margin };
+}
+
+/** 밝기 0..100 일 때 구름의 회색 범위. ★옛것은 230 을 바탕으로 **25 단계**만 흔들어서
+ *  통짜 회색으로 보였다 (사용자 지적: *"스팀 텍스쳐도 자연스럽지가 않음"*). */
+const GRAY_BASE = 228;
+const GRAY_RANGE = 60;
+
+/** 무늬 판에 **밝기·진하기**를 입혀 RGBA 로 만든다. 픽셀당 곱셈이라 슬라이더가 안 걸린다.
+ *
+ *  `out` 을 주면 거기에 쓴다 (매 프레임 새 배열을 만들지 않기 위해). */
+export function plateRGBA(
+  p: Plate, brightness: number, alpha: number, out?: Uint8ClampedArray,
+): Uint8ClampedArray {
+  const n = p.pw * p.ph;
+  const rgba = out && out.length === n * 4 ? out : new Uint8ClampedArray(n * 4);
+  const b = Math.min(100, Math.max(0, brightness)) / 100;
+  const a = Math.min(100, Math.max(0, alpha)) / 100;
+  const base = GRAY_BASE * b;
+  const range = GRAY_RANGE * b;
+  for (let i = 0; i < n; i++) {
+    const g = base + (p.lum[i] / 255 - 0.5) * range;
+    const o = i * 4;
+    rgba[o] = g;
+    rgba[o + 1] = g;
+    rgba[o + 2] = g;
+    rgba[o + 3] = p.cover[i] * a;
+  }
+  return rgba;
+}

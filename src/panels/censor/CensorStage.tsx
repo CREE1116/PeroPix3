@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "../../i18n";
-import { useCensor, passes, type Box } from "../../store/censor";
+import { coverOf, liveBoxes, useCensor, passes, type Box } from "../../store/censor";
 import {
   HANDLES,
   CURSORS,
@@ -19,12 +19,14 @@ import {
 
 /** 무대. 그림 한 장과 그 위의 박스들 (v2 `censorPreviewCanvas` + `censorOverlayCanvas`).
  *
- *  ★v2 는 캔버스 둘이었지만 여기서는 **그림 두 겹 + SVG 한 겹**이다.
- *    돌아간 박스와 손잡이를 캔버스로 그리면 좌표 변환을 손으로 다 해야 하는데,
+ *  세 겹이다 — 아래부터 **원본 `<img>` · 덮개 캔버스 · 손잡이 SVG**.
+ *
+ *  ★★덮개는 **여기서 그린다** (`CensorRenderer`). 서버에 물어보지 않으므로 박스를 끄는
+ *    동안 기다릴 것이 없다. 캔버스에는 **덮개만** 그린다 (바탕은 투명) — 원본은 아래
+ *    `<img>` 가 이미 깔고 있어서, 매 프레임 원본을 다시 그릴 이유가 없다.
+ *  ★「들춰보기」는 그래서 **CSS 투명도 하나**로 끝난다. 다시 그리지 않는다.
+ *  ★손잡이만 SVG 인 까닭: 돌아간 박스를 캔버스로 그리면 좌표 변환을 손으로 다 해야 하는데,
  *    SVG 는 `transform` 하나로 끝나고 히트 테스트도 우리 셈만 맞으면 된다.
- *  ★가린 모습은 **서버가 그린다**. 아래에 원본을 깔고 그 위에 덮는 이유는
- *    「조작시 투명도」 때문이다. 손잡이를 잡고 있는 동안 덮개를 옅게 해서
- *    무엇을 가리고 있는지 눈으로 확인한다 (v2 `steamOpacity`).
  */
 type Drag =
   | { kind: "draw"; x: number; y: number; x2: number; y2: number }
@@ -44,15 +46,51 @@ export function CensorStage() {
   const [scale, setScale] = useState(1);
   const editable = c.tab !== "before";
 
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  /** 덮개를 **지금 당장** 다시 그린다.
+   *
+   *  ★★값을 `getState()` 로 읽는다. 끄는 동안 리액트가 다시 그려 주기를 기다리지 않고
+   *    이 함수를 그 자리에서 부르기 때문이다 (한 프레임도 늦지 않는다).
+   *  ★캔버스 버퍼는 **화면에 보이는 크기 × 화면 배율**이다. 원본 크기로 그리면 큰 그림에서
+   *    쓸데없이 몇 배를 칠하게 되고, 눈에 보이는 것은 똑같다. */
+  const paint = useCallback(() => {
+    const cv = canvasRef.current;
+    const el = imgRef.current;
+    if (!cv || !el) return;
+    const st = useCensor.getState();
+    const cur = st.cur();
+    const r = st.renderer;
+    const sz = cur ? st.sizes[cur.id] : undefined;
+    const g = cv.getContext("2d");
+    if (!r || !cur || !sz || st.tab === "before") {
+      if (g) g.clearRect(0, 0, cv.width, cv.height);
+      return;
+    }
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const shown = el.clientWidth;
+    if (!shown) return;
+    r.draw(cv, liveBoxes(st.boxes[cur.id] ?? []), coverOf(st), (shown * dpr) / sz.w);
+  }, []);
+
   // 그림 좌표 ↔ 화면 좌표의 배율. 손잡이 크기와 글자 크기가 여기에 매인다
   useEffect(() => {
     const el = imgRef.current;
     if (!el || !size) return;
-    const ro = new ResizeObserver(() => setScale(el.clientWidth / size.w || 1));
+    const fit = () => {
+      setScale(el.clientWidth / size.w || 1);
+      paint();
+    };
+    const ro = new ResizeObserver(fit);
     ro.observe(el);
-    setScale(el.clientWidth / size.w || 1);
+    fit();
     return () => ro.disconnect();
-  }, [size?.w, size?.h, c.src]);
+  }, [size?.w, size?.h, c.src, paint]);
+
+  // ★박스·설정이 바뀌면 `rev` 가 오르고, 여기서 다시 그린다 (끄는 동안에는 `move` 가 직접 부른다)
+  useEffect(() => {
+    paint();
+  }, [c.rev, c.src, c.tab, c.renderer, paint]);
 
   const toImage = (e: React.PointerEvent) => {
     const el = imgRef.current;
@@ -132,12 +170,10 @@ export function CensorStage() {
     const cur = s.cur();
     if (!cur) return;
     s.set({ boxes: { ...s.boxes, [cur.id]: list } });
-    /* ★★**끄는 동안에도 덮개가 따라온다** (사용자 지적 2026-08-23: *"박스를 옮길때도 내부
-       내용물이 즉각 따라와야하는데 늦음"*). 예전에는 떼는 순간에야 한 번 그려서, 끄는 내내
-       덮개가 **옛 자리**에 남아 있었다.
-       ★한 프레임마다 서버를 때리는 것이 아니다 — `drawPreview` 가 **한 번에 하나만** 날리고
-         도는 사이의 것은 마지막 상태로 합친다 (그 함수의 ★주). 그래서 손이 안 걸린다. */
-    s.drawPreview();
+    /* ★★**그 자리에서 다시 그린다.** 리액트가 다시 그려 주기를 기다리지 않는다 —
+       `paint` 는 스토어를 `getState()` 로 읽으므로 방금 넣은 값이 바로 반영된다.
+       서버 왕복이 없으므로 프레임마다 불러도 손이 안 걸린다. */
+    paint();
   };
 
   const up = () => {
@@ -152,9 +188,10 @@ export function CensorStage() {
       if (bigEnough(r)) c.addBox(r.map(Math.round) as Rect);
       else c.set({ editing: false });
     } else {
-      // ★`editing` 은 여기서 끄지 않는다. 새 미리보기가 도착할 때 `drawPreview` 가 끈다
       c.putBoxes(boxes);
     }
+    // ★손을 떼면 덮개를 다시 진하게 (「들춰보기」는 끄는 동안만이다)
+    c.set({ editing: false });
     setDrag(null);
   };
 
@@ -167,6 +204,9 @@ export function CensorStage() {
     : "default";
 
   if (!im) return null;
+
+  // ★가린 뒤에는 테두리를 늘 그리지 않는다 (아래 `BoxShape` 의 ★주). 가릴 것이 있으면 참
+  const covered = editable && boxes.some((b) => !b.off);
 
   const shown = boxes
     .map((b, i) => ({ b, i }))
@@ -191,23 +231,20 @@ export function CensorStage() {
         }}
         style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", userSelect: "none" }}
       />
-      {c.preview && (
-        <img
-          data-censor-preview
-          src={c.preview}
-          alt=""
-          draggable={false}
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            pointerEvents: "none",
-            // 손잡이를 잡고 있는 동안 옅게 (v2 「조작시 투명도」)
-            opacity: c.editing ? 1 - c.steamOpacity / 100 : 1,
-          }}
-        />
-      )}
+      <canvas
+        ref={canvasRef}
+        data-censor-cover
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          pointerEvents: "none",
+          // ★손잡이를 잡고 있는 동안 옅게 — **방식을 가리지 않는 공통 동작**이다 (v2 「조작시 투명도」)
+          //   ★다시 그리지 않는다. 캔버스 한 장의 투명도만 바뀐다
+          opacity: c.editing ? 1 - c.peek / 100 : 1,
+        }}
+      />
       <svg
         data-censor-overlay
         viewBox={size ? `0 0 ${size.w} ${size.h}` : undefined}
@@ -238,7 +275,7 @@ export function CensorStage() {
             ok={passes(b, c.labelConf, c.conf)}
             editable={editable}
             scale={scale}
-            covered={!!c.preview}
+            covered={covered}
           />
         ))}
         {drag?.kind === "draw" && (

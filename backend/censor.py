@@ -15,7 +15,9 @@
     ★되살리지 말 것 — 그 바닥은 구조에서 오는 것이라 이 모델로는 못 넘는다.
       필요하면 **프롬프트로 도는 모델**(SAM 계열)을 따로 들인다.
 
-★**cv2 를 쓰지 않는다** (109MB). numpy + Pillow 로 같은 그림을 만든다.
+★**cv2 를 쓰지 않는다** (109MB). numpy 로 레터박스와 NMS 를 직접 짠다.
+
+★**가리는 일은 여기 없다** (2026-08-23). 화면이 캔버스로 그린다 — 아래 「가리기는 여기 없다」 절 참조.
 
 ★**imgsz 를 모델에서 읽는다 (여기 640 을 박지 말 것).** 이 모델은 **1024** 로 학습·추론된다
   (`m.overrides['imgsz']`). ultralytics 는 `.pt` 를 부를 때 그 값을 그대로 쓰므로 v2 는 내내
@@ -42,12 +44,12 @@
 from __future__ import annotations
 
 import ast
-import math
+import threading
 from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image
 
 MODEL_DIR = Path(__file__).resolve().parent.parent / "models" / "censor"
 # ★ultralytics predict 의 기본값. 바꾸면 v2 와 결과가 달라진다 (cfg/default.yaml:54)
@@ -93,6 +95,17 @@ PREFER = ("CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider
 def _providers(ort) -> list[str]:
     have = set(ort.get_available_providers())
     return [p for p in PREFER if p in have] or ["CPUExecutionProvider"]
+
+
+#: ★★**추론은 한 번에 하나씩** (실측 2026-08-23).
+#  FastAPI 는 `def` 엔드포인트를 스레드풀에서 돌리므로 탐지 요청이 겹칠 수 있는데
+#  (그림을 고르자마자 「전체 검열」을 누르거나, 좌우로 빨리 넘길 때가 그렇다),
+#  같은 `InferenceSession` 을 두 스레드가 동시에 `run` 하면 **프로세스가 통째로 죽는다.**
+#  파이썬 예외가 아니라 네이티브 크래시라 로그에 아무것도 안 남고, 화면에는
+#  「엔진을 깨우는 중…」만 뜬 채로 멈춘다 — 원인을 찾기 대단히 어려운 종류다.
+#  ★재현: 같은 그림에 detect 를 세 갈래로 동시에 던지면 세 요청이 전부 끊긴다.
+#  ★세션을 만드는 것도 함께 잠근다 — 두 스레드가 같은 모델을 동시에 열면 같은 자리에 걸린다.
+_RUN = threading.Lock()
 
 
 @lru_cache(maxsize=2)
@@ -209,7 +222,8 @@ def detect(
 
     `return_all` 이면 문턱을 0.01 까지 낮춰 **문턱 미달까지** 돌려준다 (화면이 슬라이더로
     다시 거를 수 있게). 그때 `passes_threshold` 로 통과 여부를 함께 표시한다."""
-    sess, names, size, rect, e2e = _load(model or default_model())
+    with _RUN:
+        sess, names, size, rect, e2e = _load(model or default_model())
     label_conf = label_conf or {}
     labels = list(names.values())
     targets = targets if targets is not None else labels
@@ -218,7 +232,9 @@ def detect(
     im = img.convert("RGB")
     canvas, r, (padx, pady) = _letterbox(im, size, rect)
     x = canvas.transpose(2, 0, 1)[None] / 255.0
-    out = sess.run(None, {sess.get_inputs()[0].name: np.ascontiguousarray(x, dtype=np.float32)})[0]
+    # ★★한 번에 하나씩 (`_RUN` 의 ★★주). 겹쳐 돌리면 프로세스가 죽는다
+    with _RUN:
+        out = sess.run(None, {sess.get_inputs()[0].name: np.ascontiguousarray(x, dtype=np.float32)})[0]
 
     if e2e:
         # ★YOLO26 은 **이미 걸러진 결과**를 낸다: (1, 300, 4+1+1+32) = xyxy · conf · cls · 마스크.
@@ -286,262 +302,16 @@ def detect(
     return dets
 
 
-# ── 가리기 ────────────────────────────────────────────────────
-
-
-def _corners(x1, y1, x2, y2, rotation: float, expand: int):
-    """회전·확장한 네 꼭짓점 (v2 `get_rotated_corners` 그대로)."""
-    if expand:
-        x1, y1, x2, y2 = x1 - expand, y1 - expand, x2 + expand, y2 + expand
-    cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
-    local = [(x1 - cx, y1 - cy), (x2 - cx, y1 - cy), (x2 - cx, y2 - cy), (x1 - cx, y2 - cy)]
-    cos_r, sin_r = math.cos(rotation), math.sin(rotation)
-    return [(cx + lx * cos_r - ly * sin_r, cy + lx * sin_r + ly * cos_r) for lx, ly in local]
-
-
-SS = 4  # 계단을 없애려고 4배로 그린 뒤 줄인다 (cv2 의 LINE_AA 대신)
-
-
-def _mask(size: tuple[int, int], pts, feather: int) -> Image.Image:
-    """가릴 모양의 알파. ★feather 는 **가장자리만** 흐리게 한다 — 안쪽은 100% 로 남는다."""
-    w, h = size
-    big = Image.new("L", (w * SS, h * SS), 0)
-    ImageDraw.Draw(big).polygon([(x * SS, y * SS) for x, y in pts], fill=255)
-    m = big.resize((w, h), Image.BILINEAR)
-    if feather > 0:
-        # v2 는 거리변환으로 선형 감쇠를 만들었다. 여기서는 가우시안으로 같은 인상을 낸다 —
-        # 안쪽이 옅어지지 않도록 **먼저 넓혀서** 흐린다.
-        m = m.filter(ImageFilter.MaxFilter(_odd(feather))).filter(ImageFilter.GaussianBlur(feather / 2))
-    return m
-
-
-def _odd(n: int) -> int:
-    n = max(1, int(n))
-    return n if n % 2 else n + 1
-
-
-def _mosaic(region: Image.Image, block: int) -> Image.Image:
-    w, h = region.size
-    b = max(1, block)
-    small = region.resize((max(1, w // b), max(1, h // b)), Image.BILINEAR)
-    return small.resize((w, h), Image.NEAREST)
-
-
-# ── 스팀/구름 ────────────────────────────────────────────────
-# ★v2 의 **기본 방식**이다 (`index.html` 의 `censorMethod` 첫 항목). v2 는 이것을 화면의
-#   canvas 에서 그렸고 백엔드는 아예 몰랐다. 그래서 스팀이 섞이면 화면이 렌더해 base64 로
-#   올려 보내는 우회로가 있었다 (`renderCensoredImageOnCanvas`).
-#   3.0 은 **가리는 일을 서버 하나가 한다.** 두 벌로 두면 미리보기와 저장본이 갈린다.
-# ★알고리즘은 v2 원문 그대로다: 심플렉스 노이즈로 밝기와 가장자리를 흔든 타원 구름.
-#   난수표(`_simplex_perm`)의 섞는 규칙까지 옮겼다. 같은 씨앗이면 같은 무늬가 나온다.
-
-_F2 = 0.5 * (math.sqrt(3.0) - 1.0)
-_G2 = (3.0 - math.sqrt(3.0)) / 6.0
-# grad3 12개의 x·y 성분만 (2D 노이즈는 z 를 안 쓴다)
-_GRAD2 = np.array(
-    [(1, 1), (-1, 1), (1, -1), (-1, -1), (1, 0), (-1, 0), (1, 0), (-1, 0), (0, 1), (0, -1), (0, 1), (0, -1)],
-    dtype=np.float32,
-)
-# ★노이즈를 만드는 판의 상한. 큰 박스(전신)는 텍스처가 3000px 를 넘어 픽셀당 6번의 노이즈가
-#   수천만 번이 된다. 구름은 **판 크기에 비례한 무늬**라(noiseScale = 판/2) 작게 만들어
-#   늘려도 같은 그림이 나온다. 줄어드는 것은 비용뿐이다.
-_STEAM_MAX = 512
-
-
-def _simplex_perm(seed: int):
-    """v2 `SimplexNoise.seed` 그대로. LCG 로 256개를 섞어 512로 늘린다."""
-    p = list(range(256))
-    s = int(seed)
-    for i in range(255, 0, -1):
-        s = (s * 16807 + 1) % 2147483647
-        j = s % (i + 1)
-        p[i], p[j] = p[j], p[i]
-    perm = np.array([p[i & 255] for i in range(512)], dtype=np.int32)
-    return perm, perm % 12
-
-
-def _noise2(x: np.ndarray, y: np.ndarray, perm: np.ndarray, pm12: np.ndarray) -> np.ndarray:
-    """2D 심플렉스 노이즈 (v2 `noise2D` 의 벡터화). 결과 범위는 대략 -1..1."""
-    s = (x + y) * _F2
-    i = np.floor(x + s)
-    j = np.floor(y + s)
-    t = (i + j) * _G2
-    x0 = x - (i - t)
-    y0 = y - (j - t)
-    upper = x0 > y0
-    i1 = upper.astype(np.int32)
-    j1 = (~upper).astype(np.int32)
-    x1 = x0 - i1 + _G2
-    y1 = y0 - j1 + _G2
-    x2 = x0 - 1.0 + 2.0 * _G2
-    y2 = y0 - 1.0 + 2.0 * _G2
-    ii = i.astype(np.int64) & 255
-    jj = j.astype(np.int64) & 255
-
-    def corner(dx, dy, gi):
-        tt = 0.5 - dx * dx - dy * dy
-        g = _GRAD2[gi]
-        return np.where(tt < 0, 0.0, np.square(np.maximum(tt, 0.0)) ** 2 * (g[..., 0] * dx + g[..., 1] * dy))
-
-    n0 = corner(x0, y0, pm12[ii + perm[jj]])
-    n1 = corner(x1, y1, pm12[ii + i1 + perm[jj + j1]])
-    n2 = corner(x2, y2, pm12[ii + 1 + perm[jj + 1]])
-    return 70.0 * (n0 + n1 + n2)
-
-
-def steam_scale(w: float, h: float) -> float:
-    """박스가 클수록 구름을 더 넓게 편다 (v2 `getSteamBoxScale`)."""
-    size = max(min(w, h), 2.0)
-    return max(1.05, min(1 + 0.04 * math.log2(size), 1.5))
-
-
-def _steam_texture(w: float, h: float, feather: int, brightness: int, alpha: int, seed: int):
-    """구름 한 덩이를 만든다 (RGB, 알파, 판 크기). v2 `generateSteamTexture` 이식.
-
-    ★`feather` 는 여기서 **가장자리 흔들림**을 줄이는 값이다 (다른 방식의 깃털과 다르다).
-      값이 커질수록 무늬가 커지고(`featherFactor`) 윤곽의 요철이 얕아진다."""
-    expand_x = w * 0.35
-    expand_y = h * 0.35
-    tw = max(1, math.ceil(w + expand_x * 2))
-    th = max(1, math.ceil(h + expand_y * 2))
-    # 노이즈는 작은 판에서 만들고 늘린다 (_STEAM_MAX 주석)
-    k = min(1.0, _STEAM_MAX / max(tw, th))
-    nw = max(2, int(round(tw * k)))
-    nh = max(2, int(round(th * k)))
-
-    perm, pm12 = _simplex_perm(seed)
-    px = np.arange(nw, dtype=np.float32)[None, :] / k
-    py = np.arange(nh, dtype=np.float32)[:, None] / k
-    px = np.broadcast_to(px, (nh, nw)).astype(np.float32)
-    py = np.broadcast_to(py, (nh, nw)).astype(np.float32)
-
-    feather = max(0, int(feather))
-    ns = max(tw, th) / 2 * (1 + feather / 25)
-    n = lambda sx, ox=0.0: _noise2(px / sx + ox, py / sx + ox, perm, pm12)  # noqa: E731
-
-    bright = n(ns) * 1.0 + n(ns / 2) * 0.5 + n(ns / 4) * 0.25
-    bright = (bright / 1.75 + 1) / 2
-    bright = 0.5 + bright * 0.5
-
-    dx = (px - tw / 2) / max(w / 2, 1e-6)
-    dy = (py - th / 2) / max(h / 2, 1e-6)
-    ellipse = np.sqrt(dx * dx + dy * dy)
-
-    edge_strength = 1 - feather / 62.5
-    edge = n(ns * 0.5, 50.0) * 0.5 + n(ns * 0.25, 150.0) * 0.35 + n(ns * 0.12, 250.0) * 0.15
-    warped = ellipse + edge * 0.25 * edge_strength
-
-    tsm = np.clip((warped - 0.6) / 0.55, 0, 1)
-    a = np.where(warped < 0.6, 255.0, np.where(warped < 1.15, (1 - tsm * tsm * (3 - 2 * tsm)) * 255.0, 0.0))
-
-    # 판 가장자리는 반드시 0 으로 떨어뜨린다. 구름이 네모나게 잘리면 티가 난다
-    safe = min(expand_x, expand_y) * 0.25
-    gx = np.minimum(px, tw - 1 - px)
-    gy = np.minimum(py, th - 1 - py)
-    from_edge = np.minimum(gx, gy)
-    fade_end = safe * 4
-    if fade_end > safe:
-        a = a * np.clip((from_edge - safe) / (fade_end - safe), 0, 1)
-    a = np.where(from_edge < safe, 0.0, a)
-
-    b_pct = max(0, min(100, int(brightness))) / 100
-    rgb = math.floor(b_pct * 230) + np.floor(bright * math.floor(b_pct * 25))
-    a = a * (max(0, min(100, int(alpha))) / 100)
-
-    rgb_img = Image.fromarray(np.clip(rgb, 0, 255).astype(np.uint8), "L").resize((tw, th), Image.BILINEAR)
-    a_img = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), "L").resize((tw, th), Image.BILINEAR)
-    return rgb_img, a_img, tw, th
-
-
-def apply_boxes(
-    img: Image.Image,
-    boxes: list[dict],
-    method: str = "black",
-    color: str | None = None,
-    expand: int = 0,
-    feather: int = 0,
-    mosaic_strength: int = 12,
-    mosaic_opacity: int = 100,
-    blur_strength: int = 20,
-    steam_brightness: int = 100,
-    steam_alpha: int = 100,
-) -> Image.Image:
-    """찾은 자리를 가린다 — v2 `apply_censor_boxes` 이식.
-
-    박스마다 `method`·`color`·`rotation` 을 따로 가질 수 있다 (한 그림 안에서 섞어 쓴다)."""
-    im = img.convert("RGB")
-    alpha = max(0.0, min(1.0, (mosaic_opacity if mosaic_opacity is not None else 100) / 100))
-
-    for b in boxes:
-        box = b.get("box")
-        if not isinstance(box, (list, tuple)) or len(box) != 4:
-            continue  # ★고치지 않고 건너뛴다 — 화면이 보낸 것을 코드가 추측하지 않는다
-        try:
-            x1, y1, x2, y2 = (int(v) for v in box)
-        except (TypeError, ValueError):
-            continue
-        how = b.get("method") or method
-        rot = float(b.get("rotation") or 0)
-
-        if how == "steam":
-            _paste_steam(im, x1, y1, x2, y2, rot, int(expand), int(feather),
-                         steam_brightness, steam_alpha)
-            continue
-
-        pts = _corners(x1, y1, x2, y2, rot, int(expand))
-        xs = [p[0] for p in pts]
-        ys = [p[1] for p in pts]
-        pad = feather + 2
-        bx1 = max(0, int(min(xs)) - pad)
-        by1 = max(0, int(min(ys)) - pad)
-        bx2 = min(im.width, int(max(xs)) + pad)
-        by2 = min(im.height, int(max(ys)) + pad)
-        if bx2 <= bx1 or by2 <= by1:
-            continue
-
-        region = im.crop((bx1, by1, bx2, by2))
-        m = _mask(region.size, [(x - bx1, y - by1) for x, y in pts], feather)
-
-        if how == "mosaic":
-            layer = _mosaic(region, mosaic_strength)
-            if alpha < 1:
-                m = m.point(lambda v: int(v * alpha))
-        elif how == "blur":
-            layer = region.filter(ImageFilter.GaussianBlur(max(1, blur_strength)))
-        else:
-            fill = (0, 0, 0)
-            if how == "white":
-                fill = (255, 255, 255)
-            else:
-                # ★색은 박스가 따로 가질 수 있다 (머리 주석의 계약). 없으면 전체 설정을 쓴다
-                c = b.get("color") or color
-                if how == "color" and isinstance(c, str) and c.startswith("#") and len(c) >= 7:
-                    fill = (int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16))
-            layer = Image.new("RGB", region.size, fill)
-
-        im.paste(Image.composite(layer, region, m), (bx1, by1))
-    return im
-
-
-def _paste_steam(im: Image.Image, x1, y1, x2, y2, rot: float, expand: int, feather: int,
-                 brightness: int, alpha: int) -> None:
-    """구름을 박스 **가운데에 맞춰** 얹는다 (v2 `applySteamEffect`).
-
-    ★다른 방식과 달리 박스 안에 갇히지 않는다. 확장·동적 배율·노이즈 여백만큼 밖으로 번진다.
-      그래서 자를 사각형을 따로 계산하지 않고 텍스처의 중심을 박스 중심에 맞춘다
-      (v2 의 오프셋 셋을 정리하면 중심이 정확히 박스 중심으로 떨어진다)."""
-    w, h = x2 - x1, y2 - y1
-    if w <= 0 or h <= 0:
-        return
-    k = steam_scale(w, h)
-    ew = w * k + expand * 2
-    eh = h * k + expand * 2
-    seed = math.floor(x1 * 1000 + y1)
-    rgb, a, tw, th = _steam_texture(ew, eh, feather, brightness, alpha, seed)
-    tex = Image.merge("RGBA", (rgb, rgb, rgb, a))
-    if rot:
-        # 캔버스는 화면 좌표(y 아래)에서 시계 방향으로 돈다. PIL 은 반시계라 부호를 뒤집는다
-        tex = tex.rotate(-math.degrees(rot), resample=Image.BICUBIC, expand=True)
-        tw, th = tex.size
-    cx, cy = x1 + w / 2, y1 + h / 2
-    im.paste(tex, (int(round(cx - tw / 2)), int(round(cy - th / 2))), tex)
+# ── 가리기는 **여기 없다** ──────────────────────────────────────
+#
+# ★★사용자 결정 2026-08-23: 가리는 일을 **화면(캔버스)으로 옮겼다** (`src/lib/censorRender.ts`).
+#   서버가 그리면 박스를 1px 옮길 때마다 왕복이 걸려, 사람 손이 움직이는 속도를 원리상
+#   못 따라온다 (실측: 스팀 219ms + PNG 인코딩 58ms = 초당 3~4장).
+#   ★렌더러는 **한 벌뿐이다.** 저장도 화면이 원본 크기로 구운 것을 올리고, 서버는 그 바이트를
+#     받아 적기만 한다 (`/api/censor/apply`). v2 가 겪은 「미리보기와 저장본이 갈린다」는
+#     두 벌을 뒀기 때문이지 화면에서 그렸기 때문이 아니다.
+#   ★여기 있던 것(apply_boxes·스팀 심플렉스 노이즈·마스크·모자이크)은 **되살리지 말 것.**
+#     되살리면 그 순간 두 벌이 된다.
+#
+# 서버에 남은 검열 일은 **탐지 하나**다 (`detect`). 모델 39~251MB 를 웹뷰에서 못 돌리므로
+# 이것만은 서버여야 한다.

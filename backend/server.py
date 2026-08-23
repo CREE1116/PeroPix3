@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import binascii
 import contextlib
 import base64
 import io
@@ -2125,16 +2126,14 @@ class CensorDetect(CensorSource):
 
 
 class CensorApply(CensorSource):
-    boxes: list[dict] = []
-    method: str = "black"
-    color: str | None = None
-    expand: int = 0
-    feather: int = 0
-    mosaic_strength: int = 12
-    mosaic_opacity: int = 100
-    blur_strength: int = 20
-    steam_brightness: int = 100
-    steam_alpha: int = 100
+    """가린 그림을 **화면이 구워서** 올린다.
+
+    ★★가리는 일은 화면이 한다 (`src/lib/censorRender.ts`). 서버는 **받은 바이트를 적을
+      뿐**이고, 어떻게 가릴지를 정하는 값(방식·부드럽게·모자이크…)은 여기 오지 않는다.
+      까닭은 `backend/censor.py` 끝의 ★★주에 있다 — 렌더러를 두 벌 두지 않기 위해서다."""
+
+    #: 화면이 원본 크기로 구운 PNG (data URL 이거나 맨 base64)
+    image: str = ""
     suffix: str = "_censored"
     # ★결과를 둘 폴더 (아웃풋 루트 기준). 비면 원본 옆에 둔다. v2 의 `censored` 폴더 자리다
     dest: str | None = None
@@ -2142,13 +2141,12 @@ class CensorApply(CensorSource):
     name: str | None = None
 
 
-class CensorPreview(CensorApply):
-    """저장하지 않고 **가린 그림만** 돌려준다 (검열중·검열 후 탭의 미리보기).
+class CensorImage(CensorSource):
+    """원본을 **그대로** 돌려준다 (밖에서 떨군 그림은 화면에 주소가 없다).
 
-    ★가리는 일은 서버 하나가 한다. 화면에 같은 렌더러를 또 두면 미리보기와 저장본이 갈린다
-      (v2 가 그랬다: 스팀만 화면이 그려서, 확장·부드럽게를 준 미리보기와 결과가 달랐다)."""
+    ★가리지 않는다. 화면이 이것을 캔버스에 깔고 그 위에 직접 그린다."""
 
-    max_side: int = 1280
+    max_side: int = 0
 
 
 def _censor_open(b: CensorSource):
@@ -2198,40 +2196,23 @@ def censor_detect(body: CensorDetect):
     return {"detections": dets, "width": im.width, "height": im.height}
 
 
-def _censor_cover(body: CensorApply, im: Image.Image) -> Image.Image:
-    """가리기 한 번. 미리보기와 저장이 **같은 함수를 지난다.**"""
-    return censor.apply_boxes(
-        im,
-        body.boxes,
-        body.method,
-        body.color,
-        body.expand,
-        body.feather,
-        body.mosaic_strength,
-        body.mosaic_opacity,
-        body.blur_strength,
-        body.steam_brightness,
-        body.steam_alpha,
-    )
+@app.post("/api/censor/image")
+def censor_image(body: CensorImage):
+    """원본 한 장을 화면에 넘긴다 (떨군 그림·워크스페이스 밖의 그림용).
 
-
-@app.post("/api/censor/preview")
-def censor_preview(body: CensorPreview):
-    """가린 모습만 보여 준다. **파일을 만들지 않는다.**
-
-    ★`def` 다 (async 아님). 스팀 노이즈와 흐리기는 CPU 를 오래 쥐는 계산이라 async 안에서
-      돌리면 그동안 서버 전체가 멈춘다. FastAPI 는 `def` 를 스레드풀로 돌린다."""
+    ★아웃풋 안의 그림은 이 길로 안 온다 — 화면이 `/api/file` 주소를 바로 가리킨다."""
     im, _ = _censor_open(body)
-    out = _censor_cover(body, im)
-    if body.max_side and max(out.width, out.height) > body.max_side:
-        r = body.max_side / max(out.width, out.height)
-        out = out.resize((max(1, int(out.width * r)), max(1, int(out.height * r))), Image.LANCZOS)
+    w, h = im.width, im.height
+    out = im
+    if body.max_side and max(w, h) > body.max_side:
+        r = body.max_side / max(w, h)
+        out = im.resize((max(1, int(w * r)), max(1, int(h * r))), Image.LANCZOS)
     buf = io.BytesIO()
-    out.save(buf, format="WEBP", quality=88)
+    out.convert("RGB").save(buf, format="WEBP", quality=92)
     return {
         "image": "data:image/webp;base64," + base64.b64encode(buf.getvalue()).decode(),
-        "width": im.width,
-        "height": im.height,
+        "width": w,
+        "height": h,
     }
 
 
@@ -2241,9 +2222,16 @@ def censor_apply(body: CensorApply):
 
     ★덮어쓰기 경로를 만들지 말 것 — 생성물은 Anlas 가 든 원본이다.
     ★박스가 **0개여도 저장한다.** 일괄 저장에서 "찾은 게 없는 장"이 결과 폴더에서 빠지면
-      그 폴더가 원본 묶음의 대역이 되지 못한다 (v2 `completeCensoring` 도 그대로 넘긴다)."""
-    im, src = _censor_open(body)
-    out = _censor_cover(body, im)
+      그 폴더가 원본 묶음의 대역이 되지 못한다 (v2 `completeCensoring` 도 그대로 넘긴다).
+    ★★**픽셀은 화면이 그려 보낸다.** 여기서 다시 그리지 않는다 (`CensorApply` 의 ★★주)."""
+    _, src = _censor_open(body)
+    raw_img = body.image.split(",", 1)[-1] if body.image else ""
+    if not raw_img:
+        raise HTTPException(400, "그린 그림이 없습니다")
+    try:
+        rendered = base64.b64decode(raw_img)
+    except (binascii.Error, ValueError) as e:
+        raise HTTPException(400, f"그림을 못 읽었습니다: {e}")
 
     # 어디에 둘까. 폴더를 골랐으면 거기, 아니면 원본 옆
     stem = Path(body.name).stem if body.name else (src.stem if src else "censored")
@@ -2256,9 +2244,7 @@ def censor_apply(body: CensorApply):
         folder.mkdir(parents=True, exist_ok=True)
     if src is None and not body.name:
         # 갈 곳도 이름도 없다. 옛 계약대로 바이트로 돌려준다
-        buf = io.BytesIO()
-        out.save(buf, format="PNG")
-        return {"image": "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()}
+        return {"image": "data:image/png;base64," + base64.b64encode(rendered).decode()}
 
     dst = folder / f"{stem}{body.suffix}.png"
     n = 2
@@ -2270,11 +2256,9 @@ def censor_apply(body: CensorApply):
         if src is None:
             raise ValueError("원본 파일이 없다")
         raw = meta.read_raw(src.read_bytes())
-        buf = io.BytesIO()
-        out.save(buf, format="PNG")
-        dst.write_bytes(meta.write(buf.getvalue(), raw, "PNG", 95, dict(Image.open(src).info)))
+        dst.write_bytes(meta.write(rendered, raw, "PNG", 95, dict(Image.open(src).info)))
     except Exception:
-        out.save(dst, format="PNG")
+        dst.write_bytes(rendered)
     root = WS_ROOT.resolve()
     rel = dst.relative_to(root) if str(dst).startswith(str(root)) else dst
     return {"file": str(rel).replace("\\", "/"), "name": dst.name}
