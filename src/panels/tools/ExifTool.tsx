@@ -5,6 +5,7 @@ import { useImageDrop, type Dropped } from "../../lib/dropImages";
 import { KIND_LABEL } from "../../lib/dropImport";
 import { toast } from "../../store/toast";
 import { Icon } from "../../components/Icon";
+import { useUi } from "../../store/ui";
 
 /** EXIF 리더 — **밖에서 가져온 그림의 설정을 읽는다** (v2 `보조 도구 › EXIF 리더`).
  *
@@ -61,6 +62,20 @@ type Meta = {
  *  그대로 돌아온다. ★앱을 껐다 켜면 비는 것이 맞다 — 남의 그림을 잠깐 들여다보는 자리다. */
 let kept: { name: string; meta: Meta | null } = { name: "", meta: null };
 
+/** 밖에서 떨군 그림을 **EXIF 리더로 보낸다** — 드롭 가져오기 시트의 「EXIF 확인」이 부른다
+ *  (사용자 지시 2026-08-23: 시트에서 프롬프트를 늘어놓지 말고 이쪽으로 보낼 것).
+ *
+ *  ★이미 읽어 둔 것을 그대로 넘긴다 — 같은 창구(`/api/tools/meta`)에서 온 것이라 다시
+ *    물어볼 이유가 없다.
+ *  ★★렌더 중이 아닌 것을 전제로 한다: 드롭 시트는 **생성·갤러리 모드에서만** 뜨므로
+ *    (`app/DropImport`) 그때 EXIF 리더는 언마운트 상태다. 그래서 값을 넣고 모드를 옮기면
+ *    새로 마운트되면서 이 값을 읽는다. */
+export function showInExif(name: string, meta: unknown) {
+  kept = { name, meta: meta as Meta };
+  useUi.getState().setMode("utility");
+  useUi.getState().setView("tab", "tools", "exif" as never);
+}
+
 export function ExifTool() {
   const t = useI18n((s) => s.t);
   const [name, setName] = useState(kept.name);
@@ -103,25 +118,34 @@ export function ExifTool() {
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}>
       {/* 머리 — 그림이 없으면 드롭 안내, 있으면 미리보기 + 형식 배지 + 교체·닫기 */}
       {!meta ? (
+        /* ★★**받는 자리가 화면 전체**라는 것이 눈에도 보여야 한다 (사용자 지시 2026-08-23).
+           예전에는 위쪽 머리 한 줄만 점선 상자였는데, 실제로는 창 어디에 떨궈도 받는다
+           (`useImageDrop(read, true)`) — 그래서 넓은 아래쪽에 떨구면 「안 받는 자리에
+           떨궜나」 싶게 아무 표시가 없었다. 판을 통째로 받는 자리로 그리고, 안내는
+           **가운데**에 둔다. */
         <div
           {...zone}
           data-exif-drop
           onClick={() => void pick()}
           style={{
+            flex: 1,
+            minHeight: 0,
             border: `1px dashed ${over ? "var(--accent)" : "var(--line)"}`,
             background: over ? "var(--accent-bg)" : "var(--bg)",
             borderRadius: "var(--r-3)",
-            padding: "var(--sp-8)",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
+            display: "grid",
+            placeItems: "center",
             gap: 2,
             cursor: "pointer",
-            flexShrink: 0,
           }}
         >
-          <span style={{ fontSize: "var(--text-xs)", color: "var(--ink-soft)" }}>{t("tools.exifDrop")}</span>
-          <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>{t("tools.dropHint")}</span>
+          <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+            <span style={{ color: over ? "var(--accent)" : "var(--ink-ghost)", display: "grid" }}>{Icon.images}</span>
+            <span style={{ fontSize: "var(--text-sm)", color: over ? "var(--accent)" : "var(--ink-soft)" }}>
+              {t("tools.exifDrop")}
+            </span>
+            <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>{t("tools.dropHint")}</span>
+          </span>
         </div>
       ) : (
         <div

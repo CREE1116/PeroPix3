@@ -7,7 +7,7 @@ import { fileMgrThumb } from "../../lib/imgUrl";
 import { ask } from "../../store/ask";
 import { toast } from "../../store/toast";
 import { Icon } from "../../components/Icon";
-import { useConvertQueue } from "./ConvertTool";
+import { ConvertTool, useConvertQueue } from "./ConvertTool";
 import { onNearBottom } from "../../lib/nearBottom";
 
 /** 파일 관리 — **아웃풋 폴더를 그대로** 연다 (v2 `보조 도구 › 파일 관리`).
@@ -20,7 +20,10 @@ import { onNearBottom } from "../../lib/nearBottom";
  *    **Shift 는 앵커부터 범위**, 그림 위를 끌면 훑은 만큼. 판정은 `store/files.ts` 가 한다.
  *  ★격자에 **하위 폴더를 섞지 않는다** (CLAUDE.md 「의도된 차이」). 계층은 왼쪽 트리가 맡는다.
  */
-export function FileManager({ onConvert }: { onConvert: () => void }) {
+export function FileManager() {
+  /** ★★**이름 변환은 여기서 연다** (사용자 지시 2026-08-23) — 고른 것을 옆 탭으로 보내지
+   *  않는다. 패널이 오른쪽에 붙어, 무엇을 고른 것이었는지가 화면에 남는다. */
+  const [convert, setConvert] = useState(false);
   const t = useI18n((s) => s.t);
   const base = useGen((s) => s.base);
   const { tree, rootCount, folder, items, picked, open, total, hasMore, loadTree, go, more, toggleOpen, pick,
@@ -114,9 +117,11 @@ export function FileManager({ onConvert }: { onConvert: () => void }) {
   const sendToConvert = () => {
     const rows = items.filter((i) => picked.has(i.file));
     if (!rows.length) return;
-    useConvertQueue.getState().add(rows.map((r) => ({ name: r.name, rel: r.file })));
+    // ★★**고른 것으로 갈아 끼운다** (더하지 않는다) — 패널이 그 자리에서 열리므로
+    //   "지금 무엇을 바꾸는 중인가"가 고른 것과 같아야 한다.
+    useConvertQueue.setState({ items: rows.map((r) => ({ name: r.name, rel: r.file })) });
     clearPick();
-    onConvert();
+    setConvert(true);
   };
 
   /** 칸 하나에 붙는 손잡이 — 격자와 목록이 **같은 것**을 쓴다 (조작이 갈리면 안 된다).
@@ -517,6 +522,33 @@ export function FileManager({ onConvert }: { onConvert: () => void }) {
         )}
       </div>
 
+      {/* ★★이름 변환 — **옆에 붙는 패널**이다 (사용자 지시 2026-08-23). 탭으로 갈라 두면
+          고른 것을 보내는 순간 화면이 통째로 바뀌어 "무엇을 고른 것이었나"가 끊긴다.
+          ★닫아도 목록은 남는다 — 다시 열면 하던 자리다 (`useConvertQueue`). */}
+      {convert && (
+        <div
+          data-convert-panel
+          style={{
+            width: 560,
+            flexShrink: 0,
+            display: "flex",
+            flexDirection: "column",
+            gap: "var(--sp-3)",
+            minHeight: 0,
+            borderLeft: "1px solid var(--line)",
+            paddingLeft: "var(--sp-4)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", flexShrink: 0 }}>
+            <b style={{ fontSize: "var(--text-sm)" }}>{t("tools.rename")}</b>
+            <span style={{ flex: 1 }} />
+            <button data-convert-close onClick={() => setConvert(false)} style={{ color: "var(--ink-faint)", display: "grid" }}>
+              {Icon.close}
+            </button>
+          </div>
+          <ConvertTool />
+        </div>
+      )}
     </div>
   );
 }

@@ -48,6 +48,9 @@ export function ConvertTool() {
   const [prefix, setPrefix] = useState("image");
   const [start, setStart] = useState(1);
   const [pad, setPad] = useState(3);
+  /** 저장 자리 — ★세 갈래다 (사용자 지시 2026-08-23). 「원본 옆에」는 걷었다:
+   *  같은 폴더에 번호 붙은 사본이 쌓여 원본과 뒤섞였다. */
+  const [mode, setMode] = useState<"overwrite" | "sub" | "folder">("sub");
   const [dest, setDest] = useState("");
   const [busy, setBusy] = useState(false);
   /** 몇 장까지 끝났나 — 진행바가 이것만 본다 (v2 `convertProgressText` 의 `n / total`) */
@@ -58,8 +61,9 @@ export function ConvertTool() {
   const setOpenAfter = useUi((s) => s.setConvertOpenFolder);
   const { zone, over, pick } = useImageDrop(add);
 
-  // ★경로를 모르는 그림(브라우저 드롭)은 **원본 옆에** 둘 수가 없다 — 자리를 골라야 한다
-  const needDest = items.some((i) => !i.path && !i.rel);
+  /** ★경로를 모르는 그림(브라우저 드롭)은 원본 자리를 알 수 없다 — 폴더를 골라야 한다 */
+  const noHome = items.some((i) => !i.path && !i.rel);
+  const needDest = mode === "folder" || noHome;
   const flat = flatten(tree);
 
   /** 썸네일·크기는 **목록이 바뀔 때 한 번** 물어본다. 순서만 바꾼 것은 화면에서 같이 옮긴다 */
@@ -112,6 +116,7 @@ export function ConvertTool() {
   const run = async () => {
     if (busy || !items.length) return;
     if (needDest && !dest) return toast(t("tools.needDest"), "warn");
+    if (noHome && mode !== "folder") return toast(t("tools.needDest"), "warn");
     setBusy(true);
     setDone(0);
     setRows([]);
@@ -135,8 +140,12 @@ export function ConvertTool() {
                 // ★번호는 화면이 정한다 — 한 장씩 보내므로 `start + i` 를 그때그때 싣는다
                 start: start + i,
                 pad,
-                dest,
+                // ★`dest` 는 「저장 폴더 지정」에서만 뜻이 있다 — 다른 갈래에서 실어 보내면
+                //   서버가 거절한다 (`backend/tools.convert`)
+                dest: noHome || mode === "folder" ? dest : "",
                 open_folder: openAfter && last,
+                // ★자리를 모르는 그림이 섞여 있으면 폴더로 몰아 준다 (위 `noHome`)
+                mode: noHome ? "folder" : mode,
               }),
             },
           );
@@ -163,33 +172,19 @@ export function ConvertTool() {
     <div style={{ flex: 1, minHeight: 0, display: "flex", gap: "var(--sp-4)" }}>
       {/* 왼쪽 — 무엇을 */}
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--sp-3)" }}>
+        {/* ★★**목록 판 자체가 드롭존**이다 (사용자 지시 2026-08-23: 따로 두지 말고 화면
+            전체에서 받기). 위에 점선 상자를 따로 두면 목록이 길 때 그 상자가 화면 밖으로
+            밀려 나가, 넓은 아래쪽에 떨궈도 아무 일이 안 일어났다 (EXIF 리더와 같은 자국). */}
         <div
           {...zone}
           data-convert-drop
-          onClick={() => void pick()}
           style={{
-            border: `1px dashed ${over ? "var(--accent)" : "var(--line)"}`,
-            background: over ? "var(--accent-bg)" : "var(--bg)",
-            borderRadius: "var(--r-3)",
-            padding: items.length ? "var(--sp-3)" : "var(--sp-8)",
-            textAlign: "center",
-            cursor: "pointer",
-            flexShrink: 0,
-          }}
-        >
-          <div style={{ fontSize: "var(--text-xs)", color: "var(--ink-soft)" }}>{t("tools.convertDrop")}</div>
-          <div style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
-            {items.length > 1 ? t("tools.reorderHint") : t("tools.dropHint")}
-          </div>
-        </div>
-
-        <div
-          style={{
+            position: "relative",
             flex: 1,
             minHeight: 0,
             overflowY: "auto",
-            background: "var(--panel)",
-            border: "1px solid var(--line)",
+            background: over ? "var(--accent-bg)" : "var(--panel)",
+            border: `1px ${over ? "solid var(--accent)" : "solid var(--line)"}`,
             borderRadius: "var(--r-3)",
             padding: "var(--sp-2)",
             display: "flex",
@@ -265,18 +260,34 @@ export function ConvertTool() {
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {it.name}
                     </span>
-                    <span style={{ color: row?.error ? "var(--err)" : "var(--ink-faint)" }}>
-                      {row?.error
-                        ? t("tools.rowFailed")
-                        : row?.saved
-                          ? row.saved
-                          : [
-                              p?.bytes ? fmtSize(p.bytes) : "",
-                              p?.width && p?.height ? `${p.width} × ${p.height}` : "",
-                              nameOf(i),
-                            ]
+                    {/* ★★**바뀔 이름이 주인공**이다 (사용자 지적 2026-08-23: 잘 안 보였다) —
+                        크기·해상도와 나란히 흐린 글씨로 두면 어느 것이 새 이름인지 안 보인다.
+                        화살표로 가리키고 글자를 밝게 둔다. */}
+                    <span style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+                      {row?.error ? (
+                        <span style={{ color: "var(--err)" }}>{t("tools.rowFailed")}</span>
+                      ) : (
+                        <>
+                          <span style={{ color: "var(--ink-ghost)" }}>→</span>
+                          <span
+                            data-convert-newname
+                            style={{
+                              color: row?.saved ? "var(--ok)" : "var(--accent)",
+                              fontWeight: "var(--w-semi)",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {row?.saved ?? nameOf(i)}
+                          </span>
+                          <span style={{ color: "var(--ink-faint)", flexShrink: 0 }}>
+                            {[p?.bytes ? fmtSize(p.bytes) : "", p?.width && p?.height ? `${p.width} × ${p.height}` : ""]
                               .filter(Boolean)
                               .join("  ")}
+                          </span>
+                        </>
+                      )}
                     </span>
                   </span>
                   <button onClick={() => swap(i, i - 1)} style={mini} data-tip={t("tools.up")}>
@@ -293,9 +304,21 @@ export function ConvertTool() {
             );
           })}
           {!items.length && (
-            <span style={{ margin: "auto", fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
-              {t("tools.empty")}
-            </span>
+            <button
+              data-convert-pick
+              onClick={() => void pick()}
+              style={{
+                margin: "auto",
+                display: "flex",
+                flexDirection: "column",
+                gap: 2,
+                fontSize: "var(--text-xs)",
+                color: "var(--ink-soft)",
+              }}
+            >
+              {t("tools.convertDrop")}
+              <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>{t("tools.dropHint")}</span>
+            </button>
           )}
         </div>
       </div>
@@ -365,15 +388,40 @@ export function ConvertTool() {
         </Section>
 
         <Section label={t("tools.dest")} help={t("tools.destHint")}>
-          <select data-dest value={dest} onChange={(e) => setDest(e.target.value)} style={{ ...box, width: "100%" }}>
-            <option value="">{t("tools.destBeside")}</option>
-            {flat.map((f) => (
-              <option key={f.path} value={f.path}>
-                {"  ".repeat(f.depth)}
-                {f.path}
-              </option>
+          {/* ★★세 갈래를 **먼저** 고르고, 폴더를 지정할 때만 목록이 뜬다.
+              「원본 옆에」는 걷었다 — 같은 폴더에 번호 붙은 사본이 쌓여 원본과 뒤섞였다. */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {(["overwrite", "sub", "folder"] as const).map((m) => (
+              <button
+                key={m}
+                data-dest-mode={m}
+                onClick={() => setMode(m)}
+                disabled={noHome && m !== "folder"}
+                style={{
+                  ...box,
+                  textAlign: "left",
+                  opacity: noHome && m !== "folder" ? 0.4 : 1,
+                  ...(mode === m ? onSt : {}),
+                }}
+              >
+                {t(m === "overwrite" ? "tools.destOverwrite" : m === "sub" ? "tools.destSub" : "tools.destFolder")}
+              </button>
             ))}
-          </select>
+          </div>
+          {/* ★★덮어쓰기는 **원본이 자리를 내주는** 유일한 갈래다 — 무슨 일이 일어나는지 적는다.
+              (지우지는 않는다: 옛 파일은 휴지통으로 간다, `backend/tools.convert`) */}
+          {mode === "overwrite" && <Hint>{t("tools.destOverwriteHint")}</Hint>}
+          {mode === "folder" && (
+            <select data-dest value={dest} onChange={(e) => setDest(e.target.value)} style={{ ...box, width: "100%" }}>
+              <option value="">{t("tools.destPick")}</option>
+              {flat.map((f) => (
+                <option key={f.path} value={f.path}>
+                  {"  ".repeat(f.depth)}
+                  {f.path}
+                </option>
+              ))}
+            </select>
+          )}
           {/* ★남는 것은 **지금 막힌 이유**뿐이다 — 무엇을 하는 자리인지는 라벨 옆 `?` 에 있다 */}
           {needDest && !dest && <Hint>{t("tools.needDest")}</Hint>}
           {/* ★여는 것은 **방금 우리가 쓴 자리**뿐이다 (backend/files.py `open_dir` 주석) */}

@@ -1,30 +1,30 @@
 import { useUi } from "../store/ui";
 import { useI18n } from "../i18n";
 import { ExifTool } from "./tools/ExifTool";
-import { ConvertTool } from "./tools/ConvertTool";
 import { FileManager } from "./tools/FileManager";
 
-/** 보조 도구 — **셋은 서로 다른 일**이다 (사용자 지적 2026-08-05).
+/** 보조 도구 — **둘은 서로 다른 일**이다.
  *
- *      EXIF 리더   남의 그림이 어떻게 만들어졌나   읽기만
- *      이름 변환   형식·이름을 바꿔 새 파일로      원본은 그대로
- *      파일 관리   아웃풋 폴더 트리를 그대로       옮기고 지우고
+ *      파일 관리   워크스페이스 폴더 트리를 그대로   옮기고 지우고 **이름을 바꾼다**
+ *      EXIF 리더   남의 그림이 어떻게 만들어졌나     읽기만
  *
- *  ★앞의 둘은 **밖에서 떨군 그림**을 받는다 — 워크스페이스 안일 필요가 없다.
- *  ★파일 관리를 앞의 둘에 섞지 않는다. 한 번 합쳐 봤더니 "지금 어느 파일을 손보는지"가
- *    사라졌다. 넘기는 길은 한 방향뿐이다 — 파일 관리에서 고른 것을 **이름 변환으로 보낸다.**
+ *  ★★**이름 변환은 탭이 아니다** (사용자 지시 2026-08-23). 파일 관리에서 고른 뒤
+ *    「일괄 이름 변환」을 누르면 **그 자리에 패널로 열린다.** 예전에는 탭이 따로 있어
+ *    고른 것을 옆 탭으로 보내고, 화면이 통째로 바뀌어 "무엇을 고른 것이었나"가 끊겼다.
+ *  ★EXIF 리더는 **밖에서 떨군 그림**을 받는다 — 워크스페이스 안일 필요가 없다.
  */
+/** ★차례는 **파일 관리 → EXIF 리더** (사용자 지시 2026-08-23). 자주 여는 것이 앞이다.
+ *  ★「이름 변환」 탭은 없다 — **파일 관리 안**으로 들어갔다 (고른 것을 그 자리에서 바꾼다). */
 const TABS = [
-  { id: "exif", key: "tools.exif" },
-  { id: "convert", key: "tools.rename" },
   { id: "files", key: "tools.files" },
+  { id: "exif", key: "tools.exif" },
 ] as const;
 
 export function Tools() {
   const t = useI18n((s) => s.t);
   /** 어느 도구를 보고 있나 — ★**저장되는 작업 상태**다 (`useUi.view.tab`) */
   type ToolId = (typeof TABS)[number]["id"];
-  const tab = useUi((u) => (u.view.tab["tools"] as ToolId | undefined) ?? "exif");
+  const tab = useUi((u) => (u.view.tab["tools"] as ToolId | undefined) ?? "files");
   const setTab = (k: ToolId) => useUi.getState().setView("tab", "tools", k as never);
 
   return (
@@ -53,9 +53,8 @@ export function Tools() {
         })}
       </div>
 
+      {tab === "files" && <FileManager />}
       {tab === "exif" && <ExifTool />}
-      {tab === "convert" && <ConvertTool />}
-      {tab === "files" && <FileManager onConvert={() => setTab("convert")} />}
     </div>
   );
 }

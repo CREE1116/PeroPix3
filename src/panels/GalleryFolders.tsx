@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { useWs } from "../store/workspace";
 import { ALL, useGallery } from "../store/gallery";
-import { useDropZone } from "../cards/dragStore";
+import { useDrag, useDropZone } from "../cards/dragStore";
 import { ask } from "../store/ask";
 import { toast } from "../store/toast";
 import { Icon } from "../components/Icon";
@@ -33,6 +33,8 @@ export function GalleryFolders() {
   /** ★적고 있는 글자를 **ref 로도** 든다. Esc 로 물린 직후 `blur` 가 오면 그 순간의
    *  렌더가 들고 있던 옛 값으로 폴더가 만들어진다 — ref 는 즉시 비울 수 있다. */
   const draft = useRef("");
+  /** 갤러리 그림을 끌고 있나 — 그동안 이 영역이 어둠 위로 올라온다 */
+  const lift = useDrag((d) => d.drag?.kind === "keep");
 
   const addFolder = async () => {
     const name = draft.current.trim();
@@ -66,19 +68,32 @@ export function GalleryFolders() {
 
   return (
     // ★제목은 패널 머리글(Shell)이 이미 달고 있다 — 여기서 또 적으면 두 겹이 된다
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
+    <div
+      /* ★★그림을 끌 때 **이 영역을 어둠 위로 올린다** (사용자 지적 2026-08-23: 폴더 트리가
+         어두워서 안 보였다). `DragLayer` 가 화면에 어둠을 까는데, 받는 자리는 그 위로
+         올라와야 한다 — CLAUDE.md 「드롭 표시는 하나의 양식이다」의 첫 번째 겹이다.
+         ★올리는 것은 **영역 전체**다. 줄마다 올리면 줄 사이 여백이 어두운 채로 남는다. */
+      data-spot={lift ? "" : undefined}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        minHeight: 0,
+        ...(lift ? { position: "relative" as const, zIndex: 31, background: "var(--bg)" } : {}),
+      }}
+    >
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "var(--sp-2) var(--sp-2) var(--sp-3)" }}>
+        {/* ★★첫 줄이 **뿌리 폴더 그 자체**다 (사용자 지시 2026-08-23).
+            이름도 실제 폴더와 같은 `gallery` 이고, **떨구면 최상위로 올라온다**.
+            ★따로 있던 「폴더 밖으로」 줄을 걷은 자리다 — 뿌리로 되돌리는 자리가 둘이면
+              어느 것이 무엇인지 헷갈린다. 같은 일은 한 줄이 한다. */}
         <Row
           label={t("gallery.all")}
           count={total}
           on={folder === ALL}
           onClick={() => void setFolder(ws, ALL)}
+          onDropFiles={(files) => void moveFiles(files, ALL)}
         />
-        {/* ★★**뿌리로 되돌리는 줄** — 끌고 있을 때만 나온다 (사용자 지적 2026-08-21:
-            폴더 밖으로 못 뺐다). 「전체」는 폴더가 아니라 **보기**라 받을 수 없고, 그래서
-            한 번 폴더에 넣은 그림을 뿌리로 되돌릴 길이 화면에 없었다 (윗줄 드롭다운뿐).
-            ★평소에는 감춘다 — 늘 있으면 「전체」와 뜻이 겹쳐 폴더 목록이 헷갈린다. */}
-        <RootRow onDropFiles={(files) => void moveFiles(files, ALL)} />
         {rest.map((f) => (
           <Row
             key={f.path}
@@ -272,36 +287,3 @@ function Row({
   );
 }
 
-/** 뿌리(폴더 없음)로 옮기는 자리 — **끌고 있을 때만** 뜬다.
- *  ★「전체」는 폴더가 아니라 **보기**라 받을 수 없다. 그래서 한 번 폴더에 넣은 그림을
- *    뿌리로 되돌릴 길이 화면에 없었다 (윗줄 드롭다운뿐) — 이 줄이 그 자리다. */
-function RootRow({ onDropFiles }: { onDropFiles: (files: string[]) => void }) {
-  const t = useI18n((s) => s.t);
-  const zone = useDropZone({
-    id: "keep-folder-root",
-    kind: "keep",
-    prio: 10,
-    onDrop: (d) => d.files?.length && onDropFiles(d.files),
-  });
-  if (!zone.active) return null;
-  return (
-    <div
-      data-keep-folder-row="/"
-      ref={zone.ref}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "var(--sp-2)",
-        margin: "2px 0",
-        padding: "5px var(--sp-3)",
-        borderRadius: "var(--r-2)",
-        border: `1px dashed ${zone.over ? "var(--accent)" : "var(--line)"}`,
-        background: zone.over ? "var(--accent-bg)" : undefined,
-        color: zone.over ? "var(--accent)" : "var(--ink-faint)",
-        fontSize: "var(--text-2xs)",
-      }}
-    >
-      {t("gallery.toRoot")}
-    </div>
-  );
-}

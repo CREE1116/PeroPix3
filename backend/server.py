@@ -2014,11 +2014,16 @@ class ToolConvert(BaseModel):
     pad: int = 3
     dest: str = ""
     open_folder: bool = False
+    #: 저장 자리 — `overwrite` · `sub` · `folder` (`tools.MODES`)
+    mode: str = "sub"
 
 
 @app.post("/api/tools/convert")
 async def tools_convert(body: ToolConvert):
-    """변환·일괄 이름 바꾸기 — ★**원본을 지우지 않는다.** 새 파일을 만든다."""
+    """변환·일괄 이름 바꾸기.
+
+    ★★`mode` 가 `overwrite` 일 때만 원본이 자리를 내준다 — 그때도 **지우지 않고
+      휴지통으로** 보낸다 (`tools.convert` 의 ★주). 나머지 둘은 새 파일만 만든다."""
     if not body.items:
         raise HTTPException(400, "그림이 없습니다")
     try:
@@ -2033,6 +2038,7 @@ async def tools_convert(body: ToolConvert):
             body.pad,
             body.dest,
             body.open_folder,
+            body.mode,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))

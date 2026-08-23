@@ -11,7 +11,8 @@ import { vibeDefaults } from "../lib/vibeDefaults";
 import { fitSizeToBase, modelCaps, useGen } from "../store/gen";
 import { useUi } from "../store/ui";
 import { toast } from "../store/toast";
-import { MetaBody, applyMeta } from "../panels/GalleryMeta";
+import { applyMeta } from "../panels/GalleryMeta";
+import { showInExif } from "../panels/tools/ExifTool";
 
 /** 밖에서 떨군 그림 하나를 **무엇으로 쓸지 고르는 자리** (v2 「드롭 확인 모달」 이식).
  *
@@ -251,7 +252,11 @@ function Sheet({
                 cached={!!cached.encoded}
               />
             ) : canApply ? (
-              <MetaBody m={m!} />
+              /* ★★**프롬프트를 여기 늘어놓지 않는다** (사용자 지시 2026-08-23).
+                 시트에서 정할 것은 「이 그림을 무엇으로 쓸까」 하나이고, 프롬프트를 읽는 것은
+                 **EXIF 리더가 하는 일**이다 — 두 곳에서 같은 것을 보여 주면 시트가 길어져
+                 정작 고를 단추가 아래로 밀린다. 값 몇 개만 두고 나머지는 그쪽으로 보낸다. */
+              <MetaBrief m={m!} />
             ) : (
               <div style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)", lineHeight: 1.6 }}>
                 {t("drop.noMeta")}
@@ -262,6 +267,21 @@ function Sheet({
 
         {/* 무엇으로 쓸까 — ★**이 그림에 뜻이 있는 것만** 낸다. 눌러야 실패하는 단추를 두지 않는다 */}
         <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sp-2)" }}>
+          {/* ★★프롬프트·설정을 **읽는 것**은 EXIF 리더의 일이다 (사용자 지시 2026-08-23).
+              여기서는 보내기만 한다 — 이미 읽어 둔 것을 그대로 넘기므로 다시 안 물어본다. */}
+          {canApply && (
+            <button
+              data-drop-exif
+              disabled={busy}
+              onClick={() => {
+                showInExif(name, m);
+                onClose();
+              }}
+              style={btn}
+            >
+              {t("drop.exif")}
+            </button>
+          )}
           {canApply && (
             <button
               data-drop-apply
@@ -328,6 +348,30 @@ function VibeInfo({
       <div style={{ marginTop: "var(--sp-2)", color: cached ? "var(--ok)" : "var(--warn)" }}>
         {cached ? t("drop.vibeCached") : t("drop.vibeRaw")}
       </div>
+    </div>
+  );
+}
+
+/** 시트에 싣는 **값 요약** — ★프롬프트·네거티브·캐릭터는 **안 싣는다**
+ *  (사용자 지시 2026-08-23: 그것을 읽는 자리는 EXIF 리더다).
+ *  여기 남는 것은 「이 그림이 무엇인가」를 가리는 데 쓰는 값뿐이다. */
+function MetaBrief({ m }: { m: { seed?: number; steps?: number; cfg?: number; width?: number; height?: number; sampler?: string; source?: string; nai_model?: string } }) {
+  const t = useI18n((s) => s.t);
+  const rows: [string, string][] = [];
+  if (m.source || m.nai_model) rows.push([t("gallery.fieldModel"), m.source || m.nai_model!]);
+  if (m.width !== undefined) rows.push([t("gallery.fieldSize"), `${m.width}×${m.height}`]);
+  if (m.seed !== undefined) rows.push([t("gallery.fieldSeed"), String(m.seed)]);
+  if (m.steps !== undefined) rows.push([t("gallery.fieldSteps"), String(m.steps)]);
+  if (m.cfg !== undefined) rows.push([t("gallery.fieldCfg"), String(m.cfg)]);
+  if (m.sampler) rows.push([t("gallery.fieldSampler"), m.sampler]);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: "var(--text-2xs)" }}>
+      {rows.map(([k, v]) => (
+        <div key={k} style={{ display: "flex", gap: "var(--sp-2)" }}>
+          <span style={{ width: 76, flexShrink: 0, color: "var(--ink-faint)" }}>{k}</span>
+          <span style={{ color: "var(--ink-soft)", wordBreak: "break-all" }}>{v}</span>
+        </div>
+      ))}
     </div>
   );
 }

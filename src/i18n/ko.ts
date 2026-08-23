@@ -324,6 +324,7 @@ export const ko: Dict = {
   /** 밖에서 떨군 그림 가져오기 (`app/DropImport`) */
   drop: {
     title: "가져오기",
+    exif: "EXIF 확인",
     hint: "여기에 놓으면 이 그림으로 무엇을 할지 고릅니다",
     apply: "설정 적용",
     applyHint: "이 그림의 프롬프트·캐릭터·생성 설정·시드·바이브를 지금 탭에 넣습니다",
@@ -550,8 +551,12 @@ export const ko: Dict = {
     pad: "자릿수",
     preview: "{s} 처럼 저장됩니다",
     dest: "저장 위치",
-    destBeside: "원본 옆에",
-    destHint: "원본은 그대로 두고 새 파일을 만듭니다.",
+    destOverwrite: "덮어쓰기 (원본 자리에)",
+    destSub: "하위 output 폴더에",
+    destFolder: "저장 폴더 지정",
+    destPick: "폴더를 고르세요…",
+    destOverwriteHint: "옛 파일은 지우지 않고 휴지통으로 갑니다. 형식을 바꾸면 확장자가 달라집니다.",
+    destHint: "결과를 어디에 쓸지 고릅니다.",
     needDest: "밖에서 가져온 그림은 저장할 폴더를 골라야 합니다",
     runConvert: "{n}장 변환",
     converted: "{n}장 변환 (실패 {f})",
@@ -571,7 +576,7 @@ export const ko: Dict = {
     deleteFolderConfirm: "{s} 폴더를 지울까요?",
     deleteFolderBody: "안에 든 것까지 함께 휴지통으로 갑니다. 24시간 안에는 되돌릴 수 있습니다.",
     moveIntoSelf: "자기 하위 폴더로는 옮길 수 없습니다",
-    root: "아웃풋 폴더",
+    root: "workspaces",
     count: "{n}장",
     empty: "이 폴더는 비어 있습니다",
     newFolder: "새 폴더",
@@ -834,9 +839,8 @@ export const ko: Dict = {
     folderDelConfirm: "'{name}' 폴더를 지웁니다",
     folderNotEmpty: "그림이 든 폴더는 지울 수 없습니다. 먼저 옮기거나 지우세요.",
     folders: "폴더",
-    all: "전체",
+    all: "gallery",
     /** 폴더 밖(뿌리)으로 되돌리는 드롭 자리 — 끌고 있을 때만 뜬다 */
-    toRoot: "폴더 밖으로",
     countImages: "{n}장",
     /** 갤러리 단추에 그림을 떨궜을 때 */
     dropToKeep: "여기 놓으면 보관합니다",

@@ -20,6 +20,7 @@ from PIL import Image
 
 import files as files_mod
 import meta as meta_mod
+import trash
 
 Item = dict  # {"name": str, "path"?: str, "rel"?: str, "data"?: base64}
 
@@ -120,6 +121,15 @@ def _free(d: Path, stem: str, ext: str) -> Path:
     return cand
 
 
+#: 저장 자리 — 화면의 「저장 위치」와 같은 세 갈래 (사용자 지시 2026-08-23)
+#:   overwrite  원본을 **대체**한다 (원본은 휴지통으로)
+#:   sub        원본 폴더 **아래 `output/`** 에
+#:   folder     고른 폴더에 모은다 (`dest`)
+MODES = ("overwrite", "sub", "folder")
+#: 「하위 output 폴더에」가 만드는 폴더 이름
+SUB_DIR = "output"
+
+
 def convert(
     root: Path,
     items: list[Item],
@@ -131,21 +141,32 @@ def convert(
     pad: int = 3,
     dest: str = "",
     open_folder: bool = False,
+    mode: str = "sub",
 ) -> dict:
     """변환 + (원하면) 일괄 이름 바꾸기.
 
-    `dest` 가 비면 **원본 옆에** 둔다 (경로를 아는 것만). 값이 있으면 아웃풋 루트 아래
-    그 폴더에 모은다 — 브라우저에서 떨군 것처럼 원본 자리를 모르는 경우의 유일한 길이다.
+    저장 자리는 `mode` 가 정한다 (위 `MODES`). `folder` 는 아웃풋 루트 아래 `dest` 폴더에
+    모은다 — 브라우저에서 떨군 것처럼 **원본 자리를 모르는** 경우의 유일한 길이다.
 
+    ★★`overwrite` 만이 **원본을 없앤다.** 그래도 지우지 않고 **휴지통으로 보낸다**
+      (`backend/trash.py`) — 이 모듈의 나머지가 지키는 「원본을 지키다」와 같은 뜻이고,
+      잘못 눌렀을 때 되돌릴 길이 있어야 한다. 형식을 바꿔 덮으면 확장자가 달라지므로
+      **옛 파일은 휴지통으로 가고 새 확장자의 파일이 그 자리에 선다.**
     ★이름 번호는 **받은 차례**를 따른다 (v2 `generateNewFilename`: `<접두><번호>.<확장자>`,
       자릿수 0 이면 그대로). 정렬을 여기서 바꾸지 않는다 — 목록을 정한 것은 화면이다.
     """
+    if mode not in MODES:
+        raise ValueError("모르는 저장 자리입니다")
+    # ★★`dest` 는 `folder` 에서만 뜻이 있다. 조용히 무시하면 「폴더를 골랐는데 딴 데 저장됐다」가
+    #   되므로 여기서 거절한다 (부르는 쪽이 갈래에 맞게 비워 보낸다).
+    if dest and mode != "folder":
+        raise ValueError("저장 폴더는 「저장 폴더 지정」에서만 씁니다")
     fmt = (fmt or "png").lower()
     if fmt not in ("png", "jpg", "webp"):
         raise ValueError("지원하지 않는 형식입니다")
 
     out_dir: Path | None = None
-    if dest:
+    if mode == "folder":
         out_dir = files_mod.under(root, dest)
         out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -165,15 +186,36 @@ def convert(
                     chunks = dict(im.info)
                 blob = meta_mod.write(data, raw, fmt, quality, chunks)
 
-            d = out_dir or (src.parent if src else None)
+            # ★자리를 모르는 것(브라우저 드롭)은 `folder` 로만 받을 수 있다
+            if mode == "folder":
+                d = out_dir
+            elif src is None:
+                raise ValueError("저장할 폴더를 정해 주세요")
+            elif mode == "sub":
+                d = src.parent / SUB_DIR
+                d.mkdir(parents=True, exist_ok=True)
+            else:  # overwrite
+                d = src.parent
             if d is None:
                 raise ValueError("저장할 폴더를 정해 주세요")
+            ext = "jpg" if fmt == "jpg" else fmt
             if prefix is not None:
                 num = str(start + i).zfill(max(0, pad))
                 stem = f"{prefix}{num}"
             else:
                 stem = Path(name).stem
-            dst = _free(d, stem, "jpg" if fmt == "jpg" else fmt)
+            if mode == "overwrite" and src is not None:
+                # ★★옛 파일을 **휴지통으로** 보내고 그 자리에 쓴다. 이름을 함께 바꾸면
+                #   새 이름으로 서고, 그 자리에 다른 파일이 있으면 그것도 함께 물러난다.
+                dst = d / f"{stem}.{ext}"
+                gone = [p for p in {src, dst} if p.exists()]
+                if gone:
+                    trash.send_at(root, [str(p.relative_to(root)) for p in gone])
+                dst.write_bytes(blob)
+                results.append({"name": name, "saved": dst.name, "dir": str(dst.parent),
+                                "replaced": True, "ok": True})
+                continue
+            dst = _free(d, stem, ext)
             dst.write_bytes(blob)
             results.append({"name": name, "saved": dst.name, "dir": str(dst.parent), "ok": True})
         except Exception as e:  # 한 장이 깨져도 나머지는 간다
