@@ -67,6 +67,32 @@ export const newestFirst = (a: Rec, b: Rec) =>
  *  ★레코드에 `set_id` 가 없으면 이름으로 맞춘다 (id 이전에 만든 레코드 호환). 그런데 그 폴백이
  *    **새 탭에도 걸려서**, 같은 이름(`새 세트`)으로 탭을 만들면 만든 적 없는 그림이 떴다
  *    (사용자 지적 2026-08-04). 새 탭은 `idOnly` 라 폴백을 건너뛴다 — 옛 탭에만 남긴다. */
+/** ★★**같은 파일을 가리키는 줄은 하나로 접는다** (사용자 지적 2026-08-24: *"여러개가
+ *  중복표시되고 하나를 누르면 중복으로 뜬게 전부 선택"*).
+ *
+ *  레코드는 append-only 인데, 생성이 **옛 파일 이름을 다시 쓰면** 같은 경로를 가리키는 줄이
+ *  둘이 된다 (번호가 되돌아가던 문제 — `backend/workspace.next_name` 이 이제 레코드까지
+ *  세어 막는다). 그렇게 이미 생긴 줄은 화면에서 **한 장**으로 보여야 한다:
+ *  화면은 경로를 그림의 신원으로 쓰므로(고르기·지움·별표) 두 장으로 두면 하나를 눌러도
+ *  둘 다 잡힌다.
+ *  ★남기는 것은 **마지막 줄**이다 — 그 자리에 실제로 있는 그림은 나중에 쓴 것이다
+ *    (`store/workspace.addRecord` 가 실시간 충돌에서 내리는 판단과 같다).
+ *  ★원장(`records.jsonl`)은 **안 고친다.** 여기는 읽는 쪽이고, 파일은 사실의 기록이다. */
+export function dedupeByFile(records: Rec[]): Rec[] {
+  const at = new Map<string, number>();
+  const out: Rec[] = [];
+  for (const r of records) {
+    const seen = at.get(r.file);
+    if (seen === undefined) {
+      at.set(r.file, out.length);
+      out.push(r);
+    } else {
+      out[seen] = r; // 나중 줄이 이긴다 (자리는 처음 나온 차례를 지킨다)
+    }
+  }
+  return out;
+}
+
 export function takesOf(
   records: Rec[],
   tab: { id: string; name: string; idOnly?: boolean },

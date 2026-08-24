@@ -6,7 +6,8 @@ import { toast, undoToast } from "./toast";
 import { clearUndo, pushUndo } from "../lib/undo";
 import { makeBlock, parseSegs, type Block } from "../lib/blocks";
 import { wrapSetTabInCard } from "../lib/sceneCards";
-export { takesOf, takesOfScene, type Rec } from "../lib/takes";
+export { takesOf, takesOfScene, dedupeByFile, type Rec } from "../lib/takes";
+import { dedupeByFile } from "../lib/takes";
 import type { Rec } from "../lib/takes";
 // ★**형만** 가져온다 — `gen.ts` 가 이 파일을 부르므로 값으로 가져오면 순환이 된다
 import type { GenParams } from "./gen";
@@ -623,7 +624,8 @@ export const useWs = create<S>((set, get) => ({
     const tabs = get().openWs.includes(name) ? get().openWs : [...get().openWs, name];
     saveTabs(tabs);
     saveActive(name); // 켤 때 여기로 돌아온다
-    set({ current: name, spec, records: r.records ?? [], loading: false, openWs: tabs });
+    // ★같은 경로를 가리키는 줄은 **하나로 접어** 들인다 (`dedupeByFile` 의 ★★주)
+    set({ current: name, spec, records: dedupeByFile(r.records ?? []), loading: false, openWs: tabs });
     // ★AI 파일 도구의 기준을 알려 준다 — 백엔드는 어느 워크스페이스를 보고 있는지 모른다
     //   (사용자 지시 2026-08-08: 정리는 워크스페이스 안에서만)
     void api("/api/agent/workspace", {
