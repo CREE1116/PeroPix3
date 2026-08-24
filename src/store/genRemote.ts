@@ -60,13 +60,13 @@ export async function queueToWorkspace(
             prompt: resolveWildcards(cellPrompt, wildcardPools()),
             negative_prompt: resolveWildcards(uc, wildcardPools()),
             workspace,
-            tab: tab.name,
+            set: tab.name,
             set_id: tab.id,
             cell: c.name,
             cell_id: c.id,
             cell_no: i + 1,
-            // 캐릭터 이름은 저장 경로 한 칸이 된다 (<ws>/output/멀티/<캐릭터>/<탭>/)
-            char: (spec.tabs ?? []).find((c) => c.id === (tab.tabId ?? spec.activeTab))?.name ?? null,
+            // 탭 이름은 저장 경로 한 칸이 된다 (`<ws>/output/멀티/<탭>/<세트>/`)
+            tab: (spec.tabs ?? []).find((c) => c.id === (tab.tabId ?? spec.activeTab))?.name ?? null,
           },
           undefined,
           1,
@@ -90,7 +90,11 @@ export async function queueToWorkspace(
       prompt,
       negative_prompt: uc,
       workspace,
-      tab: tab.name,
+      // ★`tab` 은 탭 이름, `set` 은 세트 이름이다 (위 ★★주와 같은 자리)
+      tab: (spec.tabs ?? []).find(
+        (c) => c.id === ((tab as { tabId?: string }).tabId ?? spec.activeTab),
+      )?.name ?? null,
+      set: tab.name,
       set_id: tab.id,
     },
     shots,

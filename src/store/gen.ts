@@ -263,8 +263,13 @@ export const useGen = create<S>((set, get) => ({
           negative_prompt: uc,
           characters: withCoords(chars, get().params.use_coords),
           workspace: ws.current,
-          char: tab.kind === "set" ? (ws.activeTabOf()?.name ?? null) : null,
-          tab: tab.name,
+          /* ★★열쇠 셋이 **낱말표 그대로**여야 한다 (`shared/terms.json`):
+             `tab` = 탭 이름 · `set` = 세트 이름 · `set_id` = 그 세트의 id.
+             2026-08-24 개명 뒤에도 여기가 옛 짝(`char` = 탭 이름, `tab` = 세트 이름)으로
+             남아 있었다 — 서버에 `char` 라는 자리가 없어 **탭 칸이 통째로 비었고**,
+             저장 경로가 `멀티/<탭>/<세트>/` 로 안 잡혔다. */
+          tab: tab.kind === "set" ? (ws.activeTabOf()?.name ?? null) : null,
+          set: tab.name,
           cell: targetCell,
           cell_no:
             tab.kind === "set" && targetCell != null
@@ -340,8 +345,8 @@ export const useGen = create<S>((set, get) => ({
         ...get().params,
         ...useImageInput.getState().payload(),
         workspace: ws.current,
-        char: ws.activeTabOf()?.name ?? null,
-        tab: tab.name,
+        tab: ws.activeTabOf()?.name ?? null,
+        set: tab.name,
         set_id: tab.id,
         negative_prompt: uc,
         characters: withCoords(chars, get().params.use_coords),

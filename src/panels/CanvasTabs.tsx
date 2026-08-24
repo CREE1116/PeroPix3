@@ -345,16 +345,19 @@ function SaveHint() {
   const { current, spec } = useWs();
   const cell = useGen((s) => s.cell);
   const tr = useI18n((s) => s.t);
-  const tab = spec?.sets.find((x) => x.id === spec.activeTab);
-  if (!tab) return null;
+  /* ★★찾는 것은 **세트**이므로 열쇠도 `activeSet` 이다. 2026-08-24 개명 때 옛 이름
+     (`activeTab` 이 세트를 가리키던 시절)이 남아 아무것도 못 찾았고, 그래서 이 줄이
+     **화면에서 통째로 사라졌다** (사용자 지적: *"상단에 뜨던 저장경로 표시가 사라졌어"*). */
+  const set = spec?.sets.find((x) => x.id === spec.activeSet);
+  if (!set) return null;
   /** 화면에 적힌 그 자리 — 탐색기로 열 때도 **같은 문자열**을 쓴다 (둘이 갈리면 안 된다).
    *
    *  ★★규칙 정본은 `backend/workspace.out_dir` 다: `output/멀티/<탭>/<세트>/`.
    *    여기 적혀 있던 것은 **틀렸다** (사용자 지적 2026-08-19: 열면 400):
    *      · 위층(탭=`chars`) 폴더가 빠져 있었다
    *      · 씬 폴더를 붙이고 있었는데 **씬은 폴더가 아니다** (파일 이름 앞의 번호다) */
-  const charName = (spec?.tabs ?? []).find((c) => c.id === spec?.activeTab)?.name;
-  const rel = `output/멀티/${charName ? `${charName}/` : ""}${tab.name}`;
+  const tabName = (spec?.tabs ?? []).find((c) => c.id === spec?.activeTab)?.name;
+  const rel = `output/멀티/${tabName ? `${tabName}/` : ""}${set.name}`;
   return (
     <span
       style={{

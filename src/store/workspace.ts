@@ -923,14 +923,17 @@ export const useWs = create<S>((set, get) => ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           file,
-          tab: tab.name,
-          tab_id: tab.id,
+          /* ★그림이 앉는 자리는 **세트**다 (`CopyBody`). 2026-08-24 개명 뒤에도 여기가
+             옛 열쇠(`tab`·`tab_id`)로 남아 있어 서버가 `set` 을 못 받았다.
+             ★`tab` 은 이제 **탭 이름**이다 — 저장 경로 한 칸(`멀티/<탭>/<세트>/`)이 된다. */
+          set: tab.name,
+          set_id: tab.id,
           // ★씬 값을 **넷 다** 싣는다 — 하나라도 비면 그 그림이 어느 씬 것인지 화면이 못 찾는다
           //   (받는 탭은 `idOnly` 라 이름 폴백도 없다, `lib/takes.ts`)
           cell: cell.name,
           cell_id: cell.id,
           cell_no: 1,
-          char: (sp.tabs ?? []).find((c) => c.id === sp.activeTab)?.name ?? null,
+          tab: (sp.tabs ?? []).find((c) => c.id === sp.activeTab)?.name ?? null,
           exclude_slot_number: o.excludeNo,
           // ★보관함 그림은 서버가 **보관함에서** 집어 온다. 이 워크스페이스에 레코드가 없으니
           //   시드도 실어 준다 (없으면 0 이 박혀 「같은 시드로 다시」가 헛돈다)
@@ -1135,7 +1138,10 @@ export const useWs = create<S>((set, get) => ({
     //   다시 눌러도 `switchTab` 가 일찍 반환해 탭을 새로 만들어 주지 않는다.
     const mine = spec.sets.filter((x) => x.kind === "set" && x.tabId === ownerTab);
     if (mine.length <= 1) return;
-    const tabs = spec.sets.filter((t) => t.id !== id);
+    /* ★★남는 것은 **세트 목록**이다. 개명 때 이름만 옛것으로 남아(`tabs`) 아래에서
+       **탭 목록 자리에 세트를 써 넣고 있었다** — 세트는 지워지지도 않고 탭 줄이 통째로
+       망가진다. 이름과 쓰는 자리를 함께 맞춘다. */
+    const rest = spec.sets.filter((t) => t.id !== id);
     const wasActive = spec.activeSet === id;
     // ★닫으면 **같은 캐릭터에 머문다.** `tabs[0]` 로 가면 남의 캐릭터로 튕긴다
     //   (사용자 지적 2026-08-04, 그때는 싱글↔멀티였다). 같은 캐릭터의 탭 중 **가장 가까운 것**을 연다.
@@ -1150,13 +1156,13 @@ export const useWs = create<S>((set, get) => ({
             return Math.abs(at - wasAt) < Math.abs(bestAt - wasAt) ? t : best;
           });
     const nextActive = wasActive ? neighbour.id : spec.activeSet;
-    set({ spec: { ...spec, tabs, activeSet: nextActive } });
+    set({ spec: { ...spec, sets: rest, activeSet: nextActive } });
     // ★활성 탭을 닫았으면 **새 탭의 프롬프트를 편집기로 꺼낸다.**
     //   안 하면 편집기 안은 닫힌 탭의 내용 그대로인데 activeSet 만 바뀌어,
     //   0.4초 뒤 도는 자동 저장이 `stash(spec, activeSet)` 로 그것을 **옆 탭에 써 넣는다.**
     //   화면상으론 탭 하나를 닫은 것으로만 보여서, 옆 탭을 열기 전엔 유실을 알 수 없다.
     if (wasActive) {
-      const next = tabs.find((t) => t.id === nextActive);
+      const next = rest.find((t) => t.id === nextActive);
       usePrompt.getState().load(promptOf(spec, next));
     }
     queueSave(get);
