@@ -108,6 +108,28 @@ export function App() {
     applyFont(useUi.getState().font);
   }, []);
 
+  /** ★★**Alt 단독 누름이 창의 메뉴 모드를 깨우지 못하게 막는다** (사용자 지적 2026-08-24).
+   *
+   *  Windows 는 `Alt` 를 단독으로 누르면 **시스템 메뉴를 활성화**한다. 그 상태에 들어가면
+   *  창이 휠을 받지 못하고, **클릭이나 `Esc` 로만 풀린다.** 그래서 칩에서 `Alt+휠`로 가중치를
+   *  만진 뒤에는 큰 그림도 좌 패널도 휠이 죽어 있었다 (사용자 실측: *"Alt 를 떼어도 안 된다"*).
+   *  ★가중치 조절이 `Alt+휠`인 이상 이 상태에는 **매번** 들어간다 — 조절할 때마다 클릭을
+   *    한 번 더 해야 했다는 뜻이다.
+   *  ★막는 것은 **Alt 단독**뿐이다. `Alt+무엇`은 그대로 둔다 — OS 단축키(`Alt+Tab`·`Alt+F4`)는
+   *    애초에 웹이 못 막고, 앱 안에서 Alt 조합을 쓰게 될 여지도 남겨 둔다.
+   *  ★이 앱에는 메뉴 바가 없으므로 잃는 것이 없다 (Tauri 창을 우리가 그린다). */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Alt" && !e.ctrlKey && !e.shiftKey && !e.metaKey) e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKey);
+    };
+  }, []);
+
   useEffect(() => {
     let alive = true;
     (async () => {
