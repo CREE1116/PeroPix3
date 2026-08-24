@@ -42,6 +42,10 @@ HEAVY_KEYS = ("resolved", "env")
 PRESPLIT_NAME = "records-before-split.jsonl"
 WORK_DIR = "work"      # ★옛 경로 (읽기 전용)
 OUT_DIR = "output"     # 생성물이 사는 곳 (사용자 결정 2026-08-08)
+#: ★그 아래 한 겹. 「싱글/멀티」로 갈리던 시절의 이름이 그대로 남은 것이다 —
+#:  갈래는 2026-08-24 에 없어졌고(`out_dir` 의 ★★주) 이름만 **호환을 위해** 둔다.
+#:  바꾸면 이미 만든 그림과 새 그림이 두 폴더로 갈린다.
+MULTI_DIR = "멀티"
 # 파생 썸네일 캐시 — 원본에서 자동으로 굽는다. 지워도 다시 생긴다 (thumbs.py 참조)
 THUMB_DIR = ".thumbs"
 
@@ -161,25 +165,32 @@ class Store:
         p.mkdir(parents=True, exist_ok=True)
         return p
 
-    def out_dir(self, ws: str, set_name: str, is_set: bool, tab_name: str | None = None) -> Path:
-        """저장 자리 — ★**싱글과 멀티를 갈라 놓는다** (사용자 지시 2026-08-04).
+    def out_dir(self, ws: str, set_name: str, tab_name: str | None = None) -> Path:
+        """저장 자리 — **그림이 앉는 슬롯의 자리**를 그대로 따른다.
 
-            <ws>/output/싱글/<탭>/                    <순번>.png
-            <ws>/output/멀티/<캐릭터>/<포즈세트>/       <포즈번호>_<순번>.png
+            <ws>/output/멀티/<탭>/<세트>/       <씬번호>_<씬이름>_<순번>.png
 
+        ★★**「싱글」 갈래를 걷어냈다** (사용자 지시 2026-08-24: *"싱글이라는 개념은 없어졌음.
+          싱글에 저장하는 것 자체가 레거시가 남아있는 이슈"*). 2026-08-11 에 싱글 탭이
+          없어졌는데 저장 자리만 그 갈래를 들고 있어서, 씬을 못 찾은 그림(강화·옛 경로로 온
+          것)이 `싱글/` 로 떨어져 **그림이 나온 자리와 다른 폴더**에 쌓였다.
+          이제 갈래가 하나다 — 씬 이름·번호를 모르면 **파일 이름 앞이 비는 것**으로 끝나고,
+          폴더는 언제나 그 그림이 속한 탭·세트다.
         ★`output/` 아래로 내린 것은 **워크스페이스 안이 정리되게** 하기 위해서다
           (사용자 지시 2026-08-08). 옛 경로(`싱글/`·`멀티/`·`work/`)의 그림은 **옮기지 않는다** —
           records 의 상대경로와 썸네일 tid 가 통째로 바뀌어 꽂아 둔 커버가 깨진다.
           읽는 쪽은 상대경로를 그대로 쓰므로 옛것도 계속 보인다.
-
-        멀티는 슬롯 폴더를 만들지 않는다 — 슬롯은 **파일 이름 앞의 번호**다.
-        그래야 탐색기에서 한 세트가 한자리에 모이고 슬롯 순서대로 정렬된다
-        (페로픽스파이 `001_이름_00001_.png` 과 같은 취지).
-        ★캐릭터가 없으면(옛 세션) 그 칸을 건너뛴다."""
-        p = self.dir_of(ws) / OUT_DIR / ("멀티" if is_set else "싱글")
-        if is_set and tab_name:
+        ★`멀티/` 라는 이름도 그 시절의 자국이지만 **그대로 둔다** — 폴더 이름을 바꾸면
+          이미 만든 그림과 새 그림이 두 폴더로 갈린다 (`CLAUDE.md` 「저장 경로」 절).
+        ★씬 폴더를 만들지 않는다 — 씬은 **파일 이름 앞의 번호**다. 그래야 탐색기에서 한 세트가
+          한자리에 모이고 씬 순서대로 정렬된다 (페로픽스파이 `001_이름_00001_.png` 과 같은 취지).
+        ★탭·세트 이름이 없으면(옛 세션·이름을 못 받은 경우) 그 칸을 건너뛴다 — 「무제」 같은
+          폴더를 지어내면 그 이름의 진짜 세트와 섞인다."""
+        p = self.dir_of(ws) / OUT_DIR / MULTI_DIR
+        if tab_name:
             p = p / safe_name(tab_name)
-        p = p / safe_name(set_name)
+        if set_name:
+            p = p / safe_name(set_name)
         p.mkdir(parents=True, exist_ok=True)
         return p
 
@@ -250,16 +261,16 @@ class Store:
     ) -> str:
         """생성물을 **자리에 앉히고** 상대경로를 돌려준다 — ★이름 규칙의 **유일한 창구**다.
 
-        싱글/멀티를 갈라 저장한다 (`out_dir` 주석). 멀티는 슬롯 폴더 대신 **파일 앞 슬롯
-        번호**를 쓰고, 이름은 시각이 아니라 **순번**이다 (`file_lead`).
+        자리는 `out_dir` 하나가 정한다 (`output/멀티/<탭>/<세트>/`). 씬 폴더 대신 **파일 앞
+        씬 번호**를 쓰고, 이름은 시각이 아니라 **순번**이다 (`file_lead`).
 
         부르는 곳이 셋이다 — 평소 생성(`_generate_one`) · 미저장 그림의 「파일로 저장」
         (`/api/save-preview`) · 「새 탭으로 복제」(`copy_to_set`). 두 벌이 되면 번호열이
         갈린다: `next_name` 은 **접두마다 따로** 세므로, 한쪽만 `file_lead` 를 다르게 지으면
         같은 폴더 안에서 번호가 겹치거나 건너뛴다."""
-        is_set = cell is not None
-        d = self.out_dir(ws, set_name, is_set, tab_name)
-        lead = file_lead(cell_no, cell, exclude_no) if is_set else ""
+        # ★씬을 몰라도 **자리는 같다** — 비는 것은 파일 이름 앞뿐이다 (`out_dir` 의 ★★주)
+        d = self.out_dir(ws, set_name, tab_name)
+        lead = file_lead(cell_no, cell, exclude_no)
         path = self.next_name(d, lead, fmt, ws)
         path.write_bytes(data)
         return self.rel(ws, path)
@@ -408,8 +419,7 @@ class Store:
         """그림 한 장을 **같은 워크스페이스의 다른 탭**으로 복사한다 (원본은 그대로).
 
         「새 탭으로 복제」가 부르는 자리다 (사용자 결정 2026-08-18). 옛 「다른 탭으로 복제」는
-        `out_dir(..., False)` 로 **싱글 폴더**에 넣었는데 싱글 탭이 없어져 갈 곳이 사라졌다 —
-        그 경로를 지우고 이것으로 합쳤다.
+        싱글 폴더에 넣었는데 싱글 탭이 없어져 갈 곳이 사라졌다 — 그 경로를 지우고 이것으로 합쳤다.
 
         ★옮기지 않고 **복사**한다. 원본이 그대로라 보던 화면·선택이 흐트러지지 않는다.
         ★이름·자리는 `store_output` 하나가 정한다 — 보통 생성과 같은 규칙이라야 받는 씬의
