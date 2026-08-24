@@ -18,6 +18,20 @@ import { EnhanceDialog } from "./EnhanceDialog";
 import { useGallery, type ImageMeta } from "../store/gallery";
 import { usePreviews, withPreviews } from "../store/previews";
 import { api } from "../lib/backend";
+import {
+  ZOOM_MAX,
+  ZOOM_MIN,
+  canPan,
+  clampPan,
+  drawSize,
+  fitScale,
+  keepCenter,
+  percent,
+  stepZoom,
+  zoomFrom,
+  type Pan,
+  type Size,
+} from "../lib/zoomView";
 import { applyMetaParams, applyMetaVibes } from "./GalleryMeta";
 import { hasMeta } from "../lib/metaApply";
 import { CharPositioner } from "./CharPositioner";
@@ -390,6 +404,41 @@ const rowBtn: React.CSSProperties = {
 };
 
 /** 고른 한 장 — 씬 칸에서 고른 결과를 크게. 아무것도 안 골랐으면 안내만 */
+/** 보기 컨트롤의 단추 하나 — 켜진 것은 강조색 테두리 (앱의 다른 2택과 같은 규칙) */
+function ViewBtn({
+  on,
+  tip,
+  onClick,
+  children,
+}: {
+  on?: boolean;
+  tip?: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      data-view-btn
+      data-tip={tip}
+      onClick={onClick}
+      style={{
+        padding: "2px 8px",
+        borderRadius: "var(--r-1)",
+        fontSize: "var(--text-2xs)",
+        lineHeight: 1.6,
+        cursor: "pointer",
+        /* ★★`border` 는 **줄임으로 한 벌** 쓴다 — 낱개(`borderColor`)만 덮으면 끌 때 색이
+             `currentColor` 로 떨어져 테두리가 안 사라진다 (실측 2026-08-23). */
+        border: on ? "1px solid var(--accent)" : "1px solid transparent",
+        background: on ? "var(--accent-bg)" : "transparent",
+        color: on ? "var(--accent)" : "var(--ink-dim)",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 function ScenePreview() {
   const tr = useI18n((s) => s.t);
   /** 큰 그림을 카드 커버로 끄는 출발점 (`dir: "image"`) */
@@ -436,13 +485,81 @@ function ScenePreview() {
     if (next && next.file !== file) useSceneFocus.getState().focus(cell, next.file);
   };
 
+  /* ── 얼마로 볼까 (사용자 지시 2026-08-24) ────────────────────────────────
+     ★★설정은 **워크스페이스에 남는다** (`spec.preview`) — *"비율은 워크스페이스 단위로
+       유저가 정해둔거 항상 고정"*. 그림마다·탭마다 달라지면 「정해 뒀다」가 성립하지 않는다.
+     ★계산은 전부 `lib/zoomView` 다 (순수 함수 · 판정이 붙어 있다). 여기서는 재고, 끌고, 그린다.
+     ★보고 있는 **자리**(pan)는 안 남긴다 — 그림마다 다르고, 다음에 열었을 때 엉뚱한 구석을
+       보고 있으면 「왜 이러지」가 된다. 배율만 남고 자리는 가운데에서 시작한다. */
+  const view = useWs((s) => s.spec?.preview) ?? { fit: true, zoom: 1 };
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const [box, setBox] = useState<Size>({ w: 0, h: 0 });
+  const [nat, setNat] = useState<Size>({ w: 0, h: 0 });
+  const [pan, setPan] = useState<Pan>({ x: 0, y: 0 });
+  /** ★배치판이 열려 있으면 **꽉차게로 되돌린다** — 그 판은 그림 위에 좌표를 찍는 도구라
+   *  두 사각형이 어긋나면 엉뚱한 자리를 찍는다 (`CharPositioner` 머리 주석 1번). */
+  const fit = view.fit || positioning;
+  const scale = fit ? fitScale(box, nat) : view.zoom;
+  const draw = drawSize(nat, scale);
+  const movable = !fit && canPan(box, draw);
+
+  // 상자 크기를 잰다 — 패널 폭·씬 줄 높이를 사용자가 끌므로 계속 바뀐다
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      // ★`clientWidth/Height` — 테두리를 뺀 **안쪽**이다. 절대 배치의 기준과 같은 상자라야
+      //   끌기 한계(`clampPan`)가 눈에 보이는 가장자리와 맞는다
+      setBox({ w: el.clientWidth, h: el.clientHeight });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // 장이 바뀌면 보던 자리를 놓는다 (그림마다 크기가 다르다)
+  useEffect(() => setPan({ x: 0, y: 0 }), [file]);
+  // ★상자·배율이 바뀌면 **밖으로 나간 만큼만** 도로 붙든다 (`clampPan`)
+  useEffect(() => setPan((p) => clampPan(p, box, draw)), [box.w, box.h, draw.w, draw.h]);
+
+  const setZoom = (z: number) => {
+    const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+    setPan((p) => keepCenter(p, box, draw, drawSize(nat, next)));
+    useWs.getState().setPreview({ fit: false, zoom: next });
+  };
+  /** 휠(Ctrl) 한 칸 — 「꽉차게」에서 만지면 **보이던 크기에서** 이어진다 */
+  const bumpZoom = (d: 1 | -1) => setZoom(stepZoom(zoomFrom(box, nat, fit, view.zoom), d));
+
+  const drag = useRef<{ x: number; y: number; p: Pan } | null>(null);
+
+  /** ★★휠은 **직접 매단다** (React 의 `onWheel` 이 아니라).
+   *
+   *  React 는 휠 listener 를 **passive 로** 걸어서 `preventDefault()` 가 안 먹는다. 그러면
+   *  `Ctrl+휠` 이 우리 확대와 **웹뷰 자체의 확대**를 동시에 일으켜 앱 전체가 커진다.
+   *  여기서 `{ passive: false }` 로 걸고 우리가 쓸 때만 막는다.
+   *  ★그냥 휠은 **앞뒤 장** 그대로다 (사용자 지시 2026-08-14) — 원래 조작을 안 뺏는다.
+   *  ★`Ctrl+휠 = 확대·축소` (사용자 결정 2026-08-24: *"컨트롤 휠로 확대 축소"*). */
+  const wheelRef = useRef<HTMLDivElement | null>(null);
+  const onWheel = useRef<(e: WheelEvent) => void>(() => {});
+  onWheel.current = (e: WheelEvent) => {
+    if (e.deltaY === 0) return;
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      bumpZoom(e.deltaY > 0 ? -1 : 1);
+      return;
+    }
+    step(e.deltaY > 0 ? 1 : -1);
+  };
+  useEffect(() => {
+    const el = wheelRef.current;
+    if (!el) return;
+    const fn = (e: WheelEvent) => onWheel.current(e);
+    el.addEventListener("wheel", fn, { passive: false });
+    return () => el.removeEventListener("wheel", fn);
+  }, []);
+
   return (
     <div
       data-scene-preview
-      onWheel={(e) => {
-        if (e.deltaY === 0) return;
-        step(e.deltaY > 0 ? 1 : -1);
-      }}
+      ref={wheelRef}
       style={{
         flex: 1,
         minHeight: 0,
@@ -457,6 +574,14 @@ function ScenePreview() {
         position: "relative",
       }}
     >
+      {/* ★★**무대**(그림이 실제로 그려지는 자리). 겉 상자는 여백·테두리를 들고, 재는 것은
+          이 안쪽이다 — 두 모드가 **같은 자를 써야** 「꽉차게 = 100%」가 눈과 맞는다.
+          ★넘치는 그림은 여기서 잘린다 (`overflow: hidden`). */}
+      <div
+        ref={boxRef}
+        style={{ flex: 1, minWidth: 0, minHeight: 0, position: "relative", overflow: "hidden",
+                 display: "flex", alignItems: "stretch" }}
+      >
       {file ? (
         <img
           data-scene-img={file}
@@ -469,8 +594,26 @@ function ScenePreview() {
                싱글 캔버스를 걷을 때 이 출발점이 씬 칸의 것과 함께 사라져 있었다
                (사용자 지적 2026-08-18). 고스트는 `DragLayer` 가 작게 그리므로 화면을 안 가린다.
              ★미저장은 못 끈다 — 파일이 없어 커버로 쓸 수 없다 (받는 쪽이 경로를 쓴다). */
+          onPointerMove={(e) => {
+            const d = drag.current;
+            if (!d) return;
+            setPan(clampPan({ x: d.p.x + (e.clientX - d.x), y: d.p.y + (e.clientY - d.y) }, box, draw));
+          }}
+          onPointerUp={(e) => {
+            if (!drag.current) return;
+            drag.current = null;
+            e.currentTarget.releasePointerCapture(e.pointerId);
+          }}
           onPointerDown={
-            cur?.preview
+            /* ★★넘치는 그림을 잡으면 **이동**이다. 그러지 않으면 카드 커버로 끄는 출발점이
+                 이동을 통째로 먹어, 확대해 놓고도 다른 데를 볼 수 없다.
+                 커버로 끌기는 「꽉차게」에서 그대로 살아 있다. */
+            movable
+              ? (e) => {
+                  drag.current = { x: e.clientX, y: e.clientY, p: pan };
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                }
+              : cur?.preview
               ? undefined
               : (e) =>
                   startDrag(e, {
@@ -479,13 +622,28 @@ function ScenePreview() {
                     img: { ws, file, url: cur ? takeSrc(cur, base, ws, true) : imgUrl(base, ws, file) },
                   })
           }
+          onLoad={(e) => {
+            const el = e.currentTarget;
+            setNat({ w: el.naturalWidth, h: el.naturalHeight });
+          }}
           style={{
-            width: "100%",
-            height: "100%",
-            objectFit: "contain",
+            /* ★꽉차게는 지금까지 그대로다 (`contain`). 배율을 정한 뒤에는 **그린 크기**를
+               직접 주고 왼쪽 위에서 밀어 놓는다 — 그래야 넘치는 만큼을 끌어 볼 수 있다. */
+            ...(fit
+              ? { width: "100%", height: "100%", objectFit: "contain" as const }
+              : {
+                  position: "absolute" as const,
+                  left: 0,
+                  top: 0,
+                  width: draw.w,
+                  height: draw.h,
+                  transform: `translate(${pan.x}px, ${pan.y}px)`,
+                  maxWidth: "none" as const,
+                }),
             borderRadius: "var(--r-1)",
-            cursor: cur?.preview ? undefined : "grab",
-            ...(cur?.preview ? null : dragSourceStyle),
+            // ★끌어 볼 수 있으면 그 커서다. 아니면 **카드 커버로 끄는** 출발점 그대로
+            cursor: movable ? (drag.current ? "grabbing" : "move") : cur?.preview ? undefined : "grab",
+            ...(cur?.preview || movable ? null : dragSourceStyle),
           }}
         />
       ) : (
@@ -505,13 +663,71 @@ function ScenePreview() {
         </div>
       )}
 
-      {/* ★판은 **그림과 같은 상자**에 들어간다 — 큰 그림도 `objectFit: contain` 이라
-          비율이 같으면 두 사각형이 겹친다 (`CharPositioner` 머리 주석 1번). */}
+      {/* ★판은 **그림과 같은 무대**에 들어간다 — 배치 중에는 꽉차게로 잠기므로
+          (`fit` 의 ★주) 두 사각형이 언제나 겹친다 (`CharPositioner` 머리 주석 1번). */}
       {positioning && (
-        <div style={{ position: "absolute", inset: "var(--sp-4)", zIndex: 2 }}>
+        <div style={{ position: "absolute", inset: 0, zIndex: 2 }}>
           <CharPositioner />
         </div>
       )}
+      </div>
+
+      {/* ★★보기 컨트롤 — **오른쪽 아래에 겹친다** (그림을 가리지 않는 자리).
+          ★그림이 없으면 안 띄운다. 조절할 것이 없는데 단추만 떠 있으면 안 눌리는 UI가 된다. */}
+      {file && (
+        <div
+          data-preview-view
+          style={{
+            position: "absolute",
+            right: "var(--sp-4)",
+            bottom: "var(--sp-4)",
+            zIndex: 3,
+            display: "flex",
+            alignItems: "center",
+            gap: 2,
+            padding: 2,
+            borderRadius: "var(--r-2)",
+            border: "1px solid var(--line)",
+            background: "var(--panel-solid, var(--panel))",
+            /* ★배치 중에는 **꽉차게로 잠긴다** (`fit` 의 ★주) — 그때는 흐리게 두어
+               「지금은 못 만진다」가 보이게 한다 */
+            opacity: positioning ? 0.4 : 1,
+            pointerEvents: positioning ? "none" : undefined,
+          }}
+        >
+          <ViewBtn on={fit} onClick={() => useWs.getState().setPreview({ fit: true })}>
+            {tr("scenes.viewFit")}
+          </ViewBtn>
+          <ViewBtn
+            on={!fit && Math.abs(view.zoom - 1) < 0.001}
+            onClick={() => setZoom(1)}
+          >
+            {tr("scenes.viewActual")}
+          </ViewBtn>
+          <span style={{ width: 1, height: 16, background: "var(--line)", margin: "0 2px" }} />
+          <ViewBtn onClick={() => bumpZoom(-1)} tip={tr("scenes.viewOut")}>
+            −
+          </ViewBtn>
+          {/* ★지금 몇 %인가 — 꽉차게일 때는 **그때 실제 배율**을 보여 준다 (자동이라는 뜻) */}
+          <span
+            data-preview-pct
+            style={{
+              minWidth: 44,
+              textAlign: "center",
+              fontSize: "var(--text-2xs)",
+              fontFamily: "var(--font-mono)",
+              fontVariantNumeric: "tabular-nums",
+              color: fit ? "var(--ink-faint)" : "var(--ink)",
+            }}
+          >
+            {nat.w ? `${percent(scale)}%` : "—"}
+          </span>
+          <ViewBtn onClick={() => bumpZoom(1)} tip={tr("scenes.viewIn")}>
+            +
+          </ViewBtn>
+        </div>
+      )}
+
     </div>
   );
 }

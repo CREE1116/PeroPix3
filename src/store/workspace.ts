@@ -185,6 +185,12 @@ export type Spec = {
    *  옛 워크스페이스를 열 때 탭에 아직 프롬프트가 없으면 여기서 씨앗을 얻는다 (`migrate`). */
   prompt: TabPrompt;
   params: Record<string, unknown>;
+  /** 큰 그림을 **어떻게 보는가** (사용자 지시 2026-08-24: *"비율은 워크스페이스 단위로
+   *  유저가 정해둔거 항상 고정"*).
+   *  ★없으면 「꽉차게」다 — 옛 워크스페이스도 지금까지와 같이 뜬다 (이전이 필요 없다).
+   *  ★`zoom` 은 **원본 해상도 대비 배율**이다 (`1` = 100%). 「꽉차게」일 때는 안 쓰이지만,
+   *    껐다 켰을 때 그 값으로 돌아가도록 **지워지지 않고 남는다**. */
+  preview?: { fit: boolean; zoom: number };
   sets: SceneSet[];
   activeSet: string;
   /** 이 워크스페이스의 묶음 층. 옛 워크스페이스에는 없다 (`migrate` 가 만든다).
@@ -192,8 +198,9 @@ export type Spec = {
    *  ★★**화면에서는 이것을 「탭」이라 부른다** (사용자 결정 2026-08-18). 위쪽 탭 줄의 `+` 가
    *    만드는 것이 이 층이라, 예전 이름(「캐릭터」)으로는 한 화면에서 「캐릭터」가 두 가지를
    *    가리켰다 (아래 NAI 캐릭터 프롬프트와). 문구는 `i18n` 의 `chars.*` 에 있다.
-   *  ★코드 식별자(`chars`·`tabId`·`activeTab`)는 **바꾸지 않는다.** `workspace.json` 에
-   *    그대로 저장되는 열쇠라, 바꾸면 사용자의 기존 워크스페이스가 안 열린다.
+   *  ★★**코드 식별자도 같은 낱말이다** (2026-08-24 개명 + 1회 이전). 여기 있던 「식별자는
+   *    바꾸지 않는다」는 그 이전의 결정이라 걷었다 — 지금은 `spec.tabs`(탭)·`spec.sets`(세트)이고,
+   *    저장 파일은 `backend/migrate_terms.py` 가 부팅 때 한 번 옮긴다. 옛 열쇠 폴백은 없다.
    *  ★이 층과 헷갈리면 안 되는 「캐릭터」가 둘 더 있다. 그 둘은 그대로 「캐릭터」다:
    *    NAI 캐릭터 프롬프트(`store/prompt.ts` 의 `chars`, 화면은 `cards.charN` 등) ·
    *    덱의 캐릭터 카드(`cards.short.characters`). */
@@ -272,6 +279,8 @@ type S = {
   setActiveTab: (id: string) => void;
   /** 그 탭(`chars`)의 생성 옵션을 담아 둔다 (`store/gen` 이 부른다) */
   stashGen: (tabId: string, params: GenParams) => void;
+  /** 큰 그림 보기 설정을 고친다 (워크스페이스에 남는다) */
+  setPreview: (patch: Partial<NonNullable<Spec["preview"]>>) => void;
   /** 셀은 이름만(빈 태그) 또는 이름+태그로 준다 — 포즈세트 카드가 후자다 */
   addSet: (name: string, cells: (string | { name: string; tags?: string; blocks?: Block[] })[]) => void;
   closeSet: (id: string) => void;
@@ -958,6 +967,15 @@ export const useWs = create<S>((set, get) => ({
     const spec = get().spec;
     if (!spec?.tabs) return;
     set({ spec: { ...spec, tabs: spec.tabs.map((c) => (c.id === tabId ? { ...c, gen: params } : c)) } });
+    queueSave(get);
+  },
+
+  setPreview(patch) {
+    const spec = get().spec;
+    if (!spec) return;
+    // ★기본값은 「꽉차게 · 100%」다 (`Spec.preview` 주석). 없던 워크스페이스도 여기서 갖춰진다
+    const cur = spec.preview ?? { fit: true, zoom: 1 };
+    set({ spec: { ...spec, preview: { ...cur, ...patch } } });
     queueSave(get);
   },
 
