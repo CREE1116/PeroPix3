@@ -32,9 +32,14 @@ export async function queueToWorkspace(
   const tabs: SceneSet[] = spec.sets ?? [];
   /* ★찾는 곳이 `spec.sets` 이므로 이름도 **세트 이름**이다 (인자 이름이 `tabName` 이라
      탭 이름으로 오해하기 쉬웠다 — 적대 검토 2026-08-24). */
+  /* ★★세트를 찾는 열쇠는 **`activeSet`** 이다. 개명(2026-08-24) 전에는 `spec.tabs` 를
+     `activeTab` 으로 찾는 맞는 코드였는데, 목록만 `spec.sets` 로 바뀌고 열쇠는 남아서
+     **절대 안 맞고 언제나 `tabs[0]`(첫 세트)으로 떨어졌다** — 세트 id 는 `tab_…`,
+     탭 id 는 `ch_…` 라 겹칠 수가 없다. 조수가 「저쪽 워크스페이스에 넣어 줘」를 하면
+     오류 없이 **엉뚱한 세트**에 쌓였다 (적대 검토 2026-08-24). */
   const tab = setName
     ? tabs.find((t) => t.name === setName)
-    : (tabs.find((t) => t.id === spec!.activeTab) ?? tabs[0]);
+    : (tabs.find((t) => t.id === spec!.activeSet) ?? tabs[0]);
   if (!tab) return { error: setName ? `'${setName}' 세트가 없습니다.` : "세트가 없습니다." };
 
   const p = promptOf(spec, tab);

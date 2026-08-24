@@ -33,7 +33,7 @@
     {
       "key": "scene",
       "tool": "scenes",
-      "code": "sets[].cells",
+      "code": "sets[].cards[].cells",
       "what": { "ko": "세트 안의 칸. 그림이 여기 쌓인다", "en": "a cell inside a set; images pile up here", "ja": "セット内のマス。画像はここに溜まる" },
       "alias": { "ko": ["씬", "슬롯", "칸"], "en": ["scene", "slot", "cell"], "ja": ["シーン", "スロット", "コマ"] }
     },
