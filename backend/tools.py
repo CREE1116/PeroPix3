@@ -142,6 +142,32 @@ MODES = ("overwrite", "sub", "folder")
 SUB_DIR = "output"
 
 
+def _retire(root: Path, paths: list[Path]) -> None:
+    """덮어쓰기에 밀려나는 옛 파일을 **휴지통으로** (지우지 않는다).
+
+    ★★뿌리 **안**이면 앱 휴지통, **밖**이면 OS 휴지통이다.
+      예전에는 전부 앱 휴지통에 넣으려고 `relative_to(root)` 를 불렀는데, 탐색기에서
+      끌어다 놓은 그림은 뿌리 밖이라 거기서 `ValueError` 가 났다 — 그래서 **덮어쓰기가
+      늘 실패했다** (사용자 지적 2026-08-24: *"덮어쓰기 선택시 항상 실패"*).
+      바깥 파일을 앱 안으로 끌고 들어오지도 않는다: 사용자 폴더에서 파일이 사라진 것으로만
+      보이고, 앱을 지우면 함께 사라진다.
+    ★OS 휴지통이 없는 자리(win32 밖)에서는 **아무것도 안 물러난다** — 부르는 쪽이 그것을
+      보고 덮어쓰기를 그만둔다 (조용히 지우지 않는다)."""
+    inside, outside = [], []
+    for p in paths:
+        try:
+            inside.append(str(p.relative_to(root)))
+        except ValueError:
+            outside.append(p)
+    if inside:
+        trash.send_at(root, inside)
+    if outside:
+        sent = trash.send_os(outside)
+        left = [p for p in outside if p not in sent and p.exists()]
+        if left:
+            raise ValueError("옛 파일을 휴지통으로 못 보내 덮어쓰지 않았습니다")
+
+
 def convert(
     root: Path,
     items: list[Item],
@@ -234,7 +260,7 @@ def convert(
                 dst = d / f"{stem}.{ext}"
                 gone = [p for p in {src, dst} if p.exists()]
                 if gone:
-                    trash.send_at(root, [str(p.relative_to(root)) for p in gone])
+                    _retire(root, gone)
                 dst.write_bytes(blob)
                 results.append({"name": name, "saved": dst.name, "dir": str(dst.parent),
                                 "replaced": True, "ok": True})

@@ -26,7 +26,10 @@ export const isPreviewFile = (file: string) => file.startsWith(PREVIEW_PREFIX);
  *  화면이 저장 시점의 상태로 다시 만들면, 그 사이 씬 이름을 고쳤을 때 번호열이 갈린다
  *  (`workspace.file_lead` 는 이름마다 따로 센다). */
 type SaveHint = {
-  char: string | null;
+  /** ★**탭 이름**이다 — 저장 경로의 한 칸(`output/멀티/<탭>/<세트>/`).
+   *  2026-08-24 개명 뒤에도 옛 이름(`char`)으로 읽고 보내고 있었다. 서버는 `tab` 으로
+   *  주고 `tab` 으로 받으므로 **늘 비어 있었고**, 「파일로 저장」이 탭 폴더를 빠뜨렸다. */
+  tab: string | null;
   cell_no: number | null;
   exclude_slot_number: boolean;
 };
@@ -68,7 +71,7 @@ export const usePreviews = create<S>((set, get) => ({
       ws: String(m.workspace ?? ""),
       preview: { b64: String(m.b64 ?? ""), fmt: String(m.fmt ?? "png") },
       save: {
-        char: (m.char as string) ?? null,
+        tab: (m.tab as string) ?? null,
         cell_no: m.cell_no == null ? null : Number(m.cell_no),
         exclude_slot_number: !!m.exclude_slot_number,
       },
@@ -96,7 +99,7 @@ export const usePreviews = create<S>((set, get) => ({
         cell: it.cell,
         cell_id: it.cell_id,
         cell_no: it.save.cell_no,
-        char: it.save.char,
+        tab: it.save.tab,
         exclude_slot_number: it.save.exclude_slot_number,
         enhance_of: it.enhance_of,
         seed: it.seed,

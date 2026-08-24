@@ -67,11 +67,11 @@ export function EnhanceDialog({
   const opus = useSub((s) => (s.sub?.tier ?? 0) >= 3);
   const ws = useWs((s) => s.current);
   const records = useWs((s) => s.records);
-  const tabNow = useWs((s) => s.activeSet());
+  const setNow = useWs((s) => s.activeSet());
   // ★탭이 없으면 이 창이 뜰 수 없다 (부르는 두 자리가 다 탭 안이다). 옛 폴백은 `"싱글"`
   //   이라는 글자를 저장 자리로 흘려보냈다 — 싱글/멀티 구분이 폐기된 지금은 뜻이 없다.
-  const tabName = tabNow?.name ?? "";
-  const charName = useWs.getState().activeTabOf()?.name ?? null;
+  const setName = setNow?.name ?? "";
+  const tabName = useWs.getState().activeTabOf()?.name ?? null;
   /** 실제로 돌릴 것과 뺀 것 — ★**열 때 한 번** 정한다 (v2 도 모달을 열 때 목록을 굳힌다).
    *  돌아가는 사이에 새 레코드가 들어와도 대상이 바뀌면 안 된다.
    *  ★한 장짜리는 거르지 않는다 — 걸러 내는 것은 **배치**의 규칙이다 (v2 단일 모달도 안 거른다). */
@@ -227,7 +227,7 @@ export function EnhanceDialog({
       const { prompt, uc, chars } = usePrompt.getState().compiled();
       // ★어느 씬 칸의 그림인가. 안 실으면 씬 탭에서 결과가 어디에도 안 뜬다 (`lib/takes.ts`)
       const cellId = useSceneFocus.getState().cell;
-      const scenes = tabNow?.kind === "set" ? allScenes(tabNow) : [];
+      const scenes = setNow?.kind === "set" ? allScenes(setNow) : [];
       const found = cellId ? scenes.find((x) => x.cell.id === cellId) : null;
       /** 그 그림이 원래 있던 씬 칸 — ★배치는 **여러 씬에 걸쳐** 고른다. 보고 있는 칸 하나로
        *  전부 보내면 다른 줄의 그림을 강화한 결과가 엉뚱한 줄에 붙는다.
@@ -269,7 +269,10 @@ export function EnhanceDialog({
           ...useGen.getState().params,
           ...useImageInput.getState().payload(),
           prompt, negative_prompt: uc, characters: chars,
-          workspace: ws, tab: tabName, set_id: tabNow?.id ?? null, char: charName,
+          /* ★열쇠 짝은 낱말표 그대로다 (`shared/terms.json`): `tab`=탭 이름 ·
+             `set`=세트 이름 · `set_id`=그 세트의 id. 개명 뒤에도 여기가 옛 짝
+             (`char`=탭 이름, `tab`=세트 이름)으로 남아 저장 경로의 탭 칸이 비어 있었다. */
+          workspace: ws, tab: tabName, set: setName, set_id: setNow?.id ?? null,
           ...(found ? { cell: found.cell.name, cell_id: found.cell.id } : {}),
         },
         jobs,
