@@ -211,12 +211,24 @@ export function BlockBody({
     if (!editing) return;
     const el = ta.current;
     if (!el) return;
-    el.focus();
+    /* ★★**포커스가 화면을 굴리지 못하게 한다** (사용자 지적 2026-08-24: *"엄청 긴 프롬프트
+       블록을 편집하려고 클릭했을 때, 클릭한 위치가 아니라 항상 해당 블록 맨 위로
+       스크롤되어서 편집 위치가 안 보임"*).
+       `focus()` 는 그 요소를 보이게 굴리는데, 글 상자는 적은 글이 다 보이게 커지므로
+       (`fit`) **화면보다 길다.** 그러면 브라우저는 **맨 위**를 맞추고, 커서는 한참 아래에
+       있어 화면 밖으로 밀린다. 굴리지 않으면 **누른 그 자리가 그대로 남는다** — 누를 수
+       있었다는 것은 이미 보이고 있었다는 뜻이다. */
+    el.focus({ preventScroll: true });
     // ★★**전체 선택을 하지 않는다** (사용자 지시 2026-08-18). 열자마자 다 잡혀 있으면
     //   뭐든 한 글자 치는 순간 블록이 통째로 지워진다.
     const at = caretAt.current ?? el.value.length;
     el.setSelectionRange(at, at);
     caretAt.current = null;
+    /* ★단, **스스로 열린 것**은 보이게 굴린다 (`Tab` 으로 건너온 씬 칸·갓 만들어진 블록).
+       그때는 사용자가 그 자리를 보고 있었다는 보장이 없다.
+       ★`nearest` 라 이미 보이면 안 움직인다 — 굴리는 것은 정말 화면 밖일 때뿐이다. */
+    if (autoEdit) el.scrollIntoView({ block: "nearest" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
 
   /** @param at 커서를 놓을 글자 자리 (안 주면 맨 뒤)

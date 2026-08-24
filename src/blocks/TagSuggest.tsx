@@ -196,7 +196,10 @@ export function useTagSuggest(
     if (caret.current != null && ref.current) {
       const p = caret.current;
       caret.current = null;
-      ref.current.focus();
+      /* ★굴리지 않는다 (`BlockBody` 의 같은 ★★주). 여기서 `focus()` 를 부르는 목적은
+         **커서 자리를 되돌리는 것**뿐인데, 글 상자가 화면보다 길면 브라우저가 맨 위를
+         맞추면서 방금 치던 자리가 화면 밖으로 밀린다. */
+      ref.current.focus({ preventScroll: true });
       ref.current.setSelectionRange(p, p);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
