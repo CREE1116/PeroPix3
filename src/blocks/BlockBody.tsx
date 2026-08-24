@@ -42,6 +42,7 @@ export function BlockBody({
   dup,
   tagDrag,
   autoEdit,
+  autoCaret,
   mark,
   onEnter,
   onCancel,
@@ -60,6 +61,10 @@ export function BlockBody({
   /** 뜨자마자 글 상자를 연다 — 갓 만든 블록 · `Tab` 으로 건너온 씬 칸 ·
    *  접힌 씬 칸의 칩을 누른 경우 */
   autoEdit?: boolean;
+  /** 그렇게 열 때 **커서를 놓을 자리**. 안 주면 맨 뒤 (지금까지의 동작).
+   *  ★쓰는 자리: `Shift+Enter` 로 갈라져 나온 블록 — 커서는 **갈린 지점**에 서야 한다
+   *    (사용자 지시 2026-08-24). 옮겨 온 글의 맨 뒤에 서면 방금 치던 자리에서 멀어진다. */
+  autoCaret?: number;
   /** 조작 테스트가 잡는 손잡이 — `data-block-text` 값 */
   mark?: string;
   /** Shift+Enter — 고친 내용과 **가를 자리**를 함께. 한 번에 넘겨야 목록이 두 번 갈리지 않는다.
@@ -245,7 +250,7 @@ export function BlockBody({
 
   // 열어 달라고 하고 뜬 자리 (갓 만들어진 블록 · `Tab` 으로 건너온 씬 칸 · 접힌 줄의 칩)
   useEffect(() => {
-    if (autoEdit) openText();
+    if (autoEdit) openText(autoCaret);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoEdit]);
 

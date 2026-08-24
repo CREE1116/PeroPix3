@@ -34,6 +34,7 @@ export function BlockRow({
   onTab,
   onSave,
   autoEdit,
+  autoCaret,
   gripProps,
   tagDrag,
   dragging,
@@ -66,6 +67,8 @@ export function BlockRow({
   onTab?: (dir: 1 | -1) => void;
   /** 방금 만들어진 블록 — 뜨자마자 편집 상태로 */
   autoEdit?: boolean;
+  /** 그렇게 열 때 커서를 놓을 자리 (`BlockBody` 의 같은 이름) */
+  autoCaret?: number;
   gripProps?: React.HTMLAttributes<HTMLSpanElement>;
   /** 칩 끌기 (`useTagDrag`) — 목록이 들고 있는 것을 이 블록 몫만 받는다 */
   tagDrag?: TagDrag;
@@ -87,6 +90,7 @@ export function BlockRow({
       dup={dup}
       tagDrag={tagDrag}
       autoEdit={autoEdit}
+      autoCaret={autoCaret}
       mark={block.id}
       onEnter={onEnter}
       onCancel={onCancel}

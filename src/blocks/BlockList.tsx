@@ -234,6 +234,12 @@ export function BlockList({
               dup={dup}
               dragging={dragIdx === i}
               autoEdit={editId === b.id || (!!single && !!autoEdit)}
+              /* ★★**갈라져 나온 블록은 커서가 갈린 지점에 선다** (사용자 지시 2026-08-24).
+                 옮겨 온 글의 **맨 앞**이 곧 그 지점이다 — 맨 뒤에 세우면 방금 치던 자리에서
+                 멀어져, 이어 치려면 글 전체를 거슬러 올라와야 한다.
+                 ★`auto` 에는 `Shift+Enter` 로 생긴 것만 든다 (`enterAt`). `+` 로 만든 빈 블록은
+                   글이 없어 앞뒤가 같은 자리라 이 값을 줄 필요가 없다. */
+              autoCaret={auto.current.has(b.id) ? 0 : undefined}
               /* ★★**켜고끄기만** 담는다 (사용자 지시 2026-08-22). 이 길은 칩 편집·가중치도
                  함께 지나는데, 그것들은 `BlockBody` 가 이미 담고 있어 두 번 담기면 `Ctrl+Z` 를
                  두 번 눌러야 한 걸음이 물러난다. */
