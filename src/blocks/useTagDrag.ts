@@ -1,19 +1,25 @@
 import { useCallback, useRef, useState } from "react";
 
-/** 태그 칩 하나가 놓일 자리 — 몇 번째 블록의 몇 번째 칸인가.
- *  `index === -1` 은 **그 블록의 끝**이다 (접힌 블록에 떨어뜨렸을 때). */
-export type Spot = { block: number; index: number };
+/** 태그 칩 하나가 놓일 자리 — 어느 목록의 몇 번째 블록, 그 안의 몇 번째 칸인가.
+ *  `index === -1` 은 **그 블록의 끝**이다 (접힌 블록에 떨어뜨렸을 때).
+ *
+ *  ★`list` 는 그 목록의 `libZone` 이다. **끌어낸 곳과 다를 수 있다** — 카드를 넘어 옮기기
+ *    (사용자 지시 2026-08-24). 비어 있으면 열쇠가 없는 목록이라 받지 못한다. */
+export type Spot = { block: number; index: number; list?: string };
 
-/** 칩을 끌어 자리를 옮긴다 — 같은 블록 안에서도, **다른 블록으로도**.
+/** 칩을 끌어 자리를 옮긴다 — 같은 블록 안에서도, 다른 블록으로도, **다른 카드로도**.
  *
  *  ★블록 순서 변경(`useReorder`)과 같은 포인터 방식이다. 이유도 같다 — WebView2 가
  *    HTML5 드래그를 파일 드롭으로 가로챈다.
  *  ★칩 위치는 **끌고 있는 동안 실시간으로 잰다**. 삽입 표시가 레이아웃을 밀지 않도록
  *    화면 좌표에 떠 있는 막대로 그리므로, 재는 값이 흔들리지 않는다.
- *  ★칩 목록은 등록부를 두지 않고 `[data-chip]` 로 훑는다 — 칩은 지웠다 만들었다 하는
- *    것이라 등록부를 두면 오래된 칸이 남는다. DOM 순서가 곧 칩 순서다. */
+ *  ★★**놓을 자리는 화면 전체를 훑어서 찾는다** (`[data-block-row]`). 등록부를 두면 카드
+ *    사이를 오갈 때 낡은 칸이 남고, 애초에 **다른 목록의 줄은 내 등록부에 없다.**
+ *    칩을 `[data-chip]` 으로 훑는 것과 같은 이유이고(칩은 지웠다 만들었다 한다),
+ *    씬 줄이 카드를 넘어 옮길 때 쓰는 방식과도 같다 (`useLaneReorder` 의 ★주).
+ *  ★★한 목록 안일 때는 **y 만 보면 됐지만** 화면 전체를 보면 **x 도 봐야 한다** — 좌우로
+ *    멀리 떨어진 목록도 높이만 맞으면 잡히기 때문이다. 그래서 사각형까지의 거리로 고른다. */
 export function useTagDrag(onMove: (from: Spot, to: Spot) => void) {
-  const rows = useRef<(HTMLElement | null)[]>([]);
   const start = useRef<{ from: Spot; label: string; x: number; y: number } | null>(null);
   const overRef = useRef<Spot | null>(null);
   /** 방금 끌기가 끝났나 — 끌고 난 뒤의 클릭이 "텍스트로 편집"을 열지 않게 */
@@ -27,35 +33,49 @@ export function useTagDrag(onMove: (from: Spot, to: Spot) => void) {
   const [box, setBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [ghost, setGhost] = useState<{ x: number; y: number } | null>(null);
 
-  const regRow = useCallback(
-    (i: number) => (el: HTMLElement | null) => {
-      rows.current[i] = el;
-    },
-    [],
-  );
+  /** 사각형까지의 거리 — 안에 있으면 0 */
+  const distTo = (r: DOMRect, x: number, y: number) =>
+    Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom));
+
+  /** ★★그 줄이 사는 **층** — 화면을 덮는 창(모달)이 있으면 그 창이다.
+   *
+   *  화면 전체를 훑게 되면서 생긴 문제를 막는다: 카드 편집 창은 `position: fixed; inset: 0`
+   *  으로 화면을 덮는데, 그 창 안에서 끌던 칩을 창 바깥(어두운 바탕) 근처에 놓으면 **그 아래
+   *  가려져 있는 좌 패널의 줄**이 잡혀서 칩이 안 보이는 데로 사라진다. 시작한 층 안의 줄만 받는다.
+   *  ★시작할 때 **한 번만** 잰다 — 후보 줄마다 계산된 스타일을 물으면 끌 때마다 비싸다. */
+  const layerOf = (el: HTMLElement): Element => {
+    for (let n: HTMLElement | null = el; n; n = n.parentElement) {
+      if (getComputedStyle(n).position === "fixed") return n;
+    }
+    return document.body;
+  };
+  const layer = useRef<Element | null>(null);
 
   /** 포인터 아래의 자리. 칩이 행 우선으로 놓이므로 **앞선 칩의 수**가 곧 끼울 자리다. */
   const spotAt = useCallback((x: number, y: number) => {
-    let bi = -1;
+    let row: HTMLElement | null = null;
     let best = 24; // 블록 사이 틈(DropLine)만큼은 가까운 줄로 쳐 준다
-    for (let i = 0; i < rows.current.length; i++) {
-      const el = rows.current[i];
-      if (!el) continue;
-      const r = el.getBoundingClientRect();
-      if (y >= r.top && y <= r.bottom) {
-        bi = i;
-        best = 0;
-        break;
-      }
-      const d = y < r.top ? r.top - y : y - r.bottom;
-      if (d < best) {
+    for (const el of document.querySelectorAll<HTMLElement>("[data-block-row]")) {
+      if (layer.current && !layer.current.contains(el)) continue;
+      const d = distTo(el.getBoundingClientRect(), x, y);
+      if (d < best || (d === 0 && !row)) {
         best = d;
-        bi = i;
+        row = el;
+        if (d === 0) break;
       }
     }
-    if (bi < 0) return null;
+    if (!row) return null;
 
-    const row = rows.current[bi]!;
+    /* 그 줄이 **어느 목록의 몇 번째**인가 — 목록을 거슬러 올라가 그 안에서 센다.
+       ★번호를 표식으로 적어 두지 않는 이유: 블록은 지웠다 만들었다 하는 것이라 적어 두면
+         낡은 번호가 남는다 (칩을 훑는 것과 같은 사정). DOM 순서가 곧 블록 순서다. */
+    const listEl = row.closest<HTMLElement>("[data-block-list]");
+    const list = listEl?.dataset.blockList || undefined;
+    const siblings = listEl
+      ? [...listEl.querySelectorAll<HTMLElement>("[data-block-row]")]
+      : [row];
+    const bi = Math.max(0, siblings.indexOf(row));
+
     const chips = Array.from(row.querySelectorAll<HTMLElement>("[data-chip]"));
     const area = row.querySelector<HTMLElement>("[data-chips]");
 
@@ -63,7 +83,7 @@ export function useTagDrag(onMove: (from: Spot, to: Spot) => void) {
     if (!area) {
       const r = row.getBoundingClientRect();
       return {
-        spot: { block: bi, index: -1 },
+        spot: { block: bi, index: -1, list },
         box: { x: r.left, y: r.top, w: r.width, h: r.height },
       };
     }
@@ -81,11 +101,12 @@ export function useTagDrag(onMove: (from: Spot, to: Spot) => void) {
     const at = mark
       ? { x: idx < chips.length ? mark.left - 2 : mark.right + 1, y: mark.top, h: mark.height }
       : { x: a.left, y: a.top, h: Math.max(14, Math.min(20, a.height)) };
-    return { spot: { block: bi, index: idx }, bar: at };
+    return { spot: { block: bi, index: idx, list }, bar: at };
   }, []);
 
   const reset = useCallback(() => {
     start.current = null;
+    layer.current = null;
     overRef.current = null;
     setFrom(null);
     setBar(null);
@@ -99,6 +120,8 @@ export function useTagDrag(onMove: (from: Spot, to: Spot) => void) {
         if (e.button !== 0) return;
         e.stopPropagation();
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        // ★받을 수 있는 층을 여기서 한 번 정한다 (위 `layerOf` 의 ★주)
+        layer.current = layerOf(e.currentTarget as HTMLElement);
         start.current = { from: { block, index }, label: tagLabel, x: e.clientX, y: e.clientY };
       },
       onPointerMove: (e: React.PointerEvent) => {
@@ -133,7 +156,6 @@ export function useTagDrag(onMove: (from: Spot, to: Spot) => void) {
   );
 
   return {
-    regRow,
     handle,
     from,
     label,

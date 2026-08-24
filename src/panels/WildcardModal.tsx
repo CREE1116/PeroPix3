@@ -253,6 +253,8 @@ export function WildcardModal() {
               value={draft}
               spellCheck={false}
               onChange={ac.onChange}
+              // ★붙여넣은 직후에는 자동완성을 안 띄운다 (`useTagSuggest` 의 ★★주)
+              onPaste={ac.onPaste}
               onKeyDown={(e) => {
                 ac.onKeyDown(e);
               }}

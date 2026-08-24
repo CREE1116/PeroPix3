@@ -313,6 +313,8 @@ export function BlockBody({
             data-block-text={mark ?? ""}
             value={text}
             onChange={ac.onChange}
+            // ★붙여넣은 직후에는 자동완성을 안 띄운다 (`useTagSuggest` 의 ★★주)
+            onPaste={ac.onPaste}
             onBlur={commitText}
             onKeyDown={(e) => {
               // ★자동완성이 떠 있으면 Enter·Esc·방향키는 **그쪽 것**이다

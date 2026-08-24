@@ -1,9 +1,10 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { dupSet, makeBlock, parseSegs, type Block } from "../lib/blocks";
 import { useReorder } from "../lib/useReorder";
 import { moveTo } from "../lib/moveTo";
 import { useTagDrag, type Spot } from "./useTagDrag";
+import { getZone, registerZone, type BlockZone } from "./blockZones";
 import { TagDragLayer } from "./TagDragLayer";
 import { BlockRow } from "./BlockRow";
 import { itemToBlock, useBlockLib } from "../store/blockLib";
@@ -100,10 +101,43 @@ export function BlockList({
 
   const move = (from: number, to: number) => onChange(moveTo(blocks, from, to));
 
+  /* ★★**명부에 올린다** — 다른 카드에서 끌어온 칩이 이 목록을 고칠 수 있어야 한다
+     (`blockZones`). 상자에 담으므로 아래 `zoneBox.current` 는 언제나 최신이다. */
+  const zoneBox = useRef<BlockZone>({ blocks, onChange, single });
+  zoneBox.current = { blocks, onChange, single };
+  useEffect(() => (libZone ? registerZone(libZone, zoneBox) : undefined), [libZone]);
+
+  /** 칩 하나를 옮긴다 — 같은 블록 안·다른 블록·**다른 카드**.
+   *
+   *  ★★카드를 넘을 때는 **양쪽을 각각 고친다** (사용자 지시 2026-08-24). 두 목록은 서로 다른
+   *    자리에 살아서(캐릭터마다·씬 칸마다) 한 번의 `onChange` 로는 닿지 않는다 — 빼는 쪽은
+   *    내 `onChange`, 넣는 쪽은 명부에서 꺼낸 그쪽 `onChange` 다.
+   *  ★★**빼는 것을 먼저** 한다. 거꾸로 하면 그 사이에 실패했을 때 **칩이 양쪽에 다 있다** —
+   *    없어지는 것보다야 낫지만 사용자는 왜 둘이 됐는지 알 수 없다.
+   *  ★넣는 쪽이 블록 하나짜리(씬 칸)면 그 하나에 붙는다 — 서랍에서 블록을 받을 때와 같은 규칙.
+   *  ★열쇠 없는 목록은 명부에 없다 → **끌어낼 수는 있어도 받지는 못한다.** 그때는 아무 일도
+   *    안 일어난다 (칩이 사라지지 않는다). */
   const moveTag = (from: Spot, to: Spot) => {
+    const cross = !!to.list && to.list !== libZone;
+    const dst = cross ? getZone(to.list!) : null;
+    if (cross && !dst) return; // 받을 수 없는 자리 — 그대로 둔다
+
     const n = blocks.map((b) => ({ ...b, tags: b.tags.slice() }));
     const [tag] = n[from.block].tags.splice(from.index, 1);
     if (!tag) return;
+
+    if (dst) {
+      onChange(n); // 먼저 뺀다 (위 ★주)
+      const m = dst.blocks.map((b) => ({ ...b, tags: b.tags.slice() }));
+      // ★블록이 하나뿐인 자리(씬 칸)는 그 하나가 목적지다
+      const bi = dst.single ? 0 : Math.min(Math.max(to.block, 0), m.length - 1);
+      if (!m[bi]) return; // 빈 목록에는 넣을 블록이 없다
+      const at = to.index < 0 ? m[bi].tags.length : Math.min(to.index, m[bi].tags.length);
+      m[bi].tags.splice(at, 0, tag);
+      dst.onChange(m);
+      return;
+    }
+
     // -1 은 "그 블록의 끝" (접힌 블록에 떨어뜨린 경우)
     let at = to.index < 0 ? n[to.block].tags.length : to.index;
     if (to.block === from.block && at > from.index) at--;
@@ -221,12 +255,9 @@ export function BlockList({
           {!single && (
             <DropLine active={dragIdx != null && overIdx === i && i !== dragIdx && i !== dragIdx + 1} />
           )}
-          <div
-            ref={(el) => {
-              register(i)(el);
-              tag.regRow(i)(el);
-            }}
-          >
+          {/* ★★표식이 곧 **놓을 자리의 목록**이다 — 칩 끌기가 화면 전체에서 이것을 훑어
+              카드 너머의 줄까지 찾는다 (`useTagDrag` 의 ★주). */}
+          <div data-block-row ref={register(i)}>
             <BlockRow
               block={b}
               bare={single}

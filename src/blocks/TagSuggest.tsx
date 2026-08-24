@@ -116,12 +116,32 @@ export function useTagSuggest(
     setOpen(true);
   };
 
+  /** ★★**붙여넣기 직후에는 목록을 안 띄운다** (사용자 지시 2026-08-24:
+   *  *"대량으로 붙여넣고 엔터 누르면 입력되면 좋겠는데 자꾸 마지막 단어로 자동완성을 띄워서
+   *  불편함"*).
+   *
+   *  붙여넣은 글의 **마지막 낱말**로 사전을 뒤지는 것은 뜻이 없다 — 그 낱말은 치던 중이 아니라
+   *  이미 완성된 글의 일부다. 그런데 목록이 떠 있으면 `Enter` 를 목록이 가져가서
+   *  (`onKeyDown`) 블록 확정 대신 **엉뚱한 태그가 끼워진다.**
+   *  ★한 번만 삼키고 표식을 지운다 — 이어서 치면 그때는 평소대로 뜬다.
+   *  ★`paste` 는 값이 바뀌기 **전에** 오므로 뒤따르는 `change` 하나가 이 붙여넣기의 것이다.
+   *    시각으로 재는 이유: 빈 것을 붙여넣어 `change` 가 아예 안 오면 표식이 남아 **다음에
+   *    친 글자 하나**를 삼킨다. */
+  const pastedAt = useRef(-1e9);
+  const onPaste = () => {
+    pastedAt.current = performance.now();
+  };
+
   const onChange = (e: React.ChangeEvent<Field>) => {
     const v = e.target.value;
     const deleting = v.length < last.current.length;
     last.current = v;
     setValue(v);
     if (deleting) return close();
+    if (performance.now() - pastedAt.current < 100) {
+      pastedAt.current = -1e9;
+      return close();
+    }
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(run, 50);
   };
@@ -295,7 +315,7 @@ export function useTagSuggest(
       )
     ) : null;
 
-  return { onChange, onKeyDown, close, node, open };
+  return { onChange, onPaste, onKeyDown, close, node, open };
 }
 
 const TYPE_COLOR: Record<string, string> = {
