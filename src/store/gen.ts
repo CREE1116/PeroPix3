@@ -1,9 +1,8 @@
 import { create } from "zustand";
 import { compileBlocks } from "../lib/blocks";
-import { api, backendUrl } from "../lib/backend";
+import { backendUrl } from "../lib/backend";
 import { usePrompt } from "./prompt";
 import { allCells, allScenes, onBeforeWsSwitch, useWs } from "./workspace";
-import { localTs } from "../lib/takes";
 import { useQueue } from "./queue";
 import { useImageInput } from "./imageInput";
 import { useUi } from "./ui";
@@ -208,8 +207,6 @@ type S = {
   error: string;
   base: string;
   init: () => Promise<void>;
-  /** @param extra 요청에 얹을 것 (강화의 `enhance_of` 등) */
-  generate: (cell?: string | null, extra?: Record<string, unknown>) => Promise<void>;
   generateAll: () => Promise<void>;
 };
 
@@ -227,88 +224,6 @@ export const useGen = create<S>((set, get) => ({
   async init() {
     set({ base: await backendUrl() });
     watchTabParams();   // ★탭마다 다른 생성 옵션 (위 ★★주 — 최상위에서 매달면 죽는다)
-  },
-
-  async generate(cell, extra) {
-    const ws = useWs.getState();
-    const tab = ws.activeSet();
-    if (!tab) return;
-    const targetCell = cell !== undefined ? cell : tab.kind === "set" ? get().cell : null;
-    // ★id 를 함께 보낸다 — 화면은 이걸로 묶는다 (workspace.ts `takesOf`).
-    //   폴더는 계속 이름을 쓰지만, 이름은 바뀌므로 화면이 이름을 믿으면 안 된다.
-    const slotId =
-      tab.kind === "set" && targetCell != null
-        ? (allCells(tab).find((c) => c.name === targetCell)?.id ?? null)
-        : null;
-
-    set({ busy: true, error: "" });
-    // ★이번 장에 쓸 시드 — **적힌 값 그대로**다 (`lib/seedRounds` 머리 주석).
-    //   랜덤이어도 아무 숫자가 아니라 이 값으로 뽑고, 끝난 뒤에 칸을 굴린다.
-    const shot = get().params.seed;
-    try {
-      // ★한 장짜리 자리라 추첨도 한 번이다 (강화·인핸스가 여기로 온다)
-      const { prompt, uc, chars } = resolveShot(wildcardPools(), usePrompt.getState().compiled());
-      const r = await api<Record<string, any> & { file: string | null; seed: number }>("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...get().params,
-          // 바이브·레퍼런스·베이스 그림 — 단발과 큐가 **같은 창구**를 쓴다
-          ...useImageInput.getState().payload(),
-          // ★Random 이어도 **숫자를 박아** 보낸다 (아래 `randomSeed` 주석)
-          seed: shot,
-          // 강화라면 원본 파일이 실린다 (`enhance_of`) — 그 그림의 버전으로 묶인다
-          ...(extra ?? {}),
-          prompt,
-          negative_prompt: uc,
-          characters: withCoords(chars, get().params.use_coords),
-          workspace: ws.current,
-          /* ★★열쇠 셋이 **낱말표 그대로**여야 한다 (`shared/terms.json`):
-             `tab` = 탭 이름 · `set` = 세트 이름 · `set_id` = 그 세트의 id.
-             2026-08-24 개명 뒤에도 여기가 옛 짝(`char` = 탭 이름, `tab` = 세트 이름)으로
-             남아 있었다 — 서버에 `char` 라는 자리가 없어 **탭 칸이 통째로 비었고**,
-             저장 경로가 `멀티/<탭>/<세트>/` 로 안 잡혔다. */
-          tab: tab.kind === "set" ? (ws.activeTabOf()?.name ?? null) : null,
-          set: tab.name,
-          cell: targetCell,
-          cell_no:
-            tab.kind === "set" && targetCell != null
-              ? allCells(tab).findIndex((c) => c.name === targetCell) + 1
-              : null,
-          set_id: tab.id,
-          cell_id: slotId,
-        }),
-      });
-      // ★자동 저장을 껐으면 파일이 없다 — 디스크에 기록하지 않고 **메모리에만** 담는다.
-      //   자리는 저장된 것과 같다 (씬 줄의 「미저장」 칸, `store/previews.ts`)
-      if (!r.file) {
-        const { usePreviews } = await import("./previews");
-        usePreviews.getState().add({ ...r, workspace: ws.current });
-        set({ current: null });
-        if (get().params.seed_mode !== "fixed") get().set("seed", randomSeed());
-        return;
-      }
-      ws.addRecord({
-        // ★서버가 찍은 시각을 쓴다 (`lib/takes.localTs` 주석 — UTC 와 지역시각이 섞이면
-        //   줄 차례가 어긋난다)
-        ts: (r as { ts?: string }).ts || localTs(),
-        file: r.file,
-        enhance_of: (extra?.enhance_of as string) ?? null,
-        set: tab.name,
-        cell: targetCell,
-        set_id: tab.id,
-        cell_id: slotId,
-        seed: r.seed,
-      });
-      set({ current: r.file });
-      // ★랜덤이면 **끝난 뒤 표시 시드를 굴린다** — 시드 칸이 매번 바뀌고, Random 을 끄면
-      //   방금 값으로 고정 재현이 된다 (페로픽스파이 `start` 끝의 advance 와 같다)
-      if (get().params.seed_mode !== "fixed") get().set("seed", randomSeed());
-    } catch (e) {
-      set({ error: String(e) });
-    } finally {
-      set({ busy: false });
-    }
   },
 
   async generateAll() {

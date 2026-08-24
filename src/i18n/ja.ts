@@ -88,7 +88,7 @@ export const ja: Dict = {
     dropStyle: "このスタイルに変える",
     dropStyleNew: "スタイルカードを入れる",
     dropStack: "スタックに重ねる",
-    dropSwap: "この枠を差し替える",
+    dropSwap: "差し替え",
     dropJoin: "新しい人物として追加",
     dropDeck: "デッキに保存",
     dropThumb: "カードの絵に",

@@ -91,7 +91,7 @@ export const ko: Dict = {
     dropStyle: "이 스타일로 바꾸기",
     dropStyleNew: "스타일 카드 넣기",
     dropStack: "스택에 쌓기",
-    dropSwap: "이 자리를 이 카드로",
+    dropSwap: "교체",
     dropJoin: "새 인원으로 추가",
     dropDeck: "덱에 저장",
     dropThumb: "카드 그림으로",

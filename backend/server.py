@@ -1156,8 +1156,11 @@ def _req_of(body: GenBody) -> nai.GenRequest:
 async def _generate_one(body: GenBody) -> dict:
     """한 장을 만들어 저장하고 records 에 남긴다.
 
-    ★직접 호출(`/api/generate`)과 큐가 **같은 경로**를 쓴다 — 저장 규칙이 갈리면
-      큐로 만든 것과 직접 만든 것의 파일이 달라진다."""
+    ★★부르는 곳은 **큐 하나뿐**이다 (`_process_job`). 큐를 안 거치는 `/api/generate` 와
+      그것을 부르던 `gen.generate` 는 2026-08-24 에 걷었다 — **아무도 안 부른 지 오래였고**,
+      「강화·인핸스가 여기로 온다」는 주석만 남아 사실과 어긋나 있었다 (강화도 큐를 쓴다).
+      한 장을 만들 일이 다시 생기면 항목 하나짜리 큐로 넣는다: 그래야 취소·진행률·재연결
+      복원이 그대로 따라온다."""
     req = _req_of(body)
     # ★강화 — 원본 파일을 읽어 베이스 이미지로 쓴다 (화면이 그림을 실어 보내지 않는다).
     #   ★여기서는 **목표 크기만 잡는다.** 그림을 그 크기로 리샘플하는 것은 조립부가 한다
@@ -1408,15 +1411,6 @@ async def upscale_image(body: UpscaleBody):
     return {"ok": True, "file": rel, "from": body.file, "size": [w * 4, h * 4],
             "workspace": body.workspace,
             "record": {k: v for k, v in new_rec.items() if k not in HEAVY_REC}}
-
-
-@app.post("/api/generate")
-async def generate(body: GenBody):
-    """한 장을 바로 만든다 (큐를 거치지 않는다). 여러 장은 `/api/generate/queue`."""
-    try:
-        return await _generate_one(body)
-    except RuntimeError as e:
-        raise HTTPException(502, str(e))
 
 
 class SavePreviewBody(BaseModel):
