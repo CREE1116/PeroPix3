@@ -1,4 +1,8 @@
+import { Fragment } from "react";
 import { useI18n } from "../i18n";
+import { useReorder } from "../lib/useReorder";
+import { DragGhost } from "../cards/DragGhost";
+import { DropLine } from "../components/DropLine";
 import { EditableName } from "../components/EditableName";
 import { api } from "../lib/backend";
 import { toast } from "../store/toast";
@@ -6,8 +10,6 @@ import { useState } from "react";
 import { allCells, takesOf, useWs, type SceneSet } from "../store/workspace";
 import { ask } from "../store/ask";
 import { useGen } from "../store/gen";
-import { useDragSource } from "../cards/dragStore";
-import { kindColor } from "../cards/kindColor";
 import { Icon } from "../components/Icon";
 
 /** 캔버스 탭 — **두 층이고, 두 층의 생김새가 다르다** (페로픽스파이 규칙 이식 2026-08-04).
@@ -30,16 +32,27 @@ import { Icon } from "../components/Icon";
  *    「탭」을 되살리지 말 것. 두 줄이 같은 이름이 되면 구별이 안 된다. */
 export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) {
   const { spec, setActiveTab, closeSet, renameSet, addSet,
-    switchTab, addTab, renameTab, removeTab, records, isDeleted, deleteFiles } = useWs();
+    switchTab, addTab, renameTab, removeTab, moveTab, moveSet, records, isDeleted, deleteFiles } = useWs();
   const tr = useI18n((s) => s.t);
   const [editing, setEditing] = useState<string | null>(null);
   const [editingChar, setEditingChar] = useState<string | null>(null);
-  const startDrag = useDragSource();
+  /* ★★**두 줄 다 끌어서 차례를 바꾼다** (사용자 지시 2026-08-24). 탭 전체가 손잡이라
+     `tapSafe` 로 잡는다 — 문턱(4px)을 넘기 전에는 아무 일도 안 하므로 **눌러서 전환**과
+     **두 번 눌러 이름 고치기**가 그대로 살아 있다.
+     ★★세트 탭에 걸려 있던 「끌면 덱에 카드로 저장」은 **걷었다** (사용자 지시 2026-08-24:
+       *"세트탭을 저장하는건 잘못된 동작임. 저장은 '세트 카드'만 되어야함. 덱에 저장되는것
+       오로지 카드뿐"*). 덱으로 가는 길은 씬 줄의 **세트 카드 머리**에 그대로 있다
+       (`SceneLane` 의 `onDragSave`). 그래서 여기서 몸짓이 겹칠 일도 없다.
+     ★훅은 **`spec` 검사보다 앞**이다 — 조건부 훅은 규칙 위반이라 워크스페이스를 못 읽은
+       순간 화면이 통째로 죽는다 (`StyleSection` 이 같은 함정을 밟았다). */
+  const setOrd = useReorder(0, moveSet, { axis: "x", tapSafe: true });
+  const tabOrd = useReorder(0, moveTab, { axis: "x", tapSafe: true });
   if (!spec) return null;
 
   const inGroup = spec.sets.filter(
     (t): t is Extract<SceneSet, { kind: "set" }> => t.kind === "set" && t.tabId === spec.activeTab,
   );
+  const tabs = spec.tabs ?? [];
 
   // ★씬 세트 줄은 **캔버스 바로 위**에 붙는다 (사용자 제안 2026-08-05) — 두 줄을 앱 맨 위에
   //   전부 쌓으면 머리가 두꺼워지고, 이 층은 **캔버스의 내용**을 가르는 것이라 그 자리가 맞다
@@ -58,31 +71,17 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
           borderBottom: "1px solid var(--line)",
         }}
       >
-      {inGroup.map((t) => {
+      {inGroup.map((t, i) => {
         const on = t.id === spec.activeTab;
+        const hp = setOrd.handleProps(i);
         return (
+          <Fragment key={t.id}>
+          <DropLine on={setOrd.dragIdx != null && setOrd.overIdx === i} vert />
           <div
-            key={t.id}
+            ref={setOrd.register(i)}
+            {...hp}
             onClick={() => setActiveTab(t.id)}
             onDoubleClick={() => setEditing(t.id)}
-            // 역드래그 저장: 씬 세트 탭을 우하단 핸드로 끌면 씬 세트 카드가 된다
-            onPointerDown={(e) => {
-              if (editing) return;
-              // ★닫기 단추 위에서는 끌지 않는다 — `startDrag` 가 pointerdown 을 preventDefault 해서
-              //   따라올 click 을 삼키고, 그래서 **세트 탭이 지워지지 않았다** (사용자 지적 2026-08-04)
-              if ((e.target as HTMLElement).closest("[data-scene-set-close]")) return;
-              startDrag(e, {
-                dir: "save",
-                kind: "posesets",
-                card: {
-                  id: "",
-                  name: t.name,
-                  color: kindColor("posesets"),
-                  // ★「추가」 블록은 카드에 안 담긴다 (이 탭 것이다)
-                  cells: allCells(t).map((c) => ({ name: c.name, blocks: c.blocks })),
-                },
-              });
-            }}
             data-scene-set={t.id}
             style={{
               display: "flex",
@@ -96,7 +95,10 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
               color: on ? "var(--ink)" : "var(--ink-dim)",
               fontSize: "var(--text-xs)",
               fontWeight: on ? "var(--w-semi)" : 400,
-              cursor: "pointer",
+              // ★끌고 있는 것은 흐리게 — 잔상이 커서를 따라가므로 원본은 자리만 지킨다
+              opacity: setOrd.dragIdx === i ? 0.35 : 1,
+              ...hp.style,
+              cursor: hp.style.cursor ?? "pointer",
             }}
           >
             {/* ★이름 고치기는 **앱에 하나**다 (`EditableName` → `useRename`).
@@ -169,8 +171,10 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
               </button>
             )}
           </div>
+          </Fragment>
         );
       })}
+      <DropLine on={setOrd.dragIdx != null && setOrd.overIdx === inGroup.length} vert />
 
       <button
         // ★씬 하나로 시작한다 (사용자 지시 2026-08-04) — 필요한 만큼은 `씬 추가`로 는다.
@@ -196,6 +200,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
 
         <span style={{ flex: 1 }} />
         <SaveHint />
+        <TabGhost ord={setOrd} names={inGroup.map((x) => x.name)} />
       </div>
   );
 
@@ -218,11 +223,15 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
             borderBottom: "1px solid var(--line)",
           }}
         >
-          {(spec.tabs ?? []).map((c) => {
+          {tabs.map((c, i) => {
             const on = c.id === spec.activeTab;
+            const hp = tabOrd.handleProps(i);
             return (
+              <Fragment key={c.id}>
+              <DropLine on={tabOrd.dragIdx != null && tabOrd.overIdx === i} vert />
               <div
-                key={c.id}
+                ref={tabOrd.register(i)}
+                {...hp}
                 data-tab={c.id}
                 onClick={() => switchTab(c.id)}
                 onDoubleClick={() => setEditingChar(c.id)}
@@ -245,7 +254,10 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                   color: on ? "var(--ink)" : "var(--ink-dim)",
                   fontSize: "var(--text-xs)",
                   fontWeight: on ? "var(--w-semi)" : 400,
-                  cursor: "pointer",
+                  // ★끌고 있는 것은 흐리게 (세트 줄과 같은 규칙)
+                  opacity: tabOrd.dragIdx === i ? 0.35 : 1,
+                  ...hp.style,
+                  cursor: hp.style.cursor ?? "pointer",
                 }}
               >
                 <EditableName
@@ -314,8 +326,10 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                   </button>
                 )}
               </div>
+              </Fragment>
             );
           })}
+          <DropLine on={tabOrd.dragIdx != null && tabOrd.overIdx === tabs.length} vert />
           <button
             data-tab-add
             onClick={() => addTab()}
@@ -334,9 +348,38 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
           >
             {Icon.plus}
           </button>
+          <TabGhost ord={tabOrd} names={tabs.map((c) => c.name)} />
         </div>
 
     </div>
+  );
+}
+
+/** 차례를 바꾸는 동안 커서를 따라가는 잔상 — 두 줄이 **같은 것**을 쓴다.
+ *  ★껍데기는 앱에 하나다 (`DragGhost`): 자리·층·`pointer-events` 를 그쪽이 든다. */
+function TabGhost({ ord, names }: { ord: ReturnType<typeof useReorder>; names: string[] }) {
+  if (!ord.ghost || ord.dragIdx == null) return null;
+  return (
+    <DragGhost x={ord.ghost.x} y={ord.ghost.y} anchor="exact" style={{ width: ord.ghost.w }}>
+      <div
+        style={{
+          height: ord.ghost.h,
+          display: "grid",
+          placeItems: "center",
+          padding: "0 var(--sp-4)",
+          border: "1px solid var(--accent)",
+          borderRadius: "var(--r-2)",
+          background: "color-mix(in srgb, var(--accent) 14%, var(--surface))",
+          color: "var(--ink)",
+          fontSize: "var(--text-xs)",
+          fontWeight: "var(--w-semi)",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+        }}
+      >
+        {names[ord.dragIdx]}
+      </div>
+    </DragGhost>
   );
 }
 

@@ -19,8 +19,20 @@ export type GhostPos = {
  *  쓰는 쪽에서:
  *   - 각 행 요소를 `register(i)` 로 등록한다.
  *   - 그립에 `handleProps(i)` 를 편다.
- *   - `dragIdx` 인 행은 흐리게, `overIdx` 자리에 삽입선을, `ghost` 위치에 떠 있는 사본을 그린다. */
-export function useReorder(_count: number, onMove: (from: number, to: number) => void) {
+ *   - `dragIdx` 인 행은 흐리게, `overIdx` 자리에 삽입선을, `ghost` 위치에 떠 있는 사본을 그린다.
+ *
+ *  @param opts.axis 줄이 놓인 방향. `"x"` 면 **가로 줄**이다 (워크스페이스·탭·세트).
+ *  @param opts.tapSafe 잡는 자리가 **누를 일도 있는 요소**인가 (탭은 눌러서 전환한다).
+ *    켜면 문턱(4px)을 넘기 전에는 아무 일도 안 하고 `preventDefault` 도 하지 않아 **클릭이
+ *    살아 있다.** 전용 그립(⠿)에는 필요 없다 — 그쪽은 잃을 클릭이 없어 즉시 시작한다. */
+const THRESH = 4;
+
+export function useReorder(
+  _count: number,
+  onMove: (from: number, to: number) => void,
+  opts: { axis?: "x" | "y"; tapSafe?: boolean } = {},
+) {
+  const { axis = "y", tapSafe = false } = opts;
   const rows = useRef<(HTMLElement | null)[]>([]);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
@@ -28,6 +40,8 @@ export function useReorder(_count: number, onMove: (from: number, to: number) =>
   const overRef = useRef<number | null>(null);
   /** 잡은 지점이 행 안에서 어디였는지 — 고스트가 커서에 자연스럽게 붙게 */
   const grab = useRef({ dx: 0, dy: 0, w: 0, h: 0 });
+  /** `tapSafe` 일 때 — 아직 문턱을 안 넘은 「누른 것」. 넘으면 그때 끌기가 시작된다 */
+  const armed = useRef<{ i: number; x: number; y: number } | null>(null);
 
   const register = useCallback(
     (i: number) => (el: HTMLElement | null) => {
@@ -36,47 +50,69 @@ export function useReorder(_count: number, onMove: (from: number, to: number) =>
     [],
   );
 
-  /** 포인터 y 가 어느 틈(0..count)에 있는지 */
-  const gapAt = useCallback((y: number) => {
-    let gap = 0;
-    for (let i = 0; i < rows.current.length; i++) {
-      const el = rows.current[i];
-      if (!el) continue;
-      const r = el.getBoundingClientRect();
-      gap = y < r.top + r.height / 2 ? i : i + 1;
-      if (y < r.bottom) break;
-    }
-    return gap;
-  }, []);
+  /** 포인터가 어느 틈(0..count)에 있는지 — 가로 줄이면 x 로 본다 */
+  const gapAt = useCallback(
+    (x: number, y: number) => {
+      const at = axis === "x" ? x : y;
+      let gap = 0;
+      for (let i = 0; i < rows.current.length; i++) {
+        const el = rows.current[i];
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        const [head, size] = axis === "x" ? [r.left, r.width] : [r.top, r.height];
+        gap = at < head + size / 2 ? i : i + 1;
+        if (at < head + size) break;
+      }
+      return gap;
+    },
+    [axis],
+  );
 
   const end = useCallback(() => {
+    armed.current = null;
     setDragIdx(null);
     setOverIdx(null);
     setGhost(null);
     overRef.current = null;
   }, []);
 
+  /** 실제로 끌기를 시작한다 — 잡은 자리를 재고 고스트를 세운다 */
+  const begin = useCallback((i: number, x: number, y: number) => {
+    const r = rows.current[i]?.getBoundingClientRect();
+    if (r) {
+      grab.current = { dx: x - r.left, dy: y - r.top, w: r.width, h: r.height };
+      setGhost({ x: r.left, y: r.top, w: r.width, h: r.height });
+    }
+    setDragIdx(i);
+    setOverIdx(i);
+    overRef.current = i;
+  }, []);
+
   const handleProps = useCallback(
     (i: number) => ({
       onPointerDown: (e: React.PointerEvent) => {
         if (e.button !== 0) return;
+        /* ★★`tapSafe` 면 **여기서 아무것도 하지 않는다** — `preventDefault` 는 브라우저의
+           호환 `click` 을 삼키므로(CLAUDE.md 「잊기 쉬운 것」), 탭처럼 눌러서 전환하는
+           요소에서 하면 **탭 전환이 통째로 죽는다.** 문턱을 넘은 뒤에 시작한다. */
+        if (tapSafe) {
+          armed.current = { i, x: e.clientX, y: e.clientY };
+          return;
+        }
         e.preventDefault();
         e.stopPropagation();
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-
-        const row = rows.current[i];
-        const r = row?.getBoundingClientRect();
-        if (r) {
-          grab.current = { dx: e.clientX - r.left, dy: e.clientY - r.top, w: r.width, h: r.height };
-          setGhost({ x: r.left, y: r.top, w: r.width, h: r.height });
-        }
-        setDragIdx(i);
-        setOverIdx(i);
-        overRef.current = i;
+        begin(i, e.clientX, e.clientY);
       },
       onPointerMove: (e: React.PointerEvent) => {
-        if (dragIdx == null) return;
-        const g = gapAt(e.clientY);
+        const a = armed.current;
+        if (a && dragIdx == null) {
+          if (Math.abs(e.clientX - a.x) + Math.abs(e.clientY - a.y) < THRESH) return;
+          // ★문턱을 넘었다 — 이제부터 끌기다. 여기서 캡처해야 줄 밖으로 나가도 계속 받는다
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          begin(a.i, a.x, a.y);
+        } else if (dragIdx == null) return;
+        const g = gapAt(e.clientX, e.clientY);
         overRef.current = g;
         setOverIdx(g);
         setGhost({
@@ -96,9 +132,16 @@ export function useReorder(_count: number, onMove: (from: number, to: number) =>
         onMove(from, to);
       },
       onPointerCancel: end,
-      style: { cursor: dragIdx === i ? "grabbing" : "grab", touchAction: "none" as const },
+      style: {
+        // ★`tapSafe` 는 평소 커서를 안 바꾼다 — 눌러서 전환하는 자리라 손 모양이면 뜻이 흐려진다
+        cursor: dragIdx === i ? "grabbing" : tapSafe ? undefined : "grab",
+        touchAction: "none" as const,
+        // ★글자 선택 드래그를 막는다. `preventDefault` 를 안 하는 `tapSafe` 에서는 이것이
+        //   없으면 탭 이름이 파랗게 잡히면서 끌기가 `pointercancel` 로 끝난다
+        userSelect: "none" as const,
+      },
     }),
-    [dragIdx, gapAt, onMove, end],
+    [dragIdx, gapAt, onMove, end, begin, tapSafe],
   );
 
   return { register, handleProps, dragIdx, overIdx, ghost };

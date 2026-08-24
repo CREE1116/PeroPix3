@@ -9,6 +9,7 @@ import { wrapSetTabInCard } from "../lib/sceneCards";
 export { takesOf, takesOfScene, dedupeByFile, type Rec } from "../lib/takes";
 import { dedupeByFile } from "../lib/takes";
 import type { Rec } from "../lib/takes";
+import { moveTo } from "../lib/moveTo";
 // ★**형만** 가져온다 — `gen.ts` 가 이 파일을 부르므로 값으로 가져오면 순환이 된다
 import type { GenParams } from "./gen";
 
@@ -328,6 +329,13 @@ type S = {
   addTab: (name?: string) => void;
   renameTab: (id: string, name: string) => void;
   removeTab: (id: string) => void;
+  /** ★★**줄에 늘어선 것은 끌어서 차례를 바꾼다** (사용자 지시 2026-08-24).
+   *  셋 다 `to` 는 칸이 아니라 **틈 번호**다 (`lib/moveTo` 의 규약, `useReorder` 가 그렇게 준다).
+   *  ★`moveSet` 의 `from`·`to` 는 **지금 탭에 보이는 세트**의 번호다 — 화면에 안 보이는
+   *    다른 탭의 세트는 자리가 안 흔들린다 (그쪽 줄의 차례는 그쪽 것이다). */
+  moveWs: (from: number, to: number) => void;
+  moveTab: (from: number, to: number) => void;
+  moveSet: (from: number, to: number) => void;
 };
 
 /** 새 워크스페이스의 첫 모습.
@@ -1112,6 +1120,46 @@ export const useWs = create<S>((set, get) => ({
     set({
       spec: { ...spec, tabs: (spec.tabs ?? []).map((c) => (c.id === id ? { ...c, name: name.trim() } : c)) },
     });
+    queueSave(get);
+  },
+
+  /* ── 줄의 차례 바꾸기 (사용자 지시 2026-08-24) ────────────────────────
+     ★셈은 `lib/moveTo` **하나**를 쓴다 — 블록·인물·씬이 이미 그것을 쓴다.
+     ★어디에 남는가가 셋 다 다르다: 워크스페이스 줄은 **이 컴퓨터의 것**(localStorage)이고,
+       탭·세트는 **그 워크스페이스의 것**(`workspace.json`)이다. */
+
+  moveWs(from, to) {
+    const next = moveTo(get().openWs, from, to);
+    if (next === get().openWs) return;
+    saveTabs(next);
+    set({ openWs: next });
+  },
+
+  moveTab(from, to) {
+    const spec = get().spec;
+    if (!spec) return;
+    const next = moveTo(spec.tabs ?? [], from, to);
+    if (next === (spec.tabs ?? [])) return;
+    set({ spec: { ...spec, tabs: next } });
+    queueSave(get);
+  },
+
+  moveSet(from, to) {
+    const spec = get().spec;
+    if (!spec) return;
+    /* ★★**보이는 줄의 차례**를 바꾸는 것이지 `spec.sets` 전체를 뒤섞는 것이 아니다.
+       그 탭의 세트가 놓인 **자리들**을 그대로 두고 내용만 새 차례로 채운다 —
+       그래야 다른 탭의 세트가 이 조작에 밀리지 않는다. */
+    const at: number[] = [];
+    spec.sets.forEach((x, i) => {
+      if (x.kind === "set" && x.tabId === spec.activeTab) at.push(i);
+    });
+    const mine = at.map((i) => spec.sets[i]);
+    const next = moveTo(mine, from, to);
+    if (next === mine) return;
+    const sets = spec.sets.slice();
+    at.forEach((i, k) => (sets[i] = next[k]));
+    set({ spec: { ...spec, sets } });
     queueSave(get);
   },
 

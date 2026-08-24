@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n";
+import { DropLine } from "../components/DropLine";
 import { useGen } from "../store/gen";
 import { usePrompt } from "../store/prompt";
 import { useQueue } from "../store/queue";
@@ -1065,33 +1066,6 @@ export function SceneLane() {
 export function takeSrc(r: Rec, base: string, ws: string, thumb: boolean): string {
   if (r.preview) return `data:image/${r.preview.fmt};base64,${r.preview.b64}`;
   return thumb ? thumbUrlOf(base, ws, r.file) : imgUrl(base, ws, r.file);
-}
-
-/** 끼울 자리 표시 — ★**높이 0 위에 띄운다.** 칸 사이에 실제로 끼워 넣으면 레이아웃이 밀려
- *  방금 잰 좌표가 어긋난다 (CLAUDE.md 의 칩 드래그 규칙과 같은 이유). */
-function DropLine({ on, vert = false }: { on: boolean; vert?: boolean }) {
-  return (
-    <div
-      style={{
-        position: "relative",
-        zIndex: 5,
-        // ★자리를 안 차지해야 방금 잰 좌표가 안 어긋난다 (CLAUDE.md) — 그 축으로 0 이다
-        ...(vert ? { width: 0, minHeight: "100%" } : { height: 0, minWidth: "100%" }),
-      }}
-    >
-      {on && (
-        <div
-          data-drop-line
-          style={{
-            position: "absolute",
-            borderRadius: 1,
-            background: "var(--accent)",
-            ...(vert ? { top: 0, bottom: 0, left: -1, width: 2 } : { left: 0, right: 0, top: -1, height: 2 }),
-          }}
-        />
-      )}
-    </div>
-  );
 }
 
 /** 비었을 때 — ★그릇만 있는 상태. 여기서는 씬을 못 만든다 (씬은 카드에 속한다) */
