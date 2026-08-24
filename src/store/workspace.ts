@@ -5,7 +5,7 @@ import { t } from "../i18n";
 import { toast, undoToast } from "./toast";
 import { clearUndo, pushUndo } from "../lib/undo";
 import { makeBlock, parseSegs, type Block } from "../lib/blocks";
-import { convertSingleTab, wrapSetTabInCard } from "../lib/sceneCards";
+import { wrapSetTabInCard } from "../lib/sceneCards";
 export { takesOf, takesOfScene, type Rec } from "../lib/takes";
 import type { Rec } from "../lib/takes";
 // ★**형만** 가져온다 — `gen.ts` 가 이 파일을 부르므로 값으로 가져오면 순환이 된다
@@ -56,10 +56,6 @@ export type Slot = {
   /** 접어 두면 머리만 남는다 (블록과 같은 규칙) */
   open?: boolean;
   locked?: boolean;
-  /** ★옛 **싱글 탭**에서 옮겨 온 씬 (2026-08-11). 그 탭의 결과는 `cell`·`cell_id` 가 없어서
-   *  이 표식이 있어야 `takesOf` 가 찾아간다. 새로 만드는 씬에는 없다 — 옛 그림이 새 씬에
-   *  달라붙으면 안 되기 때문이다. */
-  fromSingle?: boolean;
 };
 
 /** 옛 슬롯을 블록으로 — ★칸 하나는 **블록 하나**다 (`slotBlock`, 2026-08-20).
@@ -106,8 +102,11 @@ export type SceneCard = {
   cells: Slot[];
 };
 
+/** ★★갈래가 **하나**다 (사용자 확인 2026-08-24: *"현재 개발단계이고 그런 워크스페이스는 없음"*).
+ *  예전에는 `kind: "single"` 갈래가 함께 있었고 `migrate` 가 그것을 씬 탭으로 옮겼다 —
+ *  싱글은 2026-08-11 에 없어졌고 저장 파일에도 남은 것이 없어 그 계보를 통째로 걷었다.
+ *  ★`kind: "set"` 리터럴은 남는다 — 저장 파일에 이미 적혀 있고, 코드 곳곳의 가드가 그것을 본다. */
 export type SceneSet =
-  | { id: string; kind: "single"; name: string; prompt?: TabPrompt; idOnly?: boolean }
   | {
       id: string;
       kind: "set";
@@ -318,10 +317,7 @@ type S = {
 
 /** 새 워크스페이스의 첫 모습.
  *
- *  ★**씬 탭 하나로 시작한다** (싱글 폐기 2026-08-11). 예전에는 싱글 탭을 만들어 놓고
- *    `migrate` 의 `convertSingleTab` 이 그것을 옮겼다 — 그러면 새 워크스페이스가 옛 싱글
- *    탭의 자국을 그대로 물려받는다: 씬에 `fromSingle` 표식이 박히고(셀 없는 레코드를
- *    끌어오는 길이다), 탭·카드·캐릭터 이름이 전부 「컷」이 된다.
+ *  ★**씬 탭 하나로 시작한다** (싱글 폐기 2026-08-11).
  *  ★모양은 `addSet` 과 같다 — **카드도 씬도 없이**·`idOnly`.
  *  ★캐릭터도 여기서 만든다. 안 만들면 `migrate` 의 고아 처리가 **탭 이름으로** 하나를
  *    지어내서, 캐릭터 탭에 「새 세트」라고 뜬다. */
@@ -373,13 +369,6 @@ function migrate(spec: Spec): Spec {
   spec = {
     ...spec,
     sets: spec.sets.map((tb) => {
-      // ★싱글 탭은 **씬 탭으로 옮긴다** (싱글/멀티 구분 폐기). 그림이 안 사라지게
-      //   옮겨 온 씬에 `fromSingle` 이 박힌다 — `takesOf` 가 그것으로 찾아간다.
-      const conv = convertSingleTab(tb as never);
-      if (conv) {
-        changed = true;
-        return conv as unknown as SceneSet;
-      }
       // ★감싸는 규칙은 `lib/sceneCards.ts` 에 있다 — 사용자 데이터를 건드리는 자리라
       //   따로 떼어 회귀 테스트를 붙였다 (`sceneCards.test.ts`)
       const wrapped = wrapSetTabInCard(tb as never);
@@ -411,10 +400,7 @@ function migrate(spec: Spec): Spec {
   const tabs = spec.sets.map((t) => {
     if (t.prompt) return t;
     changed = true;
-    // 싱글 탭만 씨앗을 받는다 — 세트 탭까지 같은 프롬프트를 복제하면 "왜 다 같지"가 된다
-    return t.kind === "single"
-      ? { ...t, prompt: spec.prompt ?? { base: defaultBase(), baseUc: defaultUc() } }
-      : { ...t, prompt: { base: defaultBase(), baseUc: defaultUc() } };
+    return { ...t, prompt: { base: defaultBase(), baseUc: defaultUc() } };
   });
   // ★캐릭터 층 이전 (2026-08-04). 세트 탭이 들고 있던 프롬프트를 **캐릭터로 올린다** —
   //   탭마다 하나씩 만들어 담으므로 **아무것도 잃지 않는다.** 이름은 그 탭 이름을 쓴다.

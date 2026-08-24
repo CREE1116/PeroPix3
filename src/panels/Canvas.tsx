@@ -25,8 +25,8 @@ import { CharPositioner } from "./CharPositioner";
 /** 캔버스 — 씬 세트 줄 + 씬 무대 (마스크를 칠하는 동안에는 그 자리가 편집기다).
  *
  *  ★우하단 카드 핸드는 걷었다 (2026-08-16) — 덱이 오른쪽 기둥에 상시로 있다.
- *  ★**싱글 화면은 없다** (사용자 결정 2026-08-11). 탭은 언제나 씬 탭이고 옛 싱글 탭은
- *    열 때 옮겨진다 (`migrate` → `convertSingleTab`). 큰 그림·히스토리 줄·별표만 보기가
+ *  ★**싱글 화면은 없다** (사용자 결정 2026-08-11). 탭은 언제나 씬 탭이다 — 옛 싱글 탭을
+ *    옮겨 주던 길도 2026-08-24 에 걷었다. 큰 그림·히스토리 줄·별표만 보기가
  *    있던 자리는 `SceneLane` + `ScenePreview` + `SceneActions` 가 이어받았다. */
 export function Canvas() {
   const { activeSet } = useWs();

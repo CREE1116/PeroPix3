@@ -61,7 +61,7 @@ export const newestFirst = (a: Rec, b: Rec) =>
  *  ★id 우선·이름 폴백. 옛 레코드(id 없음)도 계속 보여야 한다.
  *  ★판정을 여러 곳에 흩뿌리면 폴백 규칙이 어긋난다 — 고칠 때는 여기만 고친다.
  *
- *  @param cell 슬롯. `null` 은 "셀 없는 것"(싱글 탭), `undefined` 는 "셀을 안 따진다". */
+ *  @param cell 슬롯. `null` 은 "셀 없는 것", `undefined` 는 "셀을 안 따진다". */
 /** 이 탭(·슬롯)의 결과를 고른다 — **화면이 결과를 묶는 유일한 창구**다.
  *
  *  ★레코드에 `set_id` 가 없으면 이름으로 맞춘다 (id 이전에 만든 레코드 호환). 그런데 그 폴백이
@@ -70,16 +70,13 @@ export const newestFirst = (a: Rec, b: Rec) =>
 export function takesOf(
   records: Rec[],
   tab: { id: string; name: string; idOnly?: boolean },
-  cell?: { id: string; name: string; fromSingle?: boolean } | null,
+  cell?: { id: string; name: string } | null,
 ): Rec[] {
   return records.filter((r) => {
     if (!r.set_id && tab.idOnly) return false;
     if (r.set_id ? r.set_id !== tab.id : r.set !== tab.name) return false;
     if (cell === undefined) return true;
     if (cell === null) return r.cell == null;
-    // ★옛 싱글 탭에서 옮겨 온 씬은 **셀 없는 레코드**를 받는다 — 그 탭의 그림이 전부 그것이다.
-    //   `idOnly` 검사보다 **먼저** 봐야 한다 (그 검사가 셀 없는 레코드를 먼저 걷어낸다).
-    if (cell.fromSingle && r.cell_id == null && r.cell == null) return true;
     if (!r.cell_id && tab.idOnly) return false;
     return r.cell_id ? r.cell_id === cell.id : r.cell === cell.name;
   });
@@ -103,8 +100,8 @@ const warned = new Set<string>();
 export function takesOfScene(
   records: Rec[],
   tab: { id: string; name: string; idOnly?: boolean },
-  cells: { id: string; name: string; fromSingle?: boolean }[],
-  cell: { id: string; name: string; fromSingle?: boolean },
+  cells: { id: string; name: string }[],
+  cell: { id: string; name: string },
 ): Rec[] {
   const mine = takesOf(records, tab, cell);
   if (!cells.length || cells[0].id !== cell.id) return mine;

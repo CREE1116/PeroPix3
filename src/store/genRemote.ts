@@ -43,62 +43,38 @@ export async function queueToWorkspace(
   const params = { ...useGen.getState().params, ...(spec.params ?? {}) };
   const n = Math.max(1, Math.min(50, count));
 
-  if (tab.kind === "set") {
-    // ★씬마다 한 바퀴씩 돈다 (gen.generateAll 과 같은 규칙).
-    //   ★카드 공통 접두는 걷혔다 (2026-08-21) — 두 경로가 **같은 문자열**을 만들어야 한다
-    const live = allScenes(tab).filter((x) => !x.cell.locked && !x.card.locked);
-    if (!live.length) return { error: `'${tab.name}' 탭에 잠기지 않은 씬이 없습니다.` };
-    for (let round = 0; round < n; round++) {
-      for (const [i, { cell: c }] of live.entries()) {
-        const cellPrompt = [prompt, compileBlocks(c.blocks ?? [])].filter(Boolean).join(", ");
-        // ★와일드카드는 여기서도 **장마다** 뽑는다 (`lib/wildcards` 머리 주석).
-        //   풀은 워크스페이스를 안 가리는 공용 문서라 남의 워크스페이스에도 그대로 먹는다.
-        await useQueue.getState().enqueue(
-          {
-            ...params,
-            seed: params.seed_mode === "fixed" ? params.seed : -1,
-            prompt: resolveWildcards(cellPrompt, wildcardPools()),
-            negative_prompt: resolveWildcards(uc, wildcardPools()),
-            workspace,
-            set: tab.name,
-            set_id: tab.id,
-            cell: c.name,
-            cell_id: c.id,
-            cell_no: i + 1,
-            // 탭 이름은 저장 경로 한 칸이 된다 (`<ws>/output/멀티/<탭>/<세트>/`)
-            tab: (spec.tabs ?? []).find((c) => c.id === (tab.tabId ?? spec.activeTab))?.name ?? null,
-          },
-          undefined,
-          1,
-        );
-      }
+  /* ★★갈래가 **하나**다 — 2026-08-24 에 옛 싱글 탭 분기를 걷었다 (사용자 확인:
+       *"현재 개발단계이고 그런 워크스페이스는 없음"*). 그 분기는 씬 없이 큐에 넣어서
+       파일 이름에 씬 번호가 안 붙었다. */
+  if (tab.kind !== "set") return { error: `'${tab.name}' 은 씬 세트가 아닙니다.` };
+  // ★씬마다 한 바퀴씩 돈다 (gen.generateAll 과 같은 규칙).
+  //   ★카드 공통 접두는 걷혔다 (2026-08-21) — 두 경로가 **같은 문자열**을 만들어야 한다
+  const live = allScenes(tab).filter((x) => !x.cell.locked && !x.card.locked);
+  if (!live.length) return { error: `'${tab.name}' 탭에 잠기지 않은 씬이 없습니다.` };
+  for (let round = 0; round < n; round++) {
+    for (const [i, { cell: c }] of live.entries()) {
+      const cellPrompt = [prompt, compileBlocks(c.blocks ?? [])].filter(Boolean).join(", ");
+      // ★와일드카드는 여기서도 **장마다** 뽑는다 (`lib/wildcards` 머리 주석).
+      //   풀은 워크스페이스를 안 가리는 공용 문서라 남의 워크스페이스에도 그대로 먹는다.
+      await useQueue.getState().enqueue(
+        {
+          ...params,
+          seed: params.seed_mode === "fixed" ? params.seed : -1,
+          prompt: resolveWildcards(cellPrompt, wildcardPools()),
+          negative_prompt: resolveWildcards(uc, wildcardPools()),
+          workspace,
+          set: tab.name,
+          set_id: tab.id,
+          cell: c.name,
+          cell_id: c.id,
+          cell_no: i + 1,
+          // 탭 이름은 저장 경로 한 칸이 된다 (`<ws>/output/멀티/<탭>/<세트>/`)
+          tab: (spec.tabs ?? []).find((c) => c.id === (tab.tabId ?? spec.activeTab))?.name ?? null,
+        },
+        undefined,
+        1,
+      );
     }
-    return { ok: true, queued: live.length * n, set: tab.name };
   }
-
-  // ★한 요청에 n 을 넘기지 않고 **장마다 항목을 편다**. 그래야 와일드카드가 장마다 다시
-  //   뽑힌다 (묶어 보내면 n 장이 전부 같은 태그로 나온다).
-  const pools = wildcardPools();
-  const shots = Array.from({ length: n }, () => ({
-    prompt: resolveWildcards(prompt, pools),
-    negative_prompt: resolveWildcards(uc, pools),
-  }));
-  await useQueue.getState().enqueue(
-    {
-      ...params,
-      seed: params.seed_mode === "fixed" ? params.seed : -1,
-      prompt,
-      negative_prompt: uc,
-      workspace,
-      // ★`tab` 은 탭 이름, `set` 은 세트 이름이다 (위 ★★주와 같은 자리)
-      tab: (spec.tabs ?? []).find(
-        (c) => c.id === ((tab as { tabId?: string }).tabId ?? spec.activeTab),
-      )?.name ?? null,
-      set: tab.name,
-      set_id: tab.id,
-    },
-    shots,
-    1,
-  );
-  return { ok: true, queued: n, set: tab.name };
+  return { ok: true, queued: live.length * n, set: tab.name };
 }

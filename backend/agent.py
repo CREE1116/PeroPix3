@@ -91,12 +91,12 @@ def _scenes(st: dict) -> list[dict]:
     ★★씬은 **카드 안에** 있다 (`cards[].cells` — 2026-08-11 의 카드 층). 예전에는 세트가
       `cells` 를 직접 들었고, 여기는 그 옛 자리만 읽고 있었다. 그래서 **지금 만든 워크스페이스는
       조수에게 씬이 하나도 없는 것으로 보였다** (2026-08-24 발견).
-    ★옛 자리도 함께 읽는다 — 파일은 앱이 열어야 이전되므로, 아직 안 연 워크스페이스는 옛 모양이다.
+      ★옛 자리를 읽는 폴백은 두지 않는다 — 그 모양의 워크스페이스가 남아 있지 않다
+        (사용자 확인 2026-08-24). 없는 상황을 위한 길은 다음에 읽는 사람을 헷갈리게 한다.
     ★공통 접두(`prefix`)는 **카드마다** 있다 (그때 함께 내려갔다). 씬에 그 카드 이름과 접두를
       붙여 준다 — 조수가 「어느 카드의 씬인가」를 물어볼 필요가 없게."""
     out = []
-    for k in st.get("cards") or [{"name": st.get("name"), "prefix": st.get("prefix", ""),
-                                  "cells": st.get("cells") or []}]:
+    for k in st.get("cards") or []:
         for c in k.get("cells") or []:
             out.append({
                 "id": c.get("id"), "name": c.get("name"),
@@ -112,13 +112,13 @@ def _set_prompt(spec: dict, st: dict) -> dict:
     ★★세트(kind=="set")의 프롬프트는 **탭에 산다** (`spec.tabs[].prompt` — `workspace.ts` 의
       `promptOf`). 한 탭 아래 세트들은 같은 인물의 다른 포즈 묶음이라 프롬프트를 함께 쓴다.
       여기는 세트에서만 찾고 있어서 **프롬프트가 통째로 안 보였다** (2026-08-24 발견).
-    ★세트에 든 것도 읽는다 — 옛 워크스페이스와 싱글 탭이 그 모양이다."""
-    if st.get("kind") == "set":
-        cid = st.get("tabId") or spec.get("activeTab")
-        for c in spec.get("tabs") or []:
-            if c.get("id") == cid and c.get("prompt"):
-                return c["prompt"]
-    return st.get("prompt") or {}
+    ★세트에 든 것을 읽는 폴백은 두지 않는다 — 그 모양(옛 워크스페이스·싱글 탭)이 남아 있지
+      않다 (사용자 확인 2026-08-24)."""
+    cid = st.get("tabId") or spec.get("activeTab")
+    for c in spec.get("tabs") or []:
+        if c.get("id") == cid and c.get("prompt"):
+            return c["prompt"]
+    return {}
 
 
 def _tab_model(spec: dict) -> str:

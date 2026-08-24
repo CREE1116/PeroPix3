@@ -40,7 +40,6 @@ ENV_NAME = "records-env.jsonl"
 HEAVY_KEYS = ("resolved", "env")
 #: 쪼개기 전 원본을 한 번 남긴다 (지워도 앱은 돈다 — 되살릴 때만 쓴다)
 PRESPLIT_NAME = "records-before-split.jsonl"
-WORK_DIR = "work"      # ★옛 경로 (읽기 전용)
 OUT_DIR = "output"     # 생성물이 사는 곳 (사용자 결정 2026-08-08)
 #: ★그 아래 한 겹. 「싱글/멀티」로 갈리던 시절의 이름이 그대로 남은 것이다 —
 #:  갈래는 2026-08-24 에 없어졌고(`out_dir` 의 ★★주) 이름만 **호환을 위해** 둔다.
@@ -156,15 +155,6 @@ class Store:
         return trash.restore_at(self.root, entries)
 
     # ── 생성물 ────────────────────────────────────────────────
-    def work_dir(self, ws: str, set_name: str, cell: str | None = None) -> Path:
-        """옛 경로 (`work/<탭>/<셀>`). ★새로 만드는 그림은 `out_dir` 로 간다 —
-        이미 있는 그림을 읽는 쪽(갤러리·썸네일)이 이 경로를 계속 쓴다."""
-        p = self.dir_of(ws) / WORK_DIR / safe_name(set_name)
-        if cell:
-            p = p / safe_name(cell)
-        p.mkdir(parents=True, exist_ok=True)
-        return p
-
     def out_dir(self, ws: str, set_name: str, tab_name: str | None = None) -> Path:
         """저장 자리 — **그림이 앉는 슬롯의 자리**를 그대로 따른다.
 

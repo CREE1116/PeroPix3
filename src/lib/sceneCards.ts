@@ -12,32 +12,6 @@
  *  ★**이미 옮긴 탭은 손대지 않는다** — 두 번 감싸면 카드 안에 카드가 생긴다.
  */
 
-/** 옛 **싱글 탭**을 씬 탭으로 — 싱글/멀티 구분이 없어졌다 (사용자 결정 2026-08-11).
- *
- *  ★싱글 탭의 결과 레코드는 `cell`·`cell_id` 가 **없다**(셀이 없는 탭이었으므로).
- *    그냥 씬 하나로 감싸면 `takesOf` 가 그 레코드를 못 찾아 **그림이 통째로 사라져 보인다.**
- *    그래서 옮겨 온 씬에 `fromSingle` 을 박고, `takesOf` 가 그 씬에만 **셀 없는 레코드**를
- *    붙여 준다. 파일은 그대로 두고 화면이 찾아가는 길만 잇는 것이다.
- *  ★새로 만드는 씬에는 이 표식이 없다 — 옛 그림이 새 씬에 달라붙으면 안 된다. */
-export function convertSingleTab(tab: OldSetTab): Record<string, unknown> | null {
-  if (tab.kind !== "single") return null;
-  const { kind: _kind, prompt, ...rest } = tab;
-  return {
-    ...rest,
-    kind: "set",
-    prompt,
-    cards: [
-      {
-        id: "k1",
-        name: tab.name,
-        cells: [{ id: "c1", name: tab.name, blocks: [], fromSingle: true }],
-      },
-    ],
-    cardSeq: 1,
-    cellSeq: 2,
-  };
-}
-
 /** 이전 대상이 되는 옛 탭의 모습 (필요한 필드만) */
 type OldSetTab = {
   kind: string;
