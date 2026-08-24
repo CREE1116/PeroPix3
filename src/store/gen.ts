@@ -231,7 +231,7 @@ export const useGen = create<S>((set, get) => ({
 
   async generate(cell, extra) {
     const ws = useWs.getState();
-    const tab = ws.activeTab();
+    const tab = ws.activeSet();
     if (!tab) return;
     const targetCell = cell !== undefined ? cell : tab.kind === "set" ? get().cell : null;
     // ★id 를 함께 보낸다 — 화면은 이걸로 묶는다 (workspace.ts `takesOf`).
@@ -263,14 +263,14 @@ export const useGen = create<S>((set, get) => ({
           negative_prompt: uc,
           characters: withCoords(chars, get().params.use_coords),
           workspace: ws.current,
-          char: tab.kind === "set" ? (ws.activeCharOf()?.name ?? null) : null,
+          char: tab.kind === "set" ? (ws.activeTabOf()?.name ?? null) : null,
           tab: tab.name,
           cell: targetCell,
           cell_no:
             tab.kind === "set" && targetCell != null
               ? allCells(tab).findIndex((c) => c.name === targetCell) + 1
               : null,
-          tab_id: tab.id,
+          set_id: tab.id,
           cell_id: slotId,
         }),
       });
@@ -289,9 +289,9 @@ export const useGen = create<S>((set, get) => ({
         ts: (r as { ts?: string }).ts || localTs(),
         file: r.file,
         enhance_of: (extra?.enhance_of as string) ?? null,
-        tab: tab.name,
+        set: tab.name,
         cell: targetCell,
-        tab_id: tab.id,
+        set_id: tab.id,
         cell_id: slotId,
         seed: r.seed,
       });
@@ -308,7 +308,7 @@ export const useGen = create<S>((set, get) => ({
 
   async generateAll() {
     const ws = useWs.getState();
-    const tab = ws.activeTab();
+    const tab = ws.activeSet();
     if (!tab || tab.kind !== "set") return;
     // ★락은 **생성에서 뺀다** (v2 슬롯의 락). 지운 것이 아니라 이번에만 건너뛴다.
     // ★공통 접두는 **카드마다 다르다** (2026-08-11) — 그래서 씬을 카드와 함께 편다.
@@ -340,9 +340,9 @@ export const useGen = create<S>((set, get) => ({
         ...get().params,
         ...useImageInput.getState().payload(),
         workspace: ws.current,
-        char: ws.activeCharOf()?.name ?? null,
+        char: ws.activeTabOf()?.name ?? null,
         tab: tab.name,
-        tab_id: tab.id,
+        set_id: tab.id,
         negative_prompt: uc,
         characters: withCoords(chars, get().params.use_coords),
       },
@@ -459,15 +459,15 @@ export function clampCharsToModel() {
  *  ★250ms 미룬다 — 숫자칸을 타이핑하면 글자마다 바뀐다. */
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 /** ★★**생성 옵션은 탭마다 따로다** (사용자 지시 2026-08-22).
- *  ★여기서 「탭」은 **위 줄의 `새 탭`**(`spec.chars`·`activeChar`)이지, 캔버스 바로 위의
- *    「세트」(`spec.tabs`·`activeTab`)가 아니다. 정본은 `CLAUDE.md` 「워크스페이스 탭」 절.
+ *  ★여기서 「탭」은 **위 줄의 `새 탭`**(`spec.tabs`·`activeTab`)이지, 캔버스 바로 위의
+ *    「세트」(`spec.sets`·`activeTab`)가 아니다. 정본은 `CLAUDE.md` 「워크스페이스 탭」 절.
  *    한 탭 아래의 세트들은 같은 인물의 다른 포즈 묶음이라 수치를 같이 쓴다.
  *
  *  예전에는 앱 전역이라, 다른 탭에서 만지다 돌아오면 **앞 탭의 값을 물고 있어** 같은 탭인데
  *  결과가 달라졌다. 프롬프트는 이미 탭이 들고 있었는데 수치만 전역이었다.
  *
  *  ★담고 꺼내는 것을 **여기서** 한다: `workspace.ts` 는 이 파일을 값으로 못 부른다 (순환) —
- *    거기에는 담아 두는 칸(`CanvasTab.gen`)과 그 칸에 쓰는 길(`stashGen`)만 뒀다.
+ *    거기에는 담아 두는 칸(`SceneSet.gen`)과 그 칸에 쓰는 길(`stashGen`)만 뒀다.
  *  ★★**최상위에서 매달지 말 것.** 두 파일이 서로를 부르므로, 모듈이 실릴 때 매달면
  *    `useWs` 가 아직 만들어지기 전이라 **앱이 죽는다**
  *    (실측 2026-08-22: `Cannot access 'useWs' before initialization`).
@@ -486,13 +486,13 @@ function watchTabParams() {
      `spec` 이 이미 새 워크스페이스 것으로 갈려 있어서, 담으면 **남의 탭에** 쓰게 된다.
      그래서 예전에는 아예 건너뛰었고, 옮겼다 돌아오면 고친 수치가 사라져 있었다. */
   onBeforeWsSwitch(() => {
-    const id = useWs.getState().spec?.activeChar;
+    const id = useWs.getState().spec?.activeTab;
     if (id) useWs.getState().stashGen(id, useGen.getState().params);
   });
 
   useWs.subscribe((s) => {
     const spec = s.spec;
-    const id = spec?.activeChar;
+    const id = spec?.activeTab;
     // ★워크스페이스 이름까지 묶는다 — 다른 워크스페이스의 같은 탭 id 에 담으면 안 된다
     const spot = spec && id ? `${s.current ?? ""}::${id}` : null;
     if (spot === lastSpot) return;
@@ -502,7 +502,7 @@ function watchTabParams() {
     if (sameWs) {
       useWs.getState().stashGen(prev.split("::").slice(1).join("::"), useGen.getState().params);
     }
-    const tab = spec?.chars?.find((c) => c.id === id);
+    const tab = spec?.tabs?.find((c) => c.id === id);
     if (tab?.gen) {
       useGen.setState({ params: { ...DEFAULT_PARAMS, ...tab.gen } });
     } else if (!sameWs) {

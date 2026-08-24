@@ -1,0 +1,76 @@
+{
+  "_": [
+    "낱말 정본 — 화면·코드·저장·조수가 같은 이름을 쓰기 위한 표 (docs/terms-plan.md).",
+    "★프런트와 백엔드가 **둘 다** 이 파일을 읽는다. 한쪽에만 목록을 두면 반드시 갈린다",
+    "  (public/tags.json 을 양쪽이 읽는 것과 같은 방식).",
+    "★`alias` 는 사용자가 그 낱말을 다르게 부를 때를 위한 것이다 — 조수 지침에 언어별로 실린다.",
+    "  「유저가 뭐라고 말할지 모른다」(사용자 지시 2026-08-24)에 대한 답이 이 칸이다.",
+    "★`tool` 이 조수와의 계약이다. 코드 이름과 우연히 같아진 것이지 묶인 것이 아니다 —",
+    "  코드 쪽을 또 바꾸면 여기서 옮겨 담아 계약을 지킨다."
+  ],
+  "terms": [
+    {
+      "key": "workspace",
+      "tool": "workspace",
+      "code": "workspaces/<이름>/",
+      "what": { "ko": "최상위 작업 공간. 폴더 하나", "en": "the top-level workspace (one folder)", "ja": "最上位の作業スペース(フォルダ1つ)" },
+      "alias": { "ko": ["워크스페이스", "작업공간", "작업 공간"], "en": ["workspace"], "ja": ["ワークスペース", "作業スペース"] }
+    },
+    {
+      "key": "tab",
+      "tool": "tabs",
+      "code": "spec.tabs",
+      "what": { "ko": "워크스페이스 안의 묶음 층 (윗줄)", "en": "the grouping row inside a workspace (top row)", "ja": "ワークスペース内のまとまり(上の段)" },
+      "alias": { "ko": ["탭", "캐릭터 탭", "윗줄"], "en": ["tab"], "ja": ["タブ"] }
+    },
+    {
+      "key": "set",
+      "tool": "sets",
+      "code": "spec.sets",
+      "what": { "ko": "씬 묶음 (캔버스 바로 위)", "en": "a group of scenes (row just above the canvas)", "ja": "シーンのまとまり(キャンバスのすぐ上)" },
+      "alias": { "ko": ["세트", "씬 세트", "포즈세트", "포즈 세트"], "en": ["set", "scene set", "pose set"], "ja": ["セット", "シーンセット"] }
+    },
+    {
+      "key": "scene",
+      "tool": "scenes",
+      "code": "sets[].cells",
+      "what": { "ko": "세트 안의 칸. 그림이 여기 쌓인다", "en": "a cell inside a set; images pile up here", "ja": "セット内のマス。画像はここに溜まる" },
+      "alias": { "ko": ["씬", "슬롯", "칸"], "en": ["scene", "slot", "cell"], "ja": ["シーン", "スロット", "コマ"] }
+    },
+    {
+      "key": "base",
+      "tool": "base",
+      "code": "prompt.base",
+      "what": { "ko": "그 세트의 공통 프롬프트 (그림 전체에 걸린다)", "en": "the shared prompt of that set (applies to the whole image)", "ja": "そのセットの共通プロンプト(画像全体にかかる)" },
+      "alias": { "ko": ["베이스 프롬프트", "베이스", "공통 프롬프트", "그림체"], "en": ["base prompt", "base"], "ja": ["ベースプロンプト", "ベース"] }
+    },
+    {
+      "key": "character",
+      "tool": "characters",
+      "code": "prompt.chars",
+      "what": { "ko": "NAI 캐릭터 칸 — 그림 안의 인물", "en": "an NAI character slot — a person inside the image", "ja": "NAI キャラクター枠 — 画像の中の人物" },
+      "alias": { "ko": ["캐릭터 프롬프트", "인물", "캐릭터 칸"], "en": ["character prompt"], "ja": ["キャラクタープロンプト", "人物"] }
+    },
+    {
+      "key": "styleCard",
+      "tool": "styleCard",
+      "code": "cards.styles",
+      "what": { "ko": "덱의 그림체 카드", "en": "a style card in the deck", "ja": "デッキの画風カード" },
+      "alias": { "ko": ["스타일 카드", "그림체 카드"], "en": ["style card"], "ja": ["スタイルカード"] }
+    },
+    {
+      "key": "characterCard",
+      "tool": "characterCard",
+      "code": "cards.characters",
+      "what": { "ko": "덱의 캐릭터 카드 (넣어 둔 재료)", "en": "a character card in the deck (saved material)", "ja": "デッキのキャラクターカード(保存した素材)" },
+      "alias": { "ko": ["캐릭터 카드"], "en": ["character card"], "ja": ["キャラクターカード"] }
+    },
+    {
+      "key": "sceneSetCard",
+      "tool": "sceneSetCard",
+      "code": "cards.posesets",
+      "what": { "ko": "덱의 씬 묶음 카드", "en": "a scene-set card in the deck", "ja": "デッキのシーンセットカード" },
+      "alias": { "ko": ["씬 세트 카드", "포즈세트 카드"], "en": ["scene set card", "pose set card"], "ja": ["シーンセットカード"] }
+    }
+  ]
+}

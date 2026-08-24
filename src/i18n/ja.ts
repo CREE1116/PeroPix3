@@ -418,9 +418,9 @@ export const ja: Dict = {
   },
 
   /** ★画面ではこの層を「タブ」と呼ぶ (ユーザー決定 2026-08-18)。
-   *  コード上の識別子 (`chars`・`charId`) はそのまま。`workspace.json` のキーだからだ。
+   *  2026-08-24 に画面・コード・保存キーをすべて `tabs` に揃えた (1回限りの移行)。
    *  ★NAI のキャラクタープロンプト (`cards.charN`) とデッキのキャラカードは「キャラ」のまま。 */
-  chars: {
+  tab: {
     newName: "新しいタブ",
     cloneName: "複製",
     add: "タブを追加",
@@ -663,6 +663,11 @@ export const ja: Dict = {
   },
 
   ai: {
+    atCard: "デッキでそのカードを開きます",
+    atPrompt: "そのプロンプトを開きます",
+    atFile: "ファイル管理でそのフォルダを開きます",
+    atGuide: "指針画面を開きます",
+    atQueue: "そのセットへ移動します",
     title: "AI",
     engineHint: "今このエンジンで動きます。押すと設定に移ります",
     contextHint: "AI が今わかっていること（ワークスペース・モード・アクティブセット）",
@@ -777,10 +782,10 @@ export const ja: Dict = {
   },
 
   /** ★下段は「セット」。上段が「タブ」になったので、このグループの文言に「タブ」を戻さないこと (2026-08-18)。 */
-  tabs: {
+  set: {
     closeConfirm: "セット「{name}」を閉じます (画像 {n} 枚)",
     closeConfirmBody: "画像ファイルはゴミ箱に入ります。アプリ起動時に24時間経過したものから削除されます。",
-    closeTab: "セットを閉じる",
+    closeSet: "セットを閉じる",
     newSet: "新しいセット",
     newSetTab: "新しいシーンセット",
     posePrefix: "シーン {n}",

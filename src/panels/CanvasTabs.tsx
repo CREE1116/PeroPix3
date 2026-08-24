@@ -3,7 +3,7 @@ import { EditableName } from "../components/EditableName";
 import { api } from "../lib/backend";
 import { toast } from "../store/toast";
 import { useState } from "react";
-import { allCells, takesOf, useWs, type CanvasTab } from "../store/workspace";
+import { allCells, takesOf, useWs, type SceneSet } from "../store/workspace";
 import { ask } from "../store/ask";
 import { useGen } from "../store/gen";
 import { useDragSource } from "../cards/dragStore";
@@ -25,20 +25,20 @@ import { Icon } from "../components/Icon";
  *    씬 탭**이고, 옛 싱글 탭은 열 때 옮겨진다 (`migrate` → `convertSingleTab`).
  *
  *  ★★**화면 이름**(사용자 결정 2026-08-18): 위층 = 「탭」, 아래층 = 「세트」.
- *    코드 식별자는 그대로 `chars`·`charId` 다 (`store/workspace.ts` 의 `Spec.chars` 주석).
+ *    코드 식별자는 그대로 `chars`·`tabId` 다 (`store/workspace.ts` 의 `Spec.chars` 주석).
  *    아래 그림의 「캐릭터」도 이제 화면에서는 「탭」이다. 아래층 문구(`tabs.*`)에
  *    「탭」을 되살리지 말 것. 두 줄이 같은 이름이 되면 구별이 안 된다. */
 export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) {
-  const { spec, setActiveTab, closeTab, renameTab, addSetTab,
-    switchChar, addChar, renameChar, removeChar, records, isDeleted, deleteFiles } = useWs();
+  const { spec, setActiveTab, closeSet, renameSet, addSet,
+    switchTab, addTab, renameTab, removeTab, records, isDeleted, deleteFiles } = useWs();
   const tr = useI18n((s) => s.t);
   const [editing, setEditing] = useState<string | null>(null);
   const [editingChar, setEditingChar] = useState<string | null>(null);
   const startDrag = useDragSource();
   if (!spec) return null;
 
-  const inGroup = spec.tabs.filter(
-    (t): t is Extract<CanvasTab, { kind: "set" }> => t.kind === "set" && t.charId === spec.activeChar,
+  const inGroup = spec.sets.filter(
+    (t): t is Extract<SceneSet, { kind: "set" }> => t.kind === "set" && t.tabId === spec.activeTab,
   );
 
   // ★씬 세트 줄은 **캔버스 바로 위**에 붙는다 (사용자 제안 2026-08-05) — 두 줄을 앱 맨 위에
@@ -70,7 +70,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
               if (editing) return;
               // ★닫기 단추 위에서는 끌지 않는다 — `startDrag` 가 pointerdown 을 preventDefault 해서
               //   따라올 click 을 삼키고, 그래서 **세트 탭이 지워지지 않았다** (사용자 지적 2026-08-04)
-              if ((e.target as HTMLElement).closest("[data-tab-close]")) return;
+              if ((e.target as HTMLElement).closest("[data-scene-set-close]")) return;
               startDrag(e, {
                 dir: "save",
                 kind: "posesets",
@@ -83,7 +83,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                 },
               });
             }}
-            data-tab={t.id}
+            data-scene-set={t.id}
             style={{
               display: "flex",
               alignItems: "center",
@@ -105,7 +105,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
               mark="tab"
               btn={false}
               name={t.name}
-              onRename={(v) => renameTab(t.id, v)}
+              onRename={(v) => renameSet(t.id, v)}
               ctrl={{ editing: editing === t.id, setEditing: (v) => setEditing(v ? t.id : null) }}
               style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
               inputStyle={{
@@ -126,7 +126,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
             >
               {allCells(t).length}
             </span>
-            {/* ★**마지막 하나는 못 닫는다** — 닫으면 이 캐릭터에 탭이 없어진다 (`closeTab` 주석) */}
+            {/* ★**마지막 하나는 못 닫는다** — 닫으면 이 캐릭터에 탭이 없어진다 (`closeSet` 주석) */}
             {inGroup.length > 1 && (
               <button
                 /* ★★그림이 든 탭은 **묻고 닫으며, 그림도 함께 지운다**
@@ -137,19 +137,19 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                      **관리가 안 되기** 때문이다.
                    ★**휴지통을 지난다** (`deleteFiles`). 24시간 유예가 있어 되살릴 수 있고,
                      이 앱에서 지우는 창구는 전부 그리로 가기로 되어 있다 (`backend/trash.py`).
-                   ★**묶는 키는 `tab_id`** 다. 폴더는 **탭 이름**으로 짓기 때문에
+                   ★**묶는 키는 `set_id`** 다. 폴더는 **탭 이름**으로 짓기 때문에
                      (`workspace.out_dir`), 폴더를 지우면 같은 이름의 다른 탭 그림까지 지운다. */
                 onClick={(e) => {
                   e.stopPropagation();
                   const mine = takesOf(records, t, undefined)
                     .filter((r) => !isDeleted(r.file))
                     .map((r) => r.file);
-                  if (!mine.length) return closeTab(t.id);
+                  if (!mine.length) return closeSet(t.id);
                   void (async () => {
                     if (
                       await ask({
-                        title: tr("tabs.closeConfirm", { name: t.name, n: mine.length }),
-                        body: tr("tabs.closeConfirmBody"),
+                        title: tr("set.closeConfirm", { name: t.name, n: mine.length }),
+                        body: tr("set.closeConfirmBody"),
                         ok: tr("common.delete"),
                         cancel: tr("common.cancel"),
                       })
@@ -157,12 +157,12 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                       // ★그림을 먼저 보낸다 — 탭이 사라진 뒤에는 어느 그림이 그 탭 것이었는지
                       //   화면이 더는 묶어 주지 못한다
                       await deleteFiles(mine);
-                      closeTab(t.id);
+                      closeSet(t.id);
                     }
                   })();
                 }}
-                data-tip={tr("tabs.closeTab")}
-                data-tab-close
+                data-tip={tr("set.closeSet")}
+                data-scene-set-close
                 style={{ color: "var(--ink-faint)", padding: 0, display: "grid" }}
               >
                 {Icon.close12}
@@ -176,9 +176,9 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
         // ★씬 하나로 시작한다 (사용자 지시 2026-08-04) — 필요한 만큼은 `씬 추가`로 는다.
         //   셋으로 시작하면 안 쓸 씬을 먼저 지워야 했다
         /* ★씬 없이 만든다 — 씬 줄에서 `+` 로 시작한다 (새 워크스페이스와 같다) */
-        onClick={() => addSetTab(tr("tabs.newSet"), [])}
-        data-tip={tr("tabs.newSetTab")}
-        data-tab-add="set"
+        onClick={() => addSet(tr("set.newSet"), [])}
+        data-tip={tr("set.newSetTab")}
+        data-scene-set-add="set"
         style={{
           border: "1px solid var(--line)",
           borderRadius: "var(--r-2)",
@@ -208,7 +208,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
       {/* ★위층(싱글 | 멀티)은 없앴다 — 구분 자체가 사라졌다 (사용자 결정 2026-08-11) */}
       {/* ── **캐릭터** — 폴더 탭. 프롬프트의 주인이다 ── */}
         <div
-          data-char-bar
+          data-tab-bar
           style={{
             display: "flex",
             alignItems: "flex-end",
@@ -218,15 +218,15 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
             borderBottom: "1px solid var(--line)",
           }}
         >
-          {(spec.chars ?? []).map((c) => {
-            const on = c.id === spec.activeChar;
+          {(spec.tabs ?? []).map((c) => {
+            const on = c.id === spec.activeTab;
             return (
               <div
                 key={c.id}
-                data-char={c.id}
-                onClick={() => switchChar(c.id)}
+                data-tab={c.id}
+                onClick={() => switchTab(c.id)}
                 onDoubleClick={() => setEditingChar(c.id)}
-                data-tip={tr("chars.rename")}
+                data-tip={tr("tab.rename")}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -252,7 +252,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                   mark="char"
                   btn={false}
                   name={c.name}
-                  onRename={(v) => renameChar(c.id, v)}
+                  onRename={(v) => renameTab(c.id, v)}
                   ctrl={{ editing: editingChar === c.id, setEditing: (v) => setEditingChar(v ? c.id : null) }}
                   style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                   inputStyle={{
@@ -264,9 +264,9 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                     padding: "0 4px",
                   }}
                 />
-                {(spec.chars?.length ?? 0) > 1 && (
+                {(spec.tabs?.length ?? 0) > 1 && (
                   <button
-                    data-char-close={c.id}
+                    data-tab-close={c.id}
                     /* ★★**생성물이 화면에서 사라지는 삭제는 전부 묻는다** (사용자 지시 2026-08-19:
                        "무슨 탭이든 상관없어. 생성된게 지워지는 상황이면 다 확인 팝업 띄워").
                        탭 하나에 세트가 여럿 달리므로 여기서 사라지는 범위가 세트 닫기보다 넓다 —
@@ -277,25 +277,25 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                        앱에서 볼 길이 없는, 관리가 안 되는 그림이 쌓였다. */
                     onClick={(e) => {
                       e.stopPropagation();
-                      const sets = spec.tabs.filter((x) => x.kind === "set" && x.charId === c.id);
+                      const sets = spec.sets.filter((x) => x.kind === "set" && x.tabId === c.id);
                       // ★한 탭에 달린 **세트 전부**의 그림을 모은다 — 묶는 키는 세트 닫기와 같은
-                      //   `tab_id` 다 (폴더는 세트 이름으로 짓기 때문에 폴더로 지우면 같은 이름의
+                      //   `set_id` 다 (폴더는 세트 이름으로 짓기 때문에 폴더로 지우면 같은 이름의
                       //   다른 세트 그림까지 지운다, 위 ★주)
                       const mine = sets.flatMap((t) =>
                         takesOf(records, t, undefined)
                           .filter((r) => !isDeleted(r.file))
                           .map((r) => r.file),
                       );
-                      if (!mine.length) return removeChar(c.id);
+                      if (!mine.length) return removeTab(c.id);
                       void (async () => {
                         if (
                           await ask({
-                            title: tr("chars.removeConfirm", {
+                            title: tr("tab.removeConfirm", {
                               name: c.name,
                               t: sets.length,
                               n: mine.length,
                             }),
-                            body: tr("tabs.closeConfirmBody"),
+                            body: tr("set.closeConfirmBody"),
                             ok: tr("common.delete"),
                             cancel: tr("common.cancel"),
                           })
@@ -303,11 +303,11 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                           // ★그림을 **먼저** 보낸다 — 탭이 사라진 뒤에는 어느 그림이 그 탭 것이었는지
                           //   화면이 더는 묶어 주지 못한다 (세트 닫기와 같은 순서)
                           await deleteFiles(mine);
-                          removeChar(c.id);
+                          removeTab(c.id);
                         }
                       })();
                     }}
-                    data-tip={tr("chars.remove")}
+                    data-tip={tr("tab.remove")}
                     style={{ color: "var(--ink-faint)", padding: 0, display: "grid" }}
                   >
                     {Icon.close12}
@@ -317,9 +317,9 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
             );
           })}
           <button
-            data-char-add
-            onClick={() => addChar()}
-            data-tip={tr("chars.add")}
+            data-tab-add
+            onClick={() => addTab()}
+            data-tip={tr("tab.add")}
             style={{
               border: "1px solid var(--line)",
               borderRadius: "var(--r-2)",
@@ -345,7 +345,7 @@ function SaveHint() {
   const { current, spec } = useWs();
   const cell = useGen((s) => s.cell);
   const tr = useI18n((s) => s.t);
-  const tab = spec?.tabs.find((x) => x.id === spec.activeTab);
+  const tab = spec?.sets.find((x) => x.id === spec.activeTab);
   if (!tab) return null;
   /** 화면에 적힌 그 자리 — 탐색기로 열 때도 **같은 문자열**을 쓴다 (둘이 갈리면 안 된다).
    *
@@ -353,7 +353,7 @@ function SaveHint() {
    *    여기 적혀 있던 것은 **틀렸다** (사용자 지적 2026-08-19: 열면 400):
    *      · 위층(탭=`chars`) 폴더가 빠져 있었다
    *      · 씬 폴더를 붙이고 있었는데 **씬은 폴더가 아니다** (파일 이름 앞의 번호다) */
-  const charName = (spec?.chars ?? []).find((c) => c.id === spec?.activeChar)?.name;
+  const charName = (spec?.tabs ?? []).find((c) => c.id === spec?.activeTab)?.name;
   const rel = `output/멀티/${charName ? `${charName}/` : ""}${tab.name}`;
   return (
     <span

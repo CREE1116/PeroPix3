@@ -152,16 +152,16 @@ class Store:
         return trash.restore_at(self.root, entries)
 
     # ── 생성물 ────────────────────────────────────────────────
-    def work_dir(self, ws: str, tab: str, cell: str | None = None) -> Path:
+    def work_dir(self, ws: str, set_name: str, cell: str | None = None) -> Path:
         """옛 경로 (`work/<탭>/<셀>`). ★새로 만드는 그림은 `out_dir` 로 간다 —
         이미 있는 그림을 읽는 쪽(갤러리·썸네일)이 이 경로를 계속 쓴다."""
-        p = self.dir_of(ws) / WORK_DIR / safe_name(tab)
+        p = self.dir_of(ws) / WORK_DIR / safe_name(set_name)
         if cell:
             p = p / safe_name(cell)
         p.mkdir(parents=True, exist_ok=True)
         return p
 
-    def out_dir(self, ws: str, tab: str, is_set: bool, char: str | None = None) -> Path:
+    def out_dir(self, ws: str, set_name: str, is_set: bool, tab_name: str | None = None) -> Path:
         """저장 자리 — ★**싱글과 멀티를 갈라 놓는다** (사용자 지시 2026-08-04).
 
             <ws>/output/싱글/<탭>/                    <순번>.png
@@ -177,9 +177,9 @@ class Store:
         (페로픽스파이 `001_이름_00001_.png` 과 같은 취지).
         ★캐릭터가 없으면(옛 세션) 그 칸을 건너뛴다."""
         p = self.dir_of(ws) / OUT_DIR / ("멀티" if is_set else "싱글")
-        if is_set and char:
-            p = p / safe_name(char)
-        p = p / safe_name(tab)
+        if is_set and tab_name:
+            p = p / safe_name(tab_name)
+        p = p / safe_name(set_name)
         p.mkdir(parents=True, exist_ok=True)
         return p
 
@@ -240,10 +240,10 @@ class Store:
     def store_output(
         self,
         ws: str,
-        tab: str,
+        set_name: str,
         cell: str | None,
         cell_no: int | None,
-        char: str | None,
+        tab_name: str | None,
         exclude_no: bool,
         fmt: str,
         data: bytes,
@@ -254,11 +254,11 @@ class Store:
         번호**를 쓰고, 이름은 시각이 아니라 **순번**이다 (`file_lead`).
 
         부르는 곳이 셋이다 — 평소 생성(`_generate_one`) · 미저장 그림의 「파일로 저장」
-        (`/api/save-preview`) · 「새 탭으로 복제」(`copy_to_tab`). 두 벌이 되면 번호열이
+        (`/api/save-preview`) · 「새 탭으로 복제」(`copy_to_set`). 두 벌이 되면 번호열이
         갈린다: `next_name` 은 **접두마다 따로** 세므로, 한쪽만 `file_lead` 를 다르게 지으면
         같은 폴더 안에서 번호가 겹치거나 건너뛴다."""
         is_set = cell is not None
-        d = self.out_dir(ws, tab, is_set, char)
+        d = self.out_dir(ws, set_name, is_set, tab_name)
         lead = file_lead(cell_no, cell, exclude_no) if is_set else ""
         path = self.next_name(d, lead, fmt, ws)
         path.write_bytes(data)
@@ -391,16 +391,16 @@ class Store:
         return p
 
     # ── 새 탭으로 복제 ────────────────────────────────────────
-    def copy_to_tab(
+    def copy_to_set(
         self,
         ws: str,
         file: str,
-        tab: str,
-        tab_id: str | None,
+        set_name: str,
+        set_id: str | None,
         cell: str | None,
         cell_id: str | None,
         cell_no: int | None,
-        char: str | None,
+        tab_name: str | None,
         exclude_no: bool,
         src_path: Path | None = None,
         seed: int | None = None,
@@ -414,7 +414,7 @@ class Store:
         ★옮기지 않고 **복사**한다. 원본이 그대로라 보던 화면·선택이 흐트러지지 않는다.
         ★이름·자리는 `store_output` 하나가 정한다 — 보통 생성과 같은 규칙이라야 받는 씬의
           번호열이 어긋나지 않는다.
-        ★레코드에 `tab_id`·`cell_id` 를 함께 쓴다 — 받는 탭이 `idOnly` 라 그것이 없으면
+        ★레코드에 `set_id`·`cell_id` 를 함께 쓴다 — 받는 세트가 `idOnly` 라 그것이 없으면
           복사해 놓고 화면 어디에도 안 뜬다 (`lib/takes.ts`).
 
         ★`src_path` 는 **워크스페이스 밖의 원본**이다 (보관함 그림). 갤러리의
@@ -429,16 +429,16 @@ class Store:
             {},
         )
         fmt = src.suffix.lstrip(".").lower() or "png"
-        rel = self.store_output(ws, tab, cell, cell_no, char, exclude_no, fmt, src.read_bytes())
+        rel = self.store_output(ws, set_name, cell, cell_no, tab_name, exclude_no, fmt, src.read_bytes())
         # ★`resolved`(그때 나간 페이로드)와 `enhance_of` 는 안 싣는다. resolved 는 바이브·베이스
         #   그림의 base64 가 들어 있어 크고, enhance_of 는 **다른 탭의 파일**을 가리키는
         #   출처 기록이라 옮겨 오면 뜻이 어긋난다 (`/api/save-preview` 와 같은 판단).
         rec = {
             "ts": datetime.now().isoformat(timespec="seconds"),
             "file": rel,
-            "tab": tab,
+            "set": set_name,
             "cell": cell,
-            "tab_id": tab_id,
+            "set_id": set_id,
             "cell_id": cell_id,
             "enhance_of": None,
             "seed": int(seed if seed is not None else (old.get("seed") or 0)),

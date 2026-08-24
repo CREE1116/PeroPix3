@@ -41,6 +41,8 @@ import meta
 import guide as guide_mod
 import tools as tools_mod  # ★별칭 필수 — 아래에서 `tools` 라는 이름을 Tools 인스턴스가 가져간다
 import trash
+import agentlog
+import migrate_terms
 import migrate_thumbs
 import nai
 import vibe as vibe_mod
@@ -178,6 +180,12 @@ def _split_records() -> None:
 
 _split_records()
 
+# ★★**낱말 이전이 먼저다** (2026-08-24). 아래 이전들은 spec 을 열어 고치는데, 그것들이
+#   새 열쇠(`tabs`=탭 · `sets`=세트)를 전제하기 때문이다. 순서를 바꾸면 옛 모양 위에
+#   새 규칙을 얹게 된다 (`migrate_terms.py` 머리 주석).
+for _line in migrate_terms.run(WS_ROOT):
+    print(_line)
+
 for _line in migrate_thumbs.run(cards, store, pins):
     print(f"[썸네일 이전] {_line}")
 
@@ -291,12 +299,13 @@ class RestoreBody(BaseModel):
 class GenBody(BaseModel):
     # 어디에 저장할지
     workspace: str = "새 작업"
-    tab: str = "싱글"
+    # ★세트 이름 — 저장 경로 한 칸이 된다 (`docs/terms-plan.md` 의 낱말표)
+    set: str = "싱글"
     cell: str | None = None
     # ★슬롯 번호(1부터). 파일 이름 앞에 붙어 **탐색기에서 슬롯 순서**를 만든다
     cell_no: int | None = None
-    # 멀티의 캐릭터 이름 — 저장 경로 한 칸이 된다 (`멀티/<캐릭터>/<포즈세트>/`)
-    char: str | None = None
+    # 탭 이름 — 저장 경로 한 칸이 된다 (`멀티/<탭>/<세트>/`)
+    tab: str | None = None
     # 이 그림이 **어느 그림에서 나왔나** (강화·업스케일·인페인트의 원본 파일).
     # ★**묶는 데 쓰지 않는다.** 결과는 언제나 **각각 별개의 그림**으로 보인다
     #   (사용자 결정 2026-08-13 — v2 의 버전 스택 `1/n` 은 작업할 때 오히려 불편하다).
@@ -880,12 +889,12 @@ class CopyBody(BaseModel):
       싱글 탭은 없어졌다."""
 
     file: str
-    tab: str
-    tab_id: str | None = None
+    set: str
+    set_id: str | None = None
     cell: str | None = None
     cell_id: str | None = None
     cell_no: int | None = None
-    char: str | None = None
+    tab: str | None = None
     exclude_slot_number: bool = False
     #: ★원본이 **보관함**에 있다 (갤러리에서 복제). 그때는 워크스페이스에 레코드가 없어
     #  시드도 화면이 메타데이터에서 읽어 실어 준다.
@@ -942,8 +951,8 @@ async def copy_to_tab(ws: str, body: CopyBody):
       「새 탭으로 복제」도 그림이 슬롯에 앉아야 하므로 같은 자리를 쓴다."""
     try:
         src = keep.safe_folder(KEEP_DIR, body.file) if body.from_keep else None
-        return store.copy_to_tab(ws, body.file, body.tab, body.tab_id, body.cell,
-                                 body.cell_id, body.cell_no, body.char,
+        return store.copy_to_set(ws, body.file, body.set, body.set_id, body.cell,
+                                 body.cell_id, body.cell_no, body.tab,
                                  body.exclude_slot_number, src, body.seed)
     except ValueError as e:
         raise HTTPException(404, str(e))
@@ -1264,9 +1273,9 @@ async def _generate_one(body: GenBody) -> dict:
                 # ★미저장도 **서버 시각**으로 준다 — 저장된 것과 같은 자로 줄에 서야 한다
                 "ts": datetime.now().isoformat(timespec="seconds"),
                 "fmt": fmt, "seed": seed, "bytes": len(data),
-                "tab": body.tab, "cell": body.cell,
-                "tab_id": body.tab_id, "cell_id": body.cell_id,
-                "cell_no": body.cell_no, "char": body.char,
+                "set": body.set, "cell": body.cell,
+                "set_id": body.set_id, "cell_id": body.cell_id,
+                "cell_no": body.cell_no, "tab": body.tab,
                 "exclude_slot_number": body.exclude_slot_number,
                 "enhance_of": body.enhance_of,
                 "workspace": body.workspace}
@@ -1274,7 +1283,7 @@ async def _generate_one(body: GenBody) -> dict:
     # ★씬 번호는 탐색기에서 순서를 만들고, **씬 이름**은 그 파일이 무엇인지 알려 준다
     #   (v2 `번호_이름_0000001.png`). 「씬 번호 빼기」는 v2 와 같이 **번호만** 뺀다 —
     #   규칙과 근거는 `workspace.file_lead` 주석 (사용자 결정 2026-08-18, v2-port-audit D3).
-    rel = store.store_output(body.workspace, body.tab, body.cell, body.cell_no, body.char,
+    rel = store.store_output(body.workspace, body.set, body.cell, body.cell_no, body.tab,
                              body.exclude_slot_number, fmt, data)
 
     # ★★시각은 **여기서 한 번** 찍고 화면에도 그대로 보낸다 (사용자 지적 2026-08-19).
@@ -1288,9 +1297,9 @@ async def _generate_one(body: GenBody) -> dict:
         {
             "ts": ts,
             "file": rel,
-            "tab": body.tab,
+            "set": body.set,
             "cell": body.cell,
-            "tab_id": body.tab_id,
+            "set_id": body.set_id,
             "cell_id": body.cell_id,
             "enhance_of": body.enhance_of,
             "seed": seed,
@@ -1299,8 +1308,8 @@ async def _generate_one(body: GenBody) -> dict:
         },
     )
     return {"ok": True, "file": rel, "seed": seed, "bytes": len(data), "ts": ts,
-            "tab": body.tab, "cell": body.cell,
-            "tab_id": body.tab_id, "cell_id": body.cell_id,
+            "set": body.set, "cell": body.cell,
+            "set_id": body.set_id, "cell_id": body.cell_id,
             "enhance_of": body.enhance_of,
             "workspace": body.workspace}
 
@@ -1353,9 +1362,9 @@ async def upscale_image(body: UpscaleBody):
     new_rec = {
         "ts": datetime.now().isoformat(timespec="seconds"),
         "file": rel,
-        "tab": (rec or {}).get("tab", ""),
+        "set": (rec or {}).get("set", ""),
         "cell": (rec or {}).get("cell"),
-        "tab_id": (rec or {}).get("tab_id"),
+        "set_id": (rec or {}).get("set_id"),
         "cell_id": (rec or {}).get("cell_id"),
         # ★뿌리를 그대로 물려받는다 — 업스케일한 것을 또 키워도 스택이 평평해야 한다
         "enhance_of": body.enhance_of or (rec or {}).get("enhance_of") or body.file,
@@ -1387,12 +1396,12 @@ class SavePreviewBody(BaseModel):
     #: 이미 **최종 포맷으로 인코딩된** 바이트다 (`_generate_one` 이 변환까지 마치고 넘겼다)
     b64: str
     fmt: str = "png"
-    tab: str = ""
-    tab_id: str | None = None
+    set: str = ""
+    set_id: str | None = None
     cell: str | None = None
     cell_id: str | None = None
     cell_no: int | None = None
-    char: str | None = None
+    tab: str | None = None
     exclude_slot_number: bool = False
     enhance_of: str | None = None
     seed: int = 0
@@ -1422,14 +1431,14 @@ async def save_preview(body: SavePreviewBody):
     if fmt not in ("png", "webp"):
         fmt = "png"
 
-    rel = store.store_output(body.workspace, body.tab, body.cell, body.cell_no, body.char,
+    rel = store.store_output(body.workspace, body.set, body.cell, body.cell_no, body.tab,
                              body.exclude_slot_number, fmt, data)
     rec = {
         "ts": datetime.now().isoformat(timespec="seconds"),
         "file": rel,
-        "tab": body.tab,
+        "set": body.set,
         "cell": body.cell,
-        "tab_id": body.tab_id,
+        "set_id": body.set_id,
         "cell_id": body.cell_id,
         "enhance_of": body.enhance_of,
         "seed": body.seed,
@@ -1455,7 +1464,9 @@ app_cmd = App(Q.clients)
 #   섞이면 `AttributeError` 로 **요청 때** 터진다 — 임포트 시점에는 조용하다.
 #   실측 2026-08-18: 이름 변환·EXIF·검열 드롭 썸네일·떨군 파일 읽기 넷이 **첫 커밋부터** 500 이었다.
 #   모듈 함수를 직접 부르는 테스트는 이걸 못 잡는다 (`test_tools.py`). HTTP 로 뚫는 판정이 필요하다.
-tools = Tools(cards, store, files, WS_ROOT, meta, _notify, app_cmd, GUIDE)
+# ★조수의 변경 이력 — 사람의 `Ctrl+Z` 와 **따로** 굴러간다 (`agentlog.py` 머리 주석)
+AGENT_LOG = agentlog.AgentLog(DATA_DIR)
+tools = Tools(cards, store, files, WS_ROOT, meta, _notify, app_cmd, GUIDE, AGENT_LOG)
 
 
 class QueueBody(BaseModel):

@@ -29,11 +29,11 @@ import { CharPositioner } from "./CharPositioner";
  *    열 때 옮겨진다 (`migrate` → `convertSingleTab`). 큰 그림·히스토리 줄·별표만 보기가
  *    있던 자리는 `SceneLane` + `ScenePreview` + `SceneActions` 가 이어받았다. */
 export function Canvas() {
-  const { activeTab } = useWs();
+  const { activeSet } = useWs();
   /** ★마스크를 칠하는 동안 **이 자리가 편집기로 바뀐다** (사용자 결정 2026-08-13).
    *  모달로 띄우면 칠하는 동안 프롬프트도 결과도 못 본다. 생성 버튼은 그동안 「인페인트」다. */
   const editing = useImageInput((s) => s.editing);
-  const tab = activeTab();
+  const tab = activeSet();
   if (!tab) return null;
 
   return (
@@ -237,7 +237,7 @@ function SceneActions() {
    *  ★★기준은 하나다: **그 그림을 뽑을 때의 구조를 그대로 재현한다**
    *    (사용자 지시 2026-08-19: *"스타일/캐릭터/슬롯 구조 그대로 재현"*).
    *    나뉘어 온다:
-   *      구조 → **그 그림이 나온 탭과 씬**에서 (`cloneToNewTab`, 레코드의 `tab_id`·`cell_id`)
+   *      구조 → **그 그림이 나온 탭과 씬**에서 (`cloneToNewTab`, 레코드의 `set_id`·`cell_id`)
    *             스타일 카드 · 베이스/네거티브 블록 · **캐릭터 카드** ·
    *             그 씬의 블록 · **카드 공통 접두** · 씬 프롬프트 목적지
    *             ★접두와 목적지를 빼면 같은 씬이라도 **다른 프롬프트가 나간다** (`gen.ts` 참조)
@@ -396,7 +396,7 @@ function ScenePreview() {
   const startDrag = useDragSource();
   const { base } = useGen();
   const ws = useWs((s) => s.current);
-  const { records, activeTab, isDeleted } = useWs();
+  const { records, activeSet, isDeleted } = useWs();
   const cell = useSceneFocus((s) => s.cell);
   const file = useSceneFocus((s) => s.file);
   /** ★만들어지는 중인 칸을 골랐나 — 그때는 **빈 화면**이다 (안내 문구도 안 띄운다) */
@@ -413,16 +413,16 @@ function ScenePreview() {
    *  ★**씬 줄에 보이는 순서를 따른다.** 줄은 최신이 왼쪽이므로, 아래로 굴리면
    *    오른쪽(더 오래된 것)으로 간다. 저장 순서로 세면 줄과 반대로 움직인다
    *    (싱글 쪽에서 한 번 밟은 함정이다). */
-  const tab = activeTab();
-  const setTab = tab?.kind === "set" ? tab : null;
-  const scene = setTab ? allScenes(setTab).find((x) => x.cell.id === cell) : null;
+  const tab = activeSet();
+  const sceneSet = tab?.kind === "set" ? tab : null;
+  const scene = sceneSet ? allScenes(sceneSet).find((x) => x.cell.id === cell) : null;
   // ★씬 줄과 **같은 창구**로 고른다 — 갈 씬이 없는 결과는 첫 씬이 받으므로(감사 D6),
   //   여기서 `takesOf` 를 쓰면 줄에는 보이는 그림을 휠로 못 넘긴다
   //   ★미저장 그림도 **같은 목록**에 든다 (`withPreviews`) — 줄과 큰 그림이 한 목록을 본다
   const merged = withPreviews(records, ws, previews);
   const shown =
-    setTab && scene
-      ? [...takesOfScene(merged, setTab, allCells(setTab), scene.cell)]
+    sceneSet && scene
+      ? [...takesOfScene(merged, sceneSet, allCells(sceneSet), scene.cell)]
           .filter((r) => !isDeleted(r.file))
           .reverse()
       : [];

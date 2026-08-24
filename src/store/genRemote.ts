@@ -2,7 +2,7 @@ import { api } from "../lib/backend";
 import { compileBlocks } from "../lib/blocks";
 import { resolveWildcards } from "../lib/wildcards";
 import { wildcardPools } from "./wildcards";
-import { allScenes, promptOf, type CanvasTab, type Spec } from "./workspace";
+import { allScenes, promptOf, type SceneSet, type Spec } from "./workspace";
 import { useQueue } from "./queue";
 import { useGen } from "./gen";
 
@@ -19,7 +19,7 @@ export async function queueToWorkspace(
   workspace: string,
   count: number,
   tabName?: string,
-): Promise<{ ok: true; queued: number; tab: string } | { error: string }> {
+): Promise<{ ok: true; queued: number; set: string } | { error: string }> {
   let spec: Spec | null = null;
   try {
     const r = await api<{ spec: Spec | null }>(`/api/workspaces/${encodeURIComponent(workspace)}`);
@@ -29,7 +29,7 @@ export async function queueToWorkspace(
   }
   if (!spec) return { error: `'${workspace}' 워크스페이스가 없습니다.` };
 
-  const tabs: CanvasTab[] = spec.tabs ?? [];
+  const tabs: SceneSet[] = spec.sets ?? [];
   const tab = tabName
     ? tabs.find((t) => t.name === tabName)
     : (tabs.find((t) => t.id === spec!.activeTab) ?? tabs[0]);
@@ -61,19 +61,19 @@ export async function queueToWorkspace(
             negative_prompt: resolveWildcards(uc, wildcardPools()),
             workspace,
             tab: tab.name,
-            tab_id: tab.id,
+            set_id: tab.id,
             cell: c.name,
             cell_id: c.id,
             cell_no: i + 1,
             // 캐릭터 이름은 저장 경로 한 칸이 된다 (<ws>/output/멀티/<캐릭터>/<탭>/)
-            char: (spec.chars ?? []).find((c) => c.id === (tab.charId ?? spec.activeChar))?.name ?? null,
+            char: (spec.tabs ?? []).find((c) => c.id === (tab.tabId ?? spec.activeTab))?.name ?? null,
           },
           undefined,
           1,
         );
       }
     }
-    return { ok: true, queued: live.length * n, tab: tab.name };
+    return { ok: true, queued: live.length * n, set: tab.name };
   }
 
   // ★한 요청에 n 을 넘기지 않고 **장마다 항목을 편다**. 그래야 와일드카드가 장마다 다시
@@ -91,10 +91,10 @@ export async function queueToWorkspace(
       negative_prompt: uc,
       workspace,
       tab: tab.name,
-      tab_id: tab.id,
+      set_id: tab.id,
     },
     shots,
     1,
   );
-  return { ok: true, queued: n, tab: tab.name };
+  return { ok: true, queued: n, set: tab.name };
 }

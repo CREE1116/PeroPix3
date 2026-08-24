@@ -18,67 +18,15 @@ export type TagEntry = {
   _lower?: string;
 };
 
-/** NAI 가 쓰는데 단부루 사전에는 없는 것들 — 실제로 확인하고 넣는다.
- *  `very aesthetic, masterpiece, no text` 는 백엔드가 V4.5 프롬프트 끝에 붙이는 품질
- *  태그이고(`backend/nai.py` `V45_QUALITY_TAGS`), `best quality` 는 기본 블록이 쓴다
- *  (`store/prompt.ts` `defaultBase`). 넷 다 `tags.json` 에 없어 여기서 메운다. */
-const EXTRA: TagEntry[] = ["very_aesthetic", "masterpiece", "no_text", "best_quality"].map(
-  (label) => ({ label, value: label, count: 8_000_000, type: "meta", category: 5 }),
-);
-
-/** ★`nsfw`·`sfw` — 단부루 덤프(`tags.json`)에는 **없다** (실측 2026-08-22: 별칭까지 봐도 없음).
- *  등급은 단부루에서 태그가 아니라 따로 붙는 값이라 덤프에 안 들어간다. 그런데 NAI 프롬프트에는
- *  그대로 쓰는 낱말이라 자주 친다 (사용자 지시 2026-08-22: *"자동완성에 nsfw 랑 sfw 추가해줘"*).
- *  ★`count` 는 0 이다 — 사용량 자료가 없다. 지어내지 않는다 (V5 태그와 같은 규약). */
-EXTRA.push(
-  ...["nsfw", "sfw"].map((label) => ({
-    label,
-    value: label,
-    count: 0,
-    type: "meta",
-    category: 5,
-  })),
-);
-
-/** ★NAI Diffusion **V5 에서 새로 생긴 태그** (NAI 공지 2026-08-21, 사용자 전달).
+/** NAI 가 쓰는데 단부루 사전에는 없는 것들 — **파일 하나로 뺐다** (`public/tags-extra.json`).
  *
- *  ★★근거는 **공지문뿐**이다. 공홈 번들에는 태그 사전이 없다 — 자동완성을 서버
- *    (`/ai/generate-image/suggest-tags`)에 물어보는 구조라 뽑아 올 데가 없었다.
- *    번들에서 교차 확인된 것은 실제 생성 프롬프트에 쓰인 `medium complexity` 하나다.
- *  ★★**표기를 손대지 않는다** (사용자 지시 2026-08-21). 밑줄로 바꾸거나 콜론을 빼면
- *    자동완성이 넣어 주는 문자열이 실제 태그와 달라진다 — 사전 표기가 아니라
- *    **프롬프트에 그대로 나가는 문자열**이 정본이다.
- *  ★`count` 는 0 이다 — 새 태그라 사용량 자료가 없다. 지어내지 않는다.
- *  ★`tags.json`(단부루 덤프)에 이미 있는 `transparent background`·`alpha transparency`
- *    는 여기 넣지 않는다 (중복은 `loadTags` 가 거르지만 애초에 둘 필요가 없다).
+ *  ★★2026-08-24 까지는 이 자리에 목록을 **코드로 박아 두었다.** 그런데 조수의 `search_tags`
+ *    (`backend/agent.py`)는 `tags.json` **파일만** 읽어서, 여기 얹은 V5 태그와 `nsfw`/`sfw` 를
+ *    「없다」고 판단했다 — 같은 정보에 창구가 둘로 갈린 자리였다.
+ *    이제 **프런트와 백엔드가 같은 두 파일**을 읽는다 (`tags.json` + `tags-extra.json`).
+ *  ★`tags.json`(단부루 덤프)은 **손대지 않는다.** 우리가 더하는 것만 따로 둔다.
+ *  ★`count` 가 0 인 것은 사용량 자료가 없다는 뜻이다 — 지어내지 않는다.
  */
-const V5_TAGS: [string, number][] = [
-  ["depthness", 0],
-  ["attractive male", 0],
-  ["low complexity", 0],
-  ["medium complexity", 0],
-  ["high complexity", 0],
-  ["ultra complexity", 0],
-  ["has alpha", 0],
-  ["visual novel art", 0],
-  ["visual novel bg", 0],
-  ["visual novel cg", 0],
-  ["visual novel chibi", 0],
-  ["visual novel sprite", 0],
-  // ★`meta:` 접두가 붙은 둘. 콜론을 친 뒤에 골라도 제대로 들어간다
-  //   (`currentWord` 가 홑콜론을 태그 글자로 본다 — 2026-08-21 에 고쳤다).
-  ["meta:novel era", 5],
-  ["meta:golden era", 5],
-];
-EXTRA.push(
-  ...V5_TAGS.map(([label, category]) => ({
-    label,
-    value: label,
-    count: 0,
-    type: category === 5 ? "meta" : "general",
-    category,
-  })),
-);
 
 /** 검색용 표기 — ★**밑줄과 띄어쓰기를 같은 것으로 본다.**
  *
@@ -99,13 +47,16 @@ export function loadTags(): Promise<void> {
   if (loaded) return Promise.resolve();
   if (loading) return loading;
   loading = (async () => {
-    let tags: TagEntry[] = [];
-    try {
-      const res = await fetch("/tags.json");
-      if (res.ok) tags = (await res.json()) as TagEntry[];
-    } catch {
-      /* 사전이 없어도 앱은 돈다 — 자동완성만 빠진다 */
-    }
+    const grab = async (url: string): Promise<TagEntry[]> => {
+      try {
+        const res = await fetch(url);
+        return res.ok ? ((await res.json()) as TagEntry[]) : [];
+      } catch {
+        return []; /* 사전이 없어도 앱은 돈다 — 자동완성만 빠진다 */
+      }
+    };
+    // ★★두 파일이 **정본**이다. 백엔드의 `search_tags` 도 같은 둘을 읽는다 (위 ★★주)
+    const [tags, EXTRA] = await Promise.all([grab("/tags.json"), grab("/tags-extra.json")]);
     const index: Record<string, TagEntry[]> = {};
     const seen = new Set<string>();
     for (const t of tags) {

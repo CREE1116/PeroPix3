@@ -13,7 +13,7 @@ import { useSceneFocus } from "../store/sceneFocus";
  */
 export function visibleTakes(cellId: string): Rec[] {
   const ws = useWs.getState();
-  const tab = ws.spec?.tabs.find((x) => x.id === ws.spec?.activeTab);
+  const tab = ws.spec?.sets.find((x) => x.id === ws.spec?.activeTab);
   if (tab?.kind !== "set" || !cellId) return [];
   const cell = allCells(tab).find((c) => c.id === cellId);
   if (!cell) return [];

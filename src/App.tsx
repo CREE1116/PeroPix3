@@ -369,9 +369,9 @@ export function App() {
               // ★씬 카드의 그림은 **탭이 든다** (`SceneCard.thumb`) — 덱 카드와 다른 자리다.
               //   덱으로 저장하면 그때 카드가 자기 것으로 한 벌 갖는다.
               const ws = useWs.getState();
-              const tab = ws.spec?.tabs.find((x) => x.id === t.tabId);
+              const tab = ws.spec?.sets.find((x) => x.id === t.setId);
               if (tab?.kind === "set")
-                ws.setCard(t.tabId, t.cardId, {
+                ws.setCard(t.setId, t.cardId, {
                   thumb: { tid, banner: r.banner ?? defaultView(), face: r.boxes.face ?? defaultView() },
                 });
             } else {

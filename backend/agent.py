@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import uuid
 import re
@@ -25,8 +26,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
+import nai
+
 # 태그 사전은 프론트 자산이지만 **파일**이라 백엔드도 읽는다 (한 벌만 둔다)
-TAGS_JSON = Path(__file__).resolve().parent.parent / "public" / "tags.json"
+#: ★★**둘을 함께 읽는다** — 단부루 덤프와, 우리가 더한 것(V5 태그·nsfw/sfw 등).
+#   2026-08-24 까지 더한 것은 **화면 코드에만** 있어서, 조수는 그 태그들을 「없다」고 했다.
+#   같은 정보에 창구가 둘이면 반드시 갈린다 (`src/lib/tagData.ts` 의 ★★주).
+_PUBLIC = Path(__file__).resolve().parent.parent / "public"
+TAGS_JSON = _PUBLIC / "tags.json"
+TAGS_EXTRA_JSON = _PUBLIC / "tags-extra.json"
 
 _tags_cache: list[dict] | None = None
 
@@ -34,10 +42,15 @@ _tags_cache: list[dict] | None = None
 def _tags() -> list[dict]:
     global _tags_cache
     if _tags_cache is None:
-        try:
-            _tags_cache = json.loads(TAGS_JSON.read_text(encoding="utf-8"))
-        except Exception:
-            _tags_cache = []
+        out: list[dict] = []
+        for p in (TAGS_EXTRA_JSON, TAGS_JSON):   # 더한 것이 앞에 서서 먼저 걸린다
+            try:
+                got = json.loads(p.read_text(encoding="utf-8"))
+                if isinstance(got, list):
+                    out.extend(got)
+            except Exception:
+                continue
+        _tags_cache = out
     return _tags_cache
 
 
@@ -70,6 +83,57 @@ def _view(blocks: list[dict] | None) -> list[dict]:
         )
         out.append({"id": b.get("id"), "label": b.get("label"), "on": b.get("on", True), "tags": tags})
     return out
+
+
+def _scenes(st: dict) -> list[dict]:
+    """세트 안의 **씬들**.
+
+    ★★씬은 **카드 안에** 있다 (`cards[].cells` — 2026-08-11 의 카드 층). 예전에는 세트가
+      `cells` 를 직접 들었고, 여기는 그 옛 자리만 읽고 있었다. 그래서 **지금 만든 워크스페이스는
+      조수에게 씬이 하나도 없는 것으로 보였다** (2026-08-24 발견).
+    ★옛 자리도 함께 읽는다 — 파일은 앱이 열어야 이전되므로, 아직 안 연 워크스페이스는 옛 모양이다.
+    ★공통 접두(`prefix`)는 **카드마다** 있다 (그때 함께 내려갔다). 씬에 그 카드 이름과 접두를
+      붙여 준다 — 조수가 「어느 카드의 씬인가」를 물어볼 필요가 없게."""
+    out = []
+    for k in st.get("cards") or [{"name": st.get("name"), "prefix": st.get("prefix", ""),
+                                  "cells": st.get("cells") or []}]:
+        for c in k.get("cells") or []:
+            out.append({
+                "id": c.get("id"), "name": c.get("name"),
+                "card": k.get("name"), "prefix": k.get("prefix", ""),
+                "blocks": _view(c.get("blocks")), "locked": bool(c.get("locked")),
+            })
+    return out
+
+
+def _set_prompt(spec: dict, st: dict) -> dict:
+    """그 세트에 걸리는 **프롬프트**.
+
+    ★★세트(kind=="set")의 프롬프트는 **탭에 산다** (`spec.tabs[].prompt` — `workspace.ts` 의
+      `promptOf`). 한 탭 아래 세트들은 같은 인물의 다른 포즈 묶음이라 프롬프트를 함께 쓴다.
+      여기는 세트에서만 찾고 있어서 **프롬프트가 통째로 안 보였다** (2026-08-24 발견).
+    ★세트에 든 것도 읽는다 — 옛 워크스페이스와 싱글 탭이 그 모양이다."""
+    if st.get("kind") == "set":
+        cid = st.get("tabId") or spec.get("activeTab")
+        for c in spec.get("tabs") or []:
+            if c.get("id") == cid and c.get("prompt"):
+                return c["prompt"]
+    return st.get("prompt") or {}
+
+
+def _tab_model(spec: dict) -> str:
+    """지금 탭이 쓰는 **모델**.
+
+    ★조수가 이것을 알아야 하는 까닭: 자연어를 써도 되는지·투명 배경이 되는지·퀄리티 프리셋이
+      무엇인지가 전부 모델에 매인다 (`docs/terms-plan.md` §4 의 빈칸 셋째).
+    ★생성 옵션은 **탭마다 따로** 담긴다 (`src/store/gen.ts` 의 `stashGen` — 워크스페이스는
+      각각이 개별 작업 공간이다). 그래서 세트가 아니라 **활성 탭**에서 꺼낸다.
+    ★능력표(무엇이 되고 안 되나)는 여기 두지 않는다 — 정본은 `src/lib/naiModels.ts` 하나다.
+      여기서 옮겨 적으면 표가 둘이 되어 반드시 갈린다. 지침에는 **모델 이름**만 실린다."""
+    for c in spec.get("tabs") or []:
+        if c.get("id") == spec.get("activeTab"):
+            return str((c.get("gen") or {}).get("model") or nai.GenRequest.model)
+    return nai.GenRequest.model
 
 
 class App:
@@ -123,14 +187,17 @@ _KIND_KO = {"characters": "캐릭터", "styles": "그림체", "posesets": "포�
 class Tools:
     """앱의 저장소를 그대로 쓴다 — 별도 경로를 만들면 화면과 어긋난다.
 
-    ★★**바꾸는 도구는 `did` 를 돌려준다** (사용자 지시 2026-08-08). 무엇을 바꿨는지
-      한 줄로 적으면 화면의 도구 줄에 그대로 뜨고, 사용자가 보고 "되돌려" 라고 할 수 있다.
-      예전엔 성공하면 도구 **이름만** 보였다 — `create_card` 만으로는 무엇이 생겼는지 모른다.
-      ★읽기 도구에는 붙이지 않는다 (소음이 된다)."""
+    ★★**바꾸는 도구는 `did` 와 `at` 을 돌려준다** (사용자 지시 2026-08-08 · 2026-08-24).
+      `did` 는 **무엇을** 바꿨나, `at` 은 **어디를** 바꿨나다. 화면은 그 줄을 「고침 줄」로
+      따로 그리고, 누르면 그 자리를 연다 (`docs/terms-plan.md` §3-4).
+      ★읽기 도구에는 붙이지 않는다 (소음이 된다).
+      ★★**고치는 도구는 `at` 없이 성공하면 안 된다** — 판정이 잡는다."""
 
     def __init__(self, cards, store, files_mod, outputs: Path, meta_mod, notify: Callable, app: App,
-                 guide=None):
+                 guide=None, log=None):
         self.cards = cards
+        # ★조수의 **변경 이력** (`agentlog.py`) — 되돌릴 근거. 사람의 `Ctrl+Z` 와 섞지 않는다
+        self.log = log
         # ★앱이 들고 있는 **사용자 지침** (`guide.py`) — 엔진이 무엇이든 같은 것을 본다
         self.guide = guide
         self.store = store
@@ -141,6 +208,41 @@ class Tools:
         self.notify = notify
         # 생성처럼 **앱이 해야 하는 것**은 여기로 시킨다
         self.app = app
+
+    def _mark(self, tool: str, did: str, at: dict, before=None, after=None,
+              undoable: bool = True, why: str = "") -> dict:
+        """변경 하나를 이력에 적고, 대화 줄이 가리킬 `at` 을 돌려준다.
+
+        ★★`at` 은 **어디를 고쳤나**다 — 화면이 그것으로 그 자리를 연다. 이력의 id(`log`)만
+          싣고 **본문(before/after)은 안 싣는다**: 대화에 실으면 매 턴 컨텍스트에 딸려 온다.
+        ★이력을 못 적어도 `at` 은 돌려준다 — 자리는 알려 줘야 한다."""
+        rid = self.log.add(tool, did, at, before, after, undoable, why) if self.log else ""
+        return {**at, "log": rid} if rid else dict(at)
+
+    def _mark_app(self, name: str, out: dict) -> dict:
+        """**앱이 한 일**도 같은 이력에 담는다 (프롬프트 편집·생성).
+
+        ★앱은 `did`·`at`·`before`·`after` 를 돌려주고, 이력에 담는 일은 여기서 한다 —
+          이력 파일이 백엔드에 있어서다.
+        ★★`before`·`after` 는 **여기서 걷어낸다.** 그대로 두면 고친 프롬프트 전문이 도구
+          결과로 LLM 에 실려 매 턴 컨텍스트에 눌러앉는다 (`agentlog.rows` 와 같은 이유)."""
+        if not isinstance(out, dict):
+            return out
+        if name == "generate" and out.get("ok") and not out.get("at"):
+            # ★생성은 **못 되돌린다** — 이미 Anlas 를 썼다. 그래도 자리는 남긴다
+            n = out.get("queued", 0)
+            where = out.get("set") or ""
+            did = f"「{where}」 세트에 {n}장을 넣음" if where else f"큐에 {n}장을 넣음"
+            out["did"] = did
+            out["at"] = self._mark("generate", did, {"kind": "queue"},
+                                   undoable=False, why="이미 Anlas 를 쓴 생성입니다")
+            return out
+        if out.get("at") and out.get("did"):
+            out["at"] = self._mark(name, str(out["did"]), dict(out["at"]),
+                                   before=out.pop("before", None), after=out.pop("after", None))
+        out.pop("before", None)
+        out.pop("after", None)
+        return out
 
     # ── 사용자 지침 ──────────────────────────────────────────────
     def _read_guide(self, a: dict) -> dict:
@@ -167,6 +269,8 @@ class Tools:
             b = r.get("before") or {}
             r["did"] = (f"지침을 고침 — {b.get('lines', 0)}줄 → {r['lines']}줄 "
                         f"({b.get('chars', 0)}자 → {r['chars']}자)")
+            r["at"] = self._mark("write_guide", r["did"], {"kind": "guide"},
+                                 before=b.get("text"), after=str(a.get("text") or ""))
         return r
 
     # ── 목록 ────────────────────────────────────────────────────
@@ -184,9 +288,12 @@ class Tools:
             if fn is None:
                 # ★사람이 답할 때까지 기다리는 도구는 넉넉히 (클로드 코드의 stdio MCP 유휴
                 #   한계가 30분이라 그 안이면 된다)
-                return await self.app.do(name, args or {}, timeout=600.0 if name == "ask_user" else 120.0)
+                out = await self.app.do(name, args or {}, timeout=600.0 if name == "ask_user" else 120.0)
+                return self._mark_app(name, out)
             try:
                 out = fn(args or {})
+                if inspect.isawaitable(out):
+                    out = await out
                 return out if isinstance(out, dict) else {"result": out}
             except Exception as e:
                 return {"error": f"{type(e).__name__}: {e}"}
@@ -289,13 +396,13 @@ class Tools:
             ),
             (
                 "generate",
-                "★**생성을 큐에 넣는다.** 그 탭의 잠기지 않은 씬 전부를 count 바퀴 돈다 "
-                "(씬이 하나면 count 장이다). 비우면 지금 보고 있는 탭, workspace·tab 을 주면 "
+                "★**생성을 큐에 넣는다.** 그 세트의 잠기지 않은 씬 전부를 count 바퀴 돈다 "
+                "(씬이 하나면 count 장이다). 비우면 지금 보고 있는 세트, workspace·set 을 주면 "
                 "**거기로** 넣는다 (화면은 안 옮긴다). 앱이 켜져 있어야 한다. Anlas 가 든다 — "
                 "사용자가 장수를 말했을 때만 쓴다.",
                 obj({"count": n("몇 바퀴. 기본 1"),
                      "workspace": s("어디에 넣을지 — 비우면 지금 보고 있는 곳"),
-                     "tab": s("어느 탭에 넣을지 — 비우면 그 워크스페이스의 활성 탭")}),
+                     "set": s("어느 세트에 넣을지 — 비우면 그 워크스페이스의 활성 세트")}),
                 None,  # 앱에 시킨다 (아래 _call_app)
             ),
             (
@@ -346,21 +453,42 @@ class Tools:
             ),
             (
                 "edit_current_prompt",
-                "★**지금 열려 있는 탭의 프롬프트**를 고친다 (원본 카드에는 안 닿는다). "
-                "\"지금 그림체를 더 플랫하게\" 같은 요청은 이것으로 한다. "
+                "★**보고 있는 것을 고친다** (덱의 카드에는 안 닿는다). "
+                "\"지금 그림체를 더 플랫하게\"·\"키키 의상 바꿔 줘\" 같은 요청은 이것으로 한다. "
                 "mode=\"add\" 는 블록을 새로 붙이고, \"replace\" 는 같은 이름의 블록을 갈아 끼운다 "
-                "(없으면 새로 붙는다). 앱이 켜져 있어야 한다.",
+                "(없으면 새로 붙는다). "
+                "★`set` 을 주면 **그 세트**를, 비우면 지금 보고 있는 세트를 고친다. "
+                "★`area` 에 없는 캐릭터 이름을 주면 **그 자리를 새로 만든다.** "
+                "앱이 켜져 있어야 한다.",
                 obj(
                     {
-                        "area": s('어디를 — "base"(공통·그림체) · "baseUc"(공통 UC) · '
+                        "area": s('어디를 — "base"(베이스 프롬프트) · "baseUc"(베이스 UC) · '
                                   '캐릭터는 그 이름 · 캐릭터 UC 는 "<이름>:uc"'),
                         "label": s("블록 이름 (예: 그림체)"),
                         "tags": s("태그들 — 쉼표로 구분"),
                         "mode": s('"add"(기본) 또는 "replace"'),
+                        "set": s("어느 세트를 — 비우면 지금 보고 있는 세트"),
+                        "scene": s("씬 칸 하나를 고칠 때 그 씬의 이름이나 id "
+                                   "(주면 area·label 은 쓰지 않는다 — 칸에는 블록이 하나뿐이다)"),
                     },
                     ["area", "label", "tags"],
                 ),
                 None,  # 앱에 시킨다
+            ),
+            (
+                "list_changes",
+                "★**내가 이 앱에서 바꾼 것들** — 최근 것부터. 사용자가 «되돌려» 라고 하면 "
+                "이걸로 무엇을 되돌릴지 먼저 고른다. 사람이 손으로 고친 것은 여기 없다 "
+                "(그건 사용자가 Ctrl+Z 로 되돌린다).",
+                obj({"limit": n("몇 줄까지. 기본 10")}),
+                self._list_changes,
+            ),
+            (
+                "undo_change",
+                "★**그 변경을 되돌린다** (`list_changes` 의 id). 되돌리는 것도 하나의 변경이라 "
+                "이력에 남는다 — 되돌린 것을 다시 되돌릴 수 있다. 못 되돌리는 것은 까닭을 말한다.",
+                obj({"id": s("되돌릴 변경의 id")}, ["id"]),
+                self._undo_change,
             ),
             (
                 "read_image_meta",
@@ -382,35 +510,35 @@ class Tools:
         spec = self.store.load(name)
         if spec is None:
             return {"error": f"그런 워크스페이스가 없습니다: {name}"}
-        tabs = []
-        for t in spec.get("tabs", []):
+        sets = []
+        for t in spec.get("sets", []):
             row = {"id": t.get("id"), "kind": t.get("kind"), "name": t.get("name")}
             if t.get("kind") == "set":
-                row["prefix"] = t.get("prefix", "")
-                row["slots"] = [
-                    {"id": c.get("id"), "name": c.get("name"), "blocks": _view(c.get("blocks")),
-                     "locked": bool(c.get("locked"))}
-                    for c in t.get("cells", [])
-                ]
-            p = t.get("prompt") or {}
+                row["scenes"] = _scenes(t)
+            p = _set_prompt(spec, t)
             if p:
                 row["prompt"] = {
                     "style": (p.get("style") or {}).get("name"),
                     "base": _view(p.get("base")),
                     "baseUc": _view(p.get("baseUc")),
-                    "chars": [
+                    # ★「캐릭터 프롬프트」다 — 덱의 **캐릭터 카드**와 다른 것이다 (낱말표)
+                    "characters": [
                         {"name": c.get("name"), "prompt": _view(c.get("prompt")), "uc": _view(c.get("uc"))}
                         for c in (p.get("chars") or [])
                     ],
                 }
-            tabs.append(row)
+            sets.append(row)
         out: dict[str, Any] = {
             "name": name,
+            # ★★이름은 **화면 낱말**이다 (`docs/terms-plan.md` 의 낱말표) — 탭·세트·씬.
+            #   저장 열쇠와 우연히 같아진 것이지 묶인 것이 아니다. 저장 쪽 이름을 또 바꾸면
+            #   여기서 **옮겨 담아** 계약을 지킨다.
+            "tabs": [{"id": c.get("id"), "name": c.get("name")} for c in (spec.get("tabs") or [])],
             "activeTab": spec.get("activeTab"),
-            "activeChar": spec.get("activeChar"),
-            "chars": [{"id": c.get("id"), "name": c.get("name")} for c in (spec.get("chars") or [])],
-            "tabs": tabs,
+            "sets": sets,
+            "activeSet": spec.get("activeSet"),
         }
+        out["model"] = _tab_model(spec)
         limit = int(a.get("records", 0) or 0)
         if limit:
             recs = self.store.records(name, limit)
@@ -468,8 +596,10 @@ class Tools:
         card = self._card_body(kind, a, {"name": str(a["name"])})
         saved = self.cards.save(kind, card)
         self.notify("cards")
+        did = f"{_KIND_KO.get(kind, kind)} 카드 만듦 — {saved.get('name')}"
+        at = {"kind": "card", "cardKind": kind, "id": saved.get("id")}
         return {"ok": True, "id": saved.get("id"), "name": saved.get("name"),
-                "did": f"{_KIND_KO.get(kind, kind)} 카드 만듦 — {saved.get('name')}"}
+                "did": did, "at": self._mark("create_card", did, at, after=saved)}
 
     def _update_card(self, a: dict) -> dict:
         kind = str(a["kind"])
@@ -485,18 +615,76 @@ class Tools:
         )
         saved = self.cards.save(kind, self._card_body(kind, a, cur))
         self.notify("cards")
+        did = (f"{_KIND_KO.get(kind, kind)} 카드 덮어씀 — {saved.get('name')} "
+               f"(직전 내용은 .bak/{cur['id']}-{stamp}.json)")
+        at = {"kind": "card", "cardKind": kind, "id": saved.get("id")}
         return {"ok": True, "id": saved.get("id"), "backup": f"{cur['id']}-{stamp}.json",
-                "did": f"{_KIND_KO.get(kind, kind)} 카드 덮어씀 — {saved.get('name')} "
-                       f"(직전 내용은 .bak/{cur['id']}-{stamp}.json)"}
+                "did": did, "at": self._mark("update_card", did, at, before=cur, after=saved)}
+
+    def _list_changes(self, a: dict) -> dict:
+        """★본문(before/after)은 안 준다 — 고르라고 주는 목록이다 (`agentlog.rows` 주석)."""
+        if not self.log:
+            return {"items": []}
+        return {"items": self.log.rows(int(a.get("limit", 10) or 10))}
+
+    async def _undo_change(self, a: dict) -> dict:
+        """이력 하나를 되돌린다.
+
+        ★★**되돌릴 수 있는 것만** 되돌린다. 이미 Anlas 를 쓴 생성처럼 못 되돌리는 것은
+          까닭을 말하고 끝낸다 — 조용히 아무것도 안 하면 사용자는 됐다고 믿는다."""
+        if not self.log:
+            return {"error": "변경 이력이 없습니다."}
+        row = self.log.get(str(a["id"]))
+        if not row:
+            return {"error": "그런 변경이 없습니다. list_changes 로 다시 보세요."}
+        if not row.get("undoable", True):
+            return {"error": f"되돌릴 수 없습니다: {row.get('why') or row.get('did')}"}
+        at = row.get("at") or {}
+        kind = at.get("kind")
+        if kind == "card":
+            ck, cid = at.get("cardKind"), at.get("id")
+            before = row.get("before")
+            if before is None:                      # 만든 것 → 지운다
+                self.cards.delete(ck, cid)
+                did = f"만들었던 카드를 지움 — {(row.get('after') or {}).get('name', cid)}"
+            else:                                   # 덮어쓴 것 → 옛 내용으로
+                self.cards.save(ck, before)
+                did = f"카드를 되돌림 — {before.get('name', cid)}"
+            self.notify("cards")
+            return {"ok": True, "did": did,
+                    "at": self._mark("undo_change", did, {"kind": "card", "cardKind": ck, "id": cid})}
+        if kind == "guide":
+            self.guide.write(str(row.get("before") or ""))
+            self.notify("guide")
+            did = "지침을 되돌림"
+            return {"ok": True, "did": did, "at": self._mark("undo_change", did, {"kind": "guide"})}
+        if kind == "prompt":
+            # ★앱이 되돌린다 — 프롬프트는 **화면이 들고 있는 사본**이라 파일만 고칠 수 없다
+            before = row.get("before")
+            if not isinstance(before, dict):
+                return {"error": "되돌릴 내용이 남아 있지 않습니다."}
+            r = await self.app.do("restore_prompt", before, timeout=120.0)
+            if r.get("error"):
+                return r
+            did = f"되돌림 — {row.get('did')}"
+            return {"ok": True, "did": did, "at": self._mark("undo_change", did, at)}
+        # ★파일 옮기기·폴더 만들기는 **아직 안 되돌린다** — 그 사이 사용자가 또 옮겼을 수 있어
+        #   되돌리기가 오히려 어지럽힌다. 무엇을 했는지는 말해 준다.
+        return {"error": f"이 변경은 아직 자동으로 못 되돌립니다: {row.get('did')}"}
 
     def _search_tags(self, a: dict) -> dict:
-        q = str(a["query"]).lower().replace(" ", "_")
+        """★★**밑줄과 띄어쓰기를 같은 것으로 본다.** 단부루 덤프는 `high_complexity` 꼴이고
+        V5 새 태그는 `high complexity` 꼴이라, 한쪽으로만 맞추면 **다른 쪽이 영영 안 걸린다**
+        (실측 2026-08-24: `medium complexity` 가 0건이었다). 화면 쪽도 같은 규칙이다
+        (`src/lib/tagData.ts` 의 `norm`)."""
+        norm = lambda x: x.lower().replace("_", " ")  # noqa: E731
+        q = norm(str(a["query"]))
         if len(q) < 2:
             return {"items": []}
         mx = min(40, int(a.get("max", 15) or 15))
         starts, has = [], []
         for t in _tags():
-            low = t["label"].lower()
+            low = norm(t["label"])
             if low.startswith(q):
                 starts.append(t)
                 if len(starts) >= mx:
@@ -505,6 +693,10 @@ class Tools:
                 has.append(t)
         items = (starts + has)[:mx]
         return {"items": [{"tag": t["label"], "count": t.get("count"), "type": t.get("type")} for t in items]}
+
+    def _ws_name(self, a: dict) -> str:
+        """이 도구가 보는 워크스페이스 이름 — 화면이 그 자리를 열 때 쓴다"""
+        return str(a.get("workspace") or self.app.workspace or "").strip()
 
     def _ws_root(self, a: dict) -> Path:
         """파일 도구가 볼 자리 — **그 워크스페이스 안**이다.
@@ -540,7 +732,11 @@ class Tools:
         out = self.files.mkdir(self._ws_root(a), str(a.get("parent", "")), str(a["name"]))
         self.notify("files")
         if isinstance(out, dict) and not out.get("error"):
-            out["did"] = f"폴더 만듦 — {str(a.get('parent') or '').rstrip('/')}/{a['name']}".lstrip("/")
+            path = f"{str(a.get('parent') or '').rstrip('/')}/{a['name']}".lstrip("/")
+            out["did"] = f"폴더 만듦 — {path}"
+            out["at"] = self._mark("create_folder", out["did"],
+                                   {"kind": "file", "workspace": self._ws_name(a), "path": path},
+                                   after={"path": path})
         return out
 
     def _move(self, a: dict) -> dict:
@@ -551,6 +747,9 @@ class Tools:
             # ★몇 개를 어디로 — 되돌리려면 이 둘이 있어야 한다
             head = ", ".join(files[:3]) + (f" 외 {len(files) - 3}개" if len(files) > 3 else "")
             out["did"] = f"{len(files)}개 옮김 → {a['dest']} ({head})"
+            out["at"] = self._mark("move_files", out["did"],
+                                   {"kind": "file", "workspace": self._ws_name(a), "path": str(a["dest"])},
+                                   before={"files": files}, after={"dest": str(a["dest"])})
         return out
 
     def _read_meta(self, a: dict) -> dict:
@@ -567,6 +766,48 @@ SUPPORT_URL = "https://discord.gg/Cv4hUFM2Z2"
 
 #: 앱이 지원하는 표시 언어 → 프롬프트에 적을 이름
 LANGS = {"ko": "Korean", "en": "English", "ja": "Japanese"}
+
+#: 낱말 정본 — 화면·코드·저장·조수가 **같은 이름**을 쓰기 위한 표 (`docs/terms-plan.md`)
+TERMS_JSON = Path(__file__).resolve().parent.parent / "shared" / "terms.json"
+_terms_cache: list[dict] | None = None
+
+
+def _terms() -> list[dict]:
+    global _terms_cache
+    if _terms_cache is None:
+        try:
+            _terms_cache = json.loads(TERMS_JSON.read_text(encoding="utf-8")).get("terms", [])
+        except Exception:
+            _terms_cache = []
+    return _terms_cache
+
+
+def terms_block(lang: str = "") -> str:
+    """지침에 실을 **용어 절**을 표에서 만든다.
+
+    ★★표가 바뀌면 지침이 따라 바뀐다 — 문서에만 적어 두면 또 어긋난다 (2026-08-18 에
+      표를 적어 뒀는데도 코드가 뒤집힌 채로 남아 있었다).
+    ★**별칭을 그 언어로 함께 싣는다** (사용자 지시 2026-08-24: *"유저가 뭐라고 말할지
+      모르니 유연성을 줘야 한다"*). 사용자가 「슬롯」·「칸」이라 해도 씬으로 알아듣는다.
+    ★필드 이름은 **영어 하나**다 — 답은 사용자 언어로 하되 계약은 하나여야 한다."""
+    rows = _terms()
+    if not rows:
+        return ""
+    say = (lang or "en") if (lang or "en") in ("ko", "en", "ja") else "en"
+    out = ["\n\nWords this app uses. **The tool field is the contract**; the rest is how the",
+           "user may say it. When they use one of the aliases, they mean that term."]
+    for t in rows:
+        what = (t.get("what") or {}).get(say) or (t.get("what") or {}).get("en") or ""
+        alias = (t.get("alias") or {}).get(say) or []
+        also = (" — user may say: " + " / ".join(alias)) if alias else ""
+        out.append(f"- `{t['tool']}` : {what}{also}")
+    out += [
+        "★A **character prompt** (`characters`) is a person inside the image being drawn;",
+        "  a **character card** (`characterCard`) is saved material in the deck. Editing the card",
+        "  does not change what is on screen. The same split holds for a **style card** and `base`.",
+        "★`tabs` contain `sets`, and a set contains `scenes`. Say which one you mean.",
+    ]
+    return "\n".join(out)
 
 
 def system_prompt(support: str = "", guide_block: str = "", lang: str = "") -> str:
@@ -594,7 +835,8 @@ def system_prompt(support: str = "", guide_block: str = "", lang: str = "") -> s
             else ""
         )
     )
-    return SYSTEM.replace("{support}", support or SUPPORT_URL) + line + (guide_block or "")
+    return (SYSTEM.replace("{support}", support or SUPPORT_URL) + line
+            + terms_block(lang) + (guide_block or ""))
 
 
 #: ★본문은 영문이다 — 까닭은 `system_prompt()` 주석에 있다 (출력 언어를 명시하려고).
@@ -609,12 +851,32 @@ The user makes art with NovelAI (NAI); a prompt is **Danbooru tags** joined by c
 Principles:
 - When you need to know what the user is doing, call **get_workspace** first.
   It holds their tabs, pose slots and prompt blocks exactly as they are.
-- Never invent tags. Confirm a tag really exists with **search_tags** before using it.
-  Write them with spaces, not underscores (long_hair -> long hair).
+- **Danbooru tags are the default** - they reproduce best. Look one up with **search_tags**
+  first and prefer what you find. Words outside the dictionary are allowed; just be clear
+  about which ones you confirmed and which you did not. Write tags with spaces, not
+  underscores (long_hair -> long hair).
+- **Plain sentences only when the user asks for them.** V5 takes natural language well, but
+  tags stay the default. When you do mix prose in, keep the tags.
+- ★get_workspace tells you the **model** the open tab generates with. `nai-diffusion-5-*`
+  reads plain sentences well and can do a transparent background; the 4.5 models do neither,
+  so on those keep to tags and say a transparent background is not available there.
+- When asked for a **whole prompt**, split it the way the app is built: `base` for what
+  applies to the whole image (style, quality, framing, background) and one `characters`
+  entry per person (looks, outfit, expression, pose). Never pile several people into one -
+  NAI blends them, and the user cannot then fix a single person.
 - Emphasis is `1.3::tag::`, de-emphasis is `0.7::tag::`. To keep a character's traits
   without drowning out other tags, **lower the weight** instead of removing the tag.
-- ★**Prefer create_card.** update_card overwrites an existing card - use it only when the
-  user clearly asked you to change that card, and say what you changed.
+- ★**Three places a request can land, and they show up in different places:**
+  (1) what they are looking at now - **edit_current_prompt** (on screen; they save it later),
+  (2) the deck - **create_card** / **update_card** (kept for later; the screen does not change),
+  (3) just your reply (nothing is touched).
+  **When the wording does not say which, ask before you make anything.** Making a card when
+  they meant (1) leaves the result nowhere they can see.
+- **"Change X" defaults to (1)** - people usually mean what is on screen right now.
+- **When a name comes up, find where it lives first.** Look at the current set's `characters`
+  with get_workspace; if it is not there, look in the deck with list_cards. **If it is in
+  both, ask which one.**
+- update_card overwrites an existing card - use it only when they clearly asked for that.
 - **Organize files only within that workspace.** Folders you create land under it.
 - Never decide a matter of taste on your own. There are **two ways to ask**:
   - **ask_user (buttons)** - only when the user must choose and the **options differ clearly**.
@@ -634,8 +896,22 @@ Principles:
   tag", "remember this"), **read it with read_guide and rewrite the whole thing with
   write_guide**. Same when they take it back ("forget that") or ask you to tidy it up.
   ★Never add what they did not say. ★Writing without reading first erases what was there.
+- ★**Turn repeated questions into a rule.** The *second* time you have to ask the same kind
+  of question, add "Should I keep doing it this way?" after you get the answer. If they say
+  yes, write that one line into the guide. **Never write it without asking** - a rule they
+  did not agree to is a rule they cannot see.
 - ★**Always say what you changed.** If you touched a card, a prompt, a file or the guide,
   put one line about it in your reply. The user must be able to ask you to undo it.
+- edit_current_prompt works on the set that is open. Pass `set` to work on another one - the
+  app opens it, so the user watches the change land. Naming a character who is not there
+  **creates that slot**, so "add a maid standing behind them" is one call, not a request for
+  the user to set something up first.
+  Pass `scene` to change one scene cell instead (a cell holds a single block, so `tags` is
+  all it takes).
+- ★**Undoing your own edits.** The user's Ctrl+Z covers only what **they** did; your edits
+  are undone through you. When they say "undo that" or "put it back", call **list_changes**
+  and then **undo_change** with the id. Some things cannot be undone - a queued generation
+  has already spent Anlas. Say so plainly instead of acting as if it worked.
 - ★**You never modify the app itself** (its code or config files). You have no tool for it.
   If the user asks for an app change, tell them **why and where to go**: editing the app
   directly **breaks on the next update** - the change is lost or the app stops working.

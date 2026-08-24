@@ -67,11 +67,11 @@ export function EnhanceDialog({
   const opus = useSub((s) => (s.sub?.tier ?? 0) >= 3);
   const ws = useWs((s) => s.current);
   const records = useWs((s) => s.records);
-  const tabNow = useWs((s) => s.activeTab());
+  const tabNow = useWs((s) => s.activeSet());
   // ★탭이 없으면 이 창이 뜰 수 없다 (부르는 두 자리가 다 탭 안이다). 옛 폴백은 `"싱글"`
   //   이라는 글자를 저장 자리로 흘려보냈다 — 싱글/멀티 구분이 폐기된 지금은 뜻이 없다.
   const tabName = tabNow?.name ?? "";
-  const charName = useWs.getState().activeCharOf()?.name ?? null;
+  const charName = useWs.getState().activeTabOf()?.name ?? null;
   /** 실제로 돌릴 것과 뺀 것 — ★**열 때 한 번** 정한다 (v2 도 모달을 열 때 목록을 굳힌다).
    *  돌아가는 사이에 새 레코드가 들어와도 대상이 바뀌면 안 된다.
    *  ★한 장짜리는 거르지 않는다 — 걸러 내는 것은 **배치**의 규칙이다 (v2 단일 모달도 안 거른다). */
@@ -269,7 +269,7 @@ export function EnhanceDialog({
           ...useGen.getState().params,
           ...useImageInput.getState().payload(),
           prompt, negative_prompt: uc, characters: chars,
-          workspace: ws, tab: tabName, tab_id: tabNow?.id ?? null, char: charName,
+          workspace: ws, tab: tabName, set_id: tabNow?.id ?? null, char: charName,
           ...(found ? { cell: found.cell.name, cell_id: found.cell.id } : {}),
         },
         jobs,

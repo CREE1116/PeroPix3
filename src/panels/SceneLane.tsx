@@ -56,8 +56,8 @@ const GAP = 6;
 export function SceneLane() {
   const t = useI18n((s) => s.t);
   const base = useGen((g) => g.base);
-  const { records, current: ws, activeTab, isDeleted,
-    setTab, setCard, addCard, removeCard, addSlot, moveScene, moveCard } = useWs();
+  const { records, current: ws, activeSet, isDeleted,
+    patchSet, setCard, addCard, removeCard, addSlot, moveScene, moveCard } = useWs();
   const pending = useQueue((s) => s.pending);
   // ★구독해서 읽는다. `getState()` 로 읽으면 진행이 바뀌어도 다시 그리지 않아
   //   「생성 중」이 영영 안 뜬다 (사용자 지적 2026-08-14)
@@ -85,7 +85,7 @@ export function SceneLane() {
   const startDrag = useDragSource();
   // ★씬 프롬프트 목적지 — 켜져 있는 캐릭터만 고를 수 있다 (꺼진 캐릭터는 payload 에 없다)
   const chars = usePrompt((s) => s.chars).filter((c) => c.on);
-  const tab = activeTab();
+  const tab = activeSet();
 
   /** 지금 보고 있는 씬과 장 — ★프리뷰가 다른 컴포넌트라 스토어로 나눠 갖는다 */
   const focus = useSceneFocus();
@@ -96,7 +96,7 @@ export function SceneLane() {
     prio: 5,
     onDrop: (d) => {
       const c = d.card as { name: string; color?: [string, string]; cells?: Slot[] } | undefined;
-      const cur = useWs.getState().activeTab();
+      const cur = useWs.getState().activeSet();
       if (!c?.cells?.length || cur?.kind !== "set") return;
       addCard(cur.id, { name: c.name, color: c.color, cells: c.cells });
     },
@@ -369,16 +369,16 @@ export function SceneLane() {
        예전에는 `pending`·`laneSize`·`headw` 도 딸림값이라, **생성이 끝나 큐가 줄기만 해도**
        줄이 저 혼자 굴러갔다 (*"생성 완료시 슬롯을 강제 스크롤"*).
        나머지 값은 굴릴 이유가 아니라 **자리를 셈할 재료**일 뿐이므로 ref 로 읽는다. */
-  const scrollBits = useRef({ pending, headw, laneSize, vert, tabId: tab?.id });
-  scrollBits.current = { pending, headw, laneSize, vert, tabId: tab?.id };
+  const scrollBits = useRef({ pending, headw, laneSize, vert, setId: tab?.id });
+  scrollBits.current = { pending, headw, laneSize, vert, setId: tab?.id };
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || !focusCell || !focusFile) return;
-    const { pending, headw, laneSize, vert, tabId } = scrollBits.current;
+    const { pending, headw, laneSize, vert, setId } = scrollBits.current;
     const list = visibleTakes(focusCell);
     const at = list.findIndex((r) => r.file === focusFile);
     if (at < 0) return;
-    const waiting = pending.filter((p) => p.tabId === tabId && p.cellId === focusCell).length;
+    const waiting = pending.filter((p) => p.setId === setId && p.cellId === focusCell).length;
     const cw = Math.min(LANE_MAX, Math.max(LANE_MIN, laneSize));
     const step = cw + GAP;
     const lead = headw + 8 + (waiting + at) * step;
@@ -413,20 +413,20 @@ export function SceneLane() {
   /* ★★탭을 옮기면 **그 탭 몫으로 담아 두고**, 돌아오면 그대로 되살린다
        (사용자 지시 2026-08-22). 예전에는 비웠는데, 돌아왔을 때 보던 장을 다시 찾아
        눌러야 했다. 담고 되살리는 규칙은 `store/sceneFocus` 하나에 있다. */
-  const tabId = tab?.id;
+  const setId = tab?.id;
   /** ★★**처음 뜰 때는 놓지 않는다** (사용자 지적 2026-08-19: 인페인트에 들어갔다 나오면
    *  고른 것이 풀려 있었다). 마스크 편집기는 캔버스 자리를 통째로 차지해서 이 줄이 **언마운트**
    *  되고, 돌아올 때 다시 마운트된다 — 그때마다 이 효과가 돌아 골라 둔 장을 지웠다.
    *  탭이 **실제로 바뀐 때만** 놓는다. */
-  const lastTab = useRef(tabId);
+  const lastTab = useRef(setId);
   useEffect(() => {
-    if (lastTab.current === tabId) return;
+    if (lastTab.current === setId) return;
     const prev = lastTab.current;
-    lastTab.current = tabId;
+    lastTab.current = setId;
     // ★고른 것은 `switchTab` 이 함께 푼다 (`store/sceneFocus`)
-    useSceneFocus.getState().switchTab(prev, tabId);
+    useSceneFocus.getState().switchTab(prev, setId);
     clearUndo();   // ★없어진 블록·그림을 되살리려 들면 안 된다
-  }, [tabId]);
+  }, [setId]);
 
   // Del = 숨김(휴지통) · Ctrl+Z = 되돌리기 · Esc = 선택 해제 (멀티 무대의 규칙 그대로)
   useEffect(() => {
@@ -503,7 +503,7 @@ export function SceneLane() {
 
   const h = Math.min(LANE_MAX, Math.max(LANE_MIN, laneSize));
   const w = h;
-  const queued = pending.filter((p) => p.tabId === tab.id);
+  const queued = pending.filter((p) => p.setId === tab.id);
   const running = progress.total > progress.completed;
 
   /** 그 씬의 결과 (숨긴 것 제외).
@@ -713,7 +713,7 @@ export function SceneLane() {
             <select
               data-scene-dest
               value={dest}
-              onChange={(e) => setTab(tab.id, { sceneDest: e.target.value })}
+              onChange={(e) => patchSet(tab.id, { sceneDest: e.target.value })}
               /* ★★**목록(팝업)은 `opacity` 를 안 따른다** — 브라우저가 따로 그리면서
                  `<select>` 의 `color`·`background-color` 를 그대로 쓴다. 상자를 투명하게
                  만들면서 그 둘을 빼 버렸더니, 다크 모드에서 **밝은 글자가 밝은 바탕에**
@@ -837,7 +837,7 @@ export function SceneLane() {
               <CardGroup
                 vert={vert}
                 card={card}
-                tabId={tab.id}
+                setId={tab.id}
                 offset={offsets[ci]}
                 gripOf={lane.gripProps}
                 drop={lane.drop}
@@ -870,7 +870,7 @@ export function SceneLane() {
                     name: t("slots.copyOf", { name: from.name }),
                   })
                 }
-                onSeq={(n) => setTab(tab.id, { cellSeq: n })}
+                onSeq={(n) => patchSet(tab.id, { cellSeq: n })}
                 nextSeq={tab.cellSeq ?? 1}
                 expandedId={expandedId}
                 typingId={typingId}
@@ -1141,7 +1141,7 @@ type GroupProps = {
   vert: boolean;
   card: SceneCard;
   /** 이 카드가 든 탭 — 머리에 건 그림을 어디에 적을지 (`askThumb`) */
-  tabId: string;
+  setId: string;
   /** 앞선 카드들의 씬 수 — 줄 앞 번호가 탭 전체에서 이어지게 (`offsets` 주석) */
   offset: number;
   /** 씬·카드 그립에 펴 넣을 것 (`useLaneReorder`) */
@@ -1225,7 +1225,7 @@ function CardGroup(p: GroupProps) {
     dir: "image",
     prio: 6,
     onDrop: (d) =>
-      d.img && askThumb({ type: "scene-card", tabId: p.tabId, cardId: p.card.id, img: d.img }),
+      d.img && askThumb({ type: "scene-card", setId: p.setId, cardId: p.card.id, img: d.img }),
   });
   /** 「씬 추가」 — **한 번만 만들고 방향만 가른다.**
    *

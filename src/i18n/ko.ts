@@ -431,12 +431,12 @@ export const ko: Dict = {
     saveLocation: "생성물이 저장되는 위치",
   },
 
-  /** ★화면에서는 이 층을 「탭」이라 부른다 (사용자 결정 2026-08-18).
-   *  코드 식별자(`chars`·`charId`)는 그대로다. `workspace.json` 의 열쇠라 바꾸면
-   *  사용자의 기존 워크스페이스가 안 열린다 (`store/workspace.ts` 의 `Spec.chars` 주석).
+  /** ★이 층의 이름은 **탭**이다 — 화면도 코드도 저장 파일도 (`spec.tabs`·`activeTab`).
+   *  2026-08-24 에 옛 이름(`chars`·`charId`)을 1회 이전으로 옮겼다
+   *  (`docs/terms-plan.md` · `backend/migrate_terms.py`).
    *  ★NAI 캐릭터 프롬프트(`cards.charN`·`prompt.charBox`)와 덱의 캐릭터 카드
    *  (`cards.short.characters`)는 그대로 「캐릭터」다. 셋을 섞지 말 것. */
-  chars: {
+  tab: {
     newName: "새 탭",
     cloneName: "복제",
     add: "탭 추가",
@@ -682,6 +682,11 @@ export const ko: Dict = {
   },
 
   ai: {
+    atCard: "덱에서 그 카드를 엽니다",
+    atPrompt: "그 프롬프트 자리를 엽니다",
+    atFile: "파일 관리에서 그 폴더를 엽니다",
+    atGuide: "지침 화면을 엽니다",
+    atQueue: "그 세트로 갑니다",
     title: "AI",
     engineHint: "지금 이 엔진으로 돕니다. 누르면 설정으로 갑니다",
     contextHint: "AI 가 지금 알고 있는 것 (워크스페이스 · 모드 · 활성 세트)",
@@ -801,10 +806,10 @@ export const ko: Dict = {
 
   /** ★아래 줄은 「세트」다. 위 줄이 「탭」이 되면서 둘 다 "탭"이라 부르면 구별이 안 된다
    *  (2026-08-18). 이 그룹의 문구에 「탭」을 되살리지 말 것. */
-  tabs: {
+  set: {
     closeConfirm: "「{name}」 세트를 닫습니다 (그림 {n}장)",
     closeConfirmBody: "그림 파일은 휴지통에 남습니다. 앱을 켤 때 24시간 지난 것부터 비웁니다.",
-    closeTab: "세트 닫기",
+    closeSet: "세트 닫기",
     newSet: "새 세트",
     newSetTab: "새 씬 세트",
     posePrefix: "씬 {n}",

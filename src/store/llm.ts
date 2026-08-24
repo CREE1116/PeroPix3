@@ -6,6 +6,7 @@ import { toast, undoToast } from "./toast";
 import { useCli } from "./cli";
 import { codexWire } from "../lib/codexStream";
 import { noteCliRun } from "../lib/cliCursor";
+import type { AgentAt } from "../lib/agentAt";
 
 /** LLM 채팅 — **반복 작업을 대신 시키는 창구** (3.0 의 목표 중 하나, ui-guide 7절).
  *
@@ -40,7 +41,9 @@ export type Wire = { role: "user" | "assistant"; content: Part[] };
 export type Line =
   | { kind: "user"; text: string }
   | { kind: "ai"; text: string }
-  | { kind: "tool"; name: string; note: string; ok: boolean }
+  /** ★`at` 이 있으면 **고친 줄**이다 — 읽기 줄과 다른 얼굴로 그리고, 누르면 그 자리를 연다
+   *  (`lib/agentAt.ts`). 없으면 읽기만 한 것이다. */
+  | { kind: "tool"; name: string; note: string; ok: boolean; at?: AgentAt }
   | { kind: "error"; text: string };
 
 /** ★공급자는 **정확한 이름**으로 고른다 (사용자 지시 2026-08-08: "호환은 적을 필요 없음").
@@ -125,8 +128,10 @@ export function linesOf(wire: Wire[]): Line[] {
       else if (b.type === "tool_result") {
         let ok = true;
         let note = "";
+        let at: AgentAt | undefined;
         try {
-          const d = JSON.parse(b.content) as { error?: string; cancelled?: boolean; did?: string };
+          const d = JSON.parse(b.content) as
+            { error?: string; cancelled?: boolean; did?: string; at?: AgentAt };
           if (d?.error) {
             ok = false;
             note = String(d.error);
@@ -134,6 +139,7 @@ export function linesOf(wire: Wire[]): Line[] {
             ok = false;
             note = t("ai.declined");
           } else if (d?.did) {
+            at = (d as { at?: AgentAt }).at;
             // ★★**무엇을 바꿨는지 성공했을 때도 보여 준다** (사용자 지시 2026-08-08).
             //   예전엔 성공하면 도구 **이름만** 떴다 — `create_card` 만으로는 무엇이 생겼는지
             //   알 수 없어서, 사용자가 "되돌려" 라고 말할 근거가 화면에 없었다.
@@ -143,7 +149,7 @@ export function linesOf(wire: Wire[]): Line[] {
         } catch {
           /* 도구가 문자열을 돌려준 것 — 성공으로 본다 */
         }
-        out.push({ kind: "tool", name: names.get(b.tool_use_id) ?? "tool", note, ok });
+        out.push({ kind: "tool", name: names.get(b.tool_use_id) ?? "tool", note, ok, at });
       }
     }
   }

@@ -420,9 +420,9 @@ export const en = {
   },
 
   /** ★On screen this layer is called a "tab" (user decision 2026-08-18).
-   *  The code identifiers (`chars`, `charId`) stay: they are keys in `workspace.json`.
+   *  Screen, code and storage all call this layer `tabs` since 2026-08-24 (one-time migration).
    *  ★NAI character prompts (`cards.charN`) and deck character cards stay "character". */
-  chars: {
+  tab: {
     newName: "New tab",
     cloneName: "Copy",
     add: "Add tab",
@@ -665,6 +665,11 @@ export const en = {
   },
 
   ai: {
+    atCard: "Open that card in the deck",
+    atPrompt: "Open that prompt",
+    atFile: "Open that folder in Files",
+    atGuide: "Open the guide",
+    atQueue: "Go to that set",
     title: "AI",
     engineHint: "Running on this engine - click for settings",
     contextHint: "What the assistant knows right now (workspace, mode, active set)",
@@ -780,10 +785,10 @@ export const en = {
 
   /** ★This lower row is the "set" row. The row above is now called "tab", so keep the
    *  word "tab" out of this group (2026-08-18). */
-  tabs: {
+  set: {
     closeConfirm: "Close set \"{name}\" ({n} images)",
     closeConfirmBody: "The image files stay in the trash. Items older than 24 hours are cleared on app start.",
-    closeTab: "Close set",
+    closeSet: "Close set",
     newSet: "New set",
     newSetTab: "New scene set",
     posePrefix: "Scene {n}",

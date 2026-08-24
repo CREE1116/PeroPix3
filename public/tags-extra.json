@@ -1,0 +1,142 @@
+[
+ {
+  "label": "very_aesthetic",
+  "value": "very_aesthetic",
+  "count": 8000000,
+  "type": "meta",
+  "category": 5
+ },
+ {
+  "label": "masterpiece",
+  "value": "masterpiece",
+  "count": 8000000,
+  "type": "meta",
+  "category": 5
+ },
+ {
+  "label": "no_text",
+  "value": "no_text",
+  "count": 8000000,
+  "type": "meta",
+  "category": 5
+ },
+ {
+  "label": "best_quality",
+  "value": "best_quality",
+  "count": 8000000,
+  "type": "meta",
+  "category": 5
+ },
+ {
+  "label": "nsfw",
+  "value": "nsfw",
+  "count": 0,
+  "type": "meta",
+  "category": 5
+ },
+ {
+  "label": "sfw",
+  "value": "sfw",
+  "count": 0,
+  "type": "meta",
+  "category": 5
+ },
+ {
+  "label": "depthness",
+  "value": "depthness",
+  "count": 0,
+  "type": "general",
+  "category": 0
+ },
+ {
+  "label": "attractive male",
+  "value": "attractive male",
+  "count": 0,
+  "type": "general",
+  "category": 0
+ },
+ {
+  "label": "low complexity",
+  "value": "low complexity",
+  "count": 0,
+  "type": "general",
+  "category": 0
+ },
+ {
+  "label": "medium complexity",
+  "value": "medium complexity",
+  "count": 0,
+  "type": "general",
+  "category": 0
+ },
+ {
+  "label": "high complexity",
+  "value": "high complexity",
+  "count": 0,
+  "type": "general",
+  "category": 0
+ },
+ {
+  "label": "ultra complexity",
+  "value": "ultra complexity",
+  "count": 0,
+  "type": "general",
+  "category": 0
+ },
+ {
+  "label": "has alpha",
+  "value": "has alpha",
+  "count": 0,
+  "type": "general",
+  "category": 0
+ },
+ {
+  "label": "visual novel art",
+  "value": "visual novel art",
+  "count": 0,
+  "type": "general",
+  "category": 0
+ },
+ {
+  "label": "visual novel bg",
+  "value": "visual novel bg",
+  "count": 0,
+  "type": "general",
+  "category": 0
+ },
+ {
+  "label": "visual novel cg",
+  "value": "visual novel cg",
+  "count": 0,
+  "type": "general",
+  "category": 0
+ },
+ {
+  "label": "visual novel chibi",
+  "value": "visual novel chibi",
+  "count": 0,
+  "type": "general",
+  "category": 0
+ },
+ {
+  "label": "visual novel sprite",
+  "value": "visual novel sprite",
+  "count": 0,
+  "type": "general",
+  "category": 0
+ },
+ {
+  "label": "meta:novel era",
+  "value": "meta:novel era",
+  "count": 0,
+  "type": "meta",
+  "category": 5
+ },
+ {
+  "label": "meta:golden era",
+  "value": "meta:golden era",
+  "count": 0,
+  "type": "meta",
+  "category": 5
+ }
+]

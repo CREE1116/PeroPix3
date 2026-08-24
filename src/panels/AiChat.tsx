@@ -4,6 +4,7 @@ import { useLlm, type Ask, type Line } from "../store/llm";
 import { useWs } from "../store/workspace";
 import { useUi, MODES } from "../store/ui";
 import { useCli, CLI_EFFORTS } from "../store/cli";
+import { atLabel, openAt } from "../lib/agentAt";
 import { Icon } from "../components/Icon";
 
 /** AI 채팅 — **반복 작업을 말로 시키는 자리** (ui-guide 7절 「LLM 개입면」).
@@ -21,7 +22,7 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
   const [showList, setShowList] = useState(false);
   const { engine, exe, scanning, detect } = useCli();
   const ws = useWs((s) => s.current);
-  const tab = useWs((s) => s.activeTab());
+  const tab = useWs((s) => s.activeSet());
   const mode = useUi((s) => s.mode);
   const [text, setText] = useState("");
   const end = useRef<HTMLDivElement>(null);
@@ -710,18 +711,32 @@ function Row({ line }: { line: Line }) {
       </div>
     );
 
-  // 도구 — ★무엇을 만졌는지가 이 패널의 핵심 정보다
+  /* 도구 — ★무엇을 만졌는지가 이 패널의 핵심 정보다.
+     ★★**고친 줄은 얼굴이 다르다** (사용자 지시 2026-08-24): 왼쪽에 강조색 띠가 서고 글자가
+       안 흐리며, **누르면 그 자리를 연다**. 읽기만 한 줄은 예전 그대로 흐린 한 줄이다.
+       가르는 기준은 `at` 이다 — 고치는 도구만 그것을 돌려준다 (`backend/agent.py` `_mark`). */
+  const at = line.at;
   return (
     <div
       data-ai-tool={line.name}
-      data-tip={line.note || undefined}
+      data-ai-did={at ? line.name : undefined}
+      data-tip={at ? `${line.note} — ${atLabel(at, t)}` : line.note || undefined}
+      onClick={at ? () => void openAt(at) : undefined}
       style={{
         display: "flex",
         alignItems: "center",
         gap: "var(--sp-2)",
         fontSize: "var(--text-2xs)",
         fontFamily: "var(--font-mono)",
-        color: line.ok ? "var(--ink-dim)" : "var(--warn)",
+        color: !line.ok ? "var(--warn)" : at ? "var(--ink-soft)" : "var(--ink-dim)",
+        ...(at
+          ? {
+              cursor: "pointer",
+              borderLeft: "2px solid var(--accent)",
+              paddingLeft: "var(--sp-2)",
+              marginLeft: -2,
+            }
+          : null),
       }}
     >
       <span style={{ display: "grid", color: line.ok ? "var(--ok)" : "var(--warn)" }}>
@@ -737,7 +752,8 @@ function Row({ line }: { line: Line }) {
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
             // 성공한 것의 설명은 한 단 흐리게 — 실패 문구와 눈으로 갈린다
-            color: line.ok ? "var(--ink-faint)" : "inherit",
+            //   ★고친 줄은 안 흐리다 (그 줄의 알맹이가 바로 이 문구다)
+            color: !line.ok || at ? "inherit" : "var(--ink-faint)",
           }}
         >
           — {line.note}

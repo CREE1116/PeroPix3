@@ -17,7 +17,7 @@ export type ThumbTarget =
    *  새로 굽지 않으므로 `tid` 를 그대로 쓴다 (사용자 지시 2026-08-20) */
   | { type: "card-thumb"; kind: CardKind; card: AnyCard; tid: string; view: Thumb }
   /** 씬 카드 머리 — 탭 안의 카드 한 장에 그림을 건다 (사용자 지시 2026-08-21) */
-  | { type: "scene-card"; tabId: string; cardId: string; img: DragImage };
+  | { type: "scene-card"; setId: string; cardId: string; img: DragImage };
 
 let opener: ((t: ThumbTarget) => void) | null = null;
 

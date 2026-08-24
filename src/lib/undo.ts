@@ -21,6 +21,9 @@ export type UndoEntry = {
   /** 화면에 알릴 이름 — 이미 옮겨진 문구를 넣는다 */
   label: string;
   run: () => void | Promise<void>;
+  /** **어느 자리의 일인가** — 블록 목록의 `libZone` 과 같은 값 (`base-p`·`<charId>-uc`).
+   *  ★조수가 그 자리를 고치면 여기 걸린 사람의 항목을 버린다 (`dropUndoZone`). */
+  zone?: string;
 };
 
 const stack: UndoEntry[] = [];
@@ -28,8 +31,8 @@ const stack: UndoEntry[] = [];
 /** 너무 오래된 것은 버린다 — 그때의 상태가 이미 다른 것이 됐을 수 있다 */
 const MAX = 50;
 
-export function pushUndo(label: string, run: () => void | Promise<void>): void {
-  stack.push({ label, run });
+export function pushUndo(label: string, run: () => void | Promise<void>, zone?: string): void {
+  stack.push({ label, run, zone });
   if (stack.length > MAX) stack.shift();
 }
 
@@ -51,6 +54,25 @@ export function dropUndo(): void {
 
 export function canUndo(): boolean {
   return stack.length > 0;
+}
+
+/** ★★**조수가 고친 자리는 사람의 되돌리기에서 뺀다** (사용자 결정 2026-08-24).
+ *
+ *  담아 둔 되돌리기는 「그때의 블록 목록으로 되돌린다」는 **통째 복원**이라, 그 사이에 조수가
+ *  같은 자리를 고쳐 놓았으면 `Ctrl+Z` 한 번이 **조수의 편집까지 조용히 지운다.**
+ *  그래서 조수가 손댄 자리의 항목만 버린다 — 다른 자리(그림 선별·다른 캐릭터)는 그대로 남는다.
+ *
+ *  조수가 한 일을 되돌리는 길은 따로 있다: 조수에게 말하면 이력을 보고 되돌린다
+ *  (`backend/agentlog.py` · `undo_change`). 두 길을 한 키에 묶지 않는 것이 요점이다. */
+export function dropUndoZone(zone: string): number {
+  let n = 0;
+  for (let i = stack.length - 1; i >= 0; i--) {
+    if (stack[i].zone === zone) {
+      stack.splice(i, 1);
+      n++;
+    }
+  }
+  return n;
 }
 
 /** 탭·세트·워크스페이스가 바뀌거나, 되돌릴 수 없는 삭제가 일어나면 비운다 */

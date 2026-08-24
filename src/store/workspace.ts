@@ -39,7 +39,7 @@ export type TabPrompt = {
   style?: { ref: string | null; name: string; color: [string, string]; thumb?: Thumb | null };
   /** 스타일 카드를 쓰고 있는가 (없으면 켜진 것 — `store/prompt` 의 `styleOn`) */
   styleOn?: boolean;
-  chars?: Char[];
+  tabs?: Char[];
 };
 
 /** 슬롯(세트 탭의 칸) — v2 의 슬롯 그대로. `locked` 는 생성에서 뺀다.
@@ -106,7 +106,7 @@ export type SceneCard = {
   cells: Slot[];
 };
 
-export type CanvasTab =
+export type SceneSet =
   | { id: string; kind: "single"; name: string; prompt?: TabPrompt; idOnly?: boolean }
   | {
       id: string;
@@ -125,7 +125,7 @@ export type CanvasTab =
        *  같은 이름의 옛 탭 결과를 물고 오지 않는다 (아래 `takesOf` 주석). */
       idOnly?: boolean;
       /** 어느 캐릭터의 포즈세트인가. 옛 세트 탭에는 없다 (`migrate` 가 채운다) */
-      charId?: string;
+      tabId?: string;
       /** ★씬 프롬프트가 **payload 의 어디로 들어가나** — `"base"`(top-level prompt) ·
        *  캐릭터 id(`characterPrompts[]`) · `"all"`(**켜진 캐릭터 전원**). 없으면 base 다.
        *  ★`"all"` 은 v2 의 `promptTarget === "char"` 다 (`backend.py:2803-2833`).
@@ -148,7 +148,7 @@ export type CanvasTab =
  *  ★★프롬프트도 생성 옵션도 **이 층이 든다** (사용자 지시 2026-08-22). 세트가 아니다 —
  *    한 탭 아래의 세트들은 같은 인물의 다른 포즈 묶음이라, 세트마다 수치가 갈리면
  *    인물을 손볼 때 세트 수만큼 같은 값을 고쳐야 한다. */
-export type WsChar = {
+export type WsTab = {
   id: string;
   name: string;
   prompt?: TabPrompt;
@@ -163,18 +163,18 @@ export type WsChar = {
 /** 세트 탭의 **모든 씬** — 카드 순서대로 편다.
  *  ★`tab.cells` 를 직접 읽던 자리는 전부 이걸로 온다. 카드 층이 생겨도 "이 탭의 씬 목록"이
  *    필요한 곳(장 수 세기·번호 매기기·큐)은 하나도 안 바뀌기 때문이다. */
-export const allCells = (tab: Extract<CanvasTab, { kind: "set" }>): Slot[] =>
+export const allCells = (tab: Extract<SceneSet, { kind: "set" }>): Slot[] =>
   tab.cards.flatMap((k) => k.cells);
 
 /** 씬 하나와 그것이 속한 카드 — **생성은 카드의 접두가 필요하다** */
 export const allScenes = (
-  tab: Extract<CanvasTab, { kind: "set" }>,
+  tab: Extract<SceneSet, { kind: "set" }>,
 ): { card: SceneCard; cell: Slot }[] =>
   tab.cards.flatMap((k) => k.cells.map((c) => ({ card: k, cell: c })));
 
 /** 그 씬이 든 카드를 찾는다 (없으면 null) */
 export const cardOfCell = (
-  tab: Extract<CanvasTab, { kind: "set" }>,
+  tab: Extract<SceneSet, { kind: "set" }>,
   cellId: string,
 ): SceneCard | null => tab.cards.find((k) => k.cells.some((c) => c.id === cellId)) ?? null;
 
@@ -186,20 +186,20 @@ export type Spec = {
    *  옛 워크스페이스를 열 때 탭에 아직 프롬프트가 없으면 여기서 씨앗을 얻는다 (`migrate`). */
   prompt: TabPrompt;
   params: Record<string, unknown>;
-  tabs: CanvasTab[];
-  activeTab: string;
+  sets: SceneSet[];
+  activeSet: string;
   /** 이 워크스페이스의 묶음 층. 옛 워크스페이스에는 없다 (`migrate` 가 만든다).
    *
    *  ★★**화면에서는 이것을 「탭」이라 부른다** (사용자 결정 2026-08-18). 위쪽 탭 줄의 `+` 가
    *    만드는 것이 이 층이라, 예전 이름(「캐릭터」)으로는 한 화면에서 「캐릭터」가 두 가지를
    *    가리켰다 (아래 NAI 캐릭터 프롬프트와). 문구는 `i18n` 의 `chars.*` 에 있다.
-   *  ★코드 식별자(`chars`·`charId`·`activeChar`)는 **바꾸지 않는다.** `workspace.json` 에
+   *  ★코드 식별자(`chars`·`tabId`·`activeTab`)는 **바꾸지 않는다.** `workspace.json` 에
    *    그대로 저장되는 열쇠라, 바꾸면 사용자의 기존 워크스페이스가 안 열린다.
    *  ★이 층과 헷갈리면 안 되는 「캐릭터」가 둘 더 있다. 그 둘은 그대로 「캐릭터」다:
    *    NAI 캐릭터 프롬프트(`store/prompt.ts` 의 `chars`, 화면은 `cards.charN` 등) ·
    *    덱의 캐릭터 카드(`cards.short.characters`). */
-  chars?: WsChar[];
-  activeChar?: string;
+  tabs?: WsTab[];
+  activeTab?: string;
   selection: { deleted: string[] };
 };
 
@@ -269,19 +269,19 @@ type S = {
    *  비우는 것은 앱을 켤 때 (24시간 지난 것) — `backend/trash.py` 머리 주석. */
   deleteFiles: (files: string[]) => Promise<void>;
   isDeleted: (file: string) => boolean;
-  activeTab: () => CanvasTab | undefined;
+  activeSet: () => SceneSet | undefined;
   setActiveTab: (id: string) => void;
   /** 그 탭(`chars`)의 생성 옵션을 담아 둔다 (`store/gen` 이 부른다) */
-  stashGen: (charId: string, params: GenParams) => void;
+  stashGen: (tabId: string, params: GenParams) => void;
   /** 셀은 이름만(빈 태그) 또는 이름+태그로 준다 — 포즈세트 카드가 후자다 */
-  addSetTab: (name: string, cells: (string | { name: string; tags?: string; blocks?: Block[] })[]) => void;
-  closeTab: (id: string) => void;
-  renameTab: (id: string, name: string) => void;
+  addSet: (name: string, cells: (string | { name: string; tags?: string; blocks?: Block[] })[]) => void;
+  closeSet: (id: string) => void;
+  renameSet: (id: string, name: string) => void;
 
   /** 탭의 필드를 갈아 끼운다 (슬롯 목록·공통 접두).
    *  ★예전엔 SlotStrip 이 `useWs.setState` 로 스토어를 직접 만졌다 — 저장 예약이 컴포넌트에
    *    흩어져 있어 어디서 무엇이 저장되는지 알 수 없었다. 창구를 여기 하나로 모은다. */
-  setTab: (id: string, patch: Partial<Extract<CanvasTab, { kind: "set" }>>) => void;
+  patchSet: (id: string, patch: Partial<Extract<SceneSet, { kind: "set" }>>) => void;
   /** 씬을 하나 더한다. `from` 을 주면 그 씬의 복제, `after` 를 주면 **그 카드 안에서** 그 뒤에.
    *  ★번호는 탭의 `cellSeq` 가 발급한다 — 컴포넌트가 id 를 만들지 않고, 카드가 여럿이어도
    *    번호는 탭 안에서 유일하다 (결과가 `cell_id` 로 묶이므로).
@@ -298,22 +298,22 @@ type S = {
     card?: { name?: string; srcId?: string; color?: [string, string]; cells?: Slot[] },
   ) => void;
   /** 카드를 뺀다. ★확인을 받지 않는다 — `Ctrl+Z` 로 되돌린다 (사용자 결정 2026-08-11) */
-  removeCard: (tabId: string, cardId: string) => void;
+  removeCard: (setId: string, cardId: string) => void;
   /** 카드의 필드를 갈아 끼운다 (이름·씬 목록) */
-  setCard: (tabId: string, cardId: string, patch: Partial<SceneCard>) => void;
+  setCard: (setId: string, cardId: string, patch: Partial<SceneCard>) => void;
   /** 씬을 **어느 카드의 어느 자리로든** 옮긴다 — 같은 카드 안이든, 다른 카드로든
    *  (v2 `index.html:11860-12002` 의 슬롯 드래그. 그쪽은 슬롯이 한 줄이라 카드 층이 없었다).
    *  `toIndex` 는 **틈 번호**다 (0..n, `useReorder` 규약과 같다). 음수면 그 카드의 끝. */
-  moveScene: (tabId: string, cellId: string, toCardId: string, toIndex: number) => void;
+  moveScene: (setId: string, cellId: string, toCardId: string, toIndex: number) => void;
   /** 카드 자체의 순서. `toIndex` 도 **틈 번호**다 */
-  moveCard: (tabId: string, cardId: string, toIndex: number) => void;
+  moveCard: (setId: string, cardId: string, toIndex: number) => void;
 
   // ── 캐릭터 (멀티 전용) ──
-  activeCharOf: () => WsChar | undefined;
-  switchChar: (id: string) => void;
-  addChar: (name?: string) => void;
-  renameChar: (id: string, name: string) => void;
-  removeChar: (id: string) => void;
+  activeTabOf: () => WsTab | undefined;
+  switchTab: (id: string) => void;
+  addTab: (name?: string) => void;
+  renameTab: (id: string, name: string) => void;
+  removeTab: (id: string) => void;
 };
 
 /** 새 워크스페이스의 첫 모습.
@@ -322,7 +322,7 @@ type S = {
  *    `migrate` 의 `convertSingleTab` 이 그것을 옮겼다 — 그러면 새 워크스페이스가 옛 싱글
  *    탭의 자국을 그대로 물려받는다: 씬에 `fromSingle` 표식이 박히고(셀 없는 레코드를
  *    끌어오는 길이다), 탭·카드·캐릭터 이름이 전부 「컷」이 된다.
- *  ★모양은 `addSetTab` 과 같다 — **카드도 씬도 없이**·`idOnly`.
+ *  ★모양은 `addSet` 과 같다 — **카드도 씬도 없이**·`idOnly`.
  *  ★캐릭터도 여기서 만든다. 안 만들면 `migrate` 의 고아 처리가 **탭 이름으로** 하나를
  *    지어내서, 캐릭터 탭에 「새 세트」라고 뜬다. */
 /** ★★새로 만드는 탭·워크스페이스의 프롬프트 — **카드가 하나도 없다** (사용자 지시 2026-08-20:
@@ -338,13 +338,13 @@ const newSpec = (name: string): Spec => ({
   name,
   prompt: { base: [], baseUc: [] },
   params: {},
-  tabs: [
+  sets: [
     {
       id: "tab_1",
       kind: "set",
-      name: t("tabs.newSet"),
+      name: t("set.newSet"),
       idOnly: true,
-      charId: "ch_1",
+      tabId: "ch_1",
       /* ★★**씬도 비어 있다** (사용자 지시 2026-08-20). 카드가 없으면 씬 줄이 「씬 세트를
          만들어 시작」 자리를 띄우고, 거기서 `+` 를 눌러야 생긴다 — 프롬프트 카드·덱과
          같은 규칙이다 (*"유저가 +를 눌러야 생김"*). 예전에는 이름 없는 씬 하나가 박힌 채
@@ -354,11 +354,11 @@ const newSpec = (name: string): Spec => ({
       cardSeq: 0,
     },
   ],
-  activeTab: "tab_1",
+  activeSet: "tab_1",
   // ★첫 탭도 **「새 탭」**이다 (사용자 지시 2026-08-20) — 새로 만드는 탭과 이름 규칙이
   //   달라서 첫 탭만 「탭 1」이었다. 이름을 짓는 말은 하나면 된다 (`chars.newName`).
-  chars: [{ id: "ch_1", name: t("chars.newName"), prompt: freshPrompt() }],
-  activeChar: "ch_1",
+  tabs: [{ id: "ch_1", name: t("tab.newName"), prompt: freshPrompt() }],
+  activeTab: "ch_1",
   selection: { deleted: [] },
 });
 
@@ -372,27 +372,27 @@ function migrate(spec: Spec): Spec {
   //     유일해야 결과(`cell_id`)가 안 섞인다. 위 `SceneCard` 주석 참조.
   spec = {
     ...spec,
-    tabs: spec.tabs.map((tb) => {
+    sets: spec.sets.map((tb) => {
       // ★싱글 탭은 **씬 탭으로 옮긴다** (싱글/멀티 구분 폐기). 그림이 안 사라지게
       //   옮겨 온 씬에 `fromSingle` 이 박힌다 — `takesOf` 가 그것으로 찾아간다.
       const conv = convertSingleTab(tb as never);
       if (conv) {
         changed = true;
-        return conv as unknown as CanvasTab;
+        return conv as unknown as SceneSet;
       }
       // ★감싸는 규칙은 `lib/sceneCards.ts` 에 있다 — 사용자 데이터를 건드리는 자리라
       //   따로 떼어 회귀 테스트를 붙였다 (`sceneCards.test.ts`)
       const wrapped = wrapSetTabInCard(tb as never);
       if (!wrapped) return tb;
       changed = true;
-      return wrapped as unknown as CanvasTab;
+      return wrapped as unknown as SceneSet;
     }),
   };
   // ★슬롯을 블록으로 (2026-08-07). 옛 세션은 문자열 태그를 들고 있다 — 열 때 한 번 옮긴다.
   //   ★카드 층이 생기면서 **카드마다** 돈다 (`cells` 는 이제 카드 안에 있다).
   spec = {
     ...spec,
-    tabs: spec.tabs.map((tb) => {
+    sets: spec.sets.map((tb) => {
       if (tb.kind !== "set") return tb;
       let touched = false;
       const cards = tb.cards.map((k) => {
@@ -408,7 +408,7 @@ function migrate(spec: Spec): Spec {
       return { ...tb, cards };
     }),
   };
-  const tabs = spec.tabs.map((t) => {
+  const tabs = spec.sets.map((t) => {
     if (t.prompt) return t;
     changed = true;
     // 싱글 탭만 씨앗을 받는다 — 세트 탭까지 같은 프롬프트를 복제하면 "왜 다 같지"가 된다
@@ -418,35 +418,35 @@ function migrate(spec: Spec): Spec {
   });
   // ★캐릭터 층 이전 (2026-08-04). 세트 탭이 들고 있던 프롬프트를 **캐릭터로 올린다** —
   //   탭마다 하나씩 만들어 담으므로 **아무것도 잃지 않는다.** 이름은 그 탭 이름을 쓴다.
-  let chars = spec.chars ?? [];
-  let tabs2 = tabs;
-  const orphan = tabs2.filter((t) => t.kind === "set" && !t.charId);
-  if (orphan.length || !chars.length) {
-    const made: WsChar[] = [];
-    tabs2 = tabs2.map((t) => {
-      if (t.kind !== "set" || t.charId) return t;
-      const c: WsChar = {
+  let tabList = spec.tabs ?? [];
+  let sets2 = tabs;
+  const orphan = sets2.filter((t) => t.kind === "set" && !t.tabId);
+  if (orphan.length || !tabList.length) {
+    const made: WsTab[] = [];
+    sets2 = sets2.map((t) => {
+      if (t.kind !== "set" || t.tabId) return t;
+      const c: WsTab = {
         id: "ch_" + Math.random().toString(36).slice(2, 8),
         name: t.name,
         prompt: t.prompt ?? { base: defaultBase(), baseUc: defaultUc() },
       };
       made.push(c);
-      return { ...t, charId: c.id };
+      return { ...t, tabId: c.id };
     });
     if (made.length) {
-      chars = [...chars, ...made];
+      tabList = [...tabList, ...made];
       changed = true;
     }
   }
-  if (!chars.length) {
-    chars = [{ id: "ch_1", name: t("chars.newName"), prompt: { base: defaultBase(), baseUc: defaultUc() } }];
+  if (!tabList.length) {
+    tabList = [{ id: "ch_1", name: t("tab.newName"), prompt: { base: defaultBase(), baseUc: defaultUc() } }];
     changed = true;
   }
-  const activeChar = spec.activeChar && chars.some((c) => c.id === spec.activeChar)
-    ? spec.activeChar
-    : chars[0].id;
-  if (activeChar !== spec.activeChar) changed = true;
-  return changed ? { ...spec, tabs: tabs2, chars, activeChar } : spec;
+  const activeTab = spec.activeTab && tabList.some((c) => c.id === spec.activeTab)
+    ? spec.activeTab
+    : tabList[0].id;
+  if (activeTab !== spec.activeTab) changed = true;
+  return changed ? { ...spec, sets: sets2, tabs: tabList, activeTab } : spec;
 }
 
 /** 선별 되돌리기 스택 — **서버에 저장하지 않는다.**
@@ -472,24 +472,24 @@ function maxCellNum(cells: Slot[]): number {
 
 /** 지금 편집기에 있는 것을 담는다 (자리를 떠나기 직전에 부른다).
  *  ★**멀티면 캐릭터에, 싱글이면 탭에** 담는다 — 프롬프트의 주인이 다르다. */
-function stash(spec: Spec, tabId: string): Spec {
+function stash(spec: Spec, setId: string): Spec {
   const snap = usePrompt.getState().snapshot();
-  const tab = spec.tabs.find((t) => t.id === tabId);
+  const tab = spec.sets.find((t) => t.id === setId);
   if (tab?.kind === "set") {
-    const cid = tab.charId ?? spec.activeChar;
+    const cid = tab.tabId ?? spec.activeTab;
     if (!cid) return spec;
-    return { ...spec, chars: (spec.chars ?? []).map((c) => (c.id === cid ? { ...c, prompt: snap } : c)) };
+    return { ...spec, tabs: (spec.tabs ?? []).map((c) => (c.id === cid ? { ...c, prompt: snap } : c)) };
   }
-  return { ...spec, tabs: spec.tabs.map((t) => (t.id === tabId ? { ...t, prompt: snap } : t)) };
+  return { ...spec, sets: spec.sets.map((t) => (t.id === setId ? { ...t, prompt: snap } : t)) };
 }
 
 /** 그 탭에서 편집기에 꺼내 놓을 프롬프트 — 멀티는 캐릭터 것이다 */
-export function promptOf(spec: Spec, tab: CanvasTab | undefined): TabPrompt {
+export function promptOf(spec: Spec, tab: SceneSet | undefined): TabPrompt {
   const fallback = { base: defaultBase(), baseUc: defaultUc() };
   if (!tab) return spec.prompt ?? fallback;
   if (tab.kind === "set") {
-    const cid = tab.charId ?? spec.activeChar;
-    return (spec.chars ?? []).find((c) => c.id === cid)?.prompt ?? fallback;
+    const cid = tab.tabId ?? spec.activeTab;
+    return (spec.tabs ?? []).find((c) => c.id === cid)?.prompt ?? fallback;
   }
   return tab.prompt ?? fallback;
 }
@@ -637,7 +637,7 @@ export const useWs = create<S>((set, get) => ({
       body: JSON.stringify({ name }),
     }).catch(() => {});
     // ★프롬프트는 **탭이** 들고 있다 — 활성 탭의 것을 편집기로 밀어 넣는다
-    const tab = spec.tabs.find((t) => t.id === spec.activeTab) ?? spec.tabs[0];
+    const tab = spec.sets.find((t) => t.id === spec.activeSet) ?? spec.sets[0];
     usePrompt.getState().load(promptOf(spec, tab));
   },
 
@@ -724,7 +724,7 @@ export const useWs = create<S>((set, get) => ({
     if (!current || !spec) return;
     // ★편집기 내용은 **활성 탭에** 담는다 (예전엔 spec.prompt 하나였다).
     //   spec.prompt 는 옛 워크스페이스를 여는 씨앗으로만 남는다 — 여기서 더 쓰지 않는다.
-    const next = stash(spec, spec.activeTab);
+    const next = stash(spec, spec.activeSet);
     set({ spec: next });
     await api(`/api/workspaces/${encodeURIComponent(current)}`, {
       method: "PUT",
@@ -807,12 +807,12 @@ export const useWs = create<S>((set, get) => ({
 
   /** 「새 탭으로 복제」 — 그림 한 장과 **그 그림의 설정**만 담은 새 탭을 만들고 그리로 옮긴다.
    *
-   *  ★**위층(`spec.chars`, 화면 이름 「탭」)에 만든다.** 아래층(세트)에 더하면 안 된다 —
+   *  ★**위층(`spec.tabs`, 화면 이름 「탭」)에 만든다.** 아래층(세트)에 더하면 안 된다 —
    *    세트 탭의 프롬프트 주인은 그 위층이라(`promptOf`), 같은 위층 아래에 세트만 늘리면
    *    「그 그림의 설정」이 **지금 보고 있던 세트의 프롬프트를 그대로 덮는다.**
-   *    새 위층은 씬 하나짜리 세트를 달고 태어난다(`switchChar`) — 그것이 「1슬롯짜리」다.
+   *    새 위층은 씬 하나짜리 세트를 달고 태어난다(`switchTab`) — 그것이 「1슬롯짜리」다.
    *  ★**순서가 안전장치다**: 옮겨 간 **뒤에** 설정을 얹는다. 거꾸로 하면 `stash` 가 그 설정을
-   *    떠나는 탭에 써 넣어 원래 프롬프트가 조용히 사라진다 (`closeTab` 과 같은 종류의 함정). */
+   *    떠나는 탭에 써 넣어 원래 프롬프트가 조용히 사라진다 (`closeSet` 과 같은 종류의 함정). */
   async cloneToNewTab(file, o) {
     const { current, spec, records } = get();
     if (!current || !spec) return null;
@@ -836,12 +836,12 @@ export const useWs = create<S>((set, get) => ({
         ).catch(() => ({ env: null }))
       : { env: null };
     // 편집기 내용을 spec 에 먼저 담는다 — 원본 탭이 지금 보고 있는 탭이면 이게 최신이다
-    const cur = stash(spec, spec.activeTab);
+    const cur = stash(spec, spec.activeSet);
     // ★출처가 **다른 워크스페이스**면 그 탭이 여기 없다 — 지금 보고 있는 탭으로 대신하지 않는다
     //   (그러면 그 그림과 무관한 프롬프트가 「복제」로 온다). 그때는 메타데이터가 세운다.
     const srcTab = local
-      ? (cur.tabs.find((x) => x.kind === "set" && x.id === rec?.tab_id) ??
-        cur.tabs.find((x) => x.id === cur.activeTab))
+      ? (cur.sets.find((x) => x.kind === "set" && x.id === rec?.set_id) ??
+        cur.sets.find((x) => x.id === cur.activeSet))
       : undefined;
     // 스타일·베이스·네거티브·**캐릭터 카드**가 통째로 여기 있다 (`promptOf` — 멀티는 캐릭터 소유)
     const srcPrompt = saved.env?.prompt
@@ -867,18 +867,18 @@ export const useWs = create<S>((set, get) => ({
     const srcDest = saved.env ? saved.env.sceneDest : srcTab?.kind === "set" ? srcTab.sceneDest : undefined;
 
     set({ spec: cur });
-    get().addChar(t("chars.cloneName"));
-    /* ★★새 탭은 **씬 카드 없이** 시작한다 (`switchChar` 의 ★★주, 2026-08-20). 복제는 그 그림이
+    get().addTab(t("tab.cloneName"));
+    /* ★★새 탭은 **씬 카드 없이** 시작한다 (`switchTab` 의 ★★주, 2026-08-20). 복제는 그 그림이
        설 씬이 하나 필요하므로 **여기서 만든다.**
        ★없다고 조용히 `return null` 하던 자리다 — 탭만 생기고 프롬프트도 그림도 안 오는
          빈 껍데기가 남았다 (사용자 지적 2026-08-22: *"새 탭으로 복제 안되고 있음"*).
          오류도 토스트도 없어서 무엇이 잘못됐는지 알 수가 없었다. */
     let sp = get().spec;
-    let tab = sp?.tabs.find((x) => x.id === sp!.activeTab);
+    let tab = sp?.sets.find((x) => x.id === sp!.activeSet);
     if (tab?.kind === "set" && !tab.cards.length) {
       get().addCard(tab.id);
       sp = get().spec;
-      tab = sp?.tabs.find((x) => x.id === sp!.activeTab);
+      tab = sp?.sets.find((x) => x.id === sp!.activeSet);
     }
     const cell = tab?.kind === "set" ? tab.cards[0]?.cells[0] : undefined;
     if (!sp || !tab || tab.kind !== "set" || !cell) {
@@ -894,7 +894,7 @@ export const useWs = create<S>((set, get) => ({
     //    ★`sceneDest`(씬 프롬프트가 베이스로 가나 캐릭터로 가나)도 함께 옮긴다 —
     //      목적지가 다르면 같은 씬이라도 다른 프롬프트가 나간다.
     if (srcScene) {
-      get().setTab(tab.id, {
+      get().patchSet(tab.id, {
         sceneDest: srcDest,
         cards: tab.cards.map((k) =>
           k.id === tab.cards[0]?.id
@@ -930,7 +930,7 @@ export const useWs = create<S>((set, get) => ({
           cell: cell.name,
           cell_id: cell.id,
           cell_no: 1,
-          char: (sp.chars ?? []).find((c) => c.id === sp.activeChar)?.name ?? null,
+          char: (sp.tabs ?? []).find((c) => c.id === sp.activeTab)?.name ?? null,
           exclude_slot_number: o.excludeNo,
           // ★보관함 그림은 서버가 **보관함에서** 집어 온다. 이 워크스페이스에 레코드가 없으니
           //   시드도 실어 준다 (없으면 0 이 박혀 「같은 시드로 다시」가 헛돈다)
@@ -961,44 +961,44 @@ export const useWs = create<S>((set, get) => ({
   },
   isDeleted: (file) => !!get().spec?.selection.deleted.includes(file),
 
-  activeTab: () => get().spec?.tabs.find((t) => t.id === get().spec!.activeTab),
+  activeSet: () => get().spec?.sets.find((t) => t.id === get().spec!.activeSet),
 
   /** 그 탭(`chars`, 화면 이름 「탭」)의 생성 옵션을 담아 둔다.
    *  부르는 쪽은 `store/gen` 의 구독 하나뿐이다. */
-  stashGen(charId, params) {
+  stashGen(tabId, params) {
     const spec = get().spec;
-    if (!spec?.chars) return;
-    set({ spec: { ...spec, chars: spec.chars.map((c) => (c.id === charId ? { ...c, gen: params } : c)) } });
+    if (!spec?.tabs) return;
+    set({ spec: { ...spec, tabs: spec.tabs.map((c) => (c.id === tabId ? { ...c, gen: params } : c)) } });
     queueSave(get);
   },
 
   setActiveTab(id) {
     const spec = get().spec;
-    if (!spec || spec.activeTab === id) return;
+    if (!spec || spec.activeSet === id) return;
     // ★떠나는 탭에 지금 편집기 내용을 담고, 오는 탭의 것을 꺼낸다.
     //   이 순서를 지키지 않으면 탭을 옮길 때마다 앞 탭의 프롬프트가 덮인다.
-    const stashed = stash(spec, spec.activeTab);
-    const next = stashed.tabs.find((t) => t.id === id);
-    set({ spec: { ...stashed, activeTab: id } });
+    const stashed = stash(spec, spec.activeSet);
+    const next = stashed.sets.find((t) => t.id === id);
+    set({ spec: { ...stashed, activeSet: id } });
     usePrompt.getState().load(promptOf(stashed, next));
     queueSave(get);
   },
 
-  addSetTab(name, cells) {
+  addSet(name, cells) {
     const spec = get().spec;
     if (!spec) return;
     const id = "tab_" + Date.now().toString(36);
     // ★이름이 겹치면 번호를 붙인다 (싱글 탭과 같은 규칙). 탭 이름이 곧 **저장 폴더**라
     //   겹치면 다른 탭의 그림이 같은 폴더에 섞인다.
-    const used = new Set(spec.tabs.map((x) => x.name));
+    const used = new Set(spec.sets.map((x) => x.name));
     let nm = name;
     for (let i = 2; used.has(nm); i++) nm = `${name} ${i}`;
-    const tab: CanvasTab = {
+    const tab: SceneSet = {
       id,
       kind: "set",
       name: nm,
       idOnly: true,
-      charId: spec.activeChar,
+      tabId: spec.activeTab,
       // ★씬은 **카드 한 장**에 담겨 얹힌다 (2026-08-11). 카드 이름은 탭 이름을 물려받는다 —
       //   덱에서 떨군 씬 세트라면 그 카드 이름이 곧 이 탭 이름이라 같은 값이다.
       // ★★씬을 안 주면 **카드도 안 만든다** — 빈 탭은 씬 줄의 「씬 세트 만들기」에서 시작한다
@@ -1022,42 +1022,42 @@ export const useWs = create<S>((set, get) => ({
       // 시작하면 바로 생성이 안 돼 한 번 더 손이 간다
       prompt: usePrompt.getState().snapshot(),
     };
-    const stashed = stash(spec, spec.activeTab);
-    set({ spec: { ...stashed, tabs: [...stashed.tabs, tab], activeTab: id } });
+    const stashed = stash(spec, spec.activeSet);
+    set({ spec: { ...stashed, sets: [...stashed.sets, tab], activeSet: id } });
     queueSave(get);
   },
 
   // ── 캐릭터 ──────────────────────────────────────────────
-  activeCharOf: () => {
+  activeTabOf: () => {
     const sp = get().spec;
-    return sp?.chars?.find((c) => c.id === sp.activeChar);
+    return sp?.tabs?.find((c) => c.id === sp.activeTab);
   },
 
-  switchChar(id) {
+  switchTab(id) {
     const spec = get().spec;
-    if (!spec || spec.activeChar === id) return;
+    if (!spec || spec.activeTab === id) return;
     // ★지금 편집기 내용을 **떠나는 캐릭터에** 담고 옮긴다 (탭 전환과 같은 순서)
-    const stashed = stash(spec, spec.activeTab);
+    const stashed = stash(spec, spec.activeSet);
     // 그 캐릭터의 포즈세트 중 하나를 연다. 없으면 하나 만든다.
-    const mine = stashed.tabs.filter((x) => x.kind === "set" && x.charId === id);
-    let next = { ...stashed, chars: stashed.chars, activeChar: id };
+    const mine = stashed.sets.filter((x) => x.kind === "set" && x.tabId === id);
+    let next = { ...stashed, tabs: stashed.tabs, activeTab: id };
     if (mine.length) {
-      next = { ...next, activeTab: mine[0].id };
+      next = { ...next, activeSet: mine[0].id };
     } else {
       const tid = "tab_" + Date.now().toString(36);
       next = {
         ...next,
-        tabs: [
-          ...next.tabs,
+        sets: [
+          ...next.sets,
           {
             id: tid,
             kind: "set",
-            name: t("tabs.newSet"),
-            charId: id,
+            name: t("set.newSet"),
+            tabId: id,
             idOnly: true,
             /* ★★**씬 세트 카드 없이 시작한다** (사용자 지적 2026-08-20: *"기본값이 세트카드
                없어야하는데 새탭 만들면 있음"*). 새 워크스페이스(`newSpec`)·새 세트 탭
-               (`addSetTab([])`)과 **같은 모양**이어야 한다 — 여기만 카드를 얹고 있었다.
+               (`addSet([])`)과 **같은 모양**이어야 한다 — 여기만 카드를 얹고 있었다.
                ★탭이 생기는 길이 셋이다(워크스페이스 만들기 · 세트 탭 「+」 · **캐릭터 탭 「+」**).
                  기본값을 바꿀 때는 셋을 함께 본다. */
             cards: [],
@@ -1065,95 +1065,95 @@ export const useWs = create<S>((set, get) => ({
             cardSeq: 0,
           },
         ],
-        activeTab: tid,
+        activeSet: tid,
       };
     }
     set({ spec: next });
-    usePrompt.getState().load(promptOf(next, next.tabs.find((x) => x.id === next.activeTab)));
+    usePrompt.getState().load(promptOf(next, next.sets.find((x) => x.id === next.activeSet)));
     queueSave(get);
   },
 
-  addChar(name) {
+  addTab(name) {
     const spec = get().spec;
     if (!spec) return;
-    const used = new Set((spec.chars ?? []).map((c) => c.name));
-    const bases = (name ?? t("chars.newName")).trim() || t("chars.newName");
+    const used = new Set((spec.tabs ?? []).map((c) => c.name));
+    const bases = (name ?? t("tab.newName")).trim() || t("tab.newName");
     let nm = bases;
     for (let i = 2; used.has(nm); i++) nm = `${bases} ${i}`;
     const id = "ch_" + Date.now().toString(36);
     // ★새 캐릭터는 **빈 프롬프트**로 시작한다 — 앞 캐릭터를 물려받으면 둘이 같은 인물이 된다
-    const stashed = stash(spec, spec.activeTab);
+    const stashed = stash(spec, spec.activeSet);
     set({
       spec: {
         ...stashed,
-        chars: [...(stashed.chars ?? []), { id, name: nm, prompt: freshPrompt() }],
+        tabs: [...(stashed.tabs ?? []), { id, name: nm, prompt: freshPrompt() }],
       },
     });
-    get().switchChar(id);
+    get().switchTab(id);
   },
 
-  renameChar(id, name) {
+  renameTab(id, name) {
     const spec = get().spec;
     if (!spec || !name.trim()) return;
     set({
-      spec: { ...spec, chars: (spec.chars ?? []).map((c) => (c.id === id ? { ...c, name: name.trim() } : c)) },
+      spec: { ...spec, tabs: (spec.tabs ?? []).map((c) => (c.id === id ? { ...c, name: name.trim() } : c)) },
     });
     queueSave(get);
   },
 
-  removeChar(id) {
+  removeTab(id) {
     const spec = get().spec;
     if (!spec) return;
-    const chars = (spec.chars ?? []).filter((c) => c.id !== id);
-    // ★마지막 캐릭터는 지우지 않는다 — 멀티에 설 자리가 없어진다
-    if (!chars.length) return;
+    const left = (spec.tabs ?? []).filter((c) => c.id !== id);
+    // ★마지막 탭은 지우지 않는다 — 세트가 설 자리가 없어진다
+    if (!left.length) return;
     // 그 탭의 포즈세트도 함께 사라진다.
     // ★그림 파일은 **부르는 쪽**(`CanvasTabs` 의 탭 닫기)이 먼저 휴지통으로 보낸다 —
     //   여기서 보내면 어느 그림이 그 탭 것이었는지 묶어 줄 화면 정보가 이미 없다
-    const tabs = spec.tabs.filter((x) => !(x.kind === "set" && x.charId === id));
-    const nextChar = spec.activeChar === id ? chars[0].id : spec.activeChar;
-    const mine = tabs.filter((x) => x.kind === "set" && x.charId === nextChar);
-    const activeTab = tabs.some((x) => x.id === spec.activeTab)
-      ? spec.activeTab
-      : (mine[0]?.id ?? tabs[0].id);
-    const next = { ...spec, chars, tabs, activeChar: nextChar, activeTab };
+    const sets = spec.sets.filter((x) => !(x.kind === "set" && x.tabId === id));
+    const nextTab = spec.activeTab === id ? left[0].id : spec.activeTab;
+    const mine = sets.filter((x) => x.kind === "set" && x.tabId === nextTab);
+    const activeSet = sets.some((x) => x.id === spec.activeSet)
+      ? spec.activeSet
+      : (mine[0]?.id ?? sets[0].id);
+    const next = { ...spec, tabs: left, sets, activeTab: nextTab, activeSet };
     set({ spec: next });
-    usePrompt.getState().load(promptOf(next, tabs.find((x) => x.id === activeTab)));
+    usePrompt.getState().load(promptOf(next, sets.find((x) => x.id === activeSet)));
     queueSave(get);
   },
 
-  closeTab(id) {
+  closeSet(id) {
     const spec = get().spec;
     if (!spec) return;
-    const target = spec.tabs.find((x) => x.id === id);
-    const charId = target?.kind === "set" ? target.charId : undefined;
+    const target = spec.sets.find((x) => x.id === id);
+    const ownerTab = target?.kind === "set" ? target.tabId : undefined;
     // ★★**그 캐릭터의 마지막 탭은 닫지 않는다.** 옛 규칙(「싱글이 하나도 없는 워크스페이스를
     //   만들지 않는다」)이 싱글 폐기(2026-08-11)와 함께 이 자리로 왔다. 안 막으면 탭을 전부
     //   닫을 수 있고, 그러면 아래 `neighbour` 가 undefined 라 `neighbour.id` 에서 앱이 죽는다
     //   (새 워크스페이스는 탭이 하나라 ×를 한 번만 눌러도 그렇게 됐다).
     //   캐릭터 단위로 세는 이유: 탭이 없는 캐릭터가 활성이면 탭 줄이 비는데, 같은 캐릭터를
-    //   다시 눌러도 `switchChar` 가 일찍 반환해 탭을 새로 만들어 주지 않는다.
-    const mine = spec.tabs.filter((x) => x.kind === "set" && x.charId === charId);
+    //   다시 눌러도 `switchTab` 가 일찍 반환해 탭을 새로 만들어 주지 않는다.
+    const mine = spec.sets.filter((x) => x.kind === "set" && x.tabId === ownerTab);
     if (mine.length <= 1) return;
-    const tabs = spec.tabs.filter((t) => t.id !== id);
-    const wasActive = spec.activeTab === id;
+    const tabs = spec.sets.filter((t) => t.id !== id);
+    const wasActive = spec.activeSet === id;
     // ★닫으면 **같은 캐릭터에 머문다.** `tabs[0]` 로 가면 남의 캐릭터로 튕긴다
     //   (사용자 지적 2026-08-04, 그때는 싱글↔멀티였다). 같은 캐릭터의 탭 중 **가장 가까운 것**을 연다.
-    const wasAt = spec.tabs.findIndex((t) => t.id === id);
-    const siblings = tabs.filter((t) => t.kind === "set" && t.charId === charId);
+    const wasAt = spec.sets.findIndex((t) => t.id === id);
+    const siblings = spec.sets.filter((t) => t.kind === "set" && t.tabId === ownerTab);
     const neighbour =
       siblings.length === 0
-        ? tabs[0]
+        ? spec.sets[0]
         : siblings.reduce((best, t) => {
-            const at = spec.tabs.findIndex((x) => x.id === t.id);
-            const bestAt = spec.tabs.findIndex((x) => x.id === best.id);
+            const at = spec.sets.findIndex((x) => x.id === t.id);
+            const bestAt = spec.sets.findIndex((x) => x.id === best.id);
             return Math.abs(at - wasAt) < Math.abs(bestAt - wasAt) ? t : best;
           });
-    const nextActive = wasActive ? neighbour.id : spec.activeTab;
-    set({ spec: { ...spec, tabs, activeTab: nextActive } });
+    const nextActive = wasActive ? neighbour.id : spec.activeSet;
+    set({ spec: { ...spec, tabs, activeSet: nextActive } });
     // ★활성 탭을 닫았으면 **새 탭의 프롬프트를 편집기로 꺼낸다.**
-    //   안 하면 편집기 안은 닫힌 탭의 내용 그대로인데 activeTab 만 바뀌어,
-    //   0.4초 뒤 도는 자동 저장이 `stash(spec, activeTab)` 로 그것을 **옆 탭에 써 넣는다.**
+    //   안 하면 편집기 안은 닫힌 탭의 내용 그대로인데 activeSet 만 바뀌어,
+    //   0.4초 뒤 도는 자동 저장이 `stash(spec, activeSet)` 로 그것을 **옆 탭에 써 넣는다.**
     //   화면상으론 탭 하나를 닫은 것으로만 보여서, 옆 탭을 열기 전엔 유실을 알 수 없다.
     if (wasActive) {
       const next = tabs.find((t) => t.id === nextActive);
@@ -1162,21 +1162,21 @@ export const useWs = create<S>((set, get) => ({
     queueSave(get);
   },
 
-  setTab(id, patch) {
+  patchSet(id, patch) {
     const spec = get().spec;
     if (!spec) return;
     set({
       spec: {
         ...spec,
-        tabs: spec.tabs.map((x) => (x.id === id && x.kind === "set" ? { ...x, ...patch } : x)),
+        sets: spec.sets.map((x) => (x.id === id && x.kind === "set" ? { ...x, ...patch } : x)),
       },
     });
     queueSave(get);
   },
 
-  addSlot(tabId, opts = {}) {
+  addSlot(setId, opts = {}) {
     const spec = get().spec;
-    const tab = spec?.tabs.find((x) => x.id === tabId);
+    const tab = spec?.sets.find((x) => x.id === setId);
     if (!spec || tab?.kind !== "set" || !tab.cards.length) return;
     const card = tab.cards.find((k) => k.id === opts.cardId) ?? tab.cards[0];
     // ★발급기가 없는 옛 탭은 지금 있는 최대 번호 + 1 부터 이어 받는다.
@@ -1191,15 +1191,15 @@ export const useWs = create<S>((set, get) => ({
         };
     const at = opts.after === undefined ? card.cells.length : opts.after + 1;
     const cells = [...card.cells.slice(0, at), cell, ...card.cells.slice(at)];
-    get().setTab(tabId, {
+    get().patchSet(setId, {
       cards: tab.cards.map((k) => (k.id === card.id ? { ...k, cells } : k)),
       cellSeq: seq + 1,
     });
   },
 
-  addCard(tabId, card = {}) {
+  addCard(setId, card = {}) {
     const spec = get().spec;
-    const tab = spec?.tabs.find((x) => x.id === tabId);
+    const tab = spec?.sets.find((x) => x.id === setId);
     if (!spec || tab?.kind !== "set") return;
     const cseq = (tab.cardSeq ?? tab.cards.length) + 1;
     const seq = tab.cellSeq ?? maxCellNum(allCells(tab)) + 1;
@@ -1208,12 +1208,12 @@ export const useWs = create<S>((set, get) => ({
         //   그대로 쓰면 이미 있는 씬과 겹쳐 결과가 섞인다
         card.cells.map((c, i) => ({ ...c, id: `c${seq + i}` }))
       : [{ id: `c${seq}`, name: t("slots.newName", { n: 1 }), blocks: [] }];
-    get().setTab(tabId, {
+    get().patchSet(setId, {
       cards: [
         ...tab.cards,
         {
           id: `k${cseq}`,
-          name: card.name ?? t("tabs.newSet"),
+          name: card.name ?? t("set.newSet"),
           srcId: card.srcId,
           color: card.color,
           cells,
@@ -1224,18 +1224,18 @@ export const useWs = create<S>((set, get) => ({
     });
   },
 
-  removeCard(tabId, cardId) {
+  removeCard(setId, cardId) {
     const spec = get().spec;
-    const tab = spec?.tabs.find((x) => x.id === tabId);
+    const tab = spec?.sets.find((x) => x.id === setId);
     if (!spec || tab?.kind !== "set") return;
-    get().setTab(tabId, { cards: tab.cards.filter((k) => k.id !== cardId) });
+    get().patchSet(setId, { cards: tab.cards.filter((k) => k.id !== cardId) });
   },
 
-  setCard(tabId, cardId, patch) {
+  setCard(setId, cardId, patch) {
     const spec = get().spec;
-    const tab = spec?.tabs.find((x) => x.id === tabId);
+    const tab = spec?.sets.find((x) => x.id === setId);
     if (!spec || tab?.kind !== "set") return;
-    get().setTab(tabId, {
+    get().patchSet(setId, {
       cards: tab.cards.map((k) => (k.id === cardId ? { ...k, ...patch } : k)),
     });
   },
@@ -1253,9 +1253,9 @@ export const useWs = create<S>((set, get) => ({
    *  ★옮긴 씬에는 **받는 카드의 공통 접두**가 걸린다 (접두는 카드의 것이다).
    *  ★마지막 씬을 빼내면 그 카드는 **빈 카드**로 남는다. 지우지 않는다 — 이름·접두가 든
    *    사용자 데이터라, 옮기는 조작이 카드를 말없이 없애면 안 된다. */
-  moveScene(tabId, cellId, toCardId, toIndex) {
+  moveScene(setId, cellId, toCardId, toIndex) {
     const spec = get().spec;
-    const tab = spec?.tabs.find((x) => x.id === tabId);
+    const tab = spec?.sets.find((x) => x.id === setId);
     if (!spec || tab?.kind !== "set") return;
     const from = tab.cards.find((k) => k.cells.some((c) => c.id === cellId));
     const to = tab.cards.find((k) => k.id === toCardId);
@@ -1268,7 +1268,7 @@ export const useWs = create<S>((set, get) => ({
       // 틈 번호는 **빼기 전** 목록 기준이라, 뒤쪽으로 옮길 때 한 칸 당긴다 (`useReorder` 와 같다)
       const put = toIndex < 0 ? rest.length : Math.min(rest.length, toIndex > at ? toIndex - 1 : toIndex);
       if (put === at) return; // 제자리
-      get().setTab(tabId, {
+      get().patchSet(setId, {
         cards: tab.cards.map((k) =>
           k.id === from.id
             ? { ...k, cells: [...rest.slice(0, put), cell, ...rest.slice(put)] }
@@ -1279,7 +1279,7 @@ export const useWs = create<S>((set, get) => ({
     }
 
     const put = toIndex < 0 ? to.cells.length : Math.max(0, Math.min(to.cells.length, toIndex));
-    get().setTab(tabId, {
+    get().patchSet(setId, {
       cards: tab.cards.map((k) => {
         if (k.id === from.id) return { ...k, cells: k.cells.filter((c) => c.id !== cellId) };
         if (k.id === to.id)
@@ -1290,23 +1290,23 @@ export const useWs = create<S>((set, get) => ({
   },
 
   /** 카드 순서 — 그 카드의 씬 전부가 함께 움직인다 (번호는 위 `moveScene` 주석과 같다) */
-  moveCard(tabId, cardId, toIndex) {
+  moveCard(setId, cardId, toIndex) {
     const spec = get().spec;
-    const tab = spec?.tabs.find((x) => x.id === tabId);
+    const tab = spec?.sets.find((x) => x.id === setId);
     if (!spec || tab?.kind !== "set") return;
     const at = tab.cards.findIndex((k) => k.id === cardId);
     if (at < 0) return;
     const rest = tab.cards.filter((_, i) => i !== at);
     const put = toIndex < 0 ? rest.length : Math.min(rest.length, toIndex > at ? toIndex - 1 : toIndex);
     if (put === at) return;
-    get().setTab(tabId, { cards: [...rest.slice(0, put), tab.cards[at], ...rest.slice(put)] });
+    get().patchSet(setId, { cards: [...rest.slice(0, put), tab.cards[at], ...rest.slice(put)] });
   },
 
-  renameTab(id, name) {
+  renameSet(id, name) {
     const spec = get().spec;
     if (!spec || !name.trim()) return;
     set({
-      spec: { ...spec, tabs: spec.tabs.map((t) => (t.id === id ? { ...t, name } : t)) },
+      spec: { ...spec, sets: spec.sets.map((t) => (t.id === id ? { ...t, name } : t)) },
     });
     queueSave(get);
   },

@@ -42,8 +42,8 @@ export type QueuePhase = "idle" | "running" | "done" | "failed" | "partial";
 /** ★큐에 넣은 **아직 안 나온 장**. 페로픽스파이는 큐에 넣는 순간 결과 객체를 만들어
  *  `queued` 카드를 띄운다 (`batch.ts start`) — 눌렀는지 알 수 있고 어디에 생길지도 보인다.
  *  우리 레코드는 **완료된 파일**뿐이라 이 목록이 그 자리를 대신한다.
- *  그림이 도착하면 같은 (tab_id, cell_id) 의 대기 하나를 지운다. */
-export type Pending = { id: string; tabId: string | null; cellId: string | null };
+ *  그림이 도착하면 같은 (set_id, cell_id) 의 대기 하나를 지운다. */
+export type Pending = { id: string; setId: string | null; cellId: string | null };
 
 type S = {
   connected: boolean;
@@ -59,7 +59,7 @@ type S = {
   connect: () => Promise<void>;
   enqueue: (base: Record<string, unknown>, items?: Record<string, unknown>[], count?: number) => Promise<void>;
   /** 이 탭의 대기 목록 (슬롯 순서대로). 맨 앞이 **지금 만드는 중**이다 */
-  pendingOf: (tabId: string) => Pending[];
+  pendingOf: (setId: string) => Pending[];
   /** ★취소는 **하나**다 — 지금 나간 장만 남기고 나머지를 전부 뺀다 (사용자 결정 2026-08-18) */
   cancelAll: () => Promise<void>;
 };
@@ -185,7 +185,7 @@ export const useQueue = create<S>((set, get) => ({
 
   async enqueue(base, items = [], count = 1) {
     // ★보내기 **전에** 자리를 잡는다 — 누른 즉시 카드가 떠야 눌린 것을 안다
-    const tabId = (base.tab_id as string) ?? null;
+    const setId = (base.set_id as string) ?? null;
     const add: Pending[] = [];
     const units = items.length ? items : [{}];
     // ★대기 칸의 순서는 **서버가 만드는 순서와 같아야 한다** (`server.py` 의 큐 루프).
@@ -197,7 +197,7 @@ export const useQueue = create<S>((set, get) => ({
         //   (사용자 지적 2026-08-14: 눌러도 아무 반응이 없어 보였다)
         add.push({
           id: `p${seqId++}`,
-          tabId,
+          setId,
           cellId: ((it.cell_id as string) ?? (base.cell_id as string)) ?? null,
         });
       }
@@ -218,7 +218,7 @@ export const useQueue = create<S>((set, get) => ({
       throw e;
     }
   },
-  pendingOf: (tabId) => get().pending.filter((p) => p.tabId === tabId),
+  pendingOf: (setId) => get().pending.filter((p) => p.setId === setId),
 
   /** ★★**대기 칸을 여기서 비우지 않는다** (감사 D5). 예전 `clear()` 는 부르자마자
    *  `pending` 을 통째로 비웠는데, 서버는 이미 나간 한 장을 끝까지 받아 낸다 —
@@ -240,6 +240,15 @@ function queueErrorText(raw: string): string {
 
 type Setter = (p: Partial<S> | ((s: S) => Partial<S>)) => void;
 
+/** ★★조수가 고친 자리는 **사람의 `Ctrl+Z` 에서 뺀다** (사용자 결정 2026-08-24:
+ *    *"LLM 이 수정한 걸 Ctrl+Z 로 되돌리면 혼란스러울 것 같다. Ctrl+Z 는 유저 본인이
+ *    수정한 것만."*). 담아 둔 되돌리기는 통째 복원이라, 그대로 두면 한 번에 조수의 편집까지
+ *    지운다. 조수가 한 일은 조수에게 말해서 되돌린다 (`undo_change`). */
+async function dropHumanUndo(zone: string): Promise<void> {
+  const { dropUndoZone } = await import("../lib/undo");
+  dropUndoZone(zone);
+}
+
 /** AI 가 시킬 수 있는 **행동 표** — 여기 없는 이름은 안 한다. */
 async function runAction(action: string, args: Record<string, any>): Promise<Record<string, unknown>> {
   try {
@@ -258,7 +267,7 @@ async function runAction(action: string, args: Record<string, any>): Promise<Rec
           unknown
         >;
       }
-      const tab = ws.activeTab();
+      const tab = ws.activeSet();
       if (!tab) return { error: "열려 있는 탭이 없습니다." };
       // ★★**`count` 는 「몇 바퀴」다** (싱글 폐기 2026-08-11 이후로는 그것 하나뿐이다).
       //   예전에는 싱글 탭이면 `queueSingle(count)` 로 **count 장**이었는데, 탭이 전부
@@ -270,7 +279,9 @@ async function runAction(action: string, args: Record<string, any>): Promise<Rec
         return { error: `'${tab.name}' 탭은 씬 탭이 아니라 생성에 쓸 수 없습니다.` };
       for (let i = 0; i < count; i++) await useGen.getState().generateAll();
       const live = allCells(tab).filter((c) => !c.locked).length;
-      return { ok: true, tab: tab.name, queued: live * count * useUi.getState().perSlot };
+      /* ★돌려주는 열쇠는 `set` 이다 — 그림이 쌓이는 자리는 **세트**다.
+         (도구 인자의 `tab` 은 **탭 이름**이라 다른 것이다 — `shared/terms.json`) */
+      return { ok: true, set: tab.name, queued: live * count * useUi.getState().perSlot };
     }
     // ★물음은 **답이 올 때까지** 안 끝난다 — 도구가 기다리고 있다
     if (action === "ask_user") {
@@ -298,30 +309,153 @@ async function runAction(action: string, args: Record<string, any>): Promise<Rec
       });
     }
 
+    /* ★★**보고 있는 것을 고친다** — 덱의 카드가 아니라 지금 화면의 프롬프트다.
+         사용자 지시 2026-08-24: *"「키키 의상을 바꿔 줘」는 보통 카드가 아니라 지금 씬에
+         올려둔 캐릭터를 바꿔 달라는 것이다. 저장은 본인이 따로 한다."*
+       ★고친 자리(`at`)와 **고치기 전 값**(`before`)을 함께 돌려준다 — 채팅 줄이 그 자리를
+         열고(`lib/agentAt`), 조수가 되돌릴 수 있다(`backend/agentlog.py`). */
     if (action === "edit_current_prompt") {
       const { usePrompt } = await import("./prompt");
       const { makeBlock, parseSegs } = await import("../lib/blocks");
+      /* ★대상 세트를 **먼저 연다.** 프롬프트 편집기는 지금 열린 세트의 **사본**이라
+         (`workspace.setActiveTab` 이 담고 꺼낸다), 다른 세트를 몰래 고칠 길이 없다.
+         여는 편이 옳기도 하다 — 사용자가 바뀐 자리를 그 자리에서 본다. */
+      const want = String(args.set ?? "").trim();
+      if (want) {
+        const hit = useWs.getState().spec?.sets.find((x) => x.id === want || x.name === want);
+        if (!hit) return { error: `그런 세트가 없습니다: ${want}` };
+        /* ★세트는 **탭에 속한다**(`tabId`). 다른 탭의 세트를 열면서 탭을 안 옮기면
+           화면의 윗줄과 아랫줄이 어긋난 채로 남는다 (`workspace.switchTab` 참조). */
+        const owner = (hit as { tabId?: string }).tabId;
+        if (owner && owner !== useWs.getState().spec?.activeTab) useWs.getState().switchTab(owner);
+        useWs.getState().setActiveTab(hit.id);
+      }
+      const ws = useWs.getState();
+      const spec = ws.spec;
+      const set = spec?.sets.find((x) => x.id === spec?.activeSet);
+      if (!set) return { error: "열려 있는 세트가 없습니다." };
+
       const area = String(args.area ?? "base");
       const label = String(args.label ?? "블록");
       const tags = parseSegs(String(args.tags ?? ""));
+      /* ★**씬 칸**은 프롬프트 편집기가 아니라 세트 안에 산다 (`sets[].cards[].cells`).
+         칸 하나에 블록도 하나뿐이라 (`slotBlocksOf`), 이름표 없이 태그만 갈아 끼운다. */
+      const wantScene = String(args.scene ?? "").trim();
+      if (wantScene) {
+        const { slotBlocksOf, makeBlock: mk } = await import("../lib/blocks");
+        const cards = (set as { cards?: { id: string; cells: { id: string; name: string; blocks?: Block[] }[] }[] }).cards ?? [];
+        let found: { id: string; name: string; blocks?: Block[] } | null = null;
+        const next = cards.map((k) => ({
+          ...k,
+          cells: k.cells.map((c) => {
+            if (c.id !== wantScene && c.name !== wantScene) return c;
+            found = c;
+            const cur = c.blocks?.[0] ?? mk("", [], { open: true, tags: [] });
+            return { ...c, blocks: slotBlocksOf({ ...cur, tags }) };
+          }),
+        }));
+        if (!found) return { error: `그런 씬이 없습니다: ${wantScene}` };
+        useWs.getState().patchSet(set.id, { cards: next } as never);
+        dropHumanUndo(`scene-${(found as { id: string }).id}`);
+        const did = `「${set.name}」 세트의 씬 「${(found as { name: string }).name}」을 고침`;
+        return {
+          ok: true, scene: (found as { name: string }).name, did,
+          at: { kind: "prompt" as const, workspace: ws.current ?? undefined,
+                tab: spec?.activeTab, set: set.id, area: "scene",
+                scene: (found as { id: string }).id, label: (found as { name: string }).name },
+          before: { set: set.id, scene: (found as { id: string }).id, blocks: (found as { blocks?: Block[] }).blocks ?? [] },
+          after: { set: set.id, scene: (found as { id: string }).id },
+        };
+      }
       const replace = String(args.mode ?? "add") === "replace";
-      const p = usePrompt.getState();
-
       const apply = (cur: Block[]): Block[] => {
         const at = cur.findIndex((b) => b.label === label);
         if (replace && at >= 0) return cur.map((b, i) => (i === at ? { ...b, tags } : b));
         return [...cur, makeBlock(label, [], { open: true, tags })];
       };
+      const at = {
+        kind: "prompt" as const,
+        workspace: ws.current ?? undefined,
+        tab: spec?.activeTab,
+        set: set.id,
+        area,
+        label,
+      };
+      const verb = replace ? "갈아 끼움" : "더함";
 
       if (area === "base" || area === "baseUc") {
-        p.update(area, apply);
-        return { ok: true, area, label };
+        const before = usePrompt.getState()[area];
+        usePrompt.getState().update(area, apply);
+        dropHumanUndo(area === "base" ? "base-p" : "base-uc");
+        const what = area === "base" ? "베이스 프롬프트" : "베이스 UC";
+        return {
+          ok: true, area, label, at,
+          did: `「${set.name}」 세트의 ${what}에 「${label}」을 ${verb}`,
+          before: { set: set.id, area, blocks: before },
+          after: { set: set.id, area, blocks: usePrompt.getState()[area] },
+        };
       }
+
       const [name, part] = area.split(":");
-      const ch = p.chars.find((c) => c.id === name || c.name === name);
-      if (!ch) return { error: `그런 자리가 없습니다: ${area}` };
-      p.updateChar(ch.id, part === "uc" ? "uc" : "prompt", apply);
-      return { ok: true, area: ch.name, label };
+      const field = part === "uc" ? ("uc" as const) : ("prompt" as const);
+      let ch = usePrompt.getState().chars.find((c) => c.id === name || c.name === name);
+      /* ★**없으면 만든다** (사용자 지시 2026-08-24). 예전에는 「그런 자리가 없습니다」로
+         끝나서, 조수가 인물을 더하려면 사람이 먼저 빈 칸을 만들어 줘야 했다.
+         ★만든 것은 `created` 로 남긴다 — 되돌릴 때는 블록이 아니라 **그 칸을 지운다.** */
+      let created = "";
+      if (!ch) {
+        created = usePrompt.getState().addChar({ name });
+        ch = usePrompt.getState().chars.find((c) => c.id === created);
+        if (!ch) return { error: `자리를 만들지 못했습니다: ${area}` };
+      }
+      const before = ch[field];
+      usePrompt.getState().updateChar(ch.id, field, apply);
+      dropHumanUndo(`${ch.id}-${field === "uc" ? "uc" : "p"}`);
+      const now = usePrompt.getState().chars.find((c) => c.id === ch!.id);
+      const what = field === "uc" ? `${ch.name} UC` : ch.name;
+      return {
+        ok: true, area: ch.name, label, at: { ...at, area: ch.name },
+        did: created
+          ? `「${set.name}」 세트에 캐릭터 「${ch.name}」을 만들고 「${label}」을 ${verb}`
+          : `「${set.name}」 세트의 ${what}에 「${label}」을 ${verb}`,
+        before: { set: set.id, area: ch.id, part: field, blocks: before, created },
+        after: { set: set.id, area: ch.id, part: field, blocks: now?.[field] ?? [] },
+      };
+    }
+
+    /* 되돌리기 — ★조수 전용 통로다. 사람의 `Ctrl+Z` 와 섞지 않는다 (`lib/undo.ts`).
+       ★도구 표에 없다 (`backend/agent.py` `_table`) — LLM 이 직접 부르는 것이 아니라
+         `undo_change` 가 이력의 `before` 를 그대로 실어 부른다. */
+    if (action === "restore_prompt") {
+      const { usePrompt } = await import("./prompt");
+      const setId = String(args.set ?? "");
+      const hit = useWs.getState().spec?.sets.find((x) => x.id === setId);
+      if (!hit) return { error: "그 세트가 이미 없습니다." };
+      useWs.getState().setActiveTab(hit.id);
+      const area = String(args.area ?? "base");
+      const blocks = (args.blocks ?? []) as Block[];
+      if (args.scene) {
+        const cards = (hit as { cards?: { cells: { id: string }[] }[] }).cards ?? [];
+        useWs.getState().patchSet(hit.id, {
+          cards: cards.map((k) => ({
+            ...k,
+            cells: k.cells.map((c) => (c.id === args.scene ? { ...c, blocks } : c)),
+          })),
+        } as never);
+        return { ok: true };
+      }
+      if (args.created) {
+        usePrompt.getState().removeChar(String(args.created));
+        return { ok: true };
+      }
+      if (area === "base" || area === "baseUc") {
+        usePrompt.getState().update(area, () => blocks);
+        return { ok: true };
+      }
+      const ch = usePrompt.getState().chars.find((c) => c.id === area || c.name === area);
+      if (!ch) return { error: "그 캐릭터 자리가 이미 없습니다." };
+      usePrompt.getState().updateChar(ch.id, args.part === "uc" ? "uc" : "prompt", () => blocks);
+      return { ok: true };
     }
     return { error: `모르는 행동: ${action}` };
   } catch (e) {
@@ -533,7 +667,7 @@ function applyStatus(status: Record<string, any> | undefined, set: Setter, get: 
 function consumePending(m: Record<string, any>, set: Setter, get: () => S) {
   const pend = get().pending;
   const at = pend.findIndex(
-    (p) => p.tabId === (m.tab_id ?? null) && p.cellId === (m.cell_id ?? null),
+    (p) => p.setId === (m.set_id ?? null) && p.cellId === (m.cell_id ?? null),
   );
   if (at < 0) return;
   const gone = pend[at];
@@ -565,9 +699,9 @@ function render(m: Record<string, any>, set: Setter, get: () => S) {
     //   UTC 와 지역시각이 섞여 줄 차례가 어긋난다 (`lib/takes.localTs` 주석)
     ts: (m.ts as string) || localTs(),
     file: m.file,
-    tab: m.tab,
+    set: m.set,
     cell: m.cell ?? null,
-    tab_id: m.tab_id ?? null,
+    set_id: m.set_id ?? null,
     cell_id: m.cell_id ?? null,
     enhance_of: m.enhance_of ?? null,
     seed: m.seed,

@@ -37,6 +37,7 @@ export function BlockRow({
   gripProps,
   tagDrag,
   dragging,
+  zone,
 }: {
   block: Block;
   /** ★**머리를 안 그린다** — 칸이 곧 블록인 자리(씬 칸)다. 몸통만 남는다.
@@ -69,6 +70,8 @@ export function BlockRow({
   /** 칩 끌기 (`useTagDrag`) — 목록이 들고 있는 것을 이 블록 몫만 받는다 */
   tagDrag?: TagDrag;
   dragging?: boolean;
+  /** 이 블록이 사는 자리 — 되돌리기가 자리별로 갈린다 (`lib/undo`) */
+  zone?: string;
 }) {
   const t = useI18n((s) => s.t);
   /** 이름 고치기 — ★규칙은 **앱에 하나**다 (`useRename`): 단추를 다시 누르면 저장하고 끝 */
@@ -90,6 +93,7 @@ export function BlockRow({
       onDone={onDone}
       onOpen={onOpen}
       onTab={onTab}
+      zone={zone}
     />
   );
   // ★머리가 없는 자리는 **몸통 그대로**다 — 테두리도 접기도 없다 (칸이 곧 블록이다)

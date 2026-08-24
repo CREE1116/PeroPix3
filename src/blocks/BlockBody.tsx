@@ -48,6 +48,7 @@ export function BlockBody({
   onDone,
   onTab,
   onOpen,
+  zone,
 }: {
   block: Block;
   /** 보여 주기만 하는 자리 (블록 저장소) — 칩도 글 상자도 안 먹는다 */
@@ -76,6 +77,9 @@ export function BlockBody({
   onTab?: (dir: 1 | -1) => void;
   /** 글 상자가 열렸다 — 잘라 보여 주던 부모가 **자리를 내준다** */
   onOpen?: () => void;
+  /** 이 블록이 사는 **자리**(`BlockList` 의 `libZone`). 되돌리기 항목에 함께 담아,
+   *  조수가 그 자리를 고치면 사람의 항목이 버려지게 한다 (`lib/undo` 의 `dropUndoZone`) */
+  zone?: string;
 }) {
   const t = useI18n((s) => s.t);
   const [editing, setEditing] = useState(false);
@@ -252,7 +256,7 @@ export function BlockBody({
    *  ★안 바뀌었으면 담지 않는다. 그냥 눌렀다 나온 것까지 쌓이면 `Ctrl+Z` 가 헛돈다. */
   const logTextEdit = (before: Block, after: Block) => {
     if (before.src === after.src) return;
-    pushUndo(tr("common.undoText"), () => onChange(before));
+    pushUndo(tr("common.undoText"), () => onChange(before), zone);
   };
 
   const commitText = () => {
@@ -464,13 +468,13 @@ export function BlockBody({
                  ★되돌리는 방법은 칩 지우기와 같다: 「이 블록을 지금 모습으로」 하나면 된다. */
               onWeightStart={() => {
                 const before = block;
-                pushUndo(tr("common.undoWeight"), () => onChange(before));
+                pushUndo(tr("common.undoWeight"), () => onChange(before), zone);
               }}
               onRemove={() => {
                 // ★★확인 없이 사라지는 자리라 **되돌릴 길**을 함께 담는다 (`Ctrl+Z`).
                 //   되돌리는 방법은 「이 블록을 지금 모습으로 되돌린다」 하나면 된다.
                 const before = block;
-                pushUndo(tr("common.undoTag"), () => onChange(before));
+                pushUndo(tr("common.undoTag"), () => onChange(before), zone);
                 onChange({ ...block, tags: block.tags.filter((_, j) => j !== i) });
               }}
             />

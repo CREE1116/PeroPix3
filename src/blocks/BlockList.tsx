@@ -85,7 +85,7 @@ export function BlockList({
       const got = itemToBlock(d.item);
       // ★`single` 은 블록을 더할 수 없다 — 태그를 **뒤에 붙인다**
       if (!single) {
-        pushUndo(t("common.undoBlockAdd"), () => onChange(blocks));
+        pushUndo(t("common.undoBlockAdd"), () => onChange(blocks), libZone);
         return onChange([...blocks, got]);
       }
       const b = blocks[0];
@@ -129,7 +129,7 @@ export function BlockList({
    *    두 칸이 쌓여 Ctrl+Z 를 두 번 눌러야 한다. */
   const enterAt = (i: number, b: Block, splitAt?: number) => {
     if (single) {
-      pushUndo(t("common.undoText"), () => onChange(blocks));
+      pushUndo(t("common.undoText"), () => onChange(blocks), libZone);
       replace(i, b);
       onNext?.();
       return;
@@ -146,7 +146,7 @@ export function BlockList({
     });
     // ★이것도 블록이 하나 느는 것이다. ★Esc 로 물러나면 `cancelAt` 이 이 칸을 도로 버린다
     //   (뒤쪽 글이 옮겨 왔으면 비지 않으므로 안 거둔다 — 그게 맞다)
-    pushUndo(t("common.undoBlockAdd"), () => onChange(blocks));
+    pushUndo(t("common.undoBlockAdd"), () => onChange(blocks), libZone);
     auto.current.add(nb.id);
     const n = blocks.slice();
     n[i] = { ...b, tags: parseSegs(head), src: head };
@@ -230,6 +230,7 @@ export function BlockList({
             <BlockRow
               block={b}
               bare={single}
+              zone={libZone}
               dup={dup}
               dragging={dragIdx === i}
               autoEdit={editId === b.id || (!!single && !!autoEdit)}
@@ -237,11 +238,11 @@ export function BlockList({
                  함께 지나는데, 그것들은 `BlockBody` 가 이미 담고 있어 두 번 담기면 `Ctrl+Z` 를
                  두 번 눌러야 한 걸음이 물러난다. */
               onChange={(nb) => {
-                if (nb.on !== b.on) pushUndo(t("common.undoBlockOn"), () => onChange(blocks));
+                if (nb.on !== b.on) pushUndo(t("common.undoBlockOn"), () => onChange(blocks), libZone);
                 replace(i, nb);
               }}
               onRemove={() => {
-                pushUndo(t("common.undoBlockRemove"), () => onChange(blocks));
+                pushUndo(t("common.undoBlockRemove"), () => onChange(blocks), libZone);
                 onChange(blocks.filter((_, j) => j !== i));
               }}
               onEnter={(nb, at) => enterAt(i, nb, at)}
@@ -276,7 +277,7 @@ export function BlockList({
             <button
               data-block-add
               onClick={() => {
-                pushUndo(t("common.undoBlockAdd"), () => onChange(blocks));
+                pushUndo(t("common.undoBlockAdd"), () => onChange(blocks), libZone);
                 onChange([...blocks, makeBlock(t("block.newBlock"), [], { open: true })]);
               }}
               style={addBtn}

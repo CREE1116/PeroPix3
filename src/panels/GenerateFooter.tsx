@@ -45,7 +45,7 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
    *  잠깐이지만 그 사이에 아무 반응이 없으면 **안 눌린 줄 안다.** 그동안 눌린 모양으로 두고
    *  다시 못 누르게 한다 — 그 뒤로는 `running` 이 이어받는다. */
   const [firing, setFiring] = useState(false);
-  const tab = useWs((s) => s.activeTab());
+  const tab = useWs((s) => s.activeSet());
   const img = useImageInput();
   /** ★그 모델에서 되는 것 — 값 계산이 **보내는 것과 같아야** 한다 (`lib/naiModels.ts`) */
   const cap = modelCaps(params.model);
@@ -58,8 +58,8 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
   const usage = (sub?.tier ?? 0) >= 3 ? (sub?.usage ?? null) : null;
 
   // ★탭은 언제나 씬 탭이다 (싱글 폐기 2026-08-11) — 옛 싱글 탭은 열 때 옮겨진다.
-  //   그래도 한 번 좁히는 이유는 `CanvasTab` 이 옛 파일을 읽으려고 두 갈래를 남겨 두기 때문이다.
-  const setTab = tab?.kind === "set" ? tab : null;
+  //   그래도 한 번 좁히는 이유는 `SceneSet` 이 옛 파일을 읽으려고 두 갈래를 남겨 두기 때문이다.
+  const sceneSet = tab?.kind === "set" ? tab : null;
   const perSlot = useUi((s) => s.perSlot);
   const setPerSlot = useUi((s) => s.setPerSlot);
   /** ★잠긴 것은 생성에서 빠지므로 장 수도 그만큼 줄여야 한다.
@@ -68,8 +68,8 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
    *    거르는데 여기는 씬 잠금만 세고 있었다. 카드를 잠그면 **푸터가 실제보다 많이 세고**,
    *    비용도 그만큼 부풀었다 (실측 장치가 「예상 > 실제」로 잡아낸 자리, `lib/anlasMeter`).
    *    세는 규칙이 둘이면 어느 쪽이 맞는지 화면으로는 알 수 없다. */
-  const slots = setTab
-    ? allScenes(setTab).filter((x) => !x.cell.locked && !x.card.locked).length
+  const slots = sceneSet
+    ? allScenes(sceneSet).filter((x) => !x.cell.locked && !x.card.locked).length
     : 1;
   const count = slots * perSlot;
   /** ★★**생성할 씬이 없으면 그 자리에서 말해 준다** (사용자 지시 2026-08-22:
@@ -80,8 +80,8 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
    *  ★두 갈래를 가른다: 씬이 **아예 없는 것**과, 있는데 **전부 잠긴 것**. 화면에서 보이는
    *    모습이 달라서(빈 줄 대 자물쇠 붙은 줄) 같은 말로 묶으면 무엇을 하라는 건지 흐려진다.
    *  ★씬 세트 탭에서만 본다 — 그 밖의 자리는 씬이라는 것이 없어 언제나 한 장이다. */
-  const noScenes = !!setTab && allScenes(setTab).length === 0;
-  const allLocked = !!setTab && !noScenes && slots === 0;
+  const noScenes = !!sceneSet && allScenes(sceneSet).length === 0;
+  const allLocked = !!sceneSet && !noScenes && slots === 0;
   const cantGen = noScenes || allLocked;
   /** ★★인페인트도 **이 버튼이 만든다** (사용자 지시 2026-08-19).
    *
