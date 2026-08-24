@@ -1269,6 +1269,16 @@ async def _generate_one(body: GenBody) -> dict:
     else:
         data = meta.write(png, meta.read_raw(png), fmt, body.jpg_quality, original_chunks)
 
+    # ★★**이 그림을 뽑은 화면 구조**는 여기서 한 번 정한다 — 저장하든 미리보기로 돌려주든 같아야 한다.
+    #   화면이 실어 준 것이 없고 강화라면(`enhance_from`) **원본의 것을 물려받는다**: 강화는 새 그림이
+    #   아니라 그 그림의 다음 판이라 뽑은 구조가 같고, `EnhanceDialog` 는 원본 메타데이터로 페이로드를
+    #   짜므로 구조를 실어 주지 않는다.
+    #   ★없으면 그 그림에서 「설정 불러오기」를 눌렀을 때 캐릭터 카드가 통째로 사라지고
+    #     `#1`·`#2` 로 다시 만들어진다 (사용자 지적 2026-08-24) — 카드는 PNG 에 안 남는다.
+    shot_env = body.env or (
+        store.heavy_of(body.workspace, body.enhance_from).get("env") if body.enhance_from else None
+    )
+
     # ★자동 저장을 끄면 **파일도 기록도 안 남긴다** — 미리보기로만 돌려준다 (v2 `auto_save`).
     #   골라서 저장하고 싶을 때 쓰는 것이라, 여기서 남기면 그 뜻이 사라진다.
     if not body.auto_save:
@@ -1284,6 +1294,13 @@ async def _generate_one(body: GenBody) -> dict:
                 "cell_no": body.cell_no, "tab": body.tab,
                 "exclude_slot_number": body.exclude_slot_number,
                 "enhance_of": body.enhance_of,
+                # ★★**화면 구조도 함께 되돌려 준다** (사용자 지적 2026-08-24). 미저장 그림을
+                #   나중에 「파일로 저장」하면 그 레코드에 `env` 가 없어서, 그 그림에서
+                #   「설정 불러오기」를 눌러도 카드가 안 살아났다.
+                #   ★저장할 때 화면의 것을 새로 담으면 안 된다 — 그 사이 프롬프트를 고쳤으면
+                #     **다른 그림의 구조**가 붙는다. 그래서 뽑을 때 것을 왕복시킨다
+                #     (구조뿐이라 작다. `resolved` 는 base64 가 들어 있어 여전히 안 보낸다).
+                "env": shot_env,
                 "workspace": body.workspace}
 
     # ★씬 번호는 탐색기에서 순서를 만들고, **씬 이름**은 그 파일이 무엇인지 알려 준다
@@ -1310,7 +1327,8 @@ async def _generate_one(body: GenBody) -> dict:
             "enhance_of": body.enhance_of,
             "seed": seed,
             "resolved": payload,
-            "env": body.env,
+            # ★위에서 한 번 정한 것을 쓴다 (`shot_env` 의 ★주) — 미저장으로 돌려준 것과 같아야 한다
+            "env": shot_env,
         },
     )
     return {"ok": True, "file": rel, "seed": seed, "bytes": len(data), "ts": ts,
@@ -1375,12 +1393,21 @@ async def upscale_image(body: UpscaleBody):
         # ★뿌리를 그대로 물려받는다 — 업스케일한 것을 또 키워도 스택이 평평해야 한다
         "enhance_of": body.enhance_of or (rec or {}).get("enhance_of") or body.file,
         "seed": (rec or {}).get("seed", 0),
+        # ★★**그때 화면 구조도 물려받는다** (사용자 지적 2026-08-24: 「설정 불러오기」를 하면
+        #   캐릭터 카드의 이름·썸네일이 없고 `#1`·`#2` 로만 나온다).
+        #   원장은 `env` 하나뿐이라, 여기 없으면 화면은 PNG 메타데이터로 떨어지고
+        #   메타데이터에는 **합쳐진 문자열**만 있어 카드가 통째로 사라진다.
+        #   업스케일은 프롬프트를 새로 만들지 않으므로 **원본의 것이 곧 이 그림의 것**이다.
+        "env": store.heavy_of(body.workspace, body.file).get("env"),
         "op": "upscale",
     }
     store.append_record(body.workspace, new_rec)
-    # ★레코드를 통째로 돌려준다 — 화면이 목록을 다시 읽지 않고 한 줄만 얹으면 된다
+    # ★레코드를 통째로 돌려준다 — 화면이 목록을 다시 읽지 않고 한 줄만 얹으면 된다.
+    #   ★단 **무거운 것은 빼고** 준다 (`_light` 와 같은 규칙): 화면은 목록에서 `env` 를 읽지 않고,
+    #     필요할 때 `/env` 로 한 장씩 가져간다.
     return {"ok": True, "file": rel, "from": body.file, "size": [w * 4, h * 4],
-            "workspace": body.workspace, "record": new_rec}
+            "workspace": body.workspace,
+            "record": {k: v for k, v in new_rec.items() if k not in HEAVY_REC}}
 
 
 @app.post("/api/generate")
@@ -1411,6 +1438,9 @@ class SavePreviewBody(BaseModel):
     exclude_slot_number: bool = False
     enhance_of: str | None = None
     seed: int = 0
+    #: ★뽑을 때의 화면 구조 — 생성 응답으로 나갔던 것이 그대로 돌아온다 (`_generate_one` 의 ★주).
+    #:  저장 시점의 화면에서 새로 짜면 그 사이 프롬프트를 고쳤을 때 다른 그림의 구조가 붙는다.
+    env: dict | None = None
 
 
 @app.post("/api/save-preview")
@@ -1448,10 +1478,13 @@ async def save_preview(body: SavePreviewBody):
         "cell_id": body.cell_id,
         "enhance_of": body.enhance_of,
         "seed": body.seed,
+        # ★뽑을 때의 화면 구조 (위 `env` 의 ★주) — 이것이 있어야 「설정 불러오기」가 카드를 되살린다
+        "env": body.env,
     }
     store.append_record(body.workspace, rec)
-    # ★레코드를 통째로 돌려준다 — 화면이 목록을 다시 읽지 않고 한 줄만 얹으면 된다 (업스케일과 같다)
-    return {"ok": True, "file": rel, "record": rec}
+    # ★레코드를 통째로 돌려준다 — 화면이 목록을 다시 읽지 않고 한 줄만 얹으면 된다 (업스케일과 같다).
+    #   ★무거운 것은 빼고 준다 (업스케일과 같은 규칙) — 목록은 `env` 를 읽지 않는다.
+    return {"ok": True, "file": rel, "record": {k: v for k, v in rec.items() if k not in HEAVY_REC}}
 
 
 # ── 큐 + WebSocket ────────────────────────────────────────────────

@@ -22,13 +22,21 @@ export function DropVeil({
   over,
   label,
   name,
+  top,
+  height,
 }: {
   innerRef?: RefObject<HTMLDivElement | null>;
   over: boolean;
   label: string;
   /** 조작 테스트가 잡는 손잡이 */
   name?: string;
+  /** 카드 한 장을 **여러 자리로 나눌 때** — 안 주면 카드 전체다 (캐릭터 카드의 스택·교체).
+   *  ★나눈 자리에는 **경계선**이 함께 생긴다. 어디까지가 어느 자리인지 안 보이면
+   *    반씩 나뉜 카드가 그냥 한 장으로 보인다. */
+  top?: string;
+  height?: string;
 }) {
+  const split = top !== undefined || height !== undefined;
   return (
     <div
       ref={innerRef}
@@ -36,12 +44,18 @@ export function DropVeil({
       data-over={over ? "" : undefined}
       style={{
         position: "absolute",
-        inset: 0,
+        left: 0,
+        right: 0,
+        top: top ?? 0,
+        ...(split ? { height: height ?? "100%" } : { bottom: 0 }),
         zIndex: 32,
         pointerEvents: "none",
         display: "grid",
         placeItems: "center",
         background: over ? "color-mix(in srgb, var(--accent) 26%, transparent)" : "transparent",
+        /* ★나뉜 자리의 **윗변에 금**을 긋는다 (맨 위 자리는 카드 테두리가 그 일을 한다).
+           금이 없으면 반씩 나뉜 카드가 한 장으로 보여 어디에 놓는지 모른다. */
+        borderTop: split && top && top !== "0" ? "1px dashed var(--accent)" : undefined,
         transition: "background 90ms",
       }}
     >

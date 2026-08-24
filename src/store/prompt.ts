@@ -74,7 +74,22 @@ export type Char = {
    *  ★들어올 때 `charPos.nextCenter` 가 빈 자리를 골라 준다. */
   center: Center;
   /** 순차 생성 더미. **맨 앞이 다음 차례**이고, 생성이 끝나면 현재 인물이 맨 뒤로 간다. */
-  stack: { ref: string | null; name: string; color: [string, string] }[];
+  stack: StackItem[];
+};
+
+/** 스택에 든 인물 — 앞 카드와 **자리를 맞바꾸는 값**이라 앞 카드가 들고 다니는 것과 짝이 맞아야 한다.
+ *
+ *  ★★`thumb` 이 여기 있어야 하는 이유 둘 (사용자 지시 2026-08-24):
+ *    1. 스택 카드에도 **그림이 보여야** 누가 다음 차례인지 눈으로 안다.
+ *    2. 그것이 없던 동안 `frontStack`·`rotateStack` 이 `ref`·`name`·`color` 만 맞바꿔서,
+ *       **앞 카드의 그림이 그 자리에 남아** 이름은 새 인물인데 그림은 옛 인물이 됐고,
+ *       옛 인물의 그림은 스택으로 따라가지 못해 그대로 사라졌다.
+ *  ★블록(프롬프트·UC)은 여전히 안 담는다 — 그건 카드가 아니라 **그 자리**의 것이다. */
+export type StackItem = {
+  ref: string | null;
+  name: string;
+  color: [string, string];
+  thumb?: Thumb | null;
 };
 
 /** 편집 대상 지정 — "base" 는 공통, 그 외는 캐릭터 id */
@@ -101,7 +116,14 @@ type S = {
   /** 생성물을 배너에 꽂는다. section 은 "base" 또는 캐릭터 id */
   setThumb: (section: string, thumb: Thumb | null) => void;
   addChar: (c: Partial<Char>) => string;
-  stackChar: (id: string, c: { ref: string | null; name: string; color: [string, string] }) => void;
+  /** 이 자리의 인물을 **다른 카드로 바꾼다** (사용자 지시 2026-08-24로 되살렸다).
+   *
+   *  ★★한 번 걷었다가 되돌린 자리다. 걷은 근거였던 *"새로 추가하고 옛 카드를 지우는 것과
+   *    결과가 같다"* 는 **틀렸다**: 새로 추가하면 차례가 맨 뒤로 가고 자리 좌표도 새로 잡히는데,
+   *    교체는 **그 자리 그대로** 사람만 갈린다 (차례는 `characterPrompts[]` 의 차례라 그림에 남는다).
+   *  ★스택·자리·켜짐은 **자리의 것**이라 그대로 둔다 — 갈리는 것은 카드에서 온 값뿐이다. */
+  swapChar: (id: string, c: Partial<Char>) => void;
+  stackChar: (id: string, c: StackItem) => void;
   /** 스택에서 한 장 빼기 · 한 장을 맨 앞으로 (사용자 지시 2026-08-19) */
   dropStack: (id: string, at: number) => void;
   frontStack: (id: string, at: number) => void;
@@ -235,6 +257,27 @@ export const usePrompt = create<S>((set, get) => ({
   },
 
 
+  swapChar(id, c) {
+    set({
+      chars: get().chars.map((x) =>
+        x.id === id
+          ? {
+              ...x,
+              ref: c.ref ?? null,
+              name: c.name ?? x.name,
+              color: c.color ?? x.color,
+              /* ★그림은 **새 카드의 것으로 갈아 끼운다** — 새 카드에 그림이 없으면 비운다.
+                 옛 그림을 남기면 이름만 갈리고 얼굴은 그대로인 카드가 된다. */
+              thumb: c.thumb ?? null,
+              prompt: c.prompt ?? x.prompt,
+              uc: c.uc ?? x.uc,
+            }
+          : x,
+      ),
+    });
+    onEdit();
+  },
+
   stackChar(id, c) {
     set({
       chars: get().chars.map((x) => (x.id === id ? { ...x, stack: [...x.stack, c] } : x)),
@@ -303,11 +346,13 @@ export const usePrompt = create<S>((set, get) => ({
           ref: pick.ref,
           name: pick.name,
           color: pick.color,
+          // ★그림도 함께 맞바꾼다 — 안 그러면 이름만 갈리고 얼굴은 앞 인물 그대로다 (`StackItem` 의 ★주)
+          thumb: pick.thumb ?? null,
           /* ★빈 이름(옛 인물)은 **표시 이름으로 굳혀서** 넣는다 — 그대로 넣으면 스택에서
              이름 없는 카드가 된다 (`addChar` 의 ★주) */
           stack: c.stack.map((x, k) =>
             k === at
-              ? { ref: c.ref, name: c.name || t("cards.charN", { n: i + 1 }), color: c.color }
+              ? { ref: c.ref, name: c.name || t("cards.charN", { n: i + 1 }), color: c.color, thumb: c.thumb }
               : x,
           ),
         };
@@ -321,13 +366,18 @@ export const usePrompt = create<S>((set, get) => ({
       chars: get().chars.map((c, i) => {
         if (c.id !== id || !c.stack.length) return c;
         const [next, ...rest] = c.stack;
-        // 지금 인물은 맨 뒤로 — 블록은 스택에 담지 않으므로 이름·색만 순환한다
+        // 지금 인물은 맨 뒤로 — 블록은 스택에 담지 않으므로 이름·색·그림만 순환한다
         return {
           ...c,
           ref: next.ref,
           name: next.name,
           color: next.color,
-          stack: [...rest, { ref: c.ref, name: c.name || t("cards.charN", { n: i + 1 }), color: c.color }],
+          // ★그림도 함께 돈다 — 안 돌면 순차 생성 내내 첫 인물의 얼굴이 붙어 있다 (`StackItem` 의 ★주)
+          thumb: next.thumb ?? null,
+          stack: [
+            ...rest,
+            { ref: c.ref, name: c.name || t("cards.charN", { n: i + 1 }), color: c.color, thumb: c.thumb },
+          ],
         };
       }),
     });
@@ -349,7 +399,8 @@ export const usePrompt = create<S>((set, get) => ({
         color: CHAR_COLOR,
         thumb: normThumb(c.thumb),
         center,
-        stack: (c.stack ?? []).map((x) => ({ ...x, color: CHAR_COLOR })),
+        // ★그림은 앞 카드와 **같은 손질**을 거친다 — 스택과 앞자리는 서로 오가는 값이다
+        stack: (c.stack ?? []).map((x) => ({ ...x, color: CHAR_COLOR, thumb: normThumb(x.thumb) })),
       };
     });
     set({

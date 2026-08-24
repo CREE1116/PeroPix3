@@ -39,6 +39,12 @@ export type PreviewTake = Rec & {
   ws: string;
   preview: { b64: string; fmt: string };
   save: SaveHint;
+  /** ★★**뽑을 때의 화면 구조** (`gen.ts` 의 `env`) — 파일로 저장할 때 그대로 돌려보낸다.
+   *  ★저장 시점의 화면에서 새로 짜면 안 된다: 그 사이 프롬프트를 고쳤으면 **다른 그림의
+   *    구조**가 붙는다. 그래서 서버가 생성 응답에 실어 준 것을 여기 들고 있다가 되돌린다.
+   *  ★이것이 없으면 나중에 저장한 그림에서 「설정 불러오기」를 눌렀을 때 캐릭터 카드가
+   *    통째로 사라지고 `#1`·`#2` 로 다시 만들어진다 (사용자 지적 2026-08-24). */
+  env?: Record<string, unknown> | null;
 };
 
 type S = {
@@ -70,6 +76,7 @@ export const usePreviews = create<S>((set, get) => ({
       enhance_of: (m.enhance_of as string) ?? null,
       ws: String(m.workspace ?? ""),
       preview: { b64: String(m.b64 ?? ""), fmt: String(m.fmt ?? "png") },
+      env: (m.env as Record<string, unknown>) ?? null,
       save: {
         tab: (m.tab as string) ?? null,
         cell_no: m.cell_no == null ? null : Number(m.cell_no),
@@ -103,6 +110,8 @@ export const usePreviews = create<S>((set, get) => ({
         exclude_slot_number: it.save.exclude_slot_number,
         enhance_of: it.enhance_of,
         seed: it.seed,
+        // ★뽑을 때의 구조를 그대로 돌려보낸다 (위 `env` 의 ★주)
+        env: it.env ?? null,
       }),
     });
     // ★파일이 된 **뒤에** 미리보기를 버린다. 먼저 버리면 저장이 실패했을 때 그림이 사라진다

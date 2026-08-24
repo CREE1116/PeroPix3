@@ -88,6 +88,7 @@ export const en = {
     dropStyle: "Replace the style",
     dropStyleNew: "Add as the style card",
     dropStack: "Add to the stack",
+    dropSwap: "Replace this slot",
     dropJoin: "Add as a new character",
     dropDeck: "Save to the deck",
     dropThumb: "Use as the card image",

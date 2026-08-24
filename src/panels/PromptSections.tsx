@@ -17,6 +17,7 @@ import { useUi } from "../store/ui";
 import { useDropZone, useDragSource, useDrag } from "../cards/dragStore";
 import { zoneIcon } from "../cards/CardArt";
 import { DropVeil } from "../cards/DropVeil";
+import { FittedImg } from "../cards/FittedImg";
 import { BANNER_BG, BANNER_CUT, BANNER_IMG_W, BANNER_STEP, bannerEmptyFill } from "../cards/banner";
 import type { Block } from "../lib/blocks";
 import type { CharCard, StyleCard } from "../store/cards";
@@ -203,23 +204,42 @@ export function CharSection({
   onThumb,
 }: { ch: Char; index: number; /** 맨 아래 카드인가 — 아래 단추를 흐리게 한다 */ last: boolean } & SectionProps) {
   const t = useI18n((s) => s.t);
-  const { updateChar, stackChar, removeChar, renameChar, stepChar } = usePrompt();
+  const { updateChar, swapChar, stackChar, removeChar, renameChar, stepChar } = usePrompt();
   const folded = useUi((u) => u.view.fold);
   const toggleFold = (id: string) => useUi.getState().setView("fold", id, !useUi.getState().view.fold[id]);
   const startDrag = useDragSource();
   const active = useDrag((s) => s.drag?.kind === "characters" && s.drag.dir === "apply");
 
-  /* ★★**받는 자리는 둘뿐이다: 스택 · 새로 추가** (사용자 지시 2026-08-20).
-     ~~교체~~ 를 걷었다 — 카드 하나를 위아래로 갈라 셋을 구별하게 하니 너무 복잡했고,
-     교체는 **새로 추가하고 옛 카드를 지우는 것**과 결과가 같다. 그래서 이제 카드 위는
-     통째로 「스택」이고, 새 인원은 아래의 「+」 자리(`JoinZone`)가 받는다. */
+  /* ★★**받는 자리는 셋이다: 스택 · 교체 · 새로 추가** (사용자 지시 2026-08-24로 교체가 돌아왔다).
+     2026-08-20 에 교체를 걷으면서 든 근거 *"새로 추가하고 옛 카드를 지우는 것과 결과가 같다"* 는
+     틀렸다 — 새로 추가하면 차례가 맨 뒤로 가고 자리 좌표도 새로 잡히는데, 교체는 **그 자리
+     그대로** 사람만 갈린다 (`swapChar` 의 ★주).
+     ★가르는 비율은 **위 1/3 이 스택, 아래 2/3 가 교체**다 (사용자 지시). 반씩 나눴던 때와 달리
+       두 자리의 크기가 달라서, 어느 쪽에 놓는지가 손에 먼저 잡힌다. 흔한 쪽(교체)이 넓다. */
   const stack = useDropZone({
     id: `sec-char-${ch.id}-stack`,
     kind: "characters",
     prio: 3,
     onDrop: (d) => {
       const c = d.card as CharCard;
-      stackChar(ch.id, { ref: c.id, name: c.name, color: c.color });
+      // ★그림도 함께 담는다 — 스택 카드에도 얼굴이 보여야 다음 차례가 누구인지 안다
+      stackChar(ch.id, { ref: c.id, name: c.name, color: c.color, thumb: thumbFromCard(c.thumb) });
+    },
+  });
+  const swap = useDropZone({
+    id: `sec-char-${ch.id}-swap`,
+    kind: "characters",
+    prio: 2,
+    onDrop: (d) => {
+      const c = d.card as CharCard;
+      swapChar(ch.id, {
+        ref: c.id,
+        name: c.name,
+        color: c.color,
+        prompt: c.prompt,
+        uc: c.uc,
+        thumb: thumbFromCard(c.thumb),
+      });
     },
   });
 
@@ -306,10 +326,27 @@ export function CharSection({
         }
         hoverLift
         overlay={
-          // ★카드 **전체**가 스택 자리다 — 반으로 가르던 「교체」를 걷었다 (위 ★주).
+          // ★카드를 **위 1/3(스택) · 아래 2/3(교체)** 로 가른다 (위 ★주).
           //   표시는 앱 전체 공통이다 (`DropVeil`)
           active ? (
-            <DropVeil innerRef={stack.ref} over={stack.over} label={t("cards.dropStack")} name="stack" />
+            <>
+              <DropVeil
+                innerRef={stack.ref}
+                over={stack.over}
+                label={t("cards.dropStack")}
+                name="stack"
+                top="0"
+                height="33.333%"
+              />
+              <DropVeil
+                innerRef={swap.ref}
+                over={swap.over}
+                label={t("cards.dropSwap")}
+                name="swap"
+                top="33.333%"
+                height="66.667%"
+              />
+            </>
           ) : img.active ? (
             <DropVeil over={img.over} label={t("cards.dropThumb")} name="thumb" />
           ) : null
@@ -341,6 +378,9 @@ function StackPeek({ ch }: { ch: Char }) {
   const [open, setOpen] = useState(false);
   const dropStack = usePrompt((s) => s.dropStack);
   const frontStack = usePrompt((s) => s.frontStack);
+  /** ★그림 주소는 **여기서 한 번** 꺼낸다 — `useThumbView` 는 훅이라 아래 `map` 안에서 못 부른다
+   *  (`StyleSection` 의 같은 ★주: JSX 안에서 훅을 부르면 개수가 렌더마다 달라져 React 가 죽는다) */
+  const base = useGen((s) => s.base);
   // 맨 앞(다음 차례)이 섹션에 가장 가까이 = DOM 마지막
   const cards = [...ch.stack].reverse();
   return (
@@ -374,7 +414,10 @@ function StackPeek({ ch }: { ch: Char }) {
               background: BANNER_BG,
             }}
           >
-            {/* 그림 자리 — 스택에는 그림이 없으므로 **같은 실루엣에 카드 색만** */}
+            {/* ★그림 자리 — **앞 카드 배너와 같은 것을 그린다** (사용자 지시 2026-08-24:
+                스택에도 썸네일이 보이게). 없으면 예전처럼 같은 실루엣에 카드 색만.
+                ★높이는 앞 카드 배너와 같은 56 이다 — 접힌 스택은 위쪽만 드러나므로
+                  그림도 위에서부터 같은 자리가 보인다 (`SectionCard` 의 배너와 짝이 맞는다). */}
             <span
               style={{
                 position: "absolute",
@@ -385,9 +428,10 @@ function StackPeek({ ch }: { ch: Char }) {
                 pointerEvents: "none",
                 maskImage: BANNER_CUT,
                 WebkitMaskImage: BANNER_CUT,
-                background: bannerEmptyFill(c.color),
+                background: c.thumb ? undefined : bannerEmptyFill(c.color),
               }}
             >
+              {c.thumb && <FittedImg url={thumbUrl(base, c.thumb)} w={BANNER_IMG_W} h={56} view={c.thumb.banner} />}
               {/* 중간 단 — 잘리기 전 구간을 한 번 어둡게 눕혀 계단을 만든다 */}
               <span style={{ position: "absolute", inset: 0, background: BANNER_STEP }} />
             </span>
