@@ -33,15 +33,29 @@ export function stepZoom(zoom: number, dir: 1 | -1): number {
 /** 사람이 읽는 % (반올림) */
 export const percent = (zoom: number): number => Math.round(zoom * 100);
 
+/** 상자 **한가운데**에 놓았을 때의 자리. 그림이 상자보다 크면 음수가 되고, 그것은
+ *  「가운데 부분이 보인다」는 뜻이다.
+ *
+ *  ★★원본 해상도로 볼 때의 **출발 자리**다 (사용자 지시 2026-08-24). 예전에는 `{0,0}` 에서
+ *    시작해서, 작은 그림은 왼쪽 위 구석에 붙고 큰 그림은 왼쪽 위 모서리부터 보였다 —
+ *    「꽉차게」는 `contain` 이라 가운데인데 배율을 정하는 순간 그림이 구석으로 튀었다. */
+export const centerPan = (box: Size, draw: Size): Pan => ({
+  x: (box.w - draw.w) / 2,
+  y: (box.h - draw.h) / 2,
+});
+
 /** ★★**그림이 상자 밖으로 완전히 나가지 못하게** 붙든다 (사용자 지시 2026-08-24).
  *
  *  한 축에서:
- *    · 그린 크기가 상자보다 **작으면** 움직일 여지가 없다 → 언제나 가운데(0).
+ *    · 그린 크기가 상자보다 **작으면** 움직일 여지가 없다 → 언제나 **가운데**.
+ *      ★값이 `0`(왼쪽 위 붙임)이 아니라 `(box - draw) / 2` 다 — 「꽉차게」가 `contain` 으로
+ *        가운데에 그리므로, 두 모드가 어긋나지 않으려면 여기도 가운데여야 한다.
  *    · **크면** 그림의 앞 끝은 0 이하, 뒤 끝은 상자 끝 이상이어야 한다 →
  *      `box - draw ≤ 값 ≤ 0`. 그래서 어느 방향으로 끌어도 상자가 늘 그림으로 덮인다.
  *  ★값은 「상자 왼쪽 위에서 본 그림의 왼쪽 위」다 (음수면 왼쪽으로 밀려 있다는 뜻). */
 export function clampPan(pan: Pan, box: Size, draw: Size): Pan {
-  const one = (v: number, b: number, d: number) => (d <= b ? 0 : Math.min(0, Math.max(b - d, v)));
+  const one = (v: number, b: number, d: number) =>
+    d <= b ? (b - d) / 2 : Math.min(0, Math.max(b - d, v));
   return { x: one(pan.x, box.w, draw.w), y: one(pan.y, box.h, draw.h) };
 }
 

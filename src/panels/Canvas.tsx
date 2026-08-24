@@ -22,6 +22,7 @@ import {
   ZOOM_MAX,
   ZOOM_MIN,
   canPan,
+  centerPan,
   clampPan,
   drawSize,
   fitScale,
@@ -515,8 +516,15 @@ function ScenePreview() {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  // 장이 바뀌면 보던 자리를 놓는다 (그림마다 크기가 다르다)
-  useEffect(() => setPan({ x: 0, y: 0 }), [file]);
+  /** 장이 바뀌면 보던 자리를 놓는다 (그림마다 크기가 다르다).
+   *  ★★새 그림은 **가운데**에서 시작한다 (사용자 지시 2026-08-24) — 원본 해상도로 볼 때
+   *    왼쪽 위 구석부터 보이면 대개 빈 배경이라 무엇이 나왔는지 알 수 없다.
+   *  ★딸림값에 그림의 **원본 크기**도 넣는다: 파일이 바뀐 순간에는 아직 옛 크기라
+   *    (`onLoad` 가 나중에 온다) 새 크기가 들어올 때 한 번 더 가운데로 잡아야 맞는다.
+   *  ★배율(`scale`)은 **안 넣는다** — %를 만질 때마다 가운데로 튀면 `keepCenter` 가
+   *    붙들어 둔 「보고 있던 지점」이 사라진다. */
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => setPan(centerPan(box, drawSize(nat, scale))), [file, nat.w, nat.h]);
   // ★상자·배율이 바뀌면 **밖으로 나간 만큼만** 도로 붙든다 (`clampPan`)
   useEffect(() => setPan((p) => clampPan(p, box, draw)), [box.w, box.h, draw.w, draw.h]);
 
