@@ -18,7 +18,7 @@ import { useGen } from "./gen";
 export async function queueToWorkspace(
   workspace: string,
   count: number,
-  tabName?: string,
+  setName?: string,
 ): Promise<{ ok: true; queued: number; set: string } | { error: string }> {
   let spec: Spec | null = null;
   try {
@@ -30,17 +30,36 @@ export async function queueToWorkspace(
   if (!spec) return { error: `'${workspace}' 워크스페이스가 없습니다.` };
 
   const tabs: SceneSet[] = spec.sets ?? [];
-  const tab = tabName
-    ? tabs.find((t) => t.name === tabName)
+  /* ★찾는 곳이 `spec.sets` 이므로 이름도 **세트 이름**이다 (인자 이름이 `tabName` 이라
+     탭 이름으로 오해하기 쉬웠다 — 적대 검토 2026-08-24). */
+  const tab = setName
+    ? tabs.find((t) => t.name === setName)
     : (tabs.find((t) => t.id === spec!.activeTab) ?? tabs[0]);
-  if (!tab) return { error: tabName ? `'${tabName}' 탭이 없습니다.` : "탭이 없습니다." };
+  if (!tab) return { error: setName ? `'${setName}' 세트가 없습니다.` : "세트가 없습니다." };
 
   const p = promptOf(spec, tab);
-  const prompt = compileBlocks(p.base ?? []);
-  const uc = compileBlocks(p.baseUc ?? []);
+  /* ★★스타일 카드를 껐으면 베이스도 UC 도 안 나간다 — 화면에 없는 것이 실려 나가면 안 된다
+     (`store/prompt.ts` 의 `compiled()` 와 **같은 규칙**이어야 한다). */
+  const on = p.styleOn !== false;
+  const prompt = on ? compileBlocks(p.base ?? []) : "";
+  const uc = on ? compileBlocks(p.baseUc ?? []) : "";
+  const params = { ...useGen.getState().params, ...(spec.params ?? {}) };
+  /* ★★★**캐릭터 프롬프트를 싣는다** (적대 검토 2026-08-24에 발견).
+     여기는 베이스와 씬만 컴파일하고 `characters` 를 payload 에 안 실었다. 그래서 조수에게
+     *"저쪽 워크스페이스에 20장"* 을 시키면 **인물이 통째로 빠진 그림**이 나왔다 —
+     오류도 안 나고 Anlas 는 그대로 든다. 로컬 경로(`store/gen.ts`)는 처음부터 싣고 있었다.
+     ★좌표 쓰기는 **전원에게 같은 값**이다 (`gen.ts` 의 `withCoords` 주석). */
+  const chars = (p.chars ?? [])
+    .filter((c) => c.on)
+    .map((c) => ({
+      id: c.id,
+      prompt: compileBlocks(c.prompt ?? []),
+      uc: compileBlocks(c.uc ?? []),
+      center: c.center,
+      use_coord: !!params.use_coords,
+    }));
   if (!prompt.trim()) return { error: `'${tab.name}' 탭의 프롬프트가 비어 있습니다.` };
 
-  const params = { ...useGen.getState().params, ...(spec.params ?? {}) };
   const n = Math.max(1, Math.min(50, count));
 
   /* ★★갈래가 **하나**다 — 2026-08-24 에 옛 싱글 탭 분기를 걷었다 (사용자 확인:
@@ -63,6 +82,7 @@ export async function queueToWorkspace(
           prompt: resolveWildcards(cellPrompt, wildcardPools()),
           negative_prompt: resolveWildcards(uc, wildcardPools()),
           workspace,
+          characters: chars,
           set: tab.name,
           set_id: tab.id,
           cell: c.name,

@@ -40,7 +40,12 @@ export type TabPrompt = {
   style?: { ref: string | null; name: string; color: [string, string]; thumb?: Thumb | null };
   /** 스타일 카드를 쓰고 있는가 (없으면 켜진 것 — `store/prompt` 의 `styleOn`) */
   styleOn?: boolean;
-  tabs?: Char[];
+  /** ★★**NAI 캐릭터 프롬프트**다. 워크스페이스의 「탭」과 **다른 것**이라 이름도 그대로
+   *  `chars` 다 (`shared/terms.json` 의 character · `docs/terms.md`).
+   *  ★2026-08-24 개명이 여기까지 밀고 들어와 `tabs?: Char[]` 로 바뀌어 있었다. 저장 파일과
+   *    백엔드(`agent._set_prompt`)는 줄곧 `chars` 였으므로 **타입만 거짓말을 하고 있었고**,
+   *    그 탓에 이 값을 읽으려는 코드가 타입 오류를 만났다 (적대 검토 2026-08-24). */
+  chars?: Char[];
 };
 
 /** 슬롯(세트 탭의 칸) — v2 의 슬롯 그대로. `locked` 는 생성에서 뺀다.

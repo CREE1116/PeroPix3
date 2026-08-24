@@ -259,10 +259,14 @@ async function runAction(action: string, args: Record<string, any>): Promise<Rec
       // ★다른 워크스페이스·다른 탭도 넣을 수 있다 (사용자 지시 2026-08-08).
       //   ★화면은 안 옮긴다 — 그쪽 spec 을 읽어 컴파일해서 큐에만 넣는다 (genRemote.ts)
       const target = String(args.workspace ?? "").trim();
-      const wantTab = String(args.tab ?? "").trim();
-      if ((target && target !== ws.current) || wantTab) {
+      /* ★★도구가 받는 이름은 **`set`** 이다 (`backend/agent.py` 의 generate 스키마).
+         여기서 `args.tab` 만 읽고 있어서, 조수가 스키마대로 `set` 을 보내면 **조용히 버려지고**
+         활성 세트에 생성됐다 — 오류도 안 나고 Anlas 는 엉뚱한 곳에 나간다 (적대 검토 2026-08-24).
+         ★옛 이름 `tab` 도 받아 준다: 입력은 너그럽게, 내보내는 이름은 하나로 (`docs/terms.md`). */
+      const wantSet = String(args.set ?? args.tab ?? "").trim();
+      if ((target && target !== ws.current) || wantSet) {
         const { queueToWorkspace } = await import("./genRemote");
-        return (await queueToWorkspace(target || ws.current, count, wantTab || undefined)) as Record<
+        return (await queueToWorkspace(target || ws.current, count, wantSet || undefined)) as Record<
           string,
           unknown
         >;
