@@ -17,6 +17,12 @@ export function DropLine({ on, vert = false }: { on: boolean; vert?: boolean }) 
         zIndex: 5,
         // ★자리를 안 차지해야 방금 잰 좌표가 안 어긋난다 — 그 축으로 0 이다
         ...(vert ? { width: 0, minHeight: "100%" } : { height: 0, minWidth: "100%" }),
+        /* ★★**늘어나야 보인다** (사용자 지적 2026-08-24: *"탭만 변경될 위치가 안찍혀서"*).
+           `minHeight: 100%` 는 품이 아이템을 늘려 줄 때만 실제 높이가 된다 — 탭 줄은
+           `align-items: flex-end` 라 아이템이 내용 높이(막대는 0)로 쪼그라들어 **아무것도
+           안 보였다.** 워크스페이스 줄은 `stretch`, 세트 줄은 `center` 라 우연히 멀쩡했다.
+           여기서 스스로 늘어나면 품의 정렬이 무엇이든 같은 굵기로 선다. */
+        alignSelf: vert ? "stretch" : undefined,
       }}
     >
       {on && (

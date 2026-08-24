@@ -18,6 +18,7 @@ import { EnhanceDialog } from "./EnhanceDialog";
 import { useGallery, type ImageMeta } from "../store/gallery";
 import { usePreviews, withPreviews } from "../store/previews";
 import { api } from "../lib/backend";
+import { wheelIsOver } from "../lib/wheelAt";
 import {
   ZOOM_MAX,
   ZOOM_MIN,
@@ -556,12 +557,19 @@ function ScenePreview() {
     }
     step(e.deltaY > 0 ? 1 : -1);
   };
+  /* ★★**창에 매달고 커서 자리로 고른다** (사용자 지적 2026-08-24: 칩에서 Alt+휠로 가중치를
+     만진 뒤 큰 그림 위로 와서 휠하면 아무 일도 안 일어나고, 한 번 클릭해야 풀렸다).
+     까닭은 브라우저의 **휠 래칭**이다 — 제스처를 처음 잡은 요소(칩)에 이벤트가 계속 배달돼서
+     이 요소는 아예 못 받는다 (`lib/wheelAt` 의 ★★주).
+     ★거품 단계다: 칩이 먼저 보고(그쪽도 커서로 판정해 그냥 넘긴다) 여기로 올라온다.
+     ★`{ passive: false }` 를 줘야 `Ctrl+휠` 에서 `preventDefault` 가 먹는다 — 안 그러면
+       웹뷰 자체가 확대돼 앱 전체가 커진다 (위 ★★주). */
   useEffect(() => {
-    const el = wheelRef.current;
-    if (!el) return;
-    const fn = (e: WheelEvent) => onWheel.current(e);
-    el.addEventListener("wheel", fn, { passive: false });
-    return () => el.removeEventListener("wheel", fn);
+    const fn = (e: WheelEvent) => {
+      if (wheelIsOver(wheelRef.current, e)) onWheel.current(e);
+    };
+    window.addEventListener("wheel", fn, { passive: false });
+    return () => window.removeEventListener("wheel", fn);
   }, []);
 
   return (

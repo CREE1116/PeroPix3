@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { wheelIsOver } from "../lib/wheelAt";
 import { COLOR_HEX, fmtW, weightLevel, type Tag } from "../lib/blocks";
 import { useUi } from "../store/ui";
 
@@ -135,6 +136,11 @@ export function Chip({
     if (!el || readOnly) return;
     const onWheel = (e: WheelEvent) => {
       if (!e.altKey) return;      // 맨 휠은 평소대로 스크롤이다
+      /* ★★**커서가 아직 이 칩 위인가**를 묻는다 (`lib/wheelAt` 의 ★★주).
+         브라우저는 휠 제스처를 처음 잡은 요소에 매어 두므로(래칭), 이것이 없으면
+         **커서가 떠난 뒤에도 가중치가 계속 바뀌고**, 커서가 간 곳(큰 그림)은 휠을 못 받는다
+         (사용자 지적 2026-08-24). */
+      if (!wheelIsOver(el, e)) return;
       e.preventDefault();
       if (!pinning.current) {
         pinning.current = true;
