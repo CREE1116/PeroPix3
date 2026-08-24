@@ -395,6 +395,29 @@ class Tools:
                 self._move,
             ),
             (
+                "create_tab",
+                "★**탭을 새로 만든다** (윗줄). 만들고 **그리로 옮겨 간다** — 이어서 "
+                "edit_current_prompt·generate 를 부르면 이 탭에 걸린다. 앱이 켜져 있어야 한다.",
+                obj({"name": s("탭 이름 (비우면 기본 이름)")}),
+                None,  # 앱에 시킨다 (아래 ★★주)
+            ),
+            (
+                "create_set",
+                "★**세트를 새로 만든다** (지금 탭 아래). `scenes` 를 주면 그 이름의 씬들과 함께 "
+                "열고, 비우면 씬 없는 빈 세트다. 앱이 켜져 있어야 한다.",
+                obj({"name": s("세트 이름 (비우면 기본 이름)"),
+                     "scenes": arr("씬 이름들 — 비우면 씬 없이", {"type": "string"})}),
+                None,
+            ),
+            (
+                "create_scene",
+                "★**씬 칸을 하나 더한다.** `set` 을 비우면 지금 보고 있는 세트에. "
+                "앱이 켜져 있어야 한다.",
+                obj({"name": s("씬 이름 (비우면 기본 이름)"),
+                     "set": s("어느 세트에 — 비우면 지금 보고 있는 세트")}),
+                None,
+            ),
+            (
                 "generate",
                 "★**생성을 큐에 넣는다.** 그 세트의 잠기지 않은 씬 전부를 count 바퀴 돈다 "
                 "(씬이 하나면 count 장이다). 비우면 지금 보고 있는 세트, workspace·set 을 주면 "
@@ -902,6 +925,10 @@ Principles:
   did not agree to is a rule they cannot see.
 - ★**Always say what you changed.** If you touched a card, a prompt, a file or the guide,
   put one line about it in your reply. The user must be able to ask you to undo it.
+- ★**Making tabs, sets and scenes goes through the app** (create_tab / create_set /
+  create_scene). The workspace file belongs to the screen - the app holds it and writes it
+  whole - so these need the app running, and the change shows up there immediately.
+  create_tab also **moves to** the new tab, so calls after it land in it.
 - edit_current_prompt works on the set that is open. Pass `set` to work on another one - the
   app opens it, so the user watches the change land. Naming a character who is not there
   **creates that slot**, so "add a maid standing behind them" is one call, not a request for

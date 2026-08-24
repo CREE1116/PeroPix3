@@ -423,6 +423,71 @@ async function runAction(action: string, args: Record<string, any>): Promise<Rec
       };
     }
 
+    /* ★★**탭·세트·씬 만들기는 앱이 한다** (사용자 지시 2026-08-24: *"앱을 켠 상태로도
+         쓸 수 있어야 할 것 같은데"*).
+
+       워크스페이스 설정(`workspace.json`)의 주인은 **화면**이다 — 앱이 통째로 들고 있다가
+       통째로 저장하므로, 백엔드가 파일에 끼어들어 쓰면 다음 저장에 덮인다. 그래서
+       `edit_current_prompt` 와 같은 길을 쓴다: 조수가 시키고, **앱이 자기 창구로** 만든다.
+       그러면 화면도 그 자리에서 따라온다.
+       ★새 창구를 만들지 않는다 — 사람이 `+` 를 눌렀을 때와 **같은 함수**를 부른다
+         (`addTab`·`addSet`·`addSlot`). 두 벌이 되면 이름 겹침 처리·번호 발급이 갈린다. */
+    if (action === "create_tab") {
+      const name = String(args.name ?? "").trim();
+      useWs.getState().addTab(name || undefined);
+      const spec = useWs.getState().spec;
+      // ★`addTab` 은 만들고 **그리로 옮긴다** — 그래서 지금 활성 탭이 방금 만든 것이다
+      const made = (spec?.tabs ?? []).find((c) => c.id === spec?.activeTab);
+      if (!made) return { error: "탭을 만들지 못했습니다." };
+      return {
+        ok: true, tab: made.name, tab_id: made.id,
+        did: `탭 「${made.name}」 을 만듦`,
+        at: { kind: "prompt" as const, workspace: useWs.getState().current ?? undefined, tab: made.id },
+      };
+    }
+
+    if (action === "create_set") {
+      const ws2 = useWs.getState();
+      const before = new Set((ws2.spec?.sets ?? []).map((x) => x.id));
+      // ★씬을 안 주면 **빈 세트**다 (사람이 `+` 로 만들 때와 같다). 이름을 주면 그 씬 하나로 연다
+      const scenes = (args.scenes as string[] | undefined)?.map((x) => String(x)) ?? [];
+      ws2.addSet(String(args.name ?? "").trim() || t("set.newSet"), scenes);
+      const spec = useWs.getState().spec;
+      const made = (spec?.sets ?? []).find((x) => !before.has(x.id));
+      if (!made) return { error: "세트를 만들지 못했습니다." };
+      return {
+        ok: true, set: made.name, set_id: made.id,
+        did: `세트 「${made.name}」 을 만듦`,
+        at: { kind: "prompt" as const, workspace: useWs.getState().current ?? undefined,
+              tab: spec?.activeTab, set: made.id },
+      };
+    }
+
+    if (action === "create_scene") {
+      const ws2 = useWs.getState();
+      const spec = ws2.spec;
+      const want = String(args.set ?? "").trim();
+      const set = want
+        ? spec?.sets.find((x) => x.id === want || x.name === want)
+        : spec?.sets.find((x) => x.id === spec?.activeSet);
+      if (!set || set.kind !== "set") return { error: "세트를 찾지 못했습니다." };
+      /* ★씬은 **카드 안**에 산다. 카드가 하나도 없으면 씬을 놓을 자리가 없으므로 먼저 만든다
+         (씬 줄의 「씬 세트 만들기」와 같은 길이다). */
+      const name = String(args.name ?? "").trim();
+      const had = new Set(allCells(set).map((c) => c.id));
+      if (!set.cards.length) ws2.addCard(set.id, name ? { cells: [{ id: "", name, blocks: [] }] } : {});
+      else ws2.addSlot(set.id, name ? { name } : {});
+      const now = useWs.getState().spec?.sets.find((x) => x.id === set.id);
+      const made = now?.kind === "set" ? allCells(now).find((c) => !had.has(c.id)) : undefined;
+      if (!made) return { error: "씬을 만들지 못했습니다." };
+      return {
+        ok: true, scene: made.name, scene_id: made.id, set: set.name, set_id: set.id,
+        did: `「${set.name}」 세트에 씬 「${made.name}」 을 만듦`,
+        at: { kind: "prompt" as const, workspace: useWs.getState().current ?? undefined,
+              tab: useWs.getState().spec?.activeTab, set: set.id, scene: made.id, label: made.name },
+      };
+    }
+
     /* 되돌리기 — ★조수 전용 통로다. 사람의 `Ctrl+Z` 와 섞지 않는다 (`lib/undo.ts`).
        ★도구 표에 없다 (`backend/agent.py` `_table`) — LLM 이 직접 부르는 것이 아니라
          `undo_change` 가 이력의 `before` 를 그대로 실어 부른다. */
