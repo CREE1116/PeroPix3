@@ -376,15 +376,29 @@ export function SceneLane() {
   scrollBits.current = { pending, headw, laneSize, vert, setId: tab?.id };
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el || !focusCell || !focusFile) return;
+    /* ★★**「생성 중」 칸을 골랐을 때도 굴린다** (사용자 지적 2026-08-25: *"생성 중인 걸 휠로
+         전환해서 선택했을 때 씬 슬롯 자동 스크롤을 안 해 줌"*).
+       대기 칸에는 **파일이 없다** — 예전에는 `focusFile` 이 비면 통째로 물러나서, 휠로
+       대기 칸에 닿는 순간 줄이 멈춘 채였다. 고를 수 있는 것은 둘이므로 둘 다 받는다. */
+    if (!el || !focusCell || (!focusFile && !focusPending)) return;
     const { pending, headw, laneSize, vert, setId } = scrollBits.current;
-    const list = visibleTakes(focusCell);
-    const at = list.findIndex((r) => r.file === focusFile);
-    if (at < 0) return;
     const waiting = pending.filter((p) => p.setId === setId && p.cellId === focusCell).length;
     const cw = Math.min(LANE_MAX, Math.max(LANE_MIN, laneSize));
     const step = cw + GAP;
-    const lead = headw + 8 + (waiting + at) * step;
+    /* ★셈은 폴백이다 (아래 ★★주) — 대기 칸은 줄의 **앞쪽**에 늦게 넣은 것부터 선다 */
+    let slot = 0;
+    if (focusFile) {
+      const at = visibleTakes(focusCell).findIndex((r) => r.file === focusFile);
+      if (at < 0) return;
+      slot = waiting + at;
+    } else {
+      const at = pending
+        .filter((p) => p.setId === setId && p.cellId === focusCell)
+        .findIndex((p) => p.id === focusPending);
+      if (at < 0) return;
+      slot = waiting - 1 - at;   // 줄은 뒤집어 그린다 (`SceneRow` 의 `waits`)
+    }
+    const lead = headw + 8 + slot * step;
 
     // ★장이 늘어서는 축 — 줄 머리에 가리지도, 끝으로 넘치지도 않게
     const pos = vert ? el.scrollTop : el.scrollLeft;
@@ -396,7 +410,12 @@ export function SceneLane() {
        ★배너 높이를 셈에 더하는 대신 **재는 쪽**으로 갔다: 자리를 정하는 것은 레이아웃이고
          셈은 그것을 옮겨 적은 사본이라, 배치가 바뀔 때마다 또 어긋난다.
        ★잴 수 없을 때(멀리 있는 장은 요소가 아예 없다 — 위 ★주)만 셈으로 물러선다. */
-    const node = el.querySelector<HTMLElement>(`[data-take="${CSS.escape(focusFile)}"]`);
+    /* ★대기 칸은 `data-pending-cell` 로 선다 — 파일이 없으니 열쇠가 다르다 */
+    const node = el.querySelector<HTMLElement>(
+      focusFile
+        ? `[data-take="${CSS.escape(focusFile)}"]`
+        : `[data-pending-cell="${CSS.escape(focusPending!)}"]`,
+    );
     const box = el.getBoundingClientRect();
     const r = node?.getBoundingClientRect();
     const at0 = r ? (vert ? r.top - box.top + el.scrollTop : r.left - box.left + el.scrollLeft) : lead;
@@ -422,7 +441,8 @@ export function SceneLane() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusCell, focusFile]);
+    // ★대기 칸도 딸림값이다 — 안 넣으면 휠로 그리 옮겨도 줄이 안 움직인다
+  }, [focusCell, focusFile, focusPending]);
 
   /* ★★탭을 옮기면 **그 탭 몫으로 담아 두고**, 돌아오면 그대로 되살린다
        (사용자 지시 2026-08-22). 예전에는 비웠는데, 돌아왔을 때 보던 장을 다시 찾아
