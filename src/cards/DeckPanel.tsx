@@ -1,7 +1,7 @@
 import { composing } from "../lib/ime";
 import { useEffect, useRef, useState } from "react";
 import { TYPE } from "../styles/type";
-import { useUi, flashStyle, useFlash } from "../store/ui";
+import { useUi, flashStyle, useFlashAt } from "../store/ui";
 import { useI18n } from "../i18n";
 import { useCards, type AnyCard, type CardKind } from "../store/cards";
 import { useDrag, useDragSource, useDropZone, dragSourceStyle, type DragImage, type SectionThumb } from "./dragStore";
@@ -463,10 +463,15 @@ function PanelCard({
   /* ★★조수가 만들거나 고친 카드를 **강조한다** (`lib/agentAt` 의 `card:<id>`).
      예전에는 `reveal` 만 부르고 **읽는 곳이 없어** 덱만 열리고 어느 카드인지 몰랐다
      (사용자 지적 2026-08-25: *"강조 효과가 존재하는 프롬프트창만 강조"*). */
-  const flash = useFlash(`card:${card.id}`);
+  const card_ = useFlashAt<HTMLDivElement>(`card:${card.id}`);
   return (
     <div
-      ref={drop.ref}
+      /* ★두 자리가 같은 요소를 부른다 — 떨괴 받는 자리(`drop`)와 조수가 고친
+           카드로 데려가는 자리(`card_`). 한쪽만 달면 다른 한쪽이 조용히 안 돈다. */
+      ref={(el) => {
+        drop.ref.current = el;
+        card_.ref.current = el;
+      }}
       data-deck-card={card.id}
       data-over={drop.over ? "1" : "0"}
       // ★지우기 단추는 **끌기에서 비켜 간다** — pointerdown 의 기본 동작 막기가 호환 click 을
@@ -484,7 +489,7 @@ function PanelCard({
         overflow: "hidden",
         /* ★잘린 자리에 드러나는 **단색** — 배너 오른쪽과 같은 색이다 (`BANNER_BG`) */
         background: BANNER_BG,
-        ...flashStyle(flash),
+        ...flashStyle(card_.on),
         border: `1px solid ${drop.over ? "var(--accent)" : "var(--line)"}`,
         cursor: "grab",
         opacity: me ? 0.35 : 1,

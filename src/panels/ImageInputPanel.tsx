@@ -12,7 +12,7 @@ import {
 } from "../store/imageInput";
 import { canFocus } from "../lib/focused";
 import { fitSizeToBase, modelCaps, useGen } from "../store/gen";
-import { flashStyle, useFlash, useUi } from "../store/ui";
+import { flashStyle, useFlashAt } from "../store/ui";
 import { toast } from "../store/toast";
 import { NAI_VIBE_EXT, isNaiVibeFile, parseNaiVibeFile } from "../lib/naiVibeFile";
 import { useTauriDrop } from "../lib/dropImages";
@@ -510,20 +510,11 @@ function Section({
   help?: string;
   children: React.ReactNode;
 } & Record<string, unknown>) {
-  const flash = useFlash(flashKey ?? "");
-  /** ★강조가 켜지면 **그 자리로 데려간다** (사용자 지시 2026-08-19) — 접힌 것을 펴 줘도
-   *  화면 밖이면 못 본다. `nearest` 라 이미 보이면 화면이 안 흔들린다. */
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    // ★데려갈지는 **부르는 쪽이 정한다** (`useUi.reveal(..., scroll)`) — 설정 불러오기처럼
-    //   여러 자리가 한꺼번에 바뀔 때는 움직이지 않는다 (`Category` 와 같은 규칙)
-    if (flash && useUi.getState().flashScroll.includes(flashKey ?? ""))
-      box.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [flash, flashKey]);
+  const f = useFlashAt<HTMLDivElement>(flashKey ?? "");
   return (
     <div
-      ref={box}
-      style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)", ...flashStyle(!!flashKey && flash) }}
+      ref={f.ref}
+      style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)", ...flashStyle(!!flashKey && f.on) }}
       {...rest}
     >
       <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)" }}>

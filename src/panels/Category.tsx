@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { flashStyle, useFlash, useUi } from "../store/ui";
+import { useEffect } from "react";
+import { flashStyle, useFlashAt, useUi } from "../store/ui";
 import { Icon } from "../components/Icon";
 
 /** 왼쪽 기둥의 **카테고리** — 이름 한 줄과 그 아래 내용. 이름을 누르면 접힌다.
@@ -56,30 +56,23 @@ export function Category({
    *  ★워크스페이스 파일이 아니라 화면 쪽에 산다 — 문서가 아니라 **보는 방식**이다. */
   const folded = useUi((u) => u.view.cat[id] ?? !!defaultFolded);
   const setFolded = (v: boolean) => useUi.getState().setView("cat", id, v);
-  const flash = useFlash(flashKey ?? "");
-  const box = useRef<HTMLDivElement>(null);
+  const f = useFlashAt<HTMLDivElement>(flashKey ?? "");
+  /* ★접힌 채로는 강조해도 안 보인다 — 강조가 켜지면 펴 준다 (데려가기는 훅이 맡는다) */
   useEffect(() => {
-    if (!flash) return;
-    if (folded) setFolded(false);
-    // ★★강조만으로는 못 본다 — **그 자리로 데려간다** (사용자 지적 2026-08-19: 카드가
-    //   바뀌는데 아무 신호가 없었다). `nearest` 라 이미 보이면 화면이 안 흔들린다.
-    // ★★단 **부르는 쪽이 끌 수 있다** (사용자 지시 2026-08-21) — 설정 불러오기처럼 여러
-    //   자리가 한꺼번에 바뀌면 데려가는 것이 화면이 튀는 것으로만 보인다.
-    if (useUi.getState().flashScroll.includes(flashKey ?? ""))
-      box.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (f.on && folded) setFolded(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flash]);
+  }, [f.on]);
   const toggle = () => setFolded(!folded);
   return (
     <div
-      ref={box}
+      ref={f.ref}
       data-category={id}
       data-folded={folded ? "" : undefined}
       data-spot={spot ? "" : undefined}
       style={{
         marginBottom: "var(--sp-5)",
         ...(spot ? { position: "relative" as const, zIndex: 31 } : {}),
-        ...flashStyle(!!flashKey && !flashQuiet && flash),
+        ...flashStyle(!!flashKey && !flashQuiet && f.on),
       }}
     >
       <div

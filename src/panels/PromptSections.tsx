@@ -15,7 +15,7 @@ import type { DragImage } from "../cards/dragStore";
 import { toggleCharCapped, useGen } from "../store/gen";
 import { useUi } from "../store/ui";
 import { useDropZone, useDragSource, useDrag } from "../cards/dragStore";
-import { flashStyle, useFlash } from "../store/ui";
+import { flashStyle, useFlashAt } from "../store/ui";
 import { TYPE } from "../styles/type";
 import { applyCard } from "../lib/applyCard";
 import { zoneIcon } from "../cards/CardArt";
@@ -61,7 +61,7 @@ export function StyleSection({ onThumb }: SectionProps) {
      아래에 「카드를 뺐으면 단추만」 갈래가 있어서, 그 뒤에 훅을 두면 렌더마다 훅 개수가
      달라져 **화면이 통째로 죽는다** (*"Rendered fewer hooks than expected"*).
      ★열쇠는 `lib/agentAt` 이 만드는 말과 같아야 한다: `prompt:base`. */
-  const flashBase = useFlash("prompt:base");
+  const base_ = useFlashAt<HTMLDivElement>("prompt:base");
   const t = useI18n((s) => s.t);
   const { base, baseUc, style, styleOn, setStyleOn, update, setStyle } = usePrompt();
   /** 접힘은 **저장되는 작업 상태**다 (`useUi.view.fold`) — 탭을 옮겨도 새로고침해도 남는다 */
@@ -132,7 +132,7 @@ export function StyleSection({ onThumb }: SectionProps) {
        눌렀는데 하단의 생성 설정쪽을 강조함"*). 프롬프트 섹션에는 강조 표식이 **아예 없어서**
        `openAt` 이 갈 곳을 못 찾고 `params`(생성 설정)로 떨어졌다.
        ★열쇠는 `lib/agentAt` 이 만드는 것과 **같은 말**이어야 한다: `prompt:base`. */
-    <div style={flashStyle(flashBase)}>
+    <div ref={base_.ref} style={flashStyle(base_.on)}>
     <SectionCard
       innerRef={(el) => {
         ref.current = el;
@@ -254,14 +254,13 @@ export function CharSection({
   /* ★★강조 열쇠는 **id 와 이름 둘 다** 본다 — 조수는 사람이 부르는 **이름**으로 자리를
      가리키는데(`edit_current_prompt` 의 `area`), 화면이 아는 것은 id 다.
      ★훅을 두 번 부르지 않는다: `||` 로 이으면 뒤엣것이 **조건부 호출**이 된다. */
-  const flashChar = useUi((u) =>
-    u.flashes.includes(`prompt:${ch.id}`) || u.flashes.includes(`prompt:${ch.name}`));
+  const char_ = useFlashAt<HTMLDivElement>([`prompt:${ch.id}`, `prompt:${ch.name}`]);
   const name = ch.name || t("cards.charN", { n: index + 1 });
   return (
     <>
       {ch.stack.length > 0 && <StackPeek ch={ch} />}
       {/* ★조수가 이 인물을 고쳤으면 여기를 강조한다 (`lib/agentAt` 의 `prompt:<id>`) */}
-      <div style={flashStyle(flashChar)}>
+      <div ref={char_.ref} style={flashStyle(char_.on)}>
       <SectionCard
         innerRef={(el) => (img.ref.current = el)}
         name={name}

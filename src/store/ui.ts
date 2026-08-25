@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useEffect, useRef } from "react";
 
 /** 모드 = 하단 네비의 자리. v2.x 의 모드 전환이 여기로 온다.
  *  싱글·세트는 모드가 아니라 캔버스 탭이므로 여기 없다. */
@@ -453,6 +454,31 @@ export const useUi = create<S>((set, get) => ({
 /** 방금 바뀐 자리인가 — 강조 스타일을 붙일 때 쓴다.
  *  ★모양은 한 곳에서만 정한다 (`flashStyle`) — 자리마다 다르게 강조하면 학습 대상이 된다. */
 export const useFlash = (key: string) => useUi((s) => s.flashes.includes(key));
+
+/** 방금 바뀐 자리인가 — **강조 + 그 자리로 데려가기**를 한 벌로 준다.
+ *
+ *  ★★사용자 지시 2026-08-25: *"AI 가 수정한 걸 클릭했을 때는 강조 + 자동 스크롤.
+ *    정확한 위치를 유저가 모르기 때문에 **AI 수정본만** 자동 스크롤을 켠다."*
+ *  ★자동 스크롤의 기본은 여전히 **끔**이다 (사용자 지시 2026-08-22). 켜지는 것은 부르는
+ *    쪽이 `reveal(..., true)` 로 청한 것뿐이고(`flashScroll`), 조수의 수정 자리를 여는
+ *    `lib/agentAt` 이 그렇게 부른다. 값이 저절로 바뀌는 자리는 켜지지 않는다.
+ *  ★`nearest` 라 이미 보이는 자리면 화면이 안 흔들린다.
+ *  ★열쇠를 여럿 받는다 — 조수는 사람이 부르는 **이름**으로 가리키는데 화면이 아는 것은
+ *    id 라, 둘 중 무엇이 와도 같은 자리를 열어야 한다 (`prompt:<id>` · `prompt:<이름>`).
+ *  ★한 창구로 둔다: 자리마다 따로 적으면 새로 만드는 자리가 스크롤을 빠뜨린다. */
+export function useFlashAt<T extends HTMLElement>(key: string | string[]) {
+  const keys = Array.isArray(key) ? key : [key];
+  const on = useUi((s) => keys.some((k) => k && s.flashes.includes(k)));
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    if (!on) return;
+    const want = useUi.getState().flashScroll;
+    if (keys.some((k) => k && want.includes(k)))
+      ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [on]);
+  return { on, ref };
+}
 
 /** 강조 — 액센트 테두리 + 옅은 바탕. 레이아웃을 밀지 않도록 **outline** 을 쓴다 */
 export const flashStyle = (on: boolean): React.CSSProperties =>
