@@ -336,6 +336,11 @@ export const ja: Dict = {
     added: "ギャラリーに入れました",
     noMetaAsk: "生成設定が残っていない画像です。それでもギャラリーに入れますか？",
     noBytes: "画像データを読めませんでした。",
+    reproNo: "この画像は {why} 使って作ったため、メタデータだけでは同じものが出ません",
+    reproImg2img: "ベース画像を",
+    reproInpainting: "インペイントを",
+    reproVibeNoEncoding: "バイブを（エンコードが残っていません）",
+    reproPreciseRef: "Precise Reference を",
   },
 
   focus: {

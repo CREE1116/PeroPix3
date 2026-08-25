@@ -14,7 +14,7 @@ import { toast } from "../store/toast";
 import { ask } from "../store/ask";
 import { useGallery } from "../store/gallery";
 import { useWs } from "../store/workspace";
-import { applyMeta, PICK_DROP, type MetaPick } from "../panels/GalleryMeta";
+import { applyMeta, PICK_DROP, ReproNote, type MetaPick } from "../panels/GalleryMeta";
 import { showInExif } from "../panels/tools/ExifTool";
 
 /** 밖에서 떨군 그림 하나를 **무엇으로 쓸지 고르는 자리** (v2 「드롭 확인 모달」 이식).
@@ -292,6 +292,10 @@ function Sheet({
                   background: "var(--surface2)",
                 }}
               >
+                {/* ★★**못 되살리는 것은 말해 준다** (사용자 결정 2026-08-25 — 공홈과 같은 갈래).
+                    가져오기를 막지는 않는다: 프롬프트·설정은 그대로 들어가고, 그림이 왜
+                    달라지는지만 미리 알린다. */}
+                <ReproNote meta={m} />
                 <ImportPicks pick={pick} onPick={setPick} />
                 <button
                   data-drop-apply

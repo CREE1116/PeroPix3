@@ -338,6 +338,11 @@ export const en = {
     added: "Added to the gallery",
     noMetaAsk: "This image carries no generation settings. Add it to the gallery anyway?",
     noBytes: "Could not read the image data.",
+    reproNo: "This image was generated using {why} and cannot be reproduced from its metadata",
+    reproImg2img: "Image2Image",
+    reproInpainting: "Inpainting",
+    reproVibeNoEncoding: "Vibe Transfer with no encodings stored",
+    reproPreciseRef: "Precise Reference",
   },
 
   focus: {

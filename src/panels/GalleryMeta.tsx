@@ -1,4 +1,5 @@
 import { Icon } from "../components/Icon";
+import { reproWarn } from "../lib/reproWarn";
 import { t, useI18n } from "../i18n";
 import { makeBlock, parseSegs } from "../lib/blocks";
 import { useGen } from "../store/gen";
@@ -349,10 +350,47 @@ function Frame({ children }: { children: React.ReactNode }) {
  *    (`docs/v2-feature-catalog.md`: *"드롭 가져오기 시트도 같은 컴포넌트를 재사용하면 창구가
  *    하나가 된다"*). 두 벌이면 한쪽에만 새 칸이 붙어 같은 그림이 자리마다 달리 보인다.
  *  ★스크롤과 여백은 **부르는 쪽**이 정한다 — 패널과 시트는 담기는 틀이 다르다. */
+/** **재현되지 않는 그림임을 알린다** — 공홈과 같은 갈래 (`lib/reproWarn`).
+ *
+ *  ★★사용자 결정 2026-08-25: *"바이브만 살려 주고 공홈처럼 알림 붙이기."*
+ *    되살릴 수 있는 것(바이브 인코딩)은 그대로 넣고, 못 되살리는 것은 **말해 준다.**
+ *  ★막지 않는다 — 가져오기는 그대로 된다. 다만 **왜 그림이 달라지는지**를 미리 알린다. */
+export function ReproNote({ meta }: { meta: Parameters<typeof reproWarn>[0] }) {
+  const t = useI18n((s) => s.t);
+  const why = reproWarn(meta);
+  if (!why) return null;
+  const label = {
+    img2img: "drop.reproImg2img",
+    inpainting: "drop.reproInpainting",
+    vibeNoEncoding: "drop.reproVibeNoEncoding",
+    preciseRef: "drop.reproPreciseRef",
+  }[why];
+  return (
+    <div
+      data-repro-warn={why}
+      style={{
+        display: "flex",
+        gap: "var(--sp-2)",
+        padding: "var(--sp-2) var(--sp-3)",
+        borderRadius: "var(--r-2)",
+        border: "1px solid color-mix(in srgb, var(--warn) 35%, var(--line))",
+        background: "color-mix(in srgb, var(--warn) 10%, transparent)",
+        fontSize: "var(--text-2xs)",
+        color: "var(--ink-dim)",
+        lineHeight: 1.5,
+      }}
+    >
+      {t("drop.reproNo", { why: t(label) })}
+    </div>
+  );
+}
+
 export function MetaBody({ m }: { m: ImageMeta }) {
   const t = useI18n((s) => s.t);
   return (
     <>
+      {/* ★값보다 **먼저** — 이 그림이 그대로 안 나온다는 것을 알고 읽어야 한다 */}
+      <ReproNote meta={m} />
       <Grid>
         {m.seed !== undefined && <Field k={t("gallery.fieldSeed")} v={String(m.seed)} mono />}
         {m.steps !== undefined && <Field k={t("gallery.fieldSteps")} v={String(m.steps)} mono />}

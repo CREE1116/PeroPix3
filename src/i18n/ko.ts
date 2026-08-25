@@ -345,6 +345,11 @@ export const ko: Dict = {
     added: "갤러리에 넣었습니다",
     noMetaAsk: "생성 설정이 남아 있지 않은 그림입니다. 그래도 갤러리에 넣을까요?",
     noBytes: "그림 데이터를 읽지 못했습니다.",
+    reproNo: "이 그림은 {why} 쓰고 만든 것이라 메타데이터만으로는 그대로 다시 나오지 않습니다",
+    reproImg2img: "베이스 이미지를",
+    reproInpainting: "인페인트를",
+    reproVibeNoEncoding: "바이브를 (인코딩이 안 남았습니다)",
+    reproPreciseRef: "Precise Reference 를",
   },
 
   focus: {

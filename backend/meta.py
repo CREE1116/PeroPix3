@@ -734,7 +734,19 @@ def normalize(meta: dict | None, sent: dict | None = None) -> dict | None:
             "strengths": meta.get("reference_strength_multiple") or [],
             "info_extracted": meta.get("reference_information_extracted_multiple") or [],
         },
-        "precise_ref_count": len(meta.get("director_reference_strength_values") or []),
+        # ★★**이름이 둘이다** (공홈 번들 실측 2026-08-25). 우리가 **보낼 때**는
+        #   `director_reference_strength_values` 인데(`nai.py`), NAI 가 PNG 에 적어 주는
+        #   기록에는 `director_reference_strengths` 로 나온다 (번들의 요청 기록 166건 대 1건).
+        #   한쪽만 보면 공홈에서 뽑은 그림의 개수가 **늘 0** 이 되어, 「재현 불가」 알림이
+        #   안 뜬다. 둘 다 본다.
+        "precise_ref_count": len(
+            meta.get("director_reference_strengths")
+            or meta.get("director_reference_strength_values")
+            or []
+        ),
+        # ★어떤 요청이었나 — 「메타데이터만으로는 재현 못 한다」를 가르는 값이다
+        #   (공홈: `Img2ImgRequest` · `NativeInfillingRequest`). 그림에 그대로 남는다.
+        "request_type": meta.get("request_type") or "",
         "pure_nai": is_pure_nai,
         "raw": meta,
     }

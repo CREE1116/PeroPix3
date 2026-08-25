@@ -50,6 +50,8 @@ export type ImageMeta = {
   /** ★NAI 가 남긴 바이브 — **인코딩만** 있고 원본 그림은 없다 (다시 굽지 못한다) */
   nai_vibes?: { images: string[]; strengths: number[]; info_extracted: number[] };
   precise_ref_count?: number;
+  /** 어떤 요청이었나 — `Img2ImgRequest` · `NativeInfillingRequest` (`lib/reproWarn` 이 읽는다) */
+  request_type?: string;
   raw?: Record<string, unknown>;
 };
 
