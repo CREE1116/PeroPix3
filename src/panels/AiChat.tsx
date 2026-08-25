@@ -432,7 +432,10 @@ function ModelChip({ onOpenSettings }: { onOpenSettings?: () => void }) {
           border: `1px solid ${open ? "var(--accent)" : "var(--line)"}`,
           background: open ? "var(--accent-bg)" : "transparent",
           color: "var(--ink-dim)",
-          fontSize: "var(--text-2xs)",
+          /* ★★**엔진 표시와 짝이라 같은 층**이다 (`TYPE.eyebrow`, 사용자 지적 2026-08-25).
+             한때 이것만 `meta`(12px)로 올라가 위의 `● CLI`(딱지)와 크기가 갈렸다 —
+             둘은 「지금 무엇으로 도는가」를 위아래에서 나눠 말하는 한 쌍이다. */
+          ...TYPE.eyebrow,
           whiteSpace: "nowrap",
         }}
       >
