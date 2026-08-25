@@ -389,14 +389,25 @@ export function SceneLane() {
     // ★장이 늘어서는 축 — 줄 머리에 가리지도, 끝으로 넘치지도 않게
     const pos = vert ? el.scrollTop : el.scrollLeft;
     const size = vert ? el.clientHeight : el.clientWidth;
+    /* ★★**그려져 있으면 실제 자리를 잰다** (사용자 지적 2026-08-25: *"세로 모드일 때는
+         현재 선택된 이미지가 경계선에 걸려 있어도 온전하게 보이게 스크롤을 안 해 줌"*).
+       셈으로만 잡던 자리가 세로 모드에서 어긋났다 — 그 모드에서는 **카드 배너**(`HEAD_H`)가
+       씬 머리 위에 한 줄 더 눕는데 셈에는 그 높이가 없어서, 늘 그만큼 덜 굴렀다.
+       ★배너 높이를 셈에 더하는 대신 **재는 쪽**으로 갔다: 자리를 정하는 것은 레이아웃이고
+         셈은 그것을 옮겨 적은 사본이라, 배치가 바뀔 때마다 또 어긋난다.
+       ★잴 수 없을 때(멀리 있는 장은 요소가 아예 없다 — 위 ★주)만 셈으로 물러선다. */
+    const node = el.querySelector<HTMLElement>(`[data-take="${CSS.escape(focusFile)}"]`);
+    const box = el.getBoundingClientRect();
+    const r = node?.getBoundingClientRect();
+    const at0 = r ? (vert ? r.top - box.top + el.scrollTop : r.left - box.left + el.scrollLeft) : lead;
+    const span = r ? (vert ? r.height : r.width) : cw;
     let next = pos;
-    if (lead < pos + headw) next = lead - headw - 8;
-    else if (lead + cw > pos + size) next = lead + cw - size + 8;
+    if (at0 < pos + headw) next = at0 - headw - 8;
+    else if (at0 + span > pos + size) next = at0 + span - size + 8;
     if (next !== pos) {
       if (vert) el.scrollTop = next;
       else el.scrollLeft = next;
     }
-
     // ★씬이 늘어서는 축 — 그 씬이 화면 밖이면 끌어온다 (씬 자체는 언제나 그려진다)
     const row = el.querySelector<HTMLElement>(`[data-scene="${CSS.escape(focusCell)}"]`);
     if (row) {
@@ -691,32 +702,6 @@ export function SceneLane() {
         >
           <Ratio {...(vert ? RATIO_PORTRAIT : RATIO_LANDSCAPE)} max={13} />
         </button>
-        {/* ★★**별표만 보기** (2026-08-22 에 걷었다가 사용자 지시로 되살렸다 2026-08-25).
-            뽑은 장이 수십이 되면 마음에 든 것을 다시 찾는 데 시간이 든다 — 별을 달아 두고
-            그것만 본다.
-            ★거르는 중에는 **개수를 안 적는다** — 「전체 보기 (3)」 은 3장이 전부라는 말로 읽힌다.
-            ★★거르기는 `visibleTakes` **하나**가 한다 — 줄과 큰 그림이 같은 목록을 봐야
-              휠로 넘길 때 걸러진 장이 큰 그림에 뜨지 않는다. */}
-        <button
-          data-star-filter
-          data-on={starOnly ? "" : undefined}
-          onClick={() => useUi.getState().setLaneStarOnly(!starOnly)}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 3,
-            height: 22,
-            padding: "0 var(--sp-2)",
-            borderRadius: "var(--r-1)",
-            border: `1px solid ${starOnly ? "var(--warn)" : "transparent"}`,
-            color: starOnly ? "var(--warn)" : "var(--ink-faint)",
-            fontSize: "var(--text-2xs)",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {starOnly ? Icon.star12On : Icon.star12}
-          {starOnly ? t("canvas.starAll") : `${t("canvas.starOnly")} (${starCount})`}
-        </button>
         <b style={{ fontSize: "var(--text-2xs)", color: "var(--ink-dim)" }}>{t("scenes.title")}</b>
         {/* ★씬 프롬프트가 payload 의 **어디로 들어가나** — 왼쪽 컨테이너 이름(베이스 프롬프트 /
             캐릭터 프롬프트)을 그대로 가리킨다. ★탭에 **하나뿐**이다 (사용자 결정)
@@ -799,8 +784,39 @@ export function SceneLane() {
             </select>
           </span>
         </label>
-        {/* ★빈 자리를 채우던 조각은 걷었다 — 뒤에 밀어 낼 것이 없어졌다 (모드 단추가 맨 앞으로).
-            ★칸 크기는 **Ctrl + 휠**로 바꾼다 (사용자 지시 2026-08-14). 버튼 셋이
+        {/* ★★**별표 단추는 맨 끝**이다 (사용자 지시 2026-08-25: *"별표만 보기를 그냥 우측
+            끝으로 옮겨"*). 앞에 붙여 두면 세로 모드의 좁은 머리에서 옆 글자와 겹쳐 읽힌다.
+            ★가르는 것(모드·이름·목적지)과 **거르는 것**을 양 끝으로 떼어 놓는 셈이기도 하다.
+            ★`writing-mode` 안에서는 flex 축도 함께 도므로 이 한 줄이 두 모드를 다 맡는다. */}
+        <span style={{ flex: 1 }} />
+        {/* ★★**별표만 보기** (2026-08-22 에 걷었다가 사용자 지시로 되살렸다 2026-08-25).
+            뽑은 장이 수십이 되면 마음에 든 것을 다시 찾는 데 시간이 든다 — 별을 달아 두고
+            그것만 본다.
+            ★거르는 중에는 **개수를 안 적는다** — 「전체 보기 (3)」 은 3장이 전부라는 말로 읽힌다.
+            ★★거르기는 `visibleTakes` **하나**가 한다 — 줄과 큰 그림이 같은 목록을 봐야
+              휠로 넘길 때 걸러진 장이 큰 그림에 뜨지 않는다. */}
+        <button
+          data-star-filter
+          data-on={starOnly ? "" : undefined}
+          onClick={() => useUi.getState().setLaneStarOnly(!starOnly)}
+          /* ★글자는 **툴팁으로 내렸다** (사용자 지시 2026-08-25: *"별표만 보기는 텍스트 없이
+             별모양만"*). 개수도 여기 붙는다 — 0 이면 눌러도 화면이 비므로 누르기 전에 알아야
+             하는데, 머리줄은 세로 모드에서 특히 좁다. */
+          data-tip={starOnly ? t("canvas.starAll") : `${t("canvas.starOnly")} (${starCount})`}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 22,
+            height: 22,
+            borderRadius: "var(--r-1)",
+            border: `1px solid ${starOnly ? "var(--warn)" : "transparent"}`,
+            color: starOnly ? "var(--warn)" : "var(--ink-faint)",
+          }}
+        >
+          {starOnly ? Icon.star12On : Icon.star12}
+        </button>
+        {/* ★칸 크기는 **Ctrl + 휠**로 바꾼다 (사용자 지시 2026-08-14). 버튼 셋이
             차지하던 자리를 돌려주고, 손이 줄 위에 있는 채로 바로 조절된다.
             ★안내 문구를 두지 않는다 (사용자 지시 2026-08-19) — 휠로 조절되는 것은
               적어 두지 않아도 안다. 지금 크기도 칸을 보면 보인다. */}
