@@ -153,7 +153,7 @@ export function WildcardModal() {
               }}
             >
               <span>{t("wc.pools")}</span>
-              <span style={{ color: "var(--ink-faint)", fontWeight: 400 }}>{names.length}</span>
+              <span style={{ color: "var(--ink-faint)", fontWeight: "var(--w-normal)" }}>{names.length}</span>
             </div>
 
             <div style={{ flexShrink: 0, maxHeight: "42%", overflowY: "auto", padding: "0 var(--sp-3)" }}>

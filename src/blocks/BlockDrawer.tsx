@@ -197,7 +197,7 @@ function Category({
         <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
           {cat || t("lib.uncategorized")}
         </span>
-        <span style={{ color: "var(--ink-faint)", fontWeight: 400 }}>{list.length}</span>
+        <span style={{ color: "var(--ink-faint)", fontWeight: "var(--w-normal)" }}>{list.length}</span>
       </div>
       {!folded && list.map((it) => <Row key={it.id} it={it} onRemove={() => onRemove(it.id)} />)}
     </div>

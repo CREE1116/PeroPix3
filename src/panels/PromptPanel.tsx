@@ -114,7 +114,7 @@ export function PromptPanel({ onThumb }: SectionProps) {
           }}
         >
           {t("prompt.finalPrompt")}
-          <span style={{ fontWeight: 400, color: "var(--ink-faint)" }}>
+          <span style={{ fontWeight: "var(--w-normal)", color: "var(--ink-faint)" }}>
             {t("prompt.chars", { n: compileBlocks(base).length + compileBlocks(baseUc).length })}
           </span>
         </button>

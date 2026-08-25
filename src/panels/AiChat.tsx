@@ -805,7 +805,7 @@ function Row({ line }: { line: Line }) {
           borderRadius: "var(--r-2)",
           padding: "var(--sp-2) var(--sp-3)",
           fontSize: "var(--text-chat)",
-          fontWeight: 400,
+          fontWeight: "var(--w-normal)",
           lineHeight: 1.6,
           whiteSpace: "pre-wrap",
           wordBreak: "break-word",
@@ -824,7 +824,7 @@ function Row({ line }: { line: Line }) {
           /* ★★굵기를 **명시**한다 (사용자 지적 2026-08-25: *"응답 전체가 볼드처럼 두꺼워서
              가독성이 떨어짐"*). 본문 폰트가 가변 굵기라(`fonts.css` 의 `font-weight: 45 920`)
              지정을 안 하면 자리마다 다르게 잡힌다 — 여기서 400 으로 못 박는다. */
-          fontWeight: 400,
+          fontWeight: "var(--w-normal)",
           lineHeight: 1.7,
           wordBreak: "break-word",
           display: "flex",

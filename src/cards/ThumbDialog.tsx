@@ -210,7 +210,7 @@ function Field({
       >
         <span>{label}</span>
         {right && (
-          <span style={{ fontWeight: 400, fontFamily: "var(--font-mono)", color: "var(--ink-faint)" }}>
+          <span style={{ fontWeight: "var(--w-normal)", fontFamily: "var(--font-mono)", color: "var(--ink-faint)" }}>
             {right}
           </span>
         )}
