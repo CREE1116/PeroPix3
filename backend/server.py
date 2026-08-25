@@ -1986,6 +1986,29 @@ async def keep_save(body: KeepSave):
         raise HTTPException(400, str(e))
 
 
+class KeepImport(BaseModel):
+    """밖에서 떨군 그림을 보관함에 들인다 (사용자 지시 2026-08-25).
+
+    ★`data` 는 **base64 원본 바이트**다 — 화면이 읽은 그대로다. 다시 인코딩하지 않는
+      까닭은 PNG 에 박힌 NAI 메타데이터를 살리기 위해서다 (`keep.import_bytes` 주석)."""
+    data: str
+    name: str = "image.png"
+    folder: str = ""
+
+
+@app.post("/api/keep/import")
+async def keep_import(body: KeepImport):
+    import base64
+
+    try:
+        raw = base64.b64decode(body.data, validate=True)
+    except Exception:
+        raise HTTPException(400, "그림 데이터를 읽지 못했습니다.")
+    if not raw:
+        raise HTTPException(400, "그림 데이터가 비어 있습니다.")
+    return keep.import_bytes(KEEP_DIR, raw, body.name, body.folder)
+
+
 @app.post("/api/keep/rename")
 async def keep_rename(body: KeepRename):
     try:

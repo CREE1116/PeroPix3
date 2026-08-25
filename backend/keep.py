@@ -277,6 +277,37 @@ def save(root: Path, src: Path, folder: str, meta: dict | None, key: str = "",
     return {"file": rel, "removed": False}
 
 
+def import_bytes(root: Path, data: bytes, name: str, folder: str = "") -> dict:
+    """**밖에서 온 그림**을 보관함에 들인다 (사용자 지시 2026-08-25).
+
+    ★`save` 와 갈리는 점 둘:
+      1. 원본이 **작업 폴더의 파일이 아니다.** 떨군 바이트가 곧 원본이라 복사할 자리가 없다.
+      2. **출처 표(`sources`)에 안 적는다.** 그 표는 「이 워크스페이스의 이 파일이 보관됐다」를
+         담는 것이라, 밖에서 온 그림에는 적을 열쇠가 없다 — 적으면 `origin_of` 가 없는
+         워크스페이스를 가리키게 된다. 그래서 되보관 토글도 안 걸린다.
+
+    ★★**바이트를 그대로 쓴다.** 다시 인코딩하면 PNG 에 박힌 NAI 메타데이터가 날아가는데,
+      그것이 「나중에 그대로 다시 쓸 수 있다」의 전부다 (`save` 의 ★주와 같은 이유).
+      그래서 PNG 가 아닌 것도 확장자만 살려 그대로 둔다 — 화면이 열 수 있으면 된다.
+    """
+    d = safe_folder(root, folder)
+    d.mkdir(parents=True, exist_ok=True)
+    stem = Path(name or "image").stem[:60] or "image"
+    ext = Path(name or "").suffix.lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+        ext = ".png"
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    dst = d / f"{stamp}_{stem}{ext}"
+    n = 2
+    while dst.exists():
+        dst = d / f"{stamp}_{stem}_{n}{ext}"
+        n += 1
+    tmp = dst.with_suffix(dst.suffix + ".part")
+    tmp.write_bytes(data)
+    tmp.replace(dst)      # ★다 쓴 뒤에 이름을 준다 — 반쯤 쓰인 파일이 목록에 안 뜨게
+    return {"file": dst.relative_to(root.resolve()).as_posix()}
+
+
 def origin_of(root: Path, rel: str) -> dict | None:
     """보관한 그림이 **어느 워크스페이스의 어느 파일**에서 왔나 (`sources` 의 거꾸로 보기).
 

@@ -174,7 +174,36 @@ const applyBtn: React.CSSProperties = {
  *    씬에서 구조째** 가져오고(`cloneToNewTab`), 메타데이터에서는 값만 얹는다 —
  *    메타데이터에는 합쳐진 문자열만 남아 구조가 없기 때문이다 (사용자 지시 2026-08-19).
  *  ★표는 `lib/metaApply` **하나**를 쓴다. `applyMeta` 도 이 함수를 부른다. */
-export function applyMetaParams(m: ImageMeta) {
+/** **무엇을 가져올까** — 밖에서 떨군 그림에서 골라 넣는다 (사용자 지시 2026-08-25).
+ *
+ *  ★★공홈(NovelAI)이 드롭할 때 내는 목록과 같은 갈래다: Prompt · Undesired Content ·
+ *    Characters(+Append) · Settings · Seed. *"드롭했을 때 저렇게 항목을 선택해서 넣을 수
+ *    있음. 해당 기능 추가."*
+ *  ★`append` 는 **캐릭터에만** 걸린다 — 지금 있는 인물 뒤에 덧붙인다(끄면 갈아 끼운다).
+ *    프롬프트·UC 는 덧붙일 자리가 없다 (한 덩이라 합치면 무엇이 원래 것인지 사라진다).
+ *  ★고르지 않은 것은 **손대지 않는다.** 「없는 값을 기본값으로 되돌리지 않는다」와 같은 규칙이다. */
+export type MetaPick = {
+  prompt: boolean;
+  uc: boolean;
+  characters: boolean;
+  append: boolean;
+  settings: boolean;
+  seed: boolean;
+};
+
+/** 「전부」 — 예전 `applyMeta(m, "all")` 과 같은 뜻이다 (갤러리의 불러오기·복제가 쓴다) */
+export const PICK_ALL: MetaPick = {
+  prompt: true, uc: true, characters: true, append: false, settings: true, seed: true,
+};
+
+/** 드롭 시트의 **처음 상태** — 공홈과 같다 (프롬프트·캐릭터만 켜져 있다).
+ *  ★설정·시드가 꺼져 있는 까닭: 남의 그림을 가져올 때 대개 원하는 것은 **글**이고,
+ *    해상도·스텝·시드까지 갈아 끼우면 잡아 둔 작업 조건이 말없이 뒤집힌다. */
+export const PICK_DROP: MetaPick = {
+  prompt: true, uc: false, characters: true, append: false, settings: false, seed: false,
+};
+
+export function applyMetaParams(m: ImageMeta, seed = true) {
   const g = useGen.getState();
   // ★★값이 밖에서 갈리면 **그 자리를 펴고 강조한다** (사용자 지시 2026-08-19) —
   //   왼쪽 패널이 접혀 있으면 무엇이 바뀌었는지 알 길이 없다 (`Category` 의 `flashKey`)
@@ -185,7 +214,9 @@ export function applyMetaParams(m: ImageMeta) {
   useGen.setState({ params: { ...g.params, ...metaParams(m) } });
   if (m.width !== undefined) g.set("width", m.width);
   if (m.height !== undefined) g.set("height", m.height);
-  if (m.seed !== undefined) g.set("seed", m.seed);
+  /* ★시드는 **따로 고를 수 있다** (`MetaPick.seed`, 2026-08-25) — 설정은 가져오되 시드는
+     그대로 두고 싶은 경우가 흔하다 (같은 조건으로 **다른 그림**을 뽑는 자리다). */
+  if (seed && m.seed !== undefined) g.set("seed", m.seed);
   /* ★★캐릭터 좌표 켜짐은 **`lib/metaApply` 표에 안 넣는다** — 시드·해상도와 같은 사정이다
      (그 파일 머리 주석): 쓰는 자리마다 뜻이 다르다. 강화는 캐릭터를 `{prompt, uc}` 로만
      실어 보내기로 정해 둔 자리라(`EnhanceDialog.metaJob` 의 ★주, v2 `index.html:24472`),
@@ -284,14 +315,20 @@ export async function applyRecordedBase(
 }
 
 /** @param what `prompt` = 프롬프트만 · `all` = 설정·시드·이미지 입력까지 (그 그림을 재현한다) */
-export function applyMeta(m: ImageMeta, what: "prompt" | "all" = "all") {
+export function applyMeta(m: ImageMeta, what: "prompt" | "all" | MetaPick = "all") {
   // ★★**보던 자리를 고정한다** (사용자 지시 2026-08-21). 불러오면 좌측 패널에서 여러 가지가
   //   한꺼번에 벌어져(묶음 펴짐·프롬프트 교체·강조) 내용 높이가 변하고, 그러면 보던 자리가
   //   위아래로 밀린다. 「데려가지 않기」만으로는 안 잡히는 움직임이라 값을 재서 되돌린다.
-  keepScroll(LEFT_SCROLL, () => applyMetaInner(m, what));
+  const pick: MetaPick =
+    what === "all"
+      ? PICK_ALL
+      : what === "prompt"
+        ? { ...PICK_ALL, settings: false, seed: false }
+        : what;
+  keepScroll(LEFT_SCROLL, () => applyMetaInner(m, pick));
 }
 
-function applyMetaInner(m: ImageMeta, what: "prompt" | "all") {
+function applyMetaInner(m: ImageMeta, pick: MetaPick) {
   const p = usePrompt.getState();
 
   const block = (label: string, body?: string) =>
@@ -313,24 +350,31 @@ function applyMetaInner(m: ImageMeta, what: "prompt" | "all") {
     stack: [],
   })) as Char[];
 
+  /* ★★**고른 것만 갈아 끼운다** (2026-08-25). 예전에는 셋을 통째로 실어 보냈는데,
+     그러면 「프롬프트만 가져오기」가 캐릭터를 **지우는** 일이 된다 — 안 고른 자리는
+     지금 값을 그대로 다시 넣어야 한다.
+     ★`append` 는 캐릭터를 **뒤에 잇는다** (공홈의 Append 와 같다). */
   p.load({
-    base: block("Prompt", m.prompt),
-    baseUc: block("UC", m.negative),
-    chars,
+    base: pick.prompt ? block("Prompt", m.prompt) : p.base,
+    baseUc: pick.uc ? block("UC", m.negative) : p.baseUc,
+    chars: pick.characters ? (pick.append ? [...p.chars, ...chars] : chars) : p.chars,
   });
 
   // ★프롬프트가 통째로 바뀐다 — 좌측 패널을 펴고 알린다 (사용자 지시 2026-08-13)
   //   ★데려가지는 않는다 (2026-08-21) — 불러오기는 여러 자리가 함께 바뀐다
-  useUi.getState().reveal("left", "prompt", false);
-  if (what === "prompt") return;
+  if (pick.prompt || pick.uc || pick.characters) useUi.getState().reveal("left", "prompt", false);
 
   // 설정 — 있는 것만 덮는다. 없는 값을 기본값으로 되돌리면 사용자가 잡아 둔 것이 날아간다.
   // ★어느 필드가 어느 설정인가는 `lib/metaApply` **하나**가 정한다 — 강화도 같은 표를 쓴다
   //   (`EnhanceDialog`, v2 `buildEnhanceRequest`). 두 벌이면 "이 그림 설정대로"가 두 화면에서
   //   조용히 달라진다.
-  applyMetaParams(m);
-
-  applyMetaVibes(m);
+  if (pick.settings) {
+    applyMetaParams(m, pick.seed);
+    applyMetaVibes(m);
+  } else if (pick.seed && m.seed !== undefined) {
+    // ★설정은 그대로 두고 **시드만** — 「같은 자리에서 그 장면을 다시」가 이 경우다
+    useGen.getState().set("seed", m.seed);
+  }
 }
 
 /** 1×1 투명 PNG — 인코딩만 있고 원본이 없는 바이브의 자리 그림 (v2 `placeholderImage`) */

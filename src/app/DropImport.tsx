@@ -3,7 +3,7 @@ import { useI18n } from "../i18n";
 import { Icon } from "../components/Icon";
 import { DropVeil } from "../cards/DropVeil";
 import { useImageDrop, type Dropped } from "../lib/dropImages";
-import { DROP_ACCEPT, KIND_LABEL, readDrop, vibeFromCachePng, type DropRead } from "../lib/dropImport";
+import { DROP_ACCEPT, readDrop, vibeFromCachePng, type DropRead } from "../lib/dropImport";
 import { hasMeta } from "../lib/metaApply";
 import { isNaiVibeFile } from "../lib/naiVibeFile";
 import { MAX_VIBES, processReference, pushVibe, useImageInput } from "../store/imageInput";
@@ -11,7 +11,10 @@ import { vibeDefaults } from "../lib/vibeDefaults";
 import { fitSizeToBase, modelCaps, useGen } from "../store/gen";
 import { useUi } from "../store/ui";
 import { toast } from "../store/toast";
-import { applyMeta } from "../panels/GalleryMeta";
+import { ask } from "../store/ask";
+import { useGallery } from "../store/gallery";
+import { useWs } from "../store/workspace";
+import { applyMeta, PICK_DROP, type MetaPick } from "../panels/GalleryMeta";
 import { showInExif } from "../panels/tools/ExifTool";
 
 /** 밖에서 떨군 그림 하나를 **무엇으로 쓸지 고르는 자리** (v2 「드롭 확인 모달」 이식).
@@ -38,7 +41,31 @@ export function DropImport() {
     if (!it || busy) return;
     setBusy(true);
     try {
-      setSheet(await readDrop(it));
+      const read = await readDrop(it);
+      /* ★★**갤러리에 떨구면 시트를 안 띄운다** (사용자 지시 2026-08-25: *"갤러리에 드롭 시에
+           지금 생성과 동일한 모달이 뜨는데 이건 생성에만 떠야 함. 갤러리에서는 별도 동작"*).
+         갤러리에서 그림을 떨구는 몸짓은 **「여기 넣어라」** 하나뿐이라 고를 것이 없다.
+         ★NAI 메타데이터가 있으면 **바로** 넣고, 없으면 한 번 묻는다 — 설정이 안 남은 그림은
+           나중에 그 그림에서 되돌릴 것이 없으므로, 그것을 알고 넣는 편이 낫다.
+         ★바이브 파일은 그림이 아니다 — 갤러리에 넣을 것이 없으니 지금까지대로 시트로 간다. */
+      if (useUi.getState().mode === "gallery" && read.kind === "image") {
+        const m = read.meta;
+        if (!m?.data) return void toast(t("drop.noBytes"), "warn");
+        if (
+          !hasMeta(m) &&
+          !(await ask({
+            title: t("drop.noMetaAsk"),
+            ok: t("drop.toGallery"),
+            cancel: t("common.cancel"),
+          }))
+        )
+          return;
+        await useGallery.getState().importImage(useWs.getState().current, m.data, read.name);
+        toast(t("drop.added"));
+        if (items.length > 1) toast(t("drop.onlyOne"), "warn");
+        return;
+      }
+      setSheet(read);
       // ★여러 장은 **말하고 첫 장만** 받는다 (v2 는 말없이 `files[0]` 이었다) —
       //   조용히 버리면 나머지가 어디 갔는지 알 수 없다
       if (items.length > 1) toast(t("drop.onlyOne"), "warn");
@@ -80,6 +107,8 @@ function Sheet({
 }) {
   const t = useI18n((s) => s.t);
   const [busy, setBusy] = useState(false);
+  /** 무엇을 가져올까 — 공홈과 같은 갈래 (`ImportPicks`) */
+  const [pick, setPick] = useState<MetaPick>(PICK_DROP);
   const vibeFile = read.kind === "vibefile" ? read.vibe : null;
   const m = read.kind === "image" ? read.meta : null;
   const name = read.name;
@@ -102,9 +131,24 @@ function Sheet({
    *    그림에 남은 것 전부다 — 프롬프트·캐릭터·생성 옵션·해상도·시드·바이브. */
   const applySettings = () => {
     if (!m) return;
-    applyMeta(m, "all");
+    applyMeta(m, pick);
     toast(t("act.applied"));
     leave();
+  };
+
+  /** 「갤러리에 추가」 — 생성하지 않고 **바이트 그대로** 보관함에 들인다 */
+  const toGallery = async () => {
+    if (!m?.data || busy) return;
+    setBusy(true);
+    try {
+      await useGallery.getState().importImage(useWs.getState().current, m.data, name);
+      toast(t("drop.added"));
+      onClose();
+    } catch (e) {
+      toast(String(e), "warn");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const asBase = async () => {
@@ -183,18 +227,6 @@ function Sheet({
       >
         <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)" }}>
           <b style={{ fontSize: "var(--text-md)" }}>{t("drop.title")}</b>
-          <span
-            data-drop-kind
-            style={{
-              padding: "1px var(--sp-2)",
-              borderRadius: "var(--r-1)",
-              background: "var(--surface2)",
-              fontSize: "var(--text-2xs)",
-              color: "var(--ink-soft)",
-            }}
-          >
-            {vibeFile ? "NAI Vibe" : (KIND_LABEL[m?.kind || ""] ?? t("tools.exifUnknown"))}
-          </span>
           <span style={{ flex: 1 }} />
           <button data-drop-close onClick={onClose} style={{ color: "var(--ink-faint)", display: "grid" }}>
             {Icon.close}
@@ -202,13 +234,19 @@ function Sheet({
         </div>
 
         <div style={{ display: "flex", gap: "var(--sp-4)", minHeight: 0, flex: 1 }}>
-          <div style={{ flexShrink: 0, width: 160 }}>
+          {/* ★★**썸네일이 크고, 곁들이는 글은 없다** (사용자 지시 2026-08-25: *"이 모달에서
+              파일명, 메타데이터 등을 미리 보여 줄 필요 없음. 그냥 썸네일만 보이고 버튼들이
+              더 메인이 되게"*). 파일 이름도 값 요약도 걷었다 — 여기서 정하는 것은
+              「이 그림을 무엇으로 쓸까」 하나이고, 값을 읽는 자리는 EXIF 리더다. */}
+          <div style={{ flexShrink: 0, width: 200 }}>
             {preview ? (
               <img
                 src={preview}
                 alt=""
                 style={{
                   width: "100%",
+                  maxHeight: "42vh",
+                  objectFit: "contain",
                   borderRadius: "var(--r-2)",
                   border: "1px solid var(--line)",
                   background: "var(--surface2)",
@@ -217,7 +255,7 @@ function Sheet({
             ) : (
               <div
                 style={{
-                  height: 120,
+                  height: 140,
                   borderRadius: "var(--r-2)",
                   border: "1px solid var(--line)",
                   background: "var(--surface2)",
@@ -227,39 +265,17 @@ function Sheet({
           </div>
 
           <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto" }}>
-            {/* ★★파일 이름은 **정보 칸 머리**에 선다 (사용자 지시 2026-08-23). 썸네일 아래에
-                두면 긴 이름이 160px 칸에서 여러 줄로 접혀 그림보다 커진다. */}
-            <div
-              data-drop-name
-              style={{
-                marginBottom: "var(--sp-2)",
-                fontSize: "var(--text-xs)",
-                color: "var(--ink)",
-                wordBreak: "break-all",
-              }}
-            >
-              {name}
-            </div>
-            {vibeFile ? (
+            {vibeFile || cached ? (
+              /* ★바이브는 **값이 곧 쓰임**이다 (강도·정보추출·구워 둠) — 이건 남긴다.
+                 구워 둔 것이 있으면 Anlas 가 안 나가는데, 그것을 모르면 고를 수가 없다. */
               <VibeInfo
-                strength={vibeFile.strength}
-                info={vibeFile.info_extracted}
-                model={vibeFile.encoded_model}
-                cached={!!vibeFile.encoded}
-              />
-            ) : cached ? (
-              <VibeInfo
-                strength={cached.strength}
-                info={cached.info_extracted}
-                model={cached.encoded_model}
-                cached={!!cached.encoded}
+                strength={(vibeFile ?? cached)!.strength}
+                info={(vibeFile ?? cached)!.info_extracted}
+                model={(vibeFile ?? cached)!.encoded_model}
+                cached={!!(vibeFile ?? cached)!.encoded}
               />
             ) : canApply ? (
-              /* ★★**프롬프트를 여기 늘어놓지 않는다** (사용자 지시 2026-08-23).
-                 시트에서 정할 것은 「이 그림을 무엇으로 쓸까」 하나이고, 프롬프트를 읽는 것은
-                 **EXIF 리더가 하는 일**이다 — 두 곳에서 같은 것을 보여 주면 시트가 길어져
-                 정작 고를 단추가 아래로 밀린다. 값 몇 개만 두고 나머지는 그쪽으로 보낸다. */
-              <MetaBrief m={m!} />
+              <ImportPicks pick={pick} onPick={setPick} />
             ) : (
               <div style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)", lineHeight: 1.6 }}>
                 {t("drop.noMeta")}
@@ -307,6 +323,22 @@ function Sheet({
               {t("imgIn.ref")}
             </button>
           )}
+          {/* ★★**갤러리에 그대로 넣는다** (사용자 지시 2026-08-25: *"현재는 설정 적용 후 한 번
+              생성해서 갤러리에 넣어야 하는데, 그냥 그걸 한 번에 넣어 주게"*).
+              생성 없이 바이트를 그대로 보관함에 들이므로 Anlas 도 안 나간다.
+              ★NAI 메타데이터가 있는 그림에만 낸다 — 없는 그림을 들이는 길은 **갤러리에
+                떨구는 것**이고, 그쪽은 물어보고 넣는다 (`DropImport` 의 갤러리 갈래). */}
+          {canApply && !!m?.data && (
+            <button
+              data-drop-gallery
+              disabled={busy}
+              onClick={() => void toGallery()}
+              data-tip={t("drop.toGalleryHint")}
+              style={btn}
+            >
+              {t("drop.toGallery")}
+            </button>
+          )}
           {canApply && (
             <button
               data-drop-apply
@@ -324,6 +356,64 @@ function Sheet({
   );
 }
 
+/** **무엇을 가져올까** — 공홈(NovelAI)이 드롭할 때 내는 목록과 같은 갈래다
+ *  (사용자 지시 2026-08-25: *"공홈에 보면 드롭했을 때 저렇게 항목을 선택해서 넣을 수 있음"*).
+ *
+ *  ★`Append` 는 **캐릭터에 딸린 것**이라 한 칸 들여 쓴다 — 켜면 지금 인물 뒤에 잇고,
+ *    끄면 갈아 끼운다. 캐릭터를 안 가져오면 눌러도 뜻이 없으므로 함께 잠근다.
+ *  ★처음 상태는 `PICK_DROP` 이다 (프롬프트·캐릭터만) — 그 까닭은 그쪽 주석에 있다. */
+function ImportPicks({ pick, onPick }: { pick: MetaPick; onPick: (p: MetaPick) => void }) {
+  const t = useI18n((s) => s.t);
+  const Row = ({ k, label, sub }: { k: keyof MetaPick; label: string; sub?: boolean }) => {
+    const off = !!sub && !pick.characters;
+    const on = pick[k] && !off;
+    return (
+      <button
+        data-drop-pick={k}
+        data-on={on ? "" : undefined}
+        disabled={off}
+        onClick={() => onPick({ ...pick, [k]: !pick[k] })}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--sp-2)",
+          padding: "3px 0",
+          marginLeft: sub ? "var(--sp-5)" : 0,
+          fontSize: "var(--text-xs)",
+          color: off ? "var(--ink-ghost)" : on ? "var(--ink)" : "var(--ink-faint)",
+          cursor: off ? "default" : "pointer",
+        }}
+      >
+        <span
+          style={{
+            display: "grid",
+            placeItems: "center",
+            width: 18,
+            height: 18,
+            flexShrink: 0,
+            borderRadius: "var(--r-1)",
+            border: `1px solid ${on ? "var(--accent)" : "var(--line)"}`,
+            background: on ? "var(--accent)" : "transparent",
+            color: on ? "var(--accent-on)" : "var(--ink-ghost)",
+          }}
+        >
+          {on ? Icon.check : Icon.close12}
+        </span>
+        {label}
+      </button>
+    );
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
+      <Row k="prompt" label={t("drop.pickPrompt")} />
+      <Row k="uc" label={t("drop.pickUc")} />
+      <Row k="characters" label={t("drop.pickChars")} />
+      <Row k="append" label={t("drop.pickAppend")} sub />
+      <Row k="settings" label={t("drop.pickSettings")} />
+      <Row k="seed" label={t("drop.pickSeed")} />
+    </div>
+  );
+}
 /** 바이브 한 장의 값 — ★**구워 둠**을 눈에 띄게 말한다. 그것이 Anlas 를 가르는 유일한 정보다 */
 function VibeInfo({
   strength,
@@ -351,30 +441,6 @@ function VibeInfo({
       <div style={{ marginTop: "var(--sp-2)", color: cached ? "var(--ok)" : "var(--warn)" }}>
         {cached ? t("drop.vibeCached") : t("drop.vibeRaw")}
       </div>
-    </div>
-  );
-}
-
-/** 시트에 싣는 **값 요약** — ★프롬프트·네거티브·캐릭터는 **안 싣는다**
- *  (사용자 지시 2026-08-23: 그것을 읽는 자리는 EXIF 리더다).
- *  여기 남는 것은 「이 그림이 무엇인가」를 가리는 데 쓰는 값뿐이다. */
-function MetaBrief({ m }: { m: { seed?: number; steps?: number; cfg?: number; width?: number; height?: number; sampler?: string; source?: string; nai_model?: string } }) {
-  const t = useI18n((s) => s.t);
-  const rows: [string, string][] = [];
-  if (m.source || m.nai_model) rows.push([t("gallery.fieldModel"), m.source || m.nai_model!]);
-  if (m.width !== undefined) rows.push([t("gallery.fieldSize"), `${m.width}×${m.height}`]);
-  if (m.seed !== undefined) rows.push([t("gallery.fieldSeed"), String(m.seed)]);
-  if (m.steps !== undefined) rows.push([t("gallery.fieldSteps"), String(m.steps)]);
-  if (m.cfg !== undefined) rows.push([t("gallery.fieldCfg"), String(m.cfg)]);
-  if (m.sampler) rows.push([t("gallery.fieldSampler"), m.sampler]);
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: "var(--text-2xs)" }}>
-      {rows.map(([k, v]) => (
-        <div key={k} style={{ display: "flex", gap: "var(--sp-2)" }}>
-          <span style={{ width: 76, flexShrink: 0, color: "var(--ink-faint)" }}>{k}</span>
-          <span style={{ color: "var(--ink-soft)", wordBreak: "break-all" }}>{v}</span>
-        </div>
-      ))}
     </div>
   );
 }

@@ -93,6 +93,8 @@ type S = {
    *  ★이미 보관돼 있으면 **무른다** — 두 번 눌러 사본이 둘 생기지 않는다 (`removed`).
    *  ★★`toggle: false` 면 무르지 않는다 — **끌어다 놓기**가 쓴다 (놓았는데 사라지면 안 된다).
    *    이미 있으면 그대로 두고 `existed` 로 알린다. */
+  /** 밖에서 온 그림을 그대로 들인다 (base64 원본 바이트) */
+  importImage: (ws: string, data: string, name: string, folder?: string) => Promise<{ file: string }>;
   keep: (
     ws: string,
     file: string,
@@ -173,6 +175,24 @@ export const useGallery = create<S>((set, get) => ({
     } finally {
       set({ loading: false });
     }
+  },
+
+  /** **밖에서 온 그림을 그대로 들인다** (사용자 지시 2026-08-25).
+   *
+   *  ★★`keep` 과 갈린다: 그쪽은 **작업 폴더의 파일**을 복사하는 것이라, 밖에서 떨군 그림에는
+   *    쓸 수 없다. 예전에는 그래서 *"설정 적용 후 한 번 생성해서 갤러리에 넣어야"* 했다 —
+   *    그림을 넣으려고 Anlas 를 쓰는 꼴이었다.
+   *  ★바이트를 **그대로** 올린다 (다시 굽지 않는다) — PNG 에 박힌 NAI 메타데이터가 살아야
+   *    나중에 그 그림에서 설정을 되돌릴 수 있다 (`backend/keep.import_bytes`).
+   *  ★들인 뒤 목록을 다시 읽는다 — 넣었는데 화면에 안 보이면 들어갔는지 알 수 없다. */
+  async importImage(ws, data, name, folder = "") {
+    const r = await api<{ file: string }>(`/api/keep/import`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data, name, folder }),
+    });
+    await get().load(ws);
+    return r;
   },
 
   async keep(ws, file, folder = "", toggle = true) {
