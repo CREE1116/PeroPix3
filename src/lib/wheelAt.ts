@@ -18,5 +18,16 @@
 export function wheelIsOver(el: Element | null | undefined, e: WheelEvent): boolean {
   if (!el) return false;
   const r = el.getBoundingClientRect();
-  return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+  const inBox =
+    e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+  if (!inBox) return false;
+  /* ★★**위에 덮인 것이 있으면 내 것이 아니다** (사용자 지적 2026-08-25: *"생성된 이미지의
+       「프롬프트 보기」로 모달을 열고 스크롤하면 뒤의 이미지가 전환됨"*).
+     네모 안인지만 보면, **모달이 그 위를 덮고 있어도** 좌표는 여전히 프리뷰 안이다.
+     그래서 모달을 굴리는 휠이 뒤의 그림을 넘겼다.
+     ★커서 아래의 **맨 위 요소**를 물어 그것이 내 안의 것인지 본다 — 창이든 말풍선이든
+       무엇이 덮여도 같은 규칙으로 걸러진다 (모달마다 예외를 적지 않는다).
+     ★`pointer-events: none` 인 껍데기는 애초에 안 잡히므로 그런 덮개는 방해하지 않는다. */
+  const hit = document.elementFromPoint(e.clientX, e.clientY);
+  return !!hit && (el === hit || el.contains(hit));
 }
