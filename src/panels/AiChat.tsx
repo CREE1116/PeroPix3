@@ -933,13 +933,15 @@ function Row({ line }: { line: Line }) {
       data-tip={at ? `${line.note} — ${atLabel(at, t)}` : line.note || undefined}
       onClick={at ? () => void openAt(at) : undefined}
       style={{
-        display: "flex",
-        // ★실패 줄은 여러 줄이 된다 — 가운데 맞춤이면 표시가 글 한가운데로 내려간다
-        // ★줄이 여러 줄이 되므로 표시는 늘 위에 붙는다
-        alignItems: "flex-start",
-        gap: "var(--sp-2)",
+        /* ★★**줄바꿈에 들여쓰기를 두지 않는다** (사용자 지시 2026-08-26).
+             flex 로 늘어놓으면 넘친 글이 **앞 칸 너비만큼 들여쓰기된 것처럼** 붙는다 —
+             좁은 패널에서는 그 들여쓰기가 글보다 넓어 보인다.
+           ★그래서 **글 흐름**으로 둔다: 표시·이름·설명이 한 문단처럼 이어지고,
+             넘치면 **왼쪽 끝**에서 다시 시작한다. */
         fontSize: "var(--text-2xs)",
         fontFamily: "var(--font-mono)",
+        lineHeight: 1.5,
+        wordBreak: "break-word",
         color: !line.ok ? "var(--warn)" : at ? "var(--ink-soft)" : "var(--ink-dim)",
         ...(at
           ? {
@@ -951,32 +953,33 @@ function Row({ line }: { line: Line }) {
           : null),
       }}
     >
-      <span style={{ display: "grid", color: line.ok ? "var(--ok)" : "var(--warn)" }}>
+      {/* ★표시는 글줄 안에 선다 — `grid` 로 두면 제 줄을 차지한다 */}
+      <span
+        style={{
+          display: "inline-grid",
+          verticalAlign: "-0.15em",
+          marginRight: 4,
+          color: line.ok ? "var(--ok)" : "var(--warn)",
+        }}
+      >
         {line.ok ? Icon.check : Icon.close12}
       </span>
-      <span style={{ flexShrink: 0 }}>{line.name}</span>
+      <span>{line.name}</span>
       {line.note && (
         <span
           data-ai-tool-did={line.ok ? "" : undefined}
           style={{
-            minWidth: 0,
-            /* ★★**채팅창은 아무것도 안 자른다** (사용자 지시 2026-08-25: *"조수 채팅에서
-                 에딧 내역도 … 으로 축소되어 안 보임. 채팅창에서는 모든 걸 줄바꿈해서 항상
-                 전체 내용이 보이게"*).
-               ★한때 성공한 줄만 한 줄로 잘랐는데, **무엇을 고쳤는지가 바로 그 줄에 적힌다** —
-                 「베이스 프롬프트에 … 를 갈아 끼움」이 잘리면 무엇이 바뀌었는지 알 길이 없다.
-                 진행 표시가 길어지는 것보다 읽을 수 없는 편이 나쁘다. */
-            whiteSpace: "pre-wrap" as const,
-            wordBreak: "break-word" as const,
+            /* ★★**채팅창은 아무것도 안 자른다** (사용자 지시 2026-08-25: *"에딧 내역도 …
+                 으로 축소되어 안 보임"*). 무엇을 고쳤는지가 바로 이 줄에 적힌다. */
             // 성공한 것의 설명은 한 단 흐리게 — 실패 문구와 눈으로 갈린다
             //   ★고친 줄은 안 흐리다 (그 줄의 알맹이가 바로 이 문구다)
             color: !line.ok || at ? "inherit" : "var(--ink-faint)",
           }}
         >
-          — {line.note}
+          {" "}— {line.note}
         </span>
       )}
-      {!line.ok && !line.note && <span>— {t("ai.failed")}</span>}
+      {!line.ok && !line.note && <span> — {t("ai.failed")}</span>}
     </div>
   );
 }

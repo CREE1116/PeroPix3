@@ -520,10 +520,39 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
           after: { set: set.id, scene: (found as { id: string }).id },
         };
       }
-      const replace = String(args.mode ?? "add") === "replace";
+      const mode = String(args.mode ?? "add");
+      const replace = mode === "replace";
+      /** ★★**지우는 길** (사용자 지시 2026-08-26: *"사용자 블록을 안 지우고 우회하는 행동을
+       *  계속 함"*). 그럴 수밖에 없었다 — 지우는 창구가 **아예 없었다.** 그래서 조수는
+       *  UC 에 반대말을 넣거나 블록을 새로 붙여 **에두르는 수**밖에 못 냈다.
+       *  ★되돌릴 수 있다 (`before` 에 원래 블록이 담긴다 → `undo_change`). */
+      const drop = mode === "remove";
+      /** 지목한 블록 하나 — `get_workspace` 가 블록마다 주는 `id` 다 (`_view`) */
+      const wantBlock = String(args.block ?? "").trim();
       const apply = (cur: Block[]): Block[] => {
-        const at = cur.findIndex((b) => b.label === label);
-        if (replace && at >= 0) return cur.map((b, i) => (i === at ? { ...b, tags } : b));
+        /* ★id 로 지목했으면 **그 블록 하나**다 — 이름이 겹쳐도 흔들리지 않는다 */
+        if (wantBlock) {
+          const at = cur.findIndex((b) => b.id === wantBlock);
+          if (at >= 0)
+            return drop ? cur.filter((_, i) => i !== at) : cur.map((b, i) => (i === at ? { ...b, tags } : b));
+        }
+        const hits = cur.filter((b) => b.label === label);
+        /* ★★**같은 이름이 여럿이면 합친다** (사용자 지시 2026-08-26: *"블록 2개로 나뉘어
+             있어도 알아서 합쳐서 수정하면 되는 건데 수정을 계속 못 함"*).
+           블록 기본 이름이 「새 블록」이라 **나뉘어 있는 것이 예사**인데, 예전에는 그중
+           **처음 걸리는 것**만 갈아 끼웠다. 그러면 나머지에 남은 옛 태그가 그대로 살아
+           있어 «바꿨는데 안 바뀌었다»가 된다.
+           ★합치는 방식: **첫 자리에** 새 태그를 넣고, 같은 이름의 나머지는 뺀다.
+             자리를 첫 것으로 잡는 까닭은 그 블록이 프롬프트에서 **앞에 서 있기** 때문이다
+             (앞에 있을수록 세게 걸린다 — 순서를 바꾸지 않는다).
+           ★지우기도 같은 규칙이다 — 같은 이름이면 **전부** 걷는다.
+           ★`add` 는 그대로 뒤에 붙인다 — 합치는 것은 **갈아 끼울 때**의 규칙이다. */
+        if (drop) return hits.length ? cur.filter((b) => !hits.includes(b)) : cur;
+        if (replace && hits.length) {
+          const first = hits[0];
+          const gone = new Set(hits.slice(1));
+          return cur.filter((b) => !gone.has(b)).map((b) => (b === first ? { ...b, tags } : b));
+        }
         return [...cur, makeBlock(label, [], { open: true, tags })];
       };
       const at = {
@@ -534,7 +563,7 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
         area,
         label,
       };
-      const verb = replace ? "갈아 끼움" : "더함";
+      const verb = drop ? "걷어냄" : replace ? "갈아 끼움" : "더함";
 
       if (area === "base" || area === "baseUc") {
         const before = usePrompt.getState()[area];
