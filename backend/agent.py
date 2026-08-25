@@ -160,6 +160,10 @@ TOOL_RISK = {
     "update_card": "ask",   # `undo_change` 가 옛 내용으로 되살린다 (회귀로 확인)
     "write_guide": "ask",   # 지침 **전문**을 갈아 끼운다. 되살아난다
     "move_files": "ask",    # ★자동 되돌리기가 없다 (파일은 그대로지만 복구 경로가 없다)
+    "delete_card": "ask",   # 되돌아오지만 **사용자가 넣어 둔 재료**가 사라진다
+    # ★★`create_card` 도 묻는다 (사용자 지시 2026-08-25): 조수가 요청도 없이 덱에 카드를
+    #   쌓아 두는 일이 잦았다 — 저장은 **사용자가 하는 것**이 기본이다 (지침에도 적었다).
+    "create_card": "ask",
     # ★만들거나 되살리는 쪽은 **잃는 것이 없다** → none
     #   create_card · create_folder · restore_files · 읽기 전부
 }
@@ -296,7 +300,22 @@ class App:
 
 
 #: 도구 줄에 보일 카드 종류 이름
-_KIND_KO = {"characters": "캐릭터", "styles": "그림체", "posesets": "포즈세트"}
+#: 카드 종류 → **화면에 쓰는 이름**. ★★낱말표에서 뽑는다 (`shared/terms.json`) —
+#:  손으로 적어 두었더니 화면은 「스타일·씬 세트」인데 조수만 「그림체·포즈세트」라고 말했다
+#:  (사용자 지적 2026-08-25). 같은 정보에 창구가 둘이면 반드시 갈린다.
+_KIND_TERM = {"styles": "styleCard", "characters": "characterCard", "posesets": "sceneSetCard"}
+
+
+def _kind_ko(kind: str) -> str:
+    """그 카드 종류를 화면이 부르는 이름 (「스타일」·「캐릭터」·「씬 세트」)."""
+    key = _KIND_TERM.get(kind)
+    for t in _terms():
+        if t.get("key") == key:
+            # 「덱의 스타일 카드」 → 「스타일」
+            ko = str((t.get("what") or {}).get("ko") or "")
+            ko = ko.replace("덱의 ", "").split(" (")[0]
+            return ko.replace(" 카드", "") or kind
+    return kind
 
 
 class Tools:
@@ -563,6 +582,15 @@ class Tools:
                     ["kind", "id"],
                 ),
                 self._update_card,
+            ),
+            (
+                "delete_card",
+                "★**덱에서 카드를 지운다.** «네가 만든 카드 지워줘» 같은 요청이 이것이다. "
+                "되돌릴 수 있다 — 지운 뒤 사용자가 «되돌려» 라고 하면 undo_change 로 되살린다. "
+                "★어떤 카드가 있는지는 list_cards 로 먼저 본다.",
+                obj({"kind": s('"styles" | "characters" | "posesets"'),
+                     "id": s("카드 id 또는 이름")}, ["kind", "id"]),
+                self._delete_card,
             ),
             (
                 "search_tags",
@@ -888,7 +916,7 @@ class Tools:
         card = self._card_body(kind, a, {"name": str(a["name"])})
         saved = self.cards.save(kind, card)
         self.notify("cards")
-        did = f"{_KIND_KO.get(kind, kind)} 카드 만듦 — {saved.get('name')}"
+        did = f"{_kind_ko(kind)} 카드 만듦 — {saved.get('name')}"
         at = {"kind": "card", "cardKind": kind, "id": saved.get("id")}
         return {"ok": True, "id": saved.get("id"), "name": saved.get("name"),
                 "did": did, "at": self._mark("create_card", did, at, after=saved)}
@@ -906,7 +934,7 @@ class Tools:
         #   약해졌다: 지금은 앱이 켜진 채 돌고 사용자가 조수에게 「되돌려」라고 말하면 된다.
         saved = self.cards.save(kind, self._card_body(kind, a, cur))
         self.notify("cards")
-        did = f"{_KIND_KO.get(kind, kind)} 카드 덮어씀 — {saved.get('name')}"
+        did = f"{_kind_ko(kind)} 카드 덮어씀 — {saved.get('name')}"
         at = {"kind": "card", "cardKind": kind, "id": saved.get("id")}
         return {"ok": True, "id": saved.get("id"),
                 "did": did, "at": self._mark("update_card", did, at, before=cur, after=saved)}
@@ -973,6 +1001,29 @@ class Tools:
         # ★파일 옮기기·폴더 만들기는 **아직 안 되돌린다** — 그 사이 사용자가 또 옮겼을 수 있어
         #   되돌리기가 오히려 어지럽힌다. 무엇을 했는지는 말해 준다.
         return fail("blocked", f"이 변경은 아직 자동으로 못 되돌립니다: {row.get('did')}", retry="never")
+
+    def _delete_card(self, a: dict) -> dict:
+        """덱에서 카드 하나를 지운다.
+
+        ★★**되돌릴 수 있다** — 지운 내용을 이력의 `before` 로 담으므로 `undo_change` 가
+          그대로 되살린다 (`_undo_change` 의 card 갈래: `before` 가 있으면 다시 저장한다).
+          그래서 위험도는 `hard` 가 아니라 `ask` 다 (`TOOL_RISK`).
+        ★예전에는 **이 도구가 아예 없어서** 조수가 「도구가 없다」고 해 놓고 곧바로
+          「지웠습니다」라고 말했다 (사용자 실측 2026-08-25). 없는 일을 한 척하는 것보다
+          할 수 있게 하는 편이 낫다."""
+        kind = str(a["kind"])
+        cur = self._find_card(kind, str(a["id"]))
+        if not cur:
+            names = [str(x.get("name")) for x in self.cards.list(kind)]
+            return fail("not_found", f"그런 카드가 없습니다: {a['id']}",
+                        what=kind, given=str(a["id"]), candidates=near_by(str(a["id"]), names))
+        self.cards.delete(kind, str(cur.get("id")))
+        self.notify("cards")
+        did = f"{_kind_ko(kind)} 카드 지움 — {cur.get('name')}"
+        # ★`at` 은 **덱**을 가리킨다 (카드가 이미 없으므로 그 카드로는 못 간다)
+        at = {"kind": "card", "cardKind": kind, "id": str(cur.get("id"))}
+        return {"ok": True, "did": did,
+                "at": self._mark("delete_card", did, at, before=cur, after=None)}
 
     def _search_tags(self, a: dict) -> dict:
         """★★**밑줄과 띄어쓰기를 같은 것으로 본다.** 단부루 덤프는 `high_complexity` 꼴이고
@@ -1262,12 +1313,22 @@ Principles:
     will get an answer.
   ★Asking every small confirmation with buttons is annoying. Buttons are for choices
   **worth choosing**. (The built-in AskUserQuestion does not work in this environment.)
-- When the user says to change **what they are working on right now** ("change the style"),
-  use edit_current_prompt - editing a card would not show on their screen. Cards are for
-  **keeping something for later**.
+  ★★**Cover what they could actually mean.** If "all of them" is a real reading of the
+  request, it must be one of the options - not only the items one by one. And when more
+  than one answer can be true at once, pass `multi=true`; a single-pick list forces them
+  to answer a question you did not ask.
+- ★★**Work on the screen first. Saving to the deck is the user's call.**
+  A request about prompts means **what they are looking at** - use edit_current_prompt (or
+  apply_card to put a saved card onto the screen). Do **not** create a card unless they
+  said so in words ("save it as a card", "put it in the deck"). Cards are storage, and
+  filling their deck uninvited is not helpful.
+- ★When a request could land in more than one place - the screen, a new card, an existing
+  card - **ask which** (ask_user) instead of picking for them.
 - When the user names a number of images ("queue 20"), put them in the queue with
   **generate**. Otherwise ask first - generating unasked spends their Anlas.
 - After using tools, say **what you did in a sentence or two**.
+- ★★**Never describe something you did not do.** If a tool failed or you had to decline,
+  the reply must not read as if it happened. Say what is missing and what the user can do.
 - When the user states something to **keep following** ("from now on...", "never use this
   tag", "remember this"), **read it with read_guide and rewrite the whole thing with
   write_guide**. Same when they take it back ("forget that") or ask you to tidy it up.

@@ -84,7 +84,23 @@ export async function openAt(at: AgentAt): Promise<void> {
       useSceneFocus.getState().focus(at.scene, null);
       return;
     }
-    // ★블록 이름까지 알면 그 자리를 펴고 강조한다 (`lib/keepScroll` 과 같은 표식)
-    ui.reveal("left", at.label ? `block:${at.label}` : "params", true);
+    /* ★★**고친 섹션을 강조한다** (사용자 지적 2026-08-25).
+       예전에는 `block:<블록이름>` 을 켰는데 **그 표식을 아무도 안 읽었고**, 이름이 없으면
+       `params`(생성 설정)로 떨어져 *"스타일을 눌렀는데 하단 생성 설정이 강조"* 됐다.
+       ★자리를 가르는 것은 `area` 다: `base`·`baseUc` 는 스타일 섹션, 그 밖은 **캐릭터 이름**
+         (`edit_current_prompt` 의 `area` 규약). 표식은 `PromptSections` 가 읽는다.
+       ★★`params` 로 떨어지지 않는다 — 갈 곳을 모르면 **패널만 편다.** 엉뚱한 자리를
+         강조하는 것은 아무것도 안 하는 것보다 나쁘다. */
+    const area = at.area ?? "";
+    if (!area) {
+      ui.reveal("left", "prompt", true);
+      return;
+    }
+    if (area === "base" || area === "baseUc") {
+      ui.reveal("left", "prompt:base", true);
+      return;
+    }
+    // `<이름>:uc` 꼴이면 이름만 떼어 낸다
+    ui.reveal("left", `prompt:${area.split(":")[0]}`, true);
   }
 }

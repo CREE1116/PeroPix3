@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useUi } from "../store/ui";
+import { useUi, flashStyle, useFlash } from "../store/ui";
 import { useI18n } from "../i18n";
 import { useCards, type AnyCard, type CardKind } from "../store/cards";
 import { useDrag, useDragSource, useDropZone, dragSourceStyle, type DragImage, type SectionThumb } from "./dragStore";
@@ -458,6 +458,10 @@ function PanelCard({
     onDrop: (d) => d.img && onImageDrop(kind, card, d.img),
   });
 
+  /* ★★조수가 만들거나 고친 카드를 **강조한다** (`lib/agentAt` 의 `card:<id>`).
+     예전에는 `reveal` 만 부르고 **읽는 곳이 없어** 덱만 열리고 어느 카드인지 몰랐다
+     (사용자 지적 2026-08-25: *"강조 효과가 존재하는 프롬프트창만 강조"*). */
+  const flash = useFlash(`card:${card.id}`);
   return (
     <div
       ref={drop.ref}
@@ -478,6 +482,7 @@ function PanelCard({
         overflow: "hidden",
         /* ★잘린 자리에 드러나는 **단색** — 배너 오른쪽과 같은 색이다 (`BANNER_BG`) */
         background: BANNER_BG,
+        ...flashStyle(flash),
         border: `1px solid ${drop.over ? "var(--accent)" : "var(--line)"}`,
         cursor: "grab",
         opacity: me ? 0.35 : 1,

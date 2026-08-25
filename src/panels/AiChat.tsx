@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { useLlm, type Ask, type Confirm, type Line } from "../store/llm";
+import { chatBlocks, type Blk, type Seg } from "../lib/chatMd";
 import { useWs } from "../store/workspace";
 import { useUi, MODES } from "../store/ui";
 import { useCli, CLI_EFFORTS } from "../store/cli";
@@ -545,6 +546,57 @@ const Field = ({ label, children }: { label: string; children: React.ReactNode }
   </label>
 );
 
+/** 조수의 말을 **마크다운 그대로 보이게** 그린다 (사용자 지적 2026-08-25).
+ *
+ *  ★규칙은 `lib/chatMd` 에 순수 함수로 있다 (회귀가 붙어 있다) — 여기서는 **그리기만** 한다.
+ *  ★`dangerouslySetInnerHTML` 을 안 쓴다: 조각 목록을 받아 React 요소로 만든다. */
+function Md({ text }: { text: string }) {
+  const blocks = useMemo(() => chatBlocks(text), [text]);
+  const draw = (segs: Seg[], key: number) => (
+    <span key={key}>
+      {segs.map((s, i) =>
+        s.t === "b" ? (
+          <strong key={i} style={{ fontWeight: 700 }}>{s.v}</strong>
+        ) : s.t === "code" ? (
+          <code
+            key={i}
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "0.92em",
+              background: "var(--panel)",
+              border: "1px solid var(--line)",
+              borderRadius: "var(--r-1)",
+              padding: "0 3px",
+            }}
+          >
+            {s.v}
+          </code>
+        ) : (
+          <span key={i} style={{ whiteSpace: "pre-wrap" }}>{s.v}</span>
+        ),
+      )}
+    </span>
+  );
+  return (
+    <>
+      {blocks.map((b: Blk, i: number) =>
+        b.k === "li" ? (
+          // ★들여쓰기와 점은 **그림으로** — 원문의 `- ` 를 그대로 두면 줄이 안 맞는다
+          <div key={i} style={{ display: "flex", gap: 6, paddingLeft: 2 }}>
+            <span style={{ color: "var(--ink-faint)", flexShrink: 0 }}>·</span>
+            {draw(b.segs, i)}
+          </div>
+        ) : b.k === "h" ? (
+          // ★크기는 안 키운다 — 채팅 줄에서 제목이 커지면 요란해진다. 굵기로만 가른다
+          <div key={i} style={{ fontWeight: 700, marginTop: i ? 4 : 0 }}>{draw(b.segs, i)}</div>
+        ) : (
+          <div key={i}>{draw(b.segs, i)}</div>
+        ),
+      )}
+    </>
+  );
+}
+
 /** **승인 카드** — 되돌릴 수 없는 일 앞에서 뜬다 (사용자 결정 2026-08-24).
  *
  *  ★★모달 확인 창이 아니라 **대화 안**이다: 클로드 코드가 파일 삭제 전에 승인을 받는 것과
@@ -740,7 +792,8 @@ function Row({ line }: { line: Line }) {
           border: "1px solid var(--accent-line)",
           borderRadius: "var(--r-2)",
           padding: "var(--sp-2) var(--sp-3)",
-          fontSize: "var(--text-2xs)",
+          fontSize: "var(--text-chat)",
+          fontWeight: 400,
           lineHeight: 1.6,
           whiteSpace: "pre-wrap",
           wordBreak: "break-word",
@@ -754,14 +807,20 @@ function Row({ line }: { line: Line }) {
     return (
       <div
         style={{
-          fontSize: "var(--text-2xs)",
+          fontSize: "var(--text-chat)",
           color: "var(--ink)",
-          lineHeight: 1.65,
-          whiteSpace: "pre-wrap",
+          /* ★★굵기를 **명시**한다 (사용자 지적 2026-08-25: *"응답 전체가 볼드처럼 두꺼워서
+             가독성이 떨어짐"*). 본문 폰트가 가변 굵기라(`fonts.css` 의 `font-weight: 45 920`)
+             지정을 안 하면 자리마다 다르게 잡힌다 — 여기서 400 으로 못 박는다. */
+          fontWeight: 400,
+          lineHeight: 1.7,
           wordBreak: "break-word",
+          display: "flex",
+          flexDirection: "column",
+          gap: 2,
         }}
       >
-        {line.text}
+        <Md text={line.text} />
       </div>
     );
 
