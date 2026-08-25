@@ -238,22 +238,21 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
       {compact ? "Q" : busy || firing ? t("canvas.generating") : t("canvas.generate")}
       {/* ★몇 장을 만들지·얼마가 드는지를 **누르기 전에** 보여 준다.
           ★Opus 무료 구간이면 숫자 대신 **FREE** 다 (v2 `anlasFreeTag`, index.html:9438).
-          ★★**돈이 나갈 때는 강하게 티를 낸다** (사용자 지시 2026-08-25: *"anlas가 소모될
-            경우 좀 더 강하게 강조. 소모되는지 모르고 생성한 적이 많음"*).
-            예전에는 무료와 유료가 **같은 흐린 글자**라, FREE 인지 숫자인지 눈여겨보지 않으면
-            구분이 안 됐다. 이제 유료면 경고색 딱지가 붙고 흐림이 없다. */}
+          ★★**강조는 값에만 건다** (사용자 지시 2026-08-25: *"강조할 때 장수 말고 가격만
+            강조"*). 장수는 무료든 유료든 똑같이 알아야 하는 값이라 함께 물들이면 무엇이
+            달라졌는지가 오히려 흐려진다. 그래서 두 조각으로 나눠 **뒤쪽만** 색을 바꾼다.
+          ★색만 바꾼다 — 한때 경고색 바탕 딱지였는데 단추 위에서 너무 튀었다
+            (*"너무 촌스러워"*). 반투명하게 두던 것(`opacity: 0.82`)만 걷고 색을 준다. */}
       {!compact && (
-        <span
-          data-gen-cost={paid ? "paid" : "free"}
-          style={{
-            fontVariantNumeric: "tabular-nums",
-            /* ★★**색만 바꾼다** (사용자 지시 2026-08-25: *"anlas 소모 강조가 너무 촌스러워.
-                 그냥 폰트 색을 바꿔 주는 정도로만 해도 됨"*). 한때 경고색 바탕에 흰 글자
-                 딱지였는데 단추 위에서 너무 튀었다. 흐림을 걷고 색을 바꾸는 것으로 충분하다. */
-            ...(paid ? { color: "var(--warn)" } : { opacity: 0.82 }),
-          }}
-        >
-          {cost.free ? t("gen.countFree", { n: count }) : t("gen.countCost", { n: count, a: cost.total })}
+        <span style={{ fontVariantNumeric: "tabular-nums", display: "flex", gap: 4 }}>
+          <span style={{ opacity: 0.82 }}>{t("gen.count", { n: count })}</span>
+          <span style={{ opacity: 0.82 }}>·</span>
+          <span
+            data-gen-cost={paid ? "paid" : "free"}
+            style={paid ? { color: "var(--warn)" } : { opacity: 0.82 }}
+          >
+            {cost.free ? "FREE" : t("gen.costAnlas", { a: cost.total })}
+          </span>
         </span>
       )}
       {/* ★★접힌 레일에서도 알아야 한다 — 거기서는 값을 아예 안 보여 주고 있었다.

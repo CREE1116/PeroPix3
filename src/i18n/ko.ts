@@ -251,7 +251,8 @@ export const ko: Dict = {
     perSlot: "씬당",
     slotsTimes: "씬 {s} × {p} = {t}장",
     countCost: "{n}장 · {a} Anlas",
-    countFree: "{n}장 · FREE",
+    count: "{n}장",
+    costAnlas: "{a} Anlas",
     vibeEncode: "바이브 인코딩 {a} Anlas",
     /** 비용이 어떻게 나왔나 (v2 `총액 (장당 × N슬롯 × M회)`) */
     costPerSlots: "장당 {p} × 씬 {s} × {r}회",

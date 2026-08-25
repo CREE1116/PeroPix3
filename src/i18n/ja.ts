@@ -247,7 +247,8 @@ export const ja: Dict = {
     perSlot: "スロットごと",
     slotsTimes: "{s}スロット × {p} = {t}枚",
     countCost: "{n}枚 · {a} Anlas",
-    countFree: "{n}枚 · FREE",
+    count: "{n}枚",
+    costAnlas: "{a} Anlas",
     vibeEncode: "バイブエンコード {a} Anlas",
     /** 費用の内訳（v2 の `合計（1枚あたり × Nスロット × M回）`） */
     costPerSlots: "1枚 {p} × シーン {s} × {r}回",

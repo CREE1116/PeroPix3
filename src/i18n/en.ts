@@ -248,7 +248,8 @@ export const en = {
     perSlot: "Per scene",
     slotsTimes: "{s} slots × {p} = {t}",
     countCost: "{n} × {a} Anlas",
-    countFree: "{n} × FREE",
+    count: "{n} ×",
+    costAnlas: "{a} Anlas",
     vibeEncode: "Vibe encoding {a} Anlas",
     /** How the cost adds up (v2 `total (per image × N slots × M rounds)`) */
     costPerSlots: "{p} each × {s} scenes × {r}",
