@@ -10,7 +10,7 @@ import { useSub } from "./sub";
 import { useAnlasMeter } from "./anlasMeter";
 import { localTs } from "../lib/takes";
 import type { Block } from "../lib/blocks";
-import { err } from "../lib/actions";
+import { err, nearBy } from "../lib/actions";
 import { useSceneFocus } from "./sceneFocus";
 import { allCells, useWs } from "./workspace";
 import { useUi } from "./ui";
@@ -388,33 +388,65 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
     if (action === "edit_current_prompt") {
       const { usePrompt } = await import("./prompt");
       const { makeBlock, parseSegs } = await import("../lib/blocks");
-      /* ★대상 세트를 **먼저 연다.** 프롬프트 편집기는 지금 열린 세트의 **사본**이라
-         (`workspace.setActiveTab` 이 담고 꺼낸다), 다른 세트를 몰래 고칠 길이 없다.
-         여는 편이 옳기도 하다 — 사용자가 바뀐 자리를 그 자리에서 본다. */
-      const want = String(args.set ?? "").trim();
-      if (want) {
-        /* ★★**같은 이름의 세트가 여러 탭에 있다** (사용자 지적 2026-08-25: 고쳤다는데 화면은
-             그대로였다). 예전에는 목록에서 **처음 걸리는 것**을 집었는데, 「새 세트」 같은
-             기본 이름은 탭마다 하나씩 있어서 **엉뚱한 탭을 고치고 성공이라고 답했다.**
-           ★그래서 (1) id 가 맞으면 그것, (2) 이름이면 **지금 탭 안**에서 먼저 찾고,
-             (3) 그래도 여럿이면 **고르지 않고 되묻는다** — 코드가 짐작할 자리가 아니다. */
-        const all = useWs.getState().spec?.sets ?? [];
-        const byId = all.find((x) => x.id === want);
-        const named = all.filter((x) => x.name === want);
-        const here = named.filter(
-          (x) => (x as { tabId?: string }).tabId === useWs.getState().spec?.activeTab,
+      /* ★★**고칠 자리는 주소로 받는다** (사용자 지적 2026-08-25: *"애초에 풀 경로를 주고
+           그걸 고치게 해야 되는 거 아니야? 세트 이름으로만 찾는 게 문제인 것 같은데"*).
+         주소는 셋이다: **워크스페이스 → 탭 → 세트.** 조수는 이 셋을 이미 다 받고 있다
+         (`get_workspace` 가 세트마다 `id`·`tab` 을, 그 위에 `tabs`·`activeTab` 을 준다).
+         ★예전에는 `set` 하나를 **이름으로** 훑어 처음 걸리는 것을 집었다. 「새 세트」 같은
+           기본 이름은 탭마다 있으므로 **엉뚱한 탭을 고치고 성공이라 답했다.**
+         ★비우면 지금 보고 있는 자리다 — 「지금 이거 고쳐 줘」가 대부분이라 그 길은 남긴다.
+         ★대상 세트를 **먼저 연다** — 편집기는 열린 세트의 사본이라 몰래 고칠 길이 없고,
+           여는 편이 옳기도 하다 (사용자가 바뀐 자리를 그 자리에서 본다). */
+      const wantWs = String(args.workspace ?? "").trim();
+      if (wantWs && wantWs !== useWs.getState().current)
+        /* ★★**다른 워크스페이스는 고치지 않는다.** 말없이 지금 것을 고치면 조수가 읽은
+             자리와 어긋난다. 옮기는 것은 사용자의 일이다 (작업이 통째로 바뀐다). */
+        return err(
+          "blocked",
+          `지금 열린 워크스페이스는 「${useWs.getState().current}」 입니다. ` +
+            `「${wantWs}」 를 고치려면 사용자가 그 워크스페이스를 열어야 합니다.`,
+          { retry: "never" },
         );
-        const hit = byId ?? (here.length === 1 ? here[0] : named.length === 1 ? named[0] : null);
-        if (!hit && named.length > 1) {
-          const tabs = useWs.getState().spec?.tabs ?? [];
-          const where = named.map(
-            (x) => `${tabs.find((c) => c.id === (x as { tabId?: string }).tabId)?.name ?? "?"}/${x.id}`,
+
+      const wantTab = String(args.tab ?? "").trim();
+      const want = String(args.set ?? "").trim();
+      if (wantTab || want) {
+        const spec0 = useWs.getState().spec;
+        const tabs = spec0?.tabs ?? [];
+        const all = spec0?.sets ?? [];
+        /* ★탭도 **id 가 먼저**다 — 이름은 사용자가 계속 고치는 값이라 열쇠로 못 쓴다 */
+        let tabId = "";
+        if (wantTab) {
+          const t = tabs.find((c) => c.id === wantTab) ?? tabs.find((c) => c.name === wantTab);
+          if (!t)
+            return err("not_found", `그런 탭이 없습니다: ${wantTab}`, {
+              candidates: nearBy(wantTab, tabs.map((c) => c.name)),
+            });
+          tabId = t.id;
+        }
+        const inTab = (x: { tabId?: string }) => !tabId || x.tabId === tabId;
+        const byId = all.find((x) => x.id === want);
+        const named = all.filter((x) => x.name === want && inTab(x as { tabId?: string }));
+        /* ★탭만 주고 세트를 안 주면 **그 탭의 세트**로 본다 (하나뿐일 때만 — 여럿이면 되묻는다) */
+        const ofTab = all.filter((x) => x.kind === "set" && inTab(x as { tabId?: string }));
+        const hit =
+          byId ?? (named.length === 1 ? named[0] : !want && ofTab.length === 1 ? ofTab[0] : null);
+        if (!hit && (named.length > 1 || (!want && ofTab.length > 1))) {
+          /* ★★**고르지 않고 되묻는다.** 어느 것인지는 사용자와 조수만 안다 — 코드가 하나를
+               집으면 틀렸을 때 **조용히** 틀린다 (그것이 이번 일이었다). */
+          const pool = named.length > 1 ? named : ofTab;
+          const where = pool.map(
+            (x) =>
+              `${tabs.find((c) => c.id === (x as { tabId?: string }).tabId)?.name ?? "?"}/${x.name}#${x.id}`,
           );
-          return err("ambiguous", `「${want}」 이름의 세트가 여럿입니다. id 로 골라 주세요.`, {
+          return err("ambiguous", `어느 세트인지 하나로 좁혀지지 않습니다. 세트 id 로 골라 주세요.`, {
             candidates: where,
           });
         }
-        if (!hit) return { error: `그런 세트가 없습니다: ${want}` };
+        if (!hit)
+          return err("not_found", `그런 세트가 없습니다: ${want || wantTab}`, {
+            candidates: nearBy(want, ofTab.map((x) => x.name)),
+          });
         /* ★세트는 **탭에 속한다**(`tabId`). 다른 탭의 세트를 열면서 탭을 안 옮기면
            화면의 윗줄과 아랫줄이 어긋난 채로 남는다 (`workspace.switchTab` 참조). */
         const owner = (hit as { tabId?: string }).tabId;

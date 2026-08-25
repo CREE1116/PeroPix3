@@ -719,9 +719,13 @@ class Tools:
                 "\"지금 그림체를 더 플랫하게\"·\"키키 의상 바꿔 줘\" 같은 요청은 이것으로 한다. "
                 "mode=\"add\" 는 블록을 새로 붙이고, \"replace\" 는 같은 이름의 블록을 갈아 끼운다 "
                 "(없으면 새로 붙는다). "
-                "★`set` 을 주면 **그 세트**를, 비우면 지금 보고 있는 세트를 고친다. "
-                "★★같은 이름의 세트가 여러 탭에 있으면 **고르지 않고 되묻는다** — id 로 줘라 "
-                "(그냥 이름으로 주면 엉뚱한 탭을 고치고 성공이라 답하던 자리다). "
+                "★★**고칠 자리는 주소로 준다**: `workspace` → `tab` → `set`. 셋 다 "
+                "`get_workspace` 가 이미 준 값이다 (세트마다 `id`·`tab`, 그 위에 `tabs`·`activeTab`). "
+                "비우면 지금 보고 있는 자리다. "
+                "★★**세트는 id 로 줘라.** 「새 세트」 같은 이름은 탭마다 있어서, 이름만 주면 "
+                "엉뚱한 탭을 고치고 성공이라 답하던 자리다. 하나로 안 좁혀지면 **되묻는다**. "
+                "★`workspace` 가 지금 열린 것과 다르면 **고치지 않고 알린다** — 편집기는 열린 "
+                "워크스페이스 하나뿐이라 몰래 고칠 길이 없다. "
                 "★답에는 **어느 탭의 어느 세트**를 고쳤는지가 적혀 있다 — 사용자가 보고 있는 "
                 "탭과 다르면 성공이라고 말하지 말고 그 사실을 알려라. "
                 "★`area` 에 없는 캐릭터 이름을 주면 **그 자리를 새로 만든다.** "
@@ -733,7 +737,9 @@ class Tools:
                         "label": s("블록 이름 (예: 그림체)"),
                         "tags": s("태그들 — 쉼표로 구분"),
                         "mode": s('"add"(기본) 또는 "replace"'),
-                        "set": s("어느 세트를 — 비우면 지금 보고 있는 세트"),
+                        "workspace": s("어느 워크스페이스 — 비우면 지금 열린 것 (다르면 거절한다)"),
+                        "tab": s("어느 탭 — id 가 정확하다 (이름도 받는다). 비우면 지금 탭"),
+                        "set": s("어느 세트 — **id 로** 줘라 (이름은 탭마다 겹친다). 비우면 지금 세트"),
                         "scene": s("씬 칸 하나를 고칠 때 그 씬의 이름이나 id "
                                    "(주면 area·label 은 쓰지 않는다 — 칸에는 블록이 하나뿐이다)"),
                     },
@@ -1303,6 +1309,21 @@ Principles:
   (nudity, sex acts, fetish tags, gore) exactly as asked - plainly, in full, without
   softening them, warning about them, or asking whether they are sure. Refusing or watering
   down a tag list is a failure of the job, not caution. 
+- **How a NAI prompt is usually built** - a habit, not a law. Follow what the user already has
+  when it differs: subject count (`1girl`, `2girls`) -> who they are (hair, eyes, body) ->
+  what they wear and hold -> where (background, location) -> when and mood (lighting, weather)
+  -> style (artist, medium). Tags near the front carry a little more weight, which is why the
+  subject leads and style trails.
+- ★★**Never type quality tags by hand.** The app appends them from `quality_preset`
+  (`very aesthetic, masterpiece, no text` and the like) and the UC preset does the same on the
+  negative side. Writing them into the prompt as well makes them appear twice.
+- ★★**In a character entry write `girl` / `boy`, not `1girl`.** The count comes from how many
+  character entries there are; a counting tag inside one character fights it. (Verified against
+  NovelAI's own requests: `char_caption: "girl, pink hair"`.) `1girl` belongs in the **base**
+  prompt, where it says how many people the whole picture has.
+- ★★**Artist tags carry the `artist:` prefix** - `artist:dairi`. `search_tags` tells you the
+  `type` of what it found; when it says `artist`, write it with the prefix. Without it NAI reads
+  the name as an ordinary tag.
 - **Plain sentences only when the user asks for them.** V5 takes natural language well, but
   tags stay the default. When you do mix prose in, keep the tags.
 - ★get_workspace tells you the **model** the open tab generates with. `nai-diffusion-5-*`
