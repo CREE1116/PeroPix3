@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api, type TrashEntry } from "../lib/backend";
 import { useWs } from "./workspace";
+import { useUi } from "./ui";
 import { t, useI18n } from "../i18n";
 import { toast, undoToast } from "./toast";
 import { useCli } from "./cli";
@@ -226,6 +227,17 @@ type S = {
   /** 이 대화의 CLI 세션이 저쪽에 **없다** — 열 때 확인한다.
    *  ★사용자가 말을 걸어 실패를 겪고 나서 알게 되지 않도록 (사용자 지시 2026-08-12) */
   cliSessionGone: boolean;
+  /** ★★**접어 둔 사이에 답이 끝났다** (사용자 지시 2026-08-26: *"AI 채팅창 접어놓은 상태에서
+   *  답변 완료되면 dot 찍어줘"*). 접힌 레일에 점 하나로 알린다 — 접어 두고 다른 일을 하다가
+   *  끝난 줄 모르고 지나치는 자리다.
+   *  ★**펴면 사라진다** (`useUi.openAi`) — 읽었다는 뜻이다.
+   *  ★저장하지 않는다: 앱을 껐다 켜면 그 대화는 이미 지난 것이다. */
+  unread: boolean;
+  setUnread: (v: boolean) => void;
+  /** ★★이 턴이 **언제 시작했나** (ms). 화면이 들면 패널을 접었다 펼 때마다 0 부터
+   *  다시 세어 **막 시작한 것처럼** 보인다 (사용자 지적 2026-08-26: 접었다 폈더니
+   *  일하는 중 표시가 사라졌다). 시각은 턴의 것이므로 턴을 아는 곳이 든다. */
+  turnAt: number;
 
   /** 지금 공급자가 주는 모델 목록. ★설정 화면과 채팅 칩이 **같은 것**을 본다 —
    *  두 곳에서 따로 받아 오면 한쪽만 갱신돼 서로 다른 목록을 보여 준다 */
@@ -273,6 +285,9 @@ export const useLlm = create<S>((set, get) => ({
   confirm: null,
   cliSession: null,
   cliSessionGone: false,
+  unread: false,
+  setUnread: (v) => set({ unread: v }),
+  turnAt: 0,
 
   async loadConfig() {
     try {
@@ -444,7 +459,7 @@ export const useLlm = create<S>((set, get) => ({
       set({ wire, lines: linesOf(wire) });
       saveSoon(); // ★턴 도중의 줄도 파일에 남는다 (`saveSoon` 머리 주석)
     };
-    set({ sending: true, error: "" });
+    set({ sending: true, error: "", turnAt: Date.now() });
     // ★★**말을 건 그 자리에서 저장한다** (사용자 지적 2026-08-15). 예전에는 턴이 끝나야
     //   저장해서, 도는 중에 앱을 다시 켜면 그 대화가 **목록에 아예 없었다.** 그러면
     //   「마지막 대화 복구」가 엉뚱한 옛 대화를 열고, 오늘 한 일이 사흘 전 대화에 붙는다.
@@ -553,7 +568,7 @@ export const useLlm = create<S>((set, get) => ({
     } catch (e) {
       set({ error: String((e as Error).message ?? e) });
     } finally {
-      set({ sending: false });
+      endTurn();
       void save(get());
       drain();
     }
@@ -681,7 +696,7 @@ export function cliEvent(ev: Record<string, any>, agent = "claude-code") {
   // ★★**턴의 끝은 `turn_end` 다.** 프로세스가 죽는 것(`exit`)과 다르다 — 이제 프로세스는
   //   대화 내내 살아 있고, 「중단」도 그 턴만 멈춘다 (사용자 지시 2026-08-15).
   if (ev.type === "turn_end" || ev.type === "exit") {
-    useLlm.setState({ sending: false });
+    endTurn();
     if (ev.code && ev.code !== 0 && !st.error) {
       const why = cliErr.join("\n");
       useLlm.setState({
@@ -777,6 +792,18 @@ function saveSoon() {
     saveTimer = null;
     void save(useLlm.getState());
   }, 500);
+}
+
+/** **턴이 끝났다** — 끝을 알리는 자리는 여기 하나다 (API 도 CLI 도 이리로 온다).
+ *
+ *  ★★접어 둔 사이에 끝났으면 **점을 남긴다** (사용자 지시 2026-08-26). 접어 두고 다른 일을
+ *    하다가 답이 끝난 줄 모르고 지나치는 자리다 — 펴면 사라진다 (`useUi.openAi`).
+ *  ★펴 놓고 보고 있었으면 점을 안 찍는다: 이미 본 것이다. */
+function endTurn() {
+  useLlm.setState({
+    sending: false,
+    unread: useLlm.getState().unread || useUi.getState().aiCollapsed,
+  });
 }
 
 /** 한 턴이 끝날 때마다 통째로 저장한다 — 대화는 길어야 수십 줄이라 부분 저장이 필요 없다 */

@@ -8,12 +8,18 @@ export function Rail({
   label,
   onExpand,
   footer,
+  dot,
 }: {
   side: "left" | "right";
   label: string;
   onExpand: () => void;
   /** ★접어 둬도 남아야 하는 것 — 생성 버튼이 그렇다 (페로픽스파이와 같다). 레일 맨 아래에 선다 */
   footer?: React.ReactNode;
+  /** ★접힌 채로 알릴 것 — `busy`(도는 중)·`done`(끝났는데 아직 안 봄).
+   *  ★★접어 두면 화면에 아무 흔적이 없어서, 끝난 줄 모르고 지나친다 (사용자 지시 2026-08-26).
+   *    ★도는 중까지 함께 내는 까닭: 접는 순간 「일하는 중」 표시가 사라져 **멈춘 것처럼**
+   *      보인다 (같은 날 지적). 레일에 점 하나만 있어도 살아 있는지가 보인다. */
+  dot?: "busy" | "done" | null;
 }) {
   const t = useI18n((s) => s.t);
   return (
@@ -42,6 +48,22 @@ export function Rail({
       >
         {label}
       </div>
+      {dot && (
+        <span
+          data-rail-dot={dot}
+          /* ★도는 중이면 **깜빡이고**(`.think-dot`), 끝난 것이면 가만히 있다 —
+             기다리는 것과 확인할 것은 성격이 다르다 */
+          className={dot === "busy" ? "think-dot" : undefined}
+          style={{
+            marginTop: "var(--sp-2)",
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            background: dot === "busy" ? "var(--ink-faint)" : "var(--accent)",
+            flexShrink: 0,
+          }}
+        />
+      )}
       {footer && (
         <>
           <span style={{ flex: 1 }} />

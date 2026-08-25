@@ -6,6 +6,7 @@ import { Rail } from "./Rail";
 import { ResizeHandle } from "../components/ResizeHandle";
 import { PanelCollapseButton } from "../components/PanelCollapseButton";
 import { useUi } from "../store/ui";
+import { useLlm } from "../store/llm";
 
 /* ★기둥·틀은 **가장 어두운 바탕**(`--bg`)이다 — 페로픽스파이는 `.params-panel` 에
    바탕색이 아예 없어 body 의 `--bg` 가 그대로 비친다 (실측 2026-08-04). 밝은 톤(`--panel`)은
@@ -81,6 +82,9 @@ export function Shell({
   const leftWidth = leftWidths[mode];
   const rightWidth = rightWidths[mode];
   const t = useI18n((s) => s.t);
+  /** 접힌 레일의 점 — 도는 중인가 · 접어 둔 사이에 끝났는가 (`Rail` 의 `dot`) */
+  const aiBusy = useLlm((s) => s.sending);
+  const aiUnread = useLlm((s) => s.unread);
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <TitleBar left={titleLeft} right={titleRight} />
@@ -91,7 +95,14 @@ export function Shell({
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         {ai &&
           (aiCollapsed ? (
-            <Rail side="left" label={t("ai.title")} onExpand={toggleAi} />
+            /* ★★접어 두면 화면에 흔적이 없다 — 점 하나로 「도는 중」과 「끝났다」를 알린다
+                 (사용자 지시 2026-08-26). 펴면 사라진다 (`useUi.toggleAi`). */
+            <Rail
+              side="left"
+              label={t("ai.title")}
+              onExpand={toggleAi}
+              dot={aiBusy ? "busy" : aiUnread ? "done" : null}
+            />
           ) : (
             <>
               <section

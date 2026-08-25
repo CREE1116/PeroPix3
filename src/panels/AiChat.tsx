@@ -26,12 +26,17 @@ import { Icon } from "../components/Icon";
  *  ★마지막으로 부른 도구 이름을 함께 낸다 — 무엇을 하느라 오래 걸리는지가 보인다. */
 function Working({ last }: { last?: string }) {
   const t = useI18n((s) => s.t);
+  /* ★★**시작 시각은 스토어가 든다** (`useLlm.turnAt`, 사용자 지적 2026-08-26).
+     화면이 들면 패널을 접었다 펼 때마다 컴포넌트가 새로 서면서 0 부터 다시 세어,
+     한참 돌던 턴이 **막 시작한 것처럼** 보인다. */
+  const at = useLlm((s) => s.turnAt);
   const [sec, setSec] = useState(0);
   useEffect(() => {
-    const t0 = Date.now();
-    const h = setInterval(() => setSec(Math.floor((Date.now() - t0) / 1000)), 1000);
+    const tick = () => setSec(at ? Math.max(0, Math.floor((Date.now() - at) / 1000)) : 0);
+    tick();
+    const h = setInterval(tick, 1000);
     return () => clearInterval(h);
-  }, []);
+  }, [at]);
   return (
     <div
       data-ai-working

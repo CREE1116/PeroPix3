@@ -330,12 +330,17 @@ export const useUi = create<S>((set, get) => ({
   setLeftWidth: (w) => set({ leftWidth: { ...get().leftWidth, [get().mode]: w } }),
   setAiWidth: (w) => set({ aiWidth: w }),
   toggleAi: () => {
+    const open = get().aiCollapsed;   // 지금 접혀 있으면 이번에 펴는 것이다
     set({ aiCollapsed: !get().aiCollapsed });
+    /* ★★**펴면 점이 사라진다** — 읽었다는 뜻이다 (`llm.unread`, 사용자 지시 2026-08-26).
+       ★스토어를 가로질러 부른다: 점을 지우는 자리가 둘이면(여기·`openAi`) 한쪽만 고치게 된다. */
+    if (open) void import("./llm").then((m) => m.useLlm.getState().setUnread(false));
     get().commitLayout();
   },
   openAi: () => {
     if (!get().aiCollapsed) return;
     set({ aiCollapsed: false });
+    void import("./llm").then((m) => m.useLlm.getState().setUnread(false));
     get().commitLayout();
   },
   setRightWidth: (w) => set({ rightWidth: { ...get().rightWidth, [get().mode]: w } }),
