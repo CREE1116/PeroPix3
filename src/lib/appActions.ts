@@ -357,3 +357,92 @@ defineAction({
     };
   },
 });
+
+/* ── 시나리오에서 드러난 빈자리 ────────────────────────────────
+   ★2026-08-24 시뮬레이션에서 실제 요청 넷을 도구 호출로 밟아 보고 찾은 것들이다.
+     *"키키의 감정별 이미지 10종"* 이 **남의 탭 밑에** 세트를 만들던 자리(A),
+     저장해 둔 그림체를 못 꽂던 자리(C), 새 워크스페이스를 못 만들던 자리(F). */
+
+defineAction({
+  id: "switch_tab",
+  desc: "★**그 탭으로 옮겨 간다** (윗줄). 이어서 만드는 세트·씬과 생성이 **그 탭에** 걸린다. "
+    + "«키키 탭에서 작업하자» 처럼 대상이 정해진 요청에서 먼저 부른다.",
+  args: { tab: { type: "string", desc: "탭 이름 또는 id", required: true } },
+  confirm: "none",
+  run: async (a) => {
+    const ws = useWs.getState();
+    const tabs = ws.spec?.tabs ?? [];
+    const key = String(a.tab ?? "").trim();
+    const hit = tabs.find((c) => c.id === key || c.name === key);
+    if (!hit)
+      return err("not_found", `그런 탭이 없습니다: ${key}`, {
+        what: "tab", given: key, candidates: nearBy(key, tabs.map((c) => c.name)),
+      });
+    if (ws.spec?.activeTab === hit.id) return { ok: true, did: `이미 「${hit.name}」 탭입니다` };
+    ws.switchTab(hit.id);
+    return {
+      ok: true, tab: hit.name, tab_id: hit.id, did: `탭 「${hit.name}」 으로 옮김`,
+      at: { kind: "prompt", workspace: ws.current ?? undefined, tab: hit.id },
+    };
+  },
+});
+
+defineAction({
+  id: "apply_card",
+  desc: "★**저장해 둔 카드를 지금 자리에 꽂는다** — 그림체(styles) · 캐릭터(characters) · "
+    + "포즈세트(posesets). «저장해 둔 수채화풍으로»·«키키 카드 올려줘» 가 이것이다. "
+    + "카드 목록은 `list_cards` 로 본다.",
+  args: {
+    kind: { type: "string", desc: '"styles" | "characters" | "posesets"', required: true },
+    card: { type: "string", desc: "카드 이름 또는 id", required: true },
+  },
+  confirm: "none",
+  run: async (a) => {
+    const kind = String(a.kind ?? "").trim();
+    if (!["styles", "characters", "posesets"].includes(kind))
+      return err("unknown_field", `카드 종류가 아닙니다: ${kind}`, {
+        candidates: ["styles", "characters", "posesets"],
+      });
+    const { useCards } = await import("../store/cards");
+    const list = (useCards.getState()[kind as "styles" | "characters" | "posesets"] ?? []) as
+      { id: string; name: string }[];
+    const key = String(a.card ?? "").trim();
+    const hit = list.find((c: { id: string; name: string }) => c.id === key || c.name === key);
+    if (!hit)
+      return err("not_found", `그런 카드가 없습니다: ${key}`, {
+        what: kind, given: key,
+        candidates: nearBy(key, list.map((c: { name: string }) => c.name)),
+      });
+    /* ★★**꽂는 길은 사람이 끌어다 놓을 때와 같은 것**이어야 한다 (선결 조건 3-1 과 같은 원칙).
+       카드마다 앉는 자리가 다르다 — 그림체는 베이스 프롬프트, 캐릭터는 인물 칸,
+       포즈세트는 세트 위의 씬 카드다. 그 규칙은 덱 쪽이 갖고 있으므로 그것을 부른다. */
+    const { applyCard } = await import("./applyCard");
+    const r = applyCard(kind as never, hit as never);
+    if (r.error) return err("blocked", r.error, { retry: "never" });
+    return {
+      ok: true, did: r.did ?? `${hit.name} 을(를) 꽂음`,
+      at: { kind: "prompt", workspace: useWs.getState().current ?? undefined },
+    };
+  },
+});
+
+defineAction({
+  id: "create_workspace",
+  desc: "★**새 워크스페이스를 만들고 그리로 옮겨 간다.** 워크스페이스는 최상위 작업 공간이라 "
+    + "생성 옵션·바이브가 넘어가지 않는다 — «새 작업 시작하자» 같은 요청에서 쓴다.",
+  args: { name: { type: "string", desc: "워크스페이스 이름", required: true } },
+  confirm: "ask",
+  preview: (a) => `새 워크스페이스 「${String(a.name ?? "").trim()}」 을 만들고 그리로 옮겨 갑니다.`,
+  run: async (a) => {
+    const name = String(a.name ?? "").trim();
+    if (!name) return err("unknown_field", "이름을 주세요.");
+    const ws = useWs.getState();
+    await ws.create(name);
+    /* ★★**이름은 앱이 정한다** — 같은 이름이 있으면 `create` 가 번호를 붙인다
+       (`store/workspace` 의 `create`). 여기서 미리 막지 않는 이유: 막는 규칙이 두 곳에
+       생기고, 실제로 만들어진 이름은 저쪽만 안다. **만든 뒤에 물어본다.** */
+    const made = useWs.getState().current;
+    return { ok: true, workspace: made, did: `워크스페이스 「${made}」 을 만들고 옮겨 감`,
+      at: { kind: "prompt", workspace: made ?? undefined } };
+  },
+});

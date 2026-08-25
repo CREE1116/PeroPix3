@@ -113,6 +113,44 @@
           "desc": "어느 세트에서 — 비우면 지금 보고 있는 세트"
         }
       }
+    },
+    {
+      "id": "switch_tab",
+      "desc": "★**그 탭으로 옮겨 간다** (윗줄). 이어서 만드는 세트·씬과 생성이 **그 탭에** 걸린다. «키키 탭에서 작업하자» 처럼 대상이 정해진 요청에서 먼저 부른다.",
+      "args": {
+        "tab": {
+          "type": "string",
+          "desc": "탭 이름 또는 id",
+          "required": true
+        }
+      }
+    },
+    {
+      "id": "apply_card",
+      "desc": "★**저장해 둔 카드를 지금 자리에 꽂는다** — 그림체(styles) · 캐릭터(characters) · 포즈세트(posesets). «저장해 둔 수채화풍으로»·«키키 카드 올려줘» 가 이것이다. 카드 목록은 `list_cards` 로 본다.",
+      "args": {
+        "kind": {
+          "type": "string",
+          "desc": "",
+          "required": true
+        },
+        "card": {
+          "type": "string",
+          "desc": "카드 이름 또는 id",
+          "required": true
+        }
+      }
+    },
+    {
+      "id": "create_workspace",
+      "desc": "★**새 워크스페이스를 만들고 그리로 옮겨 간다.** 워크스페이스는 최상위 작업 공간이라 생성 옵션·바이브가 넘어가지 않는다 — «새 작업 시작하자» 같은 요청에서 쓴다.",
+      "args": {
+        "name": {
+          "type": "string",
+          "desc": "워크스페이스 이름",
+          "required": true
+        }
+      }
     }
   ]
 }

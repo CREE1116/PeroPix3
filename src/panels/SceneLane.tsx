@@ -7,6 +7,7 @@ import { useQueue } from "../store/queue";
 import { LANE_MAX, LANE_MIN, useUi } from "../store/ui";
 import { allCells, useWs, takesOfScene, type Rec, type SceneCard, type Slot } from "../store/workspace";
 import { newestFirst } from "../lib/takes";
+import { applyCard } from "../lib/applyCard";
 import { imgUrl, thumbUrlOf } from "../lib/imgUrl";
 import { Icon } from "../components/Icon";
 import { Ratio, RATIO_LANDSCAPE, RATIO_PORTRAIT } from "../components/Ratio";
@@ -95,11 +96,10 @@ export function SceneLane() {
     id: "lane-setzone",
     kind: "posesets",
     prio: 5,
+    /* ★★꽂는 규칙은 **공용 함수 하나**다 (`lib/applyCard`, 2026-08-24) — 조수가
+       «저장해 둔 포즈세트 올려줘» 를 받을 때 **같은 것**을 부른다. */
     onDrop: (d) => {
-      const c = d.card as { name: string; color?: [string, string]; cells?: Slot[] } | undefined;
-      const cur = useWs.getState().activeSet();
-      if (!c?.cells?.length || cur?.kind !== "set") return;
-      addCard(cur.id, { name: c.name, color: c.color, cells: c.cells });
+      if (d.card) applyCard("posesets", d.card as never);
     },
   });
 

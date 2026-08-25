@@ -486,7 +486,17 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
 
     if (action === "create_set") {
       const ws2 = useWs.getState();
-      const before = new Set((ws2.spec?.sets ?? []).map((x) => x.id));
+      /* ★★**받을 탭을 먼저 연다** (시뮬레이션 구멍 A, 2026-08-24). 세트는 **탭에 속하는데**
+         (`SceneSet.tabId`) 여기는 지금 활성 탭에만 만들고 있었다 — 그래서
+         *"키키의 감정별 10종"* 같은 요청이 **남의 탭 밑에** 세트를 만들 수 있었다.
+         오류도 안 나고, 사용자는 엉뚱한 탭에서 그것을 발견한다. */
+      const wantTab = String(args.tab ?? "").trim();
+      if (wantTab) {
+        const hit = (ws2.spec?.tabs ?? []).find((c) => c.id === wantTab || c.name === wantTab);
+        if (!hit) return { error: `그런 탭이 없습니다: ${wantTab}` };
+        if (ws2.spec?.activeTab !== hit.id) ws2.switchTab(hit.id);
+      }
+      const before = new Set((useWs.getState().spec?.sets ?? []).map((x) => x.id));
       // ★씬을 안 주면 **빈 세트**다 (사람이 `+` 로 만들 때와 같다). 이름을 주면 그 씬 하나로 연다
       const scenes = (args.scenes as string[] | undefined)?.map((x) => String(x)) ?? [];
       ws2.addSet(String(args.name ?? "").trim() || t("set.newSet"), scenes);

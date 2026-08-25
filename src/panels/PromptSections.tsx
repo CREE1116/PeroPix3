@@ -12,16 +12,17 @@ import {
   type Thumb,
 } from "../store/prompt";
 import type { DragImage } from "../cards/dragStore";
-import { canEnableChar, toggleCharCapped, useGen } from "../store/gen";
+import { toggleCharCapped, useGen } from "../store/gen";
 import { useUi } from "../store/ui";
 import { useDropZone, useDragSource, useDrag } from "../cards/dragStore";
+import { applyCard } from "../lib/applyCard";
 import { zoneIcon } from "../cards/CardArt";
 import { DropVeil } from "../cards/DropVeil";
 import { FittedImg } from "../cards/FittedImg";
 import { BANNER_BG, BANNER_CUT, BANNER_IMG_W, BANNER_STEP, bannerEmptyFill } from "../cards/banner";
 import type { Block } from "../lib/blocks";
 import type { CharCard, StyleCard } from "../store/cards";
-import { pickStyleOpts, styleOptsPatch } from "../lib/styleOpts";
+import { pickStyleOpts } from "../lib/styleOpts";
 import { PromptOptsBar } from "./PromptOpts";
 
 /** 프롬프트 섹션들 — 스타일(공통) 하나 + 캐릭터 여럿.
@@ -64,28 +65,10 @@ export function StyleSection({ onThumb }: SectionProps) {
   const { ref, over, active } = useDropZone({
     id: "sec-style",
     kind: "styles",
-    onDrop: (d) => {
-      const c = d.card as StyleCard;
-      setStyle({
-        ref: c.id,
-        name: c.name,
-        color: c.color,
-        base: c.base,
-        uc: c.uc,
-        thumb: thumbFromCard(c.thumb),
-      });
-      /* ★★프롬프트가 되는 넷도 함께 건다 (`lib/styleOpts` 의 ★주) — 이것이 카드 밖에
-         남아 있으면 **같은 카드가 다른 그림을 낸다.** 옛 카드에는 없으니 그때는 안 바뀐다.
-         ★바뀐 것이 있으면 그 자리를 **펴고 강조한다** — 프롬프트 밖의 값이 함께 바뀌는 것이라
-           안 알리면 「왜 갑자기 퀄리티 태그가 붙었지」가 된다 (`applyMetaParams` 와 같은 방식).
-           ★데려가지는 않는다: 카드를 놓는 것은 프롬프트를 보면서 하는 일이다. */
-      const cur = useGen.getState().params;
-      const patch = styleOptsPatch(cur, c.opts);
-      if (Object.keys(patch).length) {
-        useGen.setState({ params: { ...cur, ...patch } });
-        useUi.getState().reveal("left", "params", false);
-      }
-    },
+    /* ★★꽂는 규칙은 **공용 함수 하나**다 (`lib/applyCard`, 2026-08-24) — 조수가
+       «저장해 둔 그 그림체로» 를 받을 때 **같은 것**을 부른다. 여기 규칙을 되살리지 말 것:
+       두 벌이 되면 끌어다 놓은 것과 조수가 꽂은 것이 달라진다. */
+    onDrop: (d) => applyCard("styles", d.card as StyleCard),
   });
   const img = useThumbDrop("base", (di) => onThumb("base", di));
   /** ★★훅은 **JSX 안에서 부르지 않는다** (사용자 지적 2026-08-19: 스타일 카드를 빼면 화면이
@@ -488,24 +471,11 @@ function StackPeek({ ch }: { ch: Char }) {
  *  캐릭터 드래그 중에만 나타난다. */
 export function JoinZone() {
   const t = useI18n((s) => s.t);
-  const addChar = usePrompt((s) => s.addChar);
   const { ref, over, active } = useDropZone({
     id: "char-join",
     kind: "characters",
     prio: 1,
-    onDrop: (d) => {
-      const c = d.card as CharCard;
-      addChar({
-        ref: c.id,
-        name: c.name,
-        color: c.color,
-        prompt: c.prompt,
-        uc: c.uc,
-        thumb: thumbFromCard(c.thumb),
-        // ★자리가 없으면 **꺼진 채로** 들어온다 — 담는 것은 막지 않고, 나가는 수만 지킨다
-        on: canEnableChar(),
-      });
-    },
+    onDrop: (d) => applyCard("characters", d.card as CharCard),
   });
   if (!active) return null;
   return (
