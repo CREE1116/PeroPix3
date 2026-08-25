@@ -21,6 +21,7 @@ import { useCensor } from "../store/censor";
 import { useQueue } from "../store/queue";
 import { useUi } from "../store/ui";
 import { useGen } from "../store/gen";
+import { useLlm } from "../store/llm";
 import { costNow, countNow } from "./costNow.ts";
 import { t } from "../i18n";
 
@@ -215,6 +216,31 @@ defineAction({
     if (!c.images.length) return err("not_found", "검열 목록이 비어 있습니다. 먼저 그림을 넣어 주세요.");
     await c.scanAll();
     return { ok: true, did: `검열 ${c.images.length}장 훑음`, at: { kind: "censor" } };
+  },
+});
+
+
+/* ── 대화 이름 ────────────────────────────────────────────────
+   ★★**지금 대화하는 조수가 짓는다** (사용자 지시 2026-08-25: *"이름짓기를 왜 API 키로
+     호출함? 지금 대화하는 ai가 지어야지"*). 한때 이름 하나를 위해 BYOK 로 따로 한 번 더
+     불렀는데, CLI 로 도는 사용자에게는 **대화하는 쪽과 다른 모델**이 이름을 지었다.
+   ★★**호출을 더 늘리지 않는다** (사용자 지시: *"그냥 처음에 그걸 먼저 하고 작업 시작하라고
+     하면 되는 거 아님?"*). 첫 턴의 지침에 한 줄을 얹어, 도구 하나를 먼저 부르게 한다. */
+
+defineAction({
+  id: "name_chat",
+  title: "이 대화에 이름을 붙입니다",
+  desc: "★**이 대화의 이름**을 정한다. 이름이 없는 새 대화라면 **다른 일보다 먼저** 부른다. "
+    + "무엇에 관한 대화인지를 짧게 적는다 (20자 안팎, 따옴표·마침표 없이). "
+    + "사용자가 쓴 언어로 적는다.",
+  args: { title: { type: "string", desc: "짧은 제목", required: true } },
+  // ★값 하나를 적는 일이고 사용자가 언제든 새 대화를 열 수 있다 — 물을 것이 없다
+  confirm: "none",
+  run: async (a) => {
+    const name = String(a.title ?? "").trim().replace(/^["'「]|["'」]$/g, "").slice(0, 40);
+    if (!name) return err("unknown_field", "제목이 비어 있습니다.", { given: String(a.title) });
+    useLlm.getState().setTitle(name);
+    return { ok: true, did: `대화 이름을 «${name}» 으로 정함` };
   },
 });
 
