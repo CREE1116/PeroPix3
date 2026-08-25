@@ -79,7 +79,9 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
           gap: "var(--sp-2)",
           padding: "4px var(--sp-4)",
           borderBottom: "1px solid var(--line)",
-          fontSize: "var(--text-2xs)",
+          /* ★★**딱지 층이다** (사용자 지시 2026-08-25). 「지금 어디를 보고 있나」를 조용히
+             알리는 줄이라, 아래의 엔진·모델 표시와 **같은 층**으로 읽혀야 한다. */
+          ...TYPE.eyebrow,
           color: "var(--ink-faint)",
           whiteSpace: "nowrap",
           overflow: "hidden",
