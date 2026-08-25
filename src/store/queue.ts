@@ -529,31 +529,47 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
       const drop = mode === "remove";
       /** 지목한 블록 하나 — `get_workspace` 가 블록마다 주는 `id` 다 (`_view`) */
       const wantBlock = String(args.block ?? "").trim();
-      const apply = (cur: Block[]): Block[] => {
-        /* ★id 로 지목했으면 **그 블록 하나**다 — 이름이 겹쳐도 흔들리지 않는다 */
+      /* ★★**이름으로는 못 고른다** (사용자 정정 2026-08-26: *"보통 다 같은 이름임. 블록에
+           이름 잘 지정 안 해서"*). 기본 이름이 「새 블록」이라 **거의 모든 블록이 같은 이름**
+           이다 — 이름으로 갈아 끼우거나 걷으면 **남의 블록까지 함께 간다.**
+         ★한때 「같은 이름은 합친다」로 두었는데, 그 규칙은 이 자리에서 통째로 뭉개는 짓이다.
+           걷어냈다. 여럿이면 **고르지 않고 되묻는다** — 후보에 id 와 앞 태그를 실어 주므로
+           조수가 그것으로 지목하면 된다 (`block`).
+         ★고칠 자리가 둘이면 **두 번 부르면 된다** — 하나는 갈아 끼우고 하나는 걷어낸다. */
+      const pickOne = (cur: Block[]): { at: number } | { many: Block[] } | null => {
         if (wantBlock) {
           const at = cur.findIndex((b) => b.id === wantBlock);
-          if (at >= 0)
-            return drop ? cur.filter((_, i) => i !== at) : cur.map((b, i) => (i === at ? { ...b, tags } : b));
+          return at >= 0 ? { at } : null;
         }
         const hits = cur.filter((b) => b.label === label);
-        /* ★★**같은 이름이 여럿이면 합친다** (사용자 지시 2026-08-26: *"블록 2개로 나뉘어
-             있어도 알아서 합쳐서 수정하면 되는 건데 수정을 계속 못 함"*).
-           블록 기본 이름이 「새 블록」이라 **나뉘어 있는 것이 예사**인데, 예전에는 그중
-           **처음 걸리는 것**만 갈아 끼웠다. 그러면 나머지에 남은 옛 태그가 그대로 살아
-           있어 «바꿨는데 안 바뀌었다»가 된다.
-           ★합치는 방식: **첫 자리에** 새 태그를 넣고, 같은 이름의 나머지는 뺀다.
-             자리를 첫 것으로 잡는 까닭은 그 블록이 프롬프트에서 **앞에 서 있기** 때문이다
-             (앞에 있을수록 세게 걸린다 — 순서를 바꾸지 않는다).
-           ★지우기도 같은 규칙이다 — 같은 이름이면 **전부** 걷는다.
-           ★`add` 는 그대로 뒤에 붙인다 — 합치는 것은 **갈아 끼울 때**의 규칙이다. */
-        if (drop) return hits.length ? cur.filter((b) => !hits.includes(b)) : cur;
-        if (replace && hits.length) {
-          const first = hits[0];
-          const gone = new Set(hits.slice(1));
-          return cur.filter((b) => !gone.has(b)).map((b) => (b === first ? { ...b, tags } : b));
-        }
+        if (hits.length > 1) return { many: hits };
+        return hits.length === 1 ? { at: cur.indexOf(hits[0]) } : null;
+      };
+      /** 고른 자리에 새 태그를 넣거나(갈아 끼움) 그 블록을 걷는다. 못 고르면 뒤에 붙인다 */
+      const apply = (cur: Block[]): Block[] => {
+        const pick = pickOne(cur);
+        if (pick && "at" in pick)
+          return drop
+            ? cur.filter((_, i) => i !== pick.at)
+            : cur.map((b, i) => (i === pick.at ? { ...b, tags } : b));
+        if (drop) return cur;                       // 걷을 것이 없다 — 그대로 둔다
         return [...cur, makeBlock(label, [], { open: true, tags })];
+      };
+      /** 하나로 안 좁혀지면 **고르지 않고 되묻는다** — 후보에 id 와 앞 태그를 실어 준다 */
+      const tooMany = (cur: Block[]) => {
+        const pick = pickOne(cur);
+        if (!pick || !("many" in pick)) return null;
+        return err(
+          "ambiguous",
+          `「${label}」 이름의 블록이 ${pick.many.length}개입니다. block 에 블록 id 를 주세요.`,
+          {
+            what: "block",
+            given: label,
+            candidates: pick.many.map(
+              (b) => `${b.id}: ${b.tags.map((x) => x.t).slice(0, 4).join(", ")}`,
+            ),
+          },
+        );
       };
       const at = {
         kind: "prompt" as const,
@@ -567,6 +583,8 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
 
       if (area === "base" || area === "baseUc") {
         const before = usePrompt.getState()[area];
+        const many = tooMany(before);
+        if (many) return many;
         usePrompt.getState().update(area, apply);
         dropHumanUndo(area === "base" ? "base-p" : "base-uc");
         const what = area === "base" ? "베이스 프롬프트" : "베이스 UC";
@@ -591,6 +609,8 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
         if (!ch) return { error: `자리를 만들지 못했습니다: ${area}` };
       }
       const before = ch[field];
+      const many = tooMany(before);
+      if (many) return many;
       usePrompt.getState().updateChar(ch.id, field, apply);
       dropHumanUndo(`${ch.id}-${field === "uc" ? "uc" : "p"}`);
       const now = usePrompt.getState().chars.find((c) => c.id === ch!.id);

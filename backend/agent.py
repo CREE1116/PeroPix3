@@ -740,8 +740,9 @@ class Tools:
                         "tags": s("태그들 — 쉼표로 구분"),
                         "mode": s('"add"(기본, 뒤에 붙임) · "replace"(같은 이름을 갈아 끼움) · '
                                   '"remove"(그 블록을 걷어냄 — 되돌릴 수 있다)'),
-                        "block": s("블록 하나를 지목할 때 그 **블록 id** "
-                                   "(`get_workspace` 의 블록마다 붙어 온다). 이름이 겹칠 때 쓴다"),
+                        "block": s("어느 블록을 — **블록 id** (`get_workspace` 가 블록마다 준다). "
+                                   "★블록 이름은 대개 다 같으므로(기본 이름) **id 가 정본**이다. "
+                                   "이름이 여럿에 걸리면 고르지 않고 되묻는다"),
                         "workspace": s("어느 워크스페이스 — 비우면 지금 열린 것 (다르면 거절한다)"),
                         "tab": s("어느 탭 — id 가 정확하다 (이름도 받는다). 비우면 지금 탭"),
                         "set": s("어느 세트 — **id 로** 줘라 (이름은 탭마다 겹친다). 비우면 지금 세트"),
@@ -1393,8 +1394,10 @@ Principles:
   entry, two blocks at once - and fix them there. You may **rewrite or remove** the user's
   blocks to do it (`mode: "replace"` / `"remove"`; every edit is undoable via `undo_change`).
   ★★**Working around them is the failure mode**: adding a second block that says the opposite,
-  putting the old tag in the UC, or asking the user to rename their blocks first. If several
-  blocks share a name, `replace` merges them - that is not a reason to stop and ask.
+  putting the old tag in the UC, or asking the user to rename their blocks first.
+  ★★**Address blocks by `block` id, not by name.** Most blocks carry the same default name, so
+  a name usually matches several - the tool then refuses and hands you the ids with a preview.
+  Two blocks to fix is two calls: replace one, `remove` the other. That is not a reason to stop.
   Ask only when you cannot tell **which meaning** the user wants, never because the layout is
   awkward.
 - ★★**Respect where the user already keeps things.** Some people write character tags in
