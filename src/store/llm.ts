@@ -89,6 +89,23 @@ export type Ask = {
   answer: (labels: string[]) => void;
 };
 
+/** **승인 요청** — 조수가 되돌릴 수 없는 일을 하기 전에 대화 안에 뜬다 (2026-08-24).
+ *
+ *  ★★모달 확인 창(`store/ask`)이 아니라 **여기**인 이유 (사용자 결정): 클로드 코드가 파일
+ *    삭제 전에 승인을 받는 것과 같은 모양이다. 왕복이 한 번이고, **대화에 남아** 무엇을
+ *    승인했는지 나중에 되짚을 수 있다 — 모달은 누르고 나면 흔적이 없다.
+ *  ★기제는 `Ask` 와 같다: **답할 때까지 도구가 기다린다.** 새로 만들지 않고 한 벌 더 쓴다.
+ *  ★조수가 잊을 수 있는 것이 없다 — 토큰을 조수에게 쥐여 주는 방식(2판)을 이것으로 바꿨다. */
+export type Confirm = {
+  /** 무엇을 하려는가 — 한 줄 */
+  title: string;
+  /** 무엇이 사라지나·얼마가 드나 (액션의 `preview` 가 만든다) */
+  body?: string;
+  /** ★되돌릴 수 없는 일인가 — 빨갛게 그리고, 「자동 승인」에서도 묻는다 */
+  hard?: boolean;
+  answer: (okay: boolean) => void;
+};
+
 /** 한 번의 물음에 도구를 몇 번까지 이어 쓰나 — 무한 루프를 막는 울타리 */
 const MAX_ROUNDS = 12;
 
@@ -178,6 +195,8 @@ type S = {
   error: string;
   /** 지금 화면에 떠 있는 물음 (없으면 null) */
   ask: Ask | null;
+  /** 지금 떠 있는 **승인 요청** — 되돌릴 수 없는 일 앞에서 뜬다 (`Confirm` 주석) */
+  confirm: Confirm | null;
   /** CLI 턴에서 저쪽이 들고 있는 대화 id — 다음 턴에 `--resume` 으로 이어 붙인다 */
   cliSession: string | null;
   /** 이 대화의 CLI 세션이 저쪽에 **없다** — 열 때 확인한다.
@@ -224,6 +243,7 @@ export const useLlm = create<S>((set, get) => ({
   queued: [],
   error: "",
   ask: null,
+  confirm: null,
   cliSession: null,
   cliSessionGone: false,
 
@@ -311,6 +331,7 @@ export const useLlm = create<S>((set, get) => ({
         lines: linesOf(d.wire ?? []),
         error: "",
         ask: null,
+        confirm: null,
         cliSession: d.session || null,
         cliSessionGone: false,
       });
@@ -335,7 +356,7 @@ export const useLlm = create<S>((set, get) => ({
     // ★턴이 도는 중에는 안 바꾼다 — 돌던 응답이 **새 대화에 붙는다** (2026-08-08 확인)
     if (get().sending) return;
     // ★CLI 세션도 함께 끊는다 — 안 그러면 새 대화인데 저쪽은 옛 맥락을 들고 있다
-    set({ id: newId(), wire: [], lines: [], error: "", ask: null, cliSession: null,
+    set({ id: newId(), wire: [], lines: [], error: "", ask: null, confirm: null, cliSession: null,
           cliSessionGone: false, queued: [] });
   },
 

@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import nai
+import trash
 
 # 태그 사전은 프론트 자산이지만 **파일**이라 백엔드도 읽는다 (한 벌만 둔다)
 #: ★★**둘을 함께 읽는다** — 단부루 덤프와, 우리가 더한 것(V5 태그·nsfw/sfw 등).
@@ -138,6 +139,66 @@ def _tab_model(spec: dict) -> str:
         if c.get("id") == spec.get("activeTab"):
             return str((c.get("gen") or {}).get("model") or nai.GenRequest.model)
     return nai.GenRequest.model
+
+
+#: 앱 액션 목록 — **빌드할 때** 프론트에서 뽑아 둔 것 (`scripts/gen-actions.mjs`)
+ACTIONS_JSON = Path(__file__).resolve().parent / "actions.json"
+_actions_cache: list[dict] | None = None
+
+
+def _actions() -> list[dict]:
+    """`actions.json` → 도구 명세.
+
+    ★★**앱이 접속할 때 받지 않는다.** 그 방식은 이미 써 보고 버렸다 — 화면이 붙는 순간에만
+      올려서, 코드가 갱신돼도 소켓이 그대로면 **도구가 0개**로 보였다 (이 파일 머리 주석).
+    ★파일이 없으면 **빈 목록**이다 (개발 중에 아직 안 뽑았을 수 있다). 앱 도구가 통째로
+      사라지므로 콘솔에 남긴다 — 조용히 비면 「도구가 없다」의 원인을 못 찾는다."""
+    global _actions_cache
+    if _actions_cache is not None:
+        return _actions_cache
+    out: list[dict] = []
+    try:
+        raw = json.loads(ACTIONS_JSON.read_text(encoding="utf-8"))
+        for a in raw.get("actions") or []:
+            props, req = {}, []
+            for name, spec in (a.get("args") or {}).items():
+                p: dict[str, Any] = {"type": spec.get("type", "string"),
+                                     "description": spec.get("desc", "")}
+                if spec.get("items"):
+                    p["items"] = {"type": spec["items"].get("type", "string")}
+                props[name] = p
+                if spec.get("required"):
+                    req.append(name)
+            out.append({
+                "name": a["id"],
+                "description": a.get("desc", ""),
+                "inputSchema": {"type": "object", "properties": props, "required": req},
+            })
+    except FileNotFoundError:
+        print(f"[agent] {ACTIONS_JSON.name} 이 없습니다 — `node scripts/gen-actions.mjs` 를 돌리세요.")
+    except Exception as e:
+        print(f"[agent] {ACTIONS_JSON.name} 을 못 읽었습니다: {e}")
+    _actions_cache = out
+    return out
+
+
+def _is_action(name: str) -> bool:
+    """앱이 해야 하는 액션인가 — `call` 이 앱으로 넘길지 가르는 자리"""
+    return any(a["name"] == name for a in _actions())
+
+
+def _tab_gen(spec: dict) -> dict:
+    """지금 탭의 **생성 옵션 전부** — 모델·크기·스텝·시드·CFG… (선결 조건 3-6).
+
+    ★★**담기는 자리는 탭이다** (`src/store/gen.ts` 의 `stashGen`). 다만 지금 보고 있는 탭의
+      값은 **화면 메모리에만** 있다가 탭을 떠날 때 담기므로, 여기서 읽은 것이 화면과
+      다를 수 있다. 그래서 조수가 값을 **고칠 때는 파일이 아니라 액션**으로 간다
+      (`docs/agent-actions-design.md` 4절).
+    ★없는 탭·옛 워크스페이스는 빈 것을 돌려준다 — 지어내지 않는다."""
+    for c in spec.get("tabs") or []:
+        if c.get("id") == spec.get("activeTab"):
+            return dict(c.get("gen") or {})
+    return {}
 
 
 class App:
@@ -279,12 +340,34 @@ class Tools:
 
     # ── 목록 ────────────────────────────────────────────────────
     def specs(self) -> list[dict]:
-        return [
+        """★**앱 액션은 빌드 때 뽑은 파일에서 온다** (`actions.json`, 2026-08-24).
+
+        표(`_table`)에 손으로 적던 앱 도구가 **스키마는 여기, 구현은 앱**으로 나뉘어 있어
+        조용히 어긋났다 (`generate` 의 `set`). 이제 한쪽(`src/lib/appActions.ts`)에서 뽑는다.
+        ★같은 이름이 표에도 있으면 **표가 진다** — 옮기는 중에 두 벌이 되지 않게."""
+        out = [
             {"name": n, "description": d, "inputSchema": s}
             for n, d, s, _ in self._table()
         ]
+        have = {x["name"] for x in out}
+        for a in _actions():
+            if a["name"] in have:
+                # ★옮겨진 것 — 파일 쪽 설명·스키마로 갈아 끼운다 (정본이 그쪽이다)
+                for x in out:
+                    if x["name"] == a["name"]:
+                        x["description"], x["inputSchema"] = a["description"], a["inputSchema"]
+                continue
+            out.append(a)
+        return out
 
     async def call(self, name: str, args: dict) -> dict:
+        # ★★표에 없는 이름이라도 **액션 목록에 있으면 앱에 시킨다** (2026-08-24).
+        #   ★기다리는 시간이 넉넉해야 한다: 되돌릴 수 없는 일 앞에서는 앱이 **승인 카드**를
+        #     띄우고 사람이 누를 때까지 멈춘다 (`docs/agent-actions-design.md` 2-5).
+        #     `ask_user` 와 같은 취급으로 두지 않으면, 사람이 답하는 중에 도구가 시간 초과로
+        #     끝나 놓고 **그 뒤에 실행**되는 어긋남이 난다.
+        if not any(n == name for n, _, _, _ in self._table()) and _is_action(name):
+            return self._mark_app(name, await self.app.do(name, args or {}, timeout=600.0))
         for n, _, _, fn in self._table():
             if n != name:
                 continue
@@ -292,7 +375,11 @@ class Tools:
             if fn is None:
                 # ★사람이 답할 때까지 기다리는 도구는 넉넉히 (클로드 코드의 stdio MCP 유휴
                 #   한계가 30분이라 그 안이면 된다)
-                out = await self.app.do(name, args or {}, timeout=600.0 if name == "ask_user" else 120.0)
+                # ★★**사람을 기다리는 도구는 넉넉히.** `ask_user` 만이 아니라 **승인 카드가
+                #   뜰 수 있는 것 전부**가 그렇다 (2026-08-24). 짧게 두면 사람이 승인을 누르는
+                #   동안 도구가 시간 초과로 끝나 놓고 **그 뒤에 실행**되는 어긋남이 난다
+                #   (조수는 실패로 보고했는데 실제로는 지워진다).
+                out = await self.app.do(name, args or {}, timeout=600.0)
                 return self._mark_app(name, out)
             try:
                 out = fn(args or {})
@@ -518,6 +605,25 @@ class Tools:
                 self._undo_change,
             ),
             (
+                "list_trash",
+                "★**휴지통에 든 것** — 최근에 버린 것부터. 지운 그림은 24시간 동안 여기 있다가 "
+                "앱을 켤 때 비워진다. 사용자가 «아까 지운 거 살려줘» 라고 하면 이걸로 먼저 찾는다. "
+                "★사람이 지운 것도 여기 있다 (list_changes 는 내가 한 것만 보여 준다).",
+                obj({"limit": n("몇 개까지. 기본 30"),
+                     "workspace": s("어느 워크스페이스인지 — 비우면 앱이 열어 둔 것")}),
+                self._list_trash,
+            ),
+            (
+                "restore_files",
+                "★**휴지통에서 되살린다.** `list_trash` 가 준 줄을 그대로 넘긴다. "
+                "★그 사이 같은 이름이 생겼으면 덮지 않고 번호를 붙인다 — 새 이름을 돌려주니 "
+                "사용자에게 그것을 말해라.",
+                obj({"items": arr("되살릴 것 — list_trash 의 줄 그대로",
+                                  obj({"file": s("원래 자리"), "at": s("휴지통 안 이름")}, ["file", "at"])),
+                     "workspace": s("어느 워크스페이스인지 — 비우면 앱이 열어 둔 것")}, ["items"]),
+                self._restore_files,
+            ),
+            (
                 "read_image_meta",
                 "생성물 한 장의 메타데이터 — 프롬프트·시드·설정. 무엇으로 만들었는지 되짚을 때.",
                 obj({"file": s("워크스페이스 폴더 기준 상대경로"),
@@ -528,12 +634,24 @@ class Tools:
 
     # ── 구현 ────────────────────────────────────────────────────
     def _get_ws(self, a: dict) -> dict:
+        """★★**읽는 곳과 쓰는 곳을 맞춘다** (선결 조건 3-5, 2026-08-24).
+
+        예전에는 이름이 없으면 `store.list()[0]` 을 봤다. 그 목록은 **이름순 정렬**이라
+        (`workspace.Store.list`) 도구 설명의 "비우면 가장 최근 것"부터가 거짓이었고,
+        쓰기는 앱이 연 것을 보므로 **다른 데를 읽고 다른 데에 쓸** 수 있었다.
+        이제 쓰기와 같은 자리(`_ws_name`)를 본다."""
+        # ★이 도구의 인자 이름은 `name` 이다 (파일 도구의 `workspace` 와 다르다 — 낱말표).
         name = str(a.get("name") or "").strip()
+        if not name:
+            # ★★**앱이 열어 둔 것을 먼저 본다** — 쓰기가 보는 자리와 같아야 한다.
+            name = str(self.app.workspace or "").strip()
         if not name:
             lst = self.store.list()
             if not lst:
                 return {"error": "워크스페이스가 없습니다."}
-            name = lst[0]["name"]
+            # ★앱이 안 알려 줬을 때만 여기 온다 (헤드리스 MCP). **가장 최근에 고친 것**을
+            #   고른다 — 이름순 첫 번째(옛 동작)는 아무 뜻이 없다.
+            name = max(lst, key=lambda x: str(x.get("updatedAt") or ""))["name"]
         spec = self.store.load(name)
         if spec is None:
             return {"error": f"그런 워크스페이스가 없습니다: {name}"}
@@ -541,7 +659,17 @@ class Tools:
         for t in spec.get("sets", []):
             row = {"id": t.get("id"), "kind": t.get("kind"), "name": t.get("name")}
             if t.get("kind") == "set":
+                # ★어느 탭에 달렸는지 — 조수가 「키키 탭의 세트」를 고르려면 있어야 한다
+                row["tab"] = t.get("tabId")
                 row["scenes"] = _scenes(t)
+                # ★★**카드 층을 함께 준다** (선결 조건 3-6). 씬을 옮기려면 **받을 카드의 id** 가
+                #   필요한데 `_scenes` 는 카드 **이름**만 실어 줘서, 같은 이름의 카드가 둘이면
+                #   조수가 고를 수 없었다.
+                row["cards"] = [
+                    {"id": k.get("id"), "name": k.get("name"),
+                     "locked": bool(k.get("locked")), "scenes": len(k.get("cells") or [])}
+                    for k in (t.get("cards") or [])
+                ]
             p = _set_prompt(spec, t)
             if p:
                 row["prompt"] = {
@@ -549,8 +677,17 @@ class Tools:
                     "base": _view(p.get("base")),
                     "baseUc": _view(p.get("baseUc")),
                     # ★「캐릭터 프롬프트」다 — 덱의 **캐릭터 카드**와 다른 것이다 (낱말표)
+                    #  ★★`id`·`on`·`center`·`stack` 을 함께 준다 (선결 조건 3-6): 꺼진 캐릭터를
+                    #    켜거나 자리를 옮기려면 조수가 그 값을 **먼저 볼 수 있어야** 한다.
+                    #  ★`center` 는 화면에서 설 자리(0~1)이고 **언제나 값이 있다**
+                    #    (`store/prompt.ts` 의 `Char.center`) — 좌표를 안 쓰는 상태는
+                    #    이 값을 비우는 것이 아니라 `use_coords` 를 끄는 것이다.
+                    #  ★`stack` 은 순차 생성 대기줄이라 **수만** 준다 (본문은 카드가 들고 있다).
                     "characters": [
-                        {"name": c.get("name"), "prompt": _view(c.get("prompt")), "uc": _view(c.get("uc"))}
+                        {"id": c.get("id"), "name": c.get("name"),
+                         "on": c.get("on", True), "center": c.get("center"),
+                         "stack": len(c.get("stack") or []),
+                         "prompt": _view(c.get("prompt")), "uc": _view(c.get("uc"))}
                         for c in (p.get("chars") or [])
                     ],
                 }
@@ -566,6 +703,10 @@ class Tools:
             "activeSet": spec.get("activeSet"),
         }
         out["model"] = _tab_model(spec)
+        # ★★**생성 옵션을 통째로 준다** (선결 조건 3-6). 예전에는 `model` 하나뿐이라
+        #   "같은 시드로 다시" 같은 요청에서 조수가 지금 값을 **볼 수조차** 없었다.
+        #   ★쓰기(액션)를 만들기 전에 읽기부터 채운다 — 못 읽는 값은 못 고친다.
+        out["gen"] = _tab_gen(spec)
         limit = int(a.get("records", 0) or 0)
         if limit:
             recs = self.store.records(name, limit)
@@ -784,6 +925,36 @@ class Tools:
         if not p.is_file():
             return {"error": "그런 파일이 없습니다."}
         return self.meta.read(p) or {"error": "메타데이터가 없습니다."}
+
+    # ── 휴지통 (선결 조건 3-9) ──────────────────────────────────
+    def _list_trash(self, a: dict) -> dict:
+        """★잘못 지운 것을 조수가 되살릴 수 있게 하는 **첫 걸음**이다.
+        되살리기가 요구하는 `{file, at}` 를 그대로 실어 준다."""
+        rows = trash.listing(self._ws_root(a), int(a.get("limit", 30) or 30))
+        if not rows:
+            return {"items": [], "note": "휴지통이 비어 있습니다."}
+        return {"items": rows}
+
+    def _restore_files(self, a: dict) -> dict:
+        items = [x for x in (a.get("items") or []) if isinstance(x, dict) and x.get("at")]
+        if not items:
+            return {"error": "되살릴 것을 주세요 (list_trash 의 줄을 그대로)."}
+        root = self._ws_root(a)
+        r = trash.restore_at(root, items)
+        back, missing = r.get("restored") or [], r.get("missing") or []
+        if not back:
+            return {"error": f"되살리지 못했습니다 (휴지통에 없음): {', '.join(missing[:3])}"}
+        # ★★**이름이 바뀔 수 있다** — 같은 이름이 이미 있으면 번호를 붙인다(`restore_at`).
+        #   그 짝(`pairs`)을 그대로 실어 조수가 새 이름을 사용자에게 말할 수 있게 한다.
+        did = f"휴지통에서 {len(back)}개를 되살림"
+        out: dict[str, Any] = {"ok": True, "restored": back, "pairs": r.get("pairs") or [], "did": did}
+        if missing:
+            out["missing"] = missing
+        out["at"] = self._mark("restore_files", did, {"kind": "files"},
+                               before=None, after=back, undoable=False,
+                               why="되살린 것을 다시 지우려면 사용자가 직접 지웁니다")
+        self.notify("files")
+        return out
 
 
 # ★요청 창구. **설정에서 바꿀 수 있다**(`config.json` 의 `support_url`) — 주소가 바뀌어도

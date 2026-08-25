@@ -10,7 +10,8 @@ import { allScenes, useWs } from "../store/workspace";
 import { useImageInput } from "../store/imageInput";
 import { useUi } from "../store/ui";
 import { toast } from "../store/toast";
-import { anlasCost, MAX_PER_IMAGE } from "../lib/anlas";
+import { MAX_PER_IMAGE } from "../lib/anlas";
+import { costNow } from "../lib/costNow";
 import { usageDuration, usageFullInSeconds, usageLow, usagePercent, usageRefillPerHour } from "../lib/opusUsage";
 import { useSub } from "../store/sub";
 import { useAnlasMeter } from "../store/anlasMeter";
@@ -93,32 +94,10 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
    *    마스크 없는 i2i 로 보낸다). 값 계산은 그 사실을 그대로 따른다 (`costInpaint`).
   /** ★해상도 칸이 아니라 **나가는 크기**로 센다 — Focused 인페인트는 서버가 조각을 1MP 로
    *  키워 보내므로 둘이 다르다 (`imageInput.costSize`) */
-  const size = img.costSize();
-  const cost = anlasCost({
-    // ★★모델을 함께 넘긴다 — **V5 는 배율이 1.5**다 (`lib/anlas.ts`). 빼면 표시가 2/3 가 된다
-    model: params.model,
-    width: size.width,
-    height: size.height,
-    steps: params.steps,
-    opus: (sub?.tier ?? 0) >= 3,
-    // ★잔량이 바닥나면 무료가 꺼진다 (V5·custom 한정 — `lib/anlas.ts`)
-    opusExhausted: !!usage?.isNegative,
-    // ★★그 모델이 지원하지 않으면 **안 나간다** — V5 는 바이브도 정밀 참조도 없다.
-    //   화면에서 절을 감추지만 담아 둔 것은 남아 있으므로, **값도 같은 능력표로** 막아야
-    //   보내는 것과 표시가 같아진다 (`backend/nai.py` 의 `caps`).
-    uncachedVibes: cap.vibe && img.vibeOn ? img.vibes.filter((v) => !v.encoded).length : 0,
-    // ★**켜진** 것이 4개를 넘으면 초과분 개당 +2 — 구워 둔 것도 센다 (요청당 한 번).
-    //   v3 에는 바이브 하나씩 끄는 스위치가 없다 — 목록에 있는 것이 곧 켜진 것이다
-    //   (`payload()` 가 목록을 통째로 싣는다). 그런 스위치를 만들면 여기도 함께 고친다
-    activeVibes: cap.vibe && img.vibeOn ? img.vibes.length : 0,
-    refCount: cap.char_ref && img.refOn ? img.refs.length : 0,
-    // ★인페인트면 바이브 비용이 통째로 빠진다 (공홈 호출부의 `!mask`)
-    inpaint: img.costInpaint(),
-    // ★강도 계수는 모드마다 다르다 (`imageInput.costStrength` — 9절의 `y`). 인페인트에서
-    //   i2i 강도로 세면 실제보다 싸게 보인다
-    strength: img.costStrength(),
-    count,
-  });
+  /* ★★값 계산은 **공용 함수 하나**다 (`lib/costNow`, 2026-08-24). 조수의 승인 카드도
+     같은 것을 쓴다 — 자동 승인이 「Anlas 가 나가는가」로 갈리기 때문이다 (사용자 결정).
+     여기 조립을 되살리지 말 것: 두 벌이 되면 푸터에 보이는 값과 승인 카드의 값이 갈린다. */
+  const cost = costNow(1);
   const running = progress.total > progress.completed;
   useEffect(() => {
     if (!running) setCancelled(false);
@@ -152,6 +131,8 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
     if (img.editing) img.endEdit();
     // ★큐에 넣기 **직전**의 잔액을 적어 둔다. 배치가 끝나면 다시 물어 실제 청구를 낸다
     //   (`store/anlasMeter`). 위 `cost` 는 예상값일 뿐이라 맞는지 확인할 길이 이것뿐이다
+    // ★실측 장치에 넘기는 크기도 **나가는 크기**여야 한다 (`costNow` 와 같은 값)
+    const size = img.costSize();
     useAnlasMeter.getState().arm(cost.total, {
       width: size.width,
       height: size.height,

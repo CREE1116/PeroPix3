@@ -7,7 +7,7 @@ import { EditableName } from "../components/EditableName";
 import { api } from "../lib/backend";
 import { toast } from "../store/toast";
 import { useState } from "react";
-import { allCells, takesOf, useWs, type SceneSet } from "../store/workspace";
+import { allCells, useWs, type SceneSet } from "../store/workspace";
 import { ask } from "../store/ask";
 import { useGen } from "../store/gen";
 import { Icon } from "../components/Icon";
@@ -31,8 +31,8 @@ import { Icon } from "../components/Icon";
  *    아래 그림의 「캐릭터」도 이제 화면에서는 「탭」이다. 아래층 문구(`tabs.*`)에
  *    「탭」을 되살리지 말 것. 두 줄이 같은 이름이 되면 구별이 안 된다. */
 export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) {
-  const { spec, setActiveTab, closeSet, renameSet, addSet,
-    switchTab, addTab, renameTab, removeTab, moveTab, moveSet, records, isDeleted, deleteFiles } = useWs();
+  const { spec, setActiveTab, renameSet, addSet,
+    switchTab, addTab, renameTab, moveTab, moveSet, planRemove, removeAt } = useWs();
   const tr = useI18n((s) => s.t);
   const [editing, setEditing] = useState<string | null>(null);
   const [editingChar, setEditingChar] = useState<string | null>(null);
@@ -141,26 +141,26 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                      이 앱에서 지우는 창구는 전부 그리로 가기로 되어 있다 (`backend/trash.py`).
                    ★**묶는 키는 `set_id`** 다. 폴더는 **탭 이름**으로 짓기 때문에
                      (`workspace.out_dir`), 폴더를 지우면 같은 이름의 다른 탭 그림까지 지운다. */
+                /* ★★**한 벌은 스토어에 있다** (`removeAt`, 2026-08-24). 여기서 하는 것은
+                     **묻는 것뿐**이다 — 그림 모으기·휴지통·되돌리기 로그 비우기가 전부
+                     그리로 갔다. 조수도 같은 함수를 부르고 묻는 방식만 다르다
+                     (승인 카드, `docs/agent-actions-design.md` 2-5). */
                 onClick={(e) => {
                   e.stopPropagation();
-                  const mine = takesOf(records, t, undefined)
-                    .filter((r) => !isDeleted(r.file))
-                    .map((r) => r.file);
-                  if (!mine.length) return closeSet(t.id);
                   void (async () => {
+                    const plan = planRemove({ kind: "set", id: t.id });
+                    if (plan.blocked) return;
                     if (
-                      await ask({
-                        title: tr("set.closeConfirm", { name: t.name, n: mine.length }),
+                      plan.files.length &&
+                      !(await ask({
+                        title: tr("set.closeConfirm", { name: t.name, n: plan.files.length }),
                         body: tr("set.closeConfirmBody"),
                         ok: tr("common.delete"),
                         cancel: tr("common.cancel"),
-                      })
-                    ) {
-                      // ★그림을 먼저 보낸다 — 탭이 사라진 뒤에는 어느 그림이 그 탭 것이었는지
-                      //   화면이 더는 묶어 주지 못한다
-                      await deleteFiles(mine);
-                      closeSet(t.id);
-                    }
+                      }))
+                    )
+                      return;
+                    await removeAt({ kind: "set", id: t.id });
                   })();
                 }}
                 data-tip={tr("set.closeSet")}
@@ -287,36 +287,28 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                        이미지가 그대로 output에 남아있음. 휴지통으로 안감."*). 세트 닫기는 먼저
                        그리로 갔는데 **범위가 더 넓은 이쪽만 빠져 있었다** — 그래서 파일만 남고
                        앱에서 볼 길이 없는, 관리가 안 되는 그림이 쌓였다. */
+                    /* ★한 벌은 스토어의 `removeAt` 이다 (세트 닫기와 같은 자리) — 그림 모으기는
+                       `planRemove` 가 하고 묶는 키도 거기 하나로 있다 (`lib/delPlan`). */
                     onClick={(e) => {
                       e.stopPropagation();
-                      const sets = spec.sets.filter((x) => x.kind === "set" && x.tabId === c.id);
-                      // ★한 탭에 달린 **세트 전부**의 그림을 모은다 — 묶는 키는 세트 닫기와 같은
-                      //   `set_id` 다 (폴더는 세트 이름으로 짓기 때문에 폴더로 지우면 같은 이름의
-                      //   다른 세트 그림까지 지운다, 위 ★주)
-                      const mine = sets.flatMap((t) =>
-                        takesOf(records, t, undefined)
-                          .filter((r) => !isDeleted(r.file))
-                          .map((r) => r.file),
-                      );
-                      if (!mine.length) return removeTab(c.id);
                       void (async () => {
+                        const plan = planRemove({ kind: "tab", id: c.id });
+                        if (plan.blocked) return;
                         if (
-                          await ask({
+                          plan.files.length &&
+                          !(await ask({
                             title: tr("tab.removeConfirm", {
                               name: c.name,
-                              t: sets.length,
-                              n: mine.length,
+                              t: plan.inner,
+                              n: plan.files.length,
                             }),
                             body: tr("set.closeConfirmBody"),
                             ok: tr("common.delete"),
                             cancel: tr("common.cancel"),
-                          })
-                        ) {
-                          // ★그림을 **먼저** 보낸다 — 탭이 사라진 뒤에는 어느 그림이 그 탭 것이었는지
-                          //   화면이 더는 묶어 주지 못한다 (세트 닫기와 같은 순서)
-                          await deleteFiles(mine);
-                          removeTab(c.id);
-                        }
+                          }))
+                        )
+                          return;
+                        await removeAt({ kind: "tab", id: c.id });
                       })();
                     }}
                     data-tip={tr("tab.remove")}

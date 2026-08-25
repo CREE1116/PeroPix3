@@ -3,6 +3,7 @@ import { api } from "../lib/backend";
 import { useI18n } from "../i18n";
 import { useLlm } from "../store/llm";
 import { useCli, CLI_EFFORTS } from "../store/cli";
+import { useUi } from "../store/ui";
 // ★같은 모양을 두 벌 만들지 않는다 — 설정 화면의 묶음 상자를 그대로 쓴다
 import { Group } from "./Settings";
 import { Help } from "../components/Tip";
@@ -43,6 +44,57 @@ function AskForModel({ url }: { url: string }) {
  *  ★AI 와 사람이 **같은 문서**를 본다 (`backend/guide.py`). 엔진(API·CLI)과 무관하다 —
  *    그래서 CLI 의 개인 지침(`CLAUDE.md`)을 끌어들이지 않고도 취향이 이어진다.
  *  ★직전 내용은 `data/.guide-bak/` 에 남는다 — 통째로 덮어쓰는 자리라 되돌릴 길을 둔다. */
+/** **자동 승인** — 조수의 작업을 어디까지 묻지 않고 넘길지 (사용자 결정 2026-08-24).
+ *
+ *  ★★칸이 **둘인** 까닭: 이 앱에는 되돌릴 수 있는 것과 없는 것이 섞여 있다. 일상 작업은
+ *    안 끊기게 하되 정말 위험한 것만 남기려면 두 칸이 함께 있어야 한다 (1안).
+ *  ★★「되돌릴 수 없는 것」은 셋이다 — 카드 삭제·씬 삭제(로그까지 비운다)와 **Anlas 가
+ *    나가는 생성**. 생성은 「생성이니까 무조건」이 아니라 **돈이 나가느냐**로 가른다:
+ *    Opus 무료 범위 안이면 통과시킨다 (`lib/appActions` 의 `generate.confirm`).
+ */
+function ApproveBox() {
+  const t = useI18n((s) => s.t);
+  const auto = useUi((s) => s.agentAuto);
+  const askHard = useUi((s) => s.agentAskHard);
+  const set = useUi((s) => s.setAgentApproval);
+  const row: React.CSSProperties = {
+    display: "inline-flex",
+    alignSelf: "flex-start",
+    alignItems: "center",
+    gap: "var(--sp-2)",
+    fontSize: "var(--text-2xs)",
+    color: "var(--ink-soft)",
+    cursor: "pointer",
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
+      <label style={row}>
+        <input
+          type="checkbox"
+          data-agent-auto
+          checked={auto}
+          onChange={(e) => set({ agentAuto: e.target.checked })}
+        />
+        {t("settings.agentAuto")}
+      </label>
+      {/* ★자동 승인이 꺼져 있으면 전부 묻는 상태라 이 칸은 뜻이 없다 — 흐리게 둔다 */}
+      <label style={{ ...row, marginLeft: "var(--sp-4)", opacity: auto ? 1 : 0.5 }}>
+        <input
+          type="checkbox"
+          data-agent-ask-hard
+          checked={askHard}
+          disabled={!auto}
+          onChange={(e) => set({ agentAskHard: e.target.checked })}
+        />
+        {t("settings.agentAskHard")}
+      </label>
+      <span style={{ fontSize: "0.62rem", color: "var(--ink-faint)", lineHeight: 1.6 }}>
+        {t("settings.agentApproveHint")}
+      </span>
+    </div>
+  );
+}
+
 function GuideBox() {
   const t = useI18n((s) => s.t);
   const [text, setText] = useState("");
@@ -198,6 +250,7 @@ export function AiSettings() {
       </div>
 
       <GuideBox />
+      <ApproveBox />
       {engine === "cli" ? (
         <>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>

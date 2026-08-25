@@ -268,6 +268,31 @@ def restore(store, ws: str, entries: list[dict]) -> dict:
     return restore_at(store.dir_of(ws), entries)
 
 
+def listing(base: Path, limit: int = 50) -> list[dict]:
+    """휴지통에 **지금 들어 있는 것** — 최근에 버린 것부터 (선결 조건 3-9, 2026-08-24).
+
+    ★★왜 필요한가: 되살리기(`restore_at`)는 **지울 때 받은 항목**(`{file, at}`)을 그대로
+      요구한다. 화면은 그것을 손에 쥐고 있다가 「되돌리기」에 넘기지만, 조수는 그 자리에
+      없었으므로 **목록이 없으면 영영 되살릴 수 없다.**
+    ★장부에 있어도 파일이 이미 없으면(비웠거나 사람이 꺼냄) 뺀다 — 못 되살릴 것을 보여
+      주면 조수가 「되살렸습니다」라고 말하게 된다.
+    ★`file`·`at` 을 그대로 실어 준다: 조수가 되살릴 때 **고른 줄을 그대로** 넘기면 된다."""
+    root = trash_root(base)
+    out = []
+    for row in reversed(read_index(root)):
+        at = _inside(root, str(row.get("at", "")))
+        if at is None or not at.exists():
+            continue
+        out.append({
+            "file": row.get("file"),      # 원래 자리 (되살아날 곳)
+            "at": row.get("at"),          # 휴지통 안 이름 — 되살리기가 요구하는 값
+            "ts": row.get("ts"),          # 버린 시각 (24시간 뒤 자동으로 비워진다)
+        })
+        if len(out) >= max(1, limit):
+            break
+    return out
+
+
 def sweep(ws_root: Path, hours: int = KEEP_HOURS) -> list[str]:
     """**앱을 켤 때** 오래된 것을 비운다.
 

@@ -249,8 +249,42 @@ async function dropHumanUndo(zone: string): Promise<void> {
   dropUndoZone(zone);
 }
 
-/** AI 가 시킬 수 있는 **행동 표** — 여기 없는 이름은 안 한다. */
+/** ★★**액션 레지스트리를 먼저 본다** (2026-08-24). 등록된 것이면 **승인 → 실행** 을 거친다.
+ *
+ *  ★여기가 「묻는 자리」다: 규칙(무엇이 사라지나·얼마가 드나)은 스토어와 `lib/costNow` 가
+ *    갖고, 화면 버튼은 확인 창으로, 조수는 **승인 카드**로 묻는다 (`docs/…` 2-5).
+ *  ★등록되지 않은 이름은 아래 옛 분기로 내려간다 — 프롬프트 편집처럼 아직 옮기지 않은 것들이다.
+ */
 async function runAction(action: string, args: Record<string, any>): Promise<Record<string, unknown>> {
+  const [{ getAction }, { askApprove, needsAsk }] = await Promise.all([
+    import("../lib/actions"),
+    import("../lib/approve"),
+  ]);
+  await import("../lib/appActions"); // ★등록이 일어나는 자리 — 부르기 전에 실려 있어야 한다
+  const def = getAction(action);
+  if (def) {
+    try {
+      const risk = typeof def.confirm === "function" ? await def.confirm(args) : (def.confirm ?? "ask");
+      if (needsAsk(risk)) {
+        const body = def.preview ? await def.preview(args) : undefined;
+        const okay = await askApprove({ title: def.desc.split("—")[0].trim(), body, hard: risk === "hard" });
+        // ★거절은 **오류가 아니다** — 조수가 다시 시도하지 않게 `never` 로 말한다
+        if (!okay)
+          return { error: { code: "refused", message: "사용자가 승인하지 않았습니다.", retry: "never" } };
+      }
+      return (await def.run(args)) as Record<string, unknown>;
+    } catch (e) {
+      return { error: { code: "blocked", message: String((e as Error).message ?? e), retry: "unsafe" } };
+    }
+  }
+  return legacyAction(action, args);
+}
+
+/** 아직 레지스트리로 안 옮긴 행동들. ★`generate` 는 등록되어 있지만 **실행 본문은 여기**다 —
+ *  프롬프트 조립·시드 규칙이 전부 이 파일에 있어서 옮기면 두 벌이 된다. */
+export const runLegacyAction = (action: string, args: Record<string, any>) => legacyAction(action, args);
+
+async function legacyAction(action: string, args: Record<string, any>): Promise<Record<string, unknown>> {
   try {
     if (action === "generate") {
       const { useGen } = await import("./gen");

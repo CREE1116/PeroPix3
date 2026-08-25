@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -40,6 +41,10 @@ ENV_NAME = "records-env.jsonl"
 HEAVY_KEYS = ("resolved", "env")
 #: 쪼개기 전 원본을 한 번 남긴다 (지워도 앱은 돈다 — 되살릴 때만 쓴다)
 PRESPLIT_NAME = "records-before-split.jsonl"
+#: 작업 상태의 직전 내용 (선결 조건 3-4) — 카드 쪽 `.bak` 과 같은 이름·같은 취지
+BAK_DIR = ".bak"
+#: 몇 개까지 남기나 — 자동 저장이 자주 돌아서 상한이 필요하다
+BAK_KEEP = 20
 OUT_DIR = "output"     # 생성물이 사는 곳 (사용자 결정 2026-08-08)
 #: ★그 아래 한 겹. 「싱글/멀티」로 갈리던 시절의 이름이 그대로 남은 것이다 —
 #:  갈래는 2026-08-24 에 없어졌고(`out_dir` 의 ★★주) 이름만 **호환을 위해** 둔다.
@@ -125,14 +130,52 @@ class Store:
         return json.loads(p.read_text(encoding="utf-8"))
 
     def save(self, ws: str, spec: dict) -> dict:
+        """작업 상태를 쓴다. ★★**백업과 최소 검사를 지난다** (선결 조건 3-4, 2026-08-24).
+
+        지침·카드·라이브러리에는 직전 내용을 남기는 장치가 있는데 **이 파일만 없었다.**
+        그런데 여기 담긴 것이 탭·세트·씬·프롬프트 전부라, 한 번 잘못 덮으면 그 워크스페이스의
+        작업이 통째로 날아간다. 조수에게 쓰기를 여는 마당이라 마지막 방어선을 둔다.
+
+        ★검사는 **하나뿐**이다: 이미 내용이 있는데 **탭이 0개로** 오면 거절한다.
+          (세트가 0개인 것은 정상이다 — 새 워크스페이스가 그렇다.)
+          더 얹지 않는 이유: 검사가 늘수록 정상 저장을 막을 위험이 커진다.
+        ★백업은 최근 `BAK_KEEP` 개만 둔다 — 자동 저장이 250ms 디바운스로 자주 돌아 무한정 쌓인다.
+        """
         d = self.dir_of(ws)
         d.mkdir(parents=True, exist_ok=True)
+        cur = d / SPEC_NAME
+
+        if cur.exists():
+            try:
+                old = json.loads(cur.read_text(encoding="utf-8"))
+            except Exception:
+                old = None
+            # ★★빈 골격이 기존 작업을 덮는 것을 막는다 (라이브러리 쪽 방어선과 같은 취지)
+            if isinstance(old, dict) and old.get("tabs") and not spec.get("tabs"):
+                raise ValueError("탭이 0개인 상태로는 덮어쓰지 않습니다 (workspace.json 보호)")
+            if old is not None:
+                self._backup(d, cur)
+
         spec["updatedAt"] = datetime.now().isoformat(timespec="seconds")
         # 임시 파일에 쓴 뒤 교체 — 쓰는 중 앱이 죽어도 기존 파일이 남는다
         tmp = d / (SPEC_NAME + ".tmp")
         tmp.write_text(json.dumps(spec, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(d / SPEC_NAME)
+        tmp.replace(cur)
         return spec
+
+    @staticmethod
+    def _backup(d: Path, cur: Path) -> None:
+        """직전 내용을 `.bak/` 에 남긴다 (카드 쪽 `.bak` 과 같은 방식)."""
+        bak = d / BAK_DIR
+        try:
+            bak.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
+            shutil.copy2(cur, bak / f"workspace-{stamp}.json")
+            old = sorted(bak.glob("workspace-*.json"))
+            for p in old[:-BAK_KEEP]:
+                p.unlink(missing_ok=True)
+        except Exception:
+            pass  # ★백업을 못 남겨도 저장 자체는 막지 않는다
 
     def rename(self, old: str, new: str) -> str:
         a, b = self.dir_of(old), self.dir_of(new)

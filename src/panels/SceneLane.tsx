@@ -1445,23 +1445,25 @@ function CardGroup(p: GroupProps) {
                  `Ctrl+Z` 를 누르면 카드가 아니라 **엉뚱한 것**이 되살아났다
                  (사용자 지적: *"카드 말고 다른 슬롯에서 지운 이미지가 복구됨"*).
                  그래서 로그를 비운다 — 되돌릴 수 없는 일 뒤에 로그가 남아 있으면 그런 일이 난다. */
+              /* ★★**한 벌은 스토어에 있다** (`removeAt`, 2026-08-24) — 그림 모으기·휴지통·
+                   로그 비우기가 전부 그리로 갔다. 여기서는 **묻기만** 한다.
+                   조수도 같은 함수를 부르고, 묻는 방식만 승인 카드로 다르다. */
               onClick={() => {
-                const mine = p.card.cells.flatMap((c) => p.takes(c).map((r) => r.file));
-                if (!mine.length) return p.onRemove();
+                const target = { kind: "sceneCard" as const, setId: p.setId, cardId: p.card.id };
                 void (async () => {
+                  const plan = useWs.getState().planRemove(target);
+                  if (plan.blocked) return;
                   if (
-                    await ask({
-                      title: t("scenes.removeCardConfirm", { name: p.card.name, c: p.card.cells.length, n: mine.length }),
+                    plan.files.length &&
+                    !(await ask({
+                      title: t("scenes.removeCardConfirm", { name: p.card.name, c: plan.inner, n: plan.files.length }),
                       body: t("scenes.removeConfirmBody"),
                       ok: t("common.delete"),
                       cancel: t("common.cancel"),
-                    })
-                  ) {
-                    // ★그림을 **먼저** 보낸다 — 카드가 사라진 뒤엔 어느 그림이 그 카드 것인지 못 묶는다
-                    await useWs.getState().deleteFiles(mine);
-                    p.onRemove();
-                    clearUndo();
-                  }
+                    }))
+                  )
+                    return;
+                  await useWs.getState().removeAt(target);
                 })();
               }}
               data-tip={t("scenes.removeCard")}
@@ -1684,25 +1686,24 @@ function SceneRow(
                  (사용자 지시 2026-08-19 묻기 · 2026-08-22 함께 지우기: *"씬 삭제하면 거기에있는
                  이미지도 삭제"*). 묶는 키는 `cell_id` 다.
                  ★되돌리기는 주지 않는다 — 카드 삭제와 같다 (위 ★★주). 그래서 로그를 비운다. */
+              /* ★한 벌은 스토어의 `removeAt` 이다 (씬카드 삭제와 같은 자리) */
               onClick={(e) => {
                 e.stopPropagation();
-                const drop = () => p.onPatch({ cells: p.card.cells.filter((x) => x.id !== c.id) });
-                const mine = takes.map((r) => r.file);
-                if (!mine.length) return drop();
+                const target = { kind: "scene" as const, setId: p.setId, cellId: c.id };
                 void (async () => {
+                  const plan = useWs.getState().planRemove(target);
+                  if (plan.blocked) return;
                   if (
-                    await ask({
-                      title: t("scenes.removeConfirm", { name: c.name, n: mine.length }),
+                    plan.files.length &&
+                    !(await ask({
+                      title: t("scenes.removeConfirm", { name: c.name, n: plan.files.length }),
                       body: t("scenes.removeConfirmBody"),
                       ok: t("common.delete"),
                       cancel: t("common.cancel"),
-                    })
-                  ) {
-                    // ★그림을 **먼저** 보낸다 — 씬이 사라진 뒤엔 어느 그림이 그 씬 것인지 못 묶는다
-                    await useWs.getState().deleteFiles(mine);
-                    drop();
-                    clearUndo();
-                  }
+                    }))
+                  )
+                    return;
+                  await useWs.getState().removeAt(target);
                 })();
               }}
               data-tip={t("slots.remove")}

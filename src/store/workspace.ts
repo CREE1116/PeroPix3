@@ -10,6 +10,8 @@ export { takesOf, takesOfScene, dedupeByFile, type Rec } from "../lib/takes";
 import { dedupeByFile } from "../lib/takes";
 import type { Rec } from "../lib/takes";
 import { moveTo } from "../lib/moveTo";
+import { planDelete, type DelPlan, type DelTarget } from "../lib/delPlan";
+export type { DelPlan, DelTarget } from "../lib/delPlan";
 // ★**형만** 가져온다 — `gen.ts` 가 이 파일을 부르므로 값으로 가져오면 순환이 된다
 import type { GenParams } from "./gen";
 
@@ -169,6 +171,22 @@ export type WsTab = {
 /** 세트 탭의 **모든 씬** — 카드 순서대로 편다.
  *  ★`tab.cells` 를 직접 읽던 자리는 전부 이걸로 온다. 카드 층이 생겨도 "이 탭의 씬 목록"이
  *    필요한 곳(장 수 세기·번호 매기기·큐)은 하나도 안 바뀌기 때문이다. */
+/** ★★`patchSet` 이 **저장해 주는 필드** — 여기 없는 이름은 버린다 (선결 조건 3-3).
+ *
+ *  막는 것은 **정체성**이다: `id`·`kind` 를 덮으면 그 세트의 그림이 통째로 안 보이고
+ *  (결과를 `set_id` 로 묶는다), `tabId` 를 덮으면 세트가 남의 탭 밑으로 순간이동한다
+ *  (옮기는 것은 순서·프롬프트가 함께 걸린 일이라 전용 창구가 맡는다).
+ *
+ *  ★`cellSeq`·`cardSeq` 는 **넣는다.** 발급기가 줄면 안 된다는 규칙은 그대로지만
+ *    (`SceneSet.cellSeq` 주석), 화면에 「다음 번호」를 사람이 정하는 칸이 있어
+ *    (`SceneLane` 의 `onSeq`) 여기서 막으면 그 기능이 조용히 죽는다.
+ *    **조수가 못 만지게 하는 것은 이 자리가 아니라 액션의 인자 목록**이다 — 이 목록은
+ *    「저장해도 되는가」를, 액션 쪽은 「조수가 정해도 되는가」를 답한다.
+ *  ★필드를 새로 더하면 **여기도 함께** 더한다. 안 그러면 저장이 조용히 안 된다. */
+const SET_PATCHABLE = new Set([
+  "name", "cards", "prompt", "idOnly", "sceneDest", "cellSeq", "cardSeq",
+]);
+
 export const allCells = (tab: Extract<SceneSet, { kind: "set" }>): Slot[] =>
   tab.cards.flatMap((k) => k.cells);
 
@@ -292,6 +310,16 @@ type S = {
   addSet: (name: string, cells: (string | { name: string; tags?: string; blocks?: Block[] })[]) => void;
   closeSet: (id: string) => void;
   renameSet: (id: string, name: string) => void;
+
+  /** ★**무엇이 사라지나** — 부작용 없는 계산 (`lib/delPlan`). 확인 창·승인 카드의 문구가 이걸 쓴다 */
+  planRemove: (target: DelTarget) => DelPlan;
+  /** ★★**삭제 한 벌** — 그림 모으기 → 휴지통 → 대상 제거 → 되돌리기 로그 비우기.
+   *
+   *  ★**묻지 않는다.** 묻는 것은 부르는 쪽이다 (화면은 확인 창, 조수는 승인 카드) —
+   *    여기서 `ask()` 를 부르면 조수 경로에서 창이 **둘** 뜬다 (`delPlan.ts` 머리 주석).
+   *  ★막힌 것(마지막 탭·세트)과 없는 것은 **실행하지 않고 까닭을 돌려준다** — 예전 스토어
+   *    함수들은 그냥 `return` 이라 조수가 성공으로 알았다 (선결 조건 3-2). */
+  removeAt: (target: DelTarget) => Promise<{ ok: true; plan: DelPlan } | { ok: false; blocked: NonNullable<DelPlan["blocked"]> }>;
 
   /** 탭의 필드를 갈아 끼운다 (슬롯 목록·공통 접두).
    *  ★예전엔 SlotStrip 이 `useWs.setState` 로 스토어를 직접 만졌다 — 저장 예약이 컴포넌트에
@@ -1230,10 +1258,23 @@ export const useWs = create<S>((set, get) => ({
   patchSet(id, patch) {
     const spec = get().spec;
     if (!spec) return;
+    /* ★★**허용 목록 밖은 버린다** (선결 조건 3-3, 2026-08-24). 예전에는 넘어온 것을 그대로
+       펼쳐 담아서, `id`·`kind` 를 덮으면 **그 세트의 그림이 통째로 안 보이고**(결과를 `set_id`
+       로 묶는다), `cellSeq` 를 낮추면 **옛 그림이 새 씬에 달라붙었다**(발급기는 줄지 않아야
+       한다는 규칙이 `SceneSet.cellSeq` 주석에 있다).
+       ★사람의 화면은 정해진 칸만 건드리니 드러나지 않았지만, 조수에게 `apply` 를 여는 순간
+         아무 값이나 들어온다. 문지기를 **값이 담기는 자리 하나**에 둔다. */
+    const drop = Object.keys(patch).filter((k) => !SET_PATCHABLE.has(k));
+    if (drop.length) {
+      // ★조용히 버리지 않는다 — 어느 이름이 막혔는지 남겨야 조수가 고칠 수 있다 (계기판)
+      console.warn(`[patchSet] 허용되지 않은 필드를 버립니다: ${drop.join(", ")}`);
+    }
+    const safe = Object.fromEntries(Object.entries(patch).filter(([k]) => SET_PATCHABLE.has(k)));
+    if (!Object.keys(safe).length) return;
     set({
       spec: {
         ...spec,
-        sets: spec.sets.map((x) => (x.id === id && x.kind === "set" ? { ...x, ...patch } : x)),
+        sets: spec.sets.map((x) => (x.id === id && x.kind === "set" ? { ...x, ...safe } : x)),
       },
     });
     queueSave(get);
@@ -1294,6 +1335,41 @@ export const useWs = create<S>((set, get) => ({
     const tab = spec?.sets.find((x) => x.id === setId);
     if (!spec || tab?.kind !== "set") return;
     get().patchSet(setId, { cards: tab.cards.filter((k) => k.id !== cardId) });
+  },
+
+  planRemove(target) {
+    const spec = get().spec;
+    if (!spec) return { kind: target.kind, name: "", files: [], inner: 0, hard: true, blocked: "not_found" };
+    return planDelete(spec, get().records, (f) => get().isDeleted(f), target);
+  },
+
+  async removeAt(target) {
+    const plan = get().planRemove(target);
+    if (plan.blocked) return { ok: false, blocked: plan.blocked };
+
+    /* ★★**그림을 먼저 보낸다.** 대상이 사라진 뒤에는 어느 그림이 그것이었는지 화면이
+       더는 묶어 주지 못한다 (`delPlan.ts` 머리 주석의 ③). 순서가 곧 안전장치다. */
+    if (plan.files.length) await get().deleteFiles(plan.files);
+
+    if (target.kind === "tab") get().removeTab(target.id);
+    else if (target.kind === "set") get().closeSet(target.id);
+    else if (target.kind === "sceneCard") get().removeCard(target.setId, target.cardId);
+    else {
+      const spec = get().spec;
+      const set = spec?.sets.find((x) => x.id === target.setId);
+      if (set?.kind !== "set") return { ok: false, blocked: "not_found" };
+      get().patchSet(target.setId, {
+        cards: set.cards.map((k) => ({ ...k, cells: k.cells.filter((c) => c.id !== target.cellId) })),
+      });
+    }
+
+    /* ★★**되돌리기 로그를 비운다** (`lib/undo.ts` 머리: *"세트·탭·씬·카드를 지우면 그 안의
+       것을 되돌릴 방법이 사라지므로, 로그를 그대로 두면 Ctrl+Z 가 엉뚱한 것을 되살린다"*).
+       ★예전에는 **씬·씬카드에서만** 돌고 세트·탭 닫기에서는 안 돌았다 (화면 코드에 흩어져
+       있어서 갈렸다). 그래서 세트를 닫은 뒤 Ctrl+Z 를 누르면 방금 휴지통에 보낸 그림이
+       **갈 자리가 없는 채로** 돌아왔다. 한 벌로 모으면서 규칙대로 맞춘다. */
+    clearUndo();
+    return { ok: true, plan };
   },
 
   setCard(setId, cardId, patch) {

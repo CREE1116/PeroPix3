@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
-import { useLlm, type Ask, type Line } from "../store/llm";
+import { useLlm, type Ask, type Confirm, type Line } from "../store/llm";
 import { useWs } from "../store/workspace";
 import { useUi, MODES } from "../store/ui";
 import { useCli, CLI_EFFORTS } from "../store/cli";
@@ -17,7 +17,7 @@ import { Icon } from "../components/Icon";
 export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
   const t = useI18n((s) => s.t);
   // `id` = 지금 열려 있는 대화 (목록에서 어느 줄이 지금 것인지 표시)
-  const { cfg, lines, sending, error, ask, list, id: cur, cliSessionGone,
+  const { cfg, lines, sending, error, ask, confirm, list, id: cur, cliSessionGone,
           loadConfig, restore, send, stop, newChat, open, remove } = useLlm();
   const [showList, setShowList] = useState(false);
   const { engine, exe, scanning, detect } = useCli();
@@ -287,6 +287,7 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
           <Row key={i} line={l} />
         ))}
         {ask && <AskCard ask={ask} />}
+        {confirm && <ConfirmCard c={confirm} />}
         {sending && (
           <div style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>{t("ai.working")}</div>
         )}
@@ -543,6 +544,78 @@ const Field = ({ label, children }: { label: string; children: React.ReactNode }
     {children}
   </label>
 );
+
+/** **승인 카드** — 되돌릴 수 없는 일 앞에서 뜬다 (사용자 결정 2026-08-24).
+ *
+ *  ★★모달 확인 창이 아니라 **대화 안**이다: 클로드 코드가 파일 삭제 전에 승인을 받는 것과
+ *    같은 모양이라, 왕복이 한 번이고 **무엇을 승인했는지 대화에 남는다.**
+ *  ★기다리는 쪽은 도구다 (`lib/approve` 의 `askApprove`) — 답할 때까지 안 끝난다.
+ *  ★「되돌릴 수 없음」(`hard`)은 **색으로도** 알린다. 지운 것이 카드·씬이면 되돌리기로도
+ *    못 돌아오고(로그를 비운다), 생성이면 Anlas 가 이미 나간다.
+ */
+function ConfirmCard({ c }: { c: Confirm }) {
+  const t = useI18n((s) => s.t);
+  const line = c.hard ? "var(--danger, #d9736a)" : "var(--accent)";
+  return (
+    <div
+      data-ai-confirm
+      data-ai-hard={c.hard ? "" : undefined}
+      style={{
+        border: `1px solid ${line}`,
+        borderRadius: "var(--r-2)",
+        background: "var(--accent-bg)",
+        padding: "var(--sp-3)",
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--sp-2)",
+      }}
+    >
+      <span style={{ fontSize: "0.62rem", letterSpacing: "0.06em", color: line }}>
+        {t("ai.confirmHeader")}
+      </span>
+      <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink)", lineHeight: 1.6 }}>
+        {c.title}
+      </span>
+      {c.body && (
+        <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)", lineHeight: 1.6 }}>
+          {c.body}
+        </span>
+      )}
+      <div style={{ display: "flex", gap: "var(--sp-2)" }}>
+        <button
+          data-ai-approve
+          onClick={() => c.answer(true)}
+          style={{
+            flex: 1,
+            border: `1px solid ${line}`,
+            borderRadius: "var(--r-2)",
+            background: c.hard ? line : "var(--accent)",
+            color: "#fff",
+            padding: "4px var(--sp-3)",
+            fontSize: "var(--text-2xs)",
+          }}
+        >
+          {t("ai.approve")}
+        </button>
+        <button
+          data-ai-deny
+          onClick={() => c.answer(false)}
+          style={{
+            flex: 1,
+            border: "1px solid var(--line)",
+            borderRadius: "var(--r-2)",
+            background: "var(--panel)",
+            color: "var(--ink)",
+            padding: "4px var(--sp-3)",
+            fontSize: "var(--text-2xs)",
+          }}
+        >
+          {t("ai.deny")}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 /** AI 의 물음 — **답할 때까지 도구가 기다린다** (`ask_user`).
  *

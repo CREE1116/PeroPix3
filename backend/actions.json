@@ -1,0 +1,99 @@
+{
+  "actions": [
+    {
+      "id": "delete_set",
+      "desc": "★**세트를 닫는다** — 그 안의 씬과 **그림도 함께 휴지통으로** 간다. 그 탭의 마지막 세트는 못 닫는다 (탭이 빈다).",
+      "args": {
+        "set": {
+          "type": "string",
+          "desc": "세트 이름 또는 id",
+          "required": true
+        }
+      }
+    },
+    {
+      "id": "delete_scene",
+      "desc": "★**씬 칸을 지운다** — 그 씬의 **그림도 함께 휴지통으로** 간다. `set` 을 비우면 지금 보고 있는 세트에서 찾는다.",
+      "args": {
+        "scene": {
+          "type": "string",
+          "desc": "씬 이름 또는 id",
+          "required": true
+        },
+        "set": {
+          "type": "string",
+          "desc": "어느 세트에서 — 비우면 지금 보고 있는 세트"
+        }
+      }
+    },
+    {
+      "id": "cancel_queue",
+      "desc": "★**생성 큐를 비운다** — 아직 시작 안 한 것이 취소된다. 이미 나간 장은 못 되돌린다 (Anlas 가 이미 나갔다). 사용자가 «그만»·«취소» 라고 하면 쓴다.",
+      "args": {}
+    },
+    {
+      "id": "censor_add",
+      "desc": "자동검열 화면에 **그림을 넣는다**. 경로는 `list_files` 가 준 것을 그대로 쓴다.",
+      "args": {
+        "files": {
+          "type": "array",
+          "desc": "워크스페이스 기준 상대경로",
+          "items": {
+            "type": "string"
+          },
+          "required": true
+        }
+      }
+    },
+    {
+      "id": "censor_clear",
+      "desc": "자동검열 목록을 **비운다** (원본 파일은 그대로다).",
+      "args": {}
+    },
+    {
+      "id": "censor_run",
+      "desc": "★자동검열을 **돌린다** (목록에 든 그림 전부를 훑어 가릴 곳을 찾는다). 결과 저장은 사용자가 화면에서 따로 누른다.",
+      "args": {}
+    },
+    {
+      "id": "set_per_slot",
+      "desc": "★**슬롯당 몇 장**을 뽑을지 정한다. 한 바퀴가 만드는 장 수 = 잠기지 않은 씬 × 이 값. «씬마다 3장씩» 같은 요청이 이것이다.",
+      "args": {
+        "n": {
+          "type": "number",
+          "desc": "1 이상",
+          "required": true
+        }
+      }
+    },
+    {
+      "id": "set_gen_option",
+      "desc": "★**생성 옵션을 고친다** — 모델·크기·스텝·CFG·시드·샘플러 등. «시드 고정해서 다시»·«스텝 28로» 같은 요청이 이것이다. 지금 값은 `get_workspace` 의 `gen` 에 있다. 한 번에 여러 개를 줘도 된다.",
+      "args": {
+        "options": {
+          "type": "object",
+          "desc": "고칠 값들 — 예: {\"steps\": 28, \"seed\": 12345}",
+          "required": true
+        }
+      }
+    },
+    {
+      "id": "generate",
+      "desc": "★**생성을 큐에 넣는다.** 그 세트의 잠기지 않은 씬 전부를 `count` 바퀴 돈다 (씬이 하나면 count 장). 비우면 지금 보고 있는 세트. ★**기다릴 필요가 없다** — 큐는 넣는 순간의 프롬프트를 담으므로, 이어서 프롬프트를 고치고 또 넣어도 앞 배치는 그대로다. Anlas 가 들 수 있다.",
+      "args": {
+        "count": {
+          "type": "number",
+          "desc": "몇 바퀴. 기본 1"
+        },
+        "workspace": {
+          "type": "string",
+          "desc": "어디에 넣을지 — 비우면 지금 보고 있는 곳"
+        },
+        "set": {
+          "type": "string",
+          "desc": "어느 세트에 — 비우면 활성 세트"
+        }
+      }
+    }
+  ]
+}

@@ -71,6 +71,19 @@ type Persisted = {
   /** ★슬롯당 몇 장 만드나 (페로픽스파이 `countPerSlot`). 한 번에 여러 장을 뽑아
    *  고르는 것이 멀티의 본래 쓰임이라, 1장씩 돌리면 같은 일을 여러 번 해야 한다. */
   perSlot: number;
+  /** ★★**조수의 작업을 자동 승인한다** (사용자 결정 2026-08-24).
+   *
+   *  켜면 승인 카드를 안 띄우고 바로 실행한다. 끄면(기본) 되돌릴 수 있는 일까지 전부 묻는다.
+   *  ★칸이 **둘인** 까닭: 이 앱에는 되돌릴 수 있는 것과 없는 것이 섞여 있다. 일상 작업은
+   *    안 끊기게 하되 정말 위험한 것만 남기려면 아래 `agentAskHard` 가 함께 있어야 한다. */
+  agentAuto: boolean;
+  /** ★★**되돌릴 수 없는 것은 언제나 묻는다** (기본 켬). `agentAuto` 를 켜도 이건 남는다.
+   *
+   *  「되돌릴 수 없는 것」은 셋이다 — 카드 삭제·씬 삭제(`clearUndo` 로 로그까지 비운다)와
+   *  **Anlas 가 나가는 생성**. ★★생성은 「생성이니까 무조건」이 아니라 **돈이 나가느냐**로
+   *  가른다 (사용자 결정): Opus 무료 범위 안이면 통과시킨다. 판정은 `lib/anlas.ts` 의
+   *  비용 계산을 그대로 쓴다 — 새 규칙을 만들면 두 벌이 되어 반드시 갈린다. */
+  agentAskHard: boolean;
   /** ★큐가 다 끝나면 알린다 — 여러 장을 돌려 놓고 다른 일을 하다 놓치는 것을 막는다 */
   notifyDone: boolean;
   /** ★끝났을 때 **소리로도** 알린다 (v2 `notifySoundOnComplete`). 화면을 안 보고 있을 때 쓴다 */
@@ -142,6 +155,8 @@ const DEFAULTS: Persisted = {
   laneHeight: 302,
   curated: false,
   perSlot: 1,
+  agentAuto: false,
+  agentAskHard: true,
   notifyDone: true,
   notifySound: false,
   notifyVolume: 50,
@@ -200,6 +215,8 @@ type S = Persisted & {
   setCols: (n: number) => void;
   setCurated: (v: boolean) => void;
   setPerSlot: (n: number) => void;
+  /** 자동 승인 두 칸 — ★한 창구로 받는다 (두 값이 함께 움직이는 한 벌이라) */
+  setAgentApproval: (p: { agentAuto?: boolean; agentAskHard?: boolean }) => void;
   setNotifyDone: (v: boolean) => void;
   setNotifySound: (v: boolean) => void;
   setNotifyVolume: (v: number) => void;
@@ -309,6 +326,10 @@ export const useUi = create<S>((set, get) => ({
     set({ perSlot: Math.max(1, Math.round(n)) });
     get().commitLayout();
   },
+  setAgentApproval: (p) => {
+    set(p);
+    get().commitLayout();
+  },
   setTagSuggest: (v) => {
     set({ tagSuggest: v });
     get().commitLayout();
@@ -380,7 +401,7 @@ export const useUi = create<S>((set, get) => ({
     //   돌아갔다 (감사 2026-08-16). 필드를 늘리면 **여기에도 더할 것.**
     const { leftWidth, rightWidth, leftCollapsed, rightCollapsed, cols, laneSize, laneHeadW,
       laneHeight, font, aiWidth, aiCollapsed,
-      notifyDone, notifySound, notifyVolume, perSlot, curated,
+      notifyDone, notifySound, notifyVolume, perSlot, curated, agentAuto, agentAskHard,
       tagSuggest, weightHl, fmView, convertOpenFolder, enhanceLast, sizeLast,
       laneSide, laneWidth, laneHeadH, view } = get();
     try {
@@ -403,6 +424,8 @@ export const useUi = create<S>((set, get) => ({
           notifyVolume,
           perSlot,
           curated,
+          agentAuto,
+          agentAskHard,
           tagSuggest,
           weightHl,
           fmView,
