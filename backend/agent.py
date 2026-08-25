@@ -456,6 +456,8 @@ class Tools:
           섞여 있어 카드가 설명서처럼 보인다 (QA 실측 2026-08-25, 앱 액션에서 밟은 자리)."""
         if name == "update_card":
             cur = self._find_card(str(a.get("kind", "")), str(a.get("id", "")))
+            if cur and "__ambiguous__" in cur:
+                cur = None   # ★여럿이면 이름을 짐작해 적지 않는다 (실행할 때 되묻는다)
             return f"카드 「{(cur or {}).get('name', a.get('id'))}」 를 통째로 덮어씁니다"
         if name == "write_guide":
             n = len(str(a.get("text") or "").splitlines())
@@ -892,13 +894,29 @@ class Tools:
         return out
 
     def _find_card(self, kind: str, key: str) -> dict | None:
-        for c in self.cards.list(kind):
-            if c.get("id") == key or c.get("name") == key:
+        """카드 하나 — ★★**id 가 먼저고, 같은 이름이 여럿이면 안 고른다** (2026-08-25).
+
+        예전에는 목록에서 처음 걸리는 것을 집었다. 카드 이름은 겹칠 수 있고(덱은 언제나
+        **새로 추가**다), `delete_card` 가 이 함수를 쓰므로 **엉뚱한 카드를 지울 수 있었다.**
+        ★고르지 않고 되묻는 것은 화면 쪽 규칙과 같다 (`src/lib/findAt.ts`).
+        ★여럿이면 `None` 이 아니라 **목록**을 돌려준다 — 부르는 쪽이 되묻는 오류를 만든다."""
+        rows = self.cards.list(kind)
+        for c in rows:
+            if c.get("id") == key:
                 return c
+        named = [c for c in rows if c.get("name") == key]
+        if len(named) == 1:
+            return named[0]
+        if len(named) > 1:
+            return {"__ambiguous__": [f"{c.get('name')}#{c.get('id')}" for c in named]}
         return None
 
     def _get_card(self, a: dict) -> dict:
         c = self._find_card(str(a["kind"]), str(a["id"]))
+        if c and "__ambiguous__" in c:
+            # ★★여럿이면 **고르지 않는다** — 지우고 덮는 도구라 틀리면 되돌릴 수 없다
+            return fail("ambiguous", f"「{a['id']}」 이름의 카드가 여럿입니다. id 로 골라 주세요.",
+                        what=str(a["kind"]), given=str(a["id"]), candidates=c["__ambiguous__"])
         if not c:
             # ★★비슷한 이름 셋을 얹는다 — 종류가 틀렸는지 이름이 틀렸는지 조수가 가른다
             names = [str(x.get("name")) for x in self.cards.list(str(a["kind"]))]
@@ -946,6 +964,10 @@ class Tools:
     def _update_card(self, a: dict) -> dict:
         kind = str(a["kind"])
         cur = self._find_card(kind, str(a["id"]))
+        if cur and "__ambiguous__" in cur:
+            # ★★여럿이면 **고르지 않는다** — 지우고 덮는 도구라 틀리면 되돌릴 수 없다
+            return fail("ambiguous", f"「{a['id']}」 이름의 카드가 여럿입니다. id 로 골라 주세요.",
+                        what=kind, given=str(a["id"]), candidates=cur["__ambiguous__"])
         if not cur:
             names = [str(x.get("name")) for x in self.cards.list(kind)]
             return fail("not_found", f"그런 카드가 없습니다: {a['id']}",
@@ -1035,6 +1057,10 @@ class Tools:
           할 수 있게 하는 편이 낫다."""
         kind = str(a["kind"])
         cur = self._find_card(kind, str(a["id"]))
+        if cur and "__ambiguous__" in cur:
+            # ★★여럿이면 **고르지 않는다** — 지우고 덮는 도구라 틀리면 되돌릴 수 없다
+            return fail("ambiguous", f"「{a['id']}」 이름의 카드가 여럿입니다. id 로 골라 주세요.",
+                        what=kind, given=str(a["id"]), candidates=cur["__ambiguous__"])
         if not cur:
             names = [str(x.get("name")) for x in self.cards.list(kind)]
             return fail("not_found", f"그런 카드가 없습니다: {a['id']}",
@@ -1299,6 +1325,13 @@ The user makes art with NovelAI (NAI); a prompt is **Danbooru tags** joined by c
 
 Principles:
 - When you need to know what the user is doing, call **get_workspace** first.
+- ★★**You are always working at one address: workspace → tab → set.** Know it before you
+  change anything, and say it when you report. `get_workspace` gives you all three (each set
+  carries its `id` and `tab`; `activeTab` / `activeSet` say where the screen is). Pass them
+  back as `workspace` / `tab` / `set` - **ids, not names**: names like "새 탭" and "새 세트"
+  repeat across tabs, and a name that matches two places is refused, not guessed.
+  When the user says a change is not there, the first thing to check is whether you edited a
+  different address - re-read and compare, do not restate what you did.
   It holds their tabs, pose slots and prompt blocks exactly as they are.
 - **Danbooru tags are the default** - they reproduce best. Look one up with **search_tags**
   first and prefer what you find. Words outside the dictionary are allowed; just be clear

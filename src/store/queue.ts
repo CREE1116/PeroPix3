@@ -260,6 +260,25 @@ async function dropHumanUndo(zone: string): Promise<void> {
   dropUndoZone(zone);
 }
 
+/** **고친 것을 디스크에 밀어 넣고 답한다** (사용자 승인 2026-08-25).
+ *
+ *  ★★조수가 **읽는 자리와 쓰는 자리가 다르다**: `get_workspace` 는 디스크의
+ *    `workspace.json` 을 읽는데(`backend/workspace.py`), 화면의 편집은 편집기에 들어가고
+ *    디스크로는 **0.4초 디바운스** 뒤에 나간다 (`workspace.queueSave`).
+ *    그래서 고친 **직후에 읽으면 옛 값**이 오고, 조수는 그것을 근거로 사용자에게 잘못 말한다
+ *    (2026-08-25: 「추가된 상태입니다」라고 답했는데 화면은 그대로였다).
+ *  ★그래서 **성공한 변경 뒤에는 저장이 끝나기를 기다린다.** 그 다음 읽기부터는 같은 것을 본다.
+ *  ★실패·거절에는 안 부른다 — 바뀐 것이 없다.
+ *  ★저장이 실패해도 답은 그대로 낸다 — 화면에는 이미 반영돼 있고, 저장은 다시 예약된다. */
+async function flushSpec(out: Record<string, unknown>) {
+  if (!out || out.error || out.ok !== true) return;
+  try {
+    await useWs.getState().save();
+  } catch {
+    /* 저장이 실패해도 화면은 그대로다 — 다음 저장이 다시 가져간다 */
+  }
+}
+
 /** ★★**액션 레지스트리를 먼저 본다** (2026-08-24). 등록된 것이면 **승인 → 실행** 을 거친다.
  *
  *  ★여기가 「묻는 자리」다: 규칙(무엇이 사라지나·얼마가 드나)은 스토어와 `lib/costNow` 가
@@ -291,7 +310,9 @@ async function runAction(action: string, args: Record<string, any>): Promise<Rec
         if (!okay)
           return { error: { code: "refused", message: "사용자가 승인하지 않았습니다.", retry: "never" } };
       }
-      return (await def.run(args)) as Record<string, unknown>;
+      const out = (await def.run(args)) as Record<string, unknown>;
+      await flushSpec(out);
+      return out;
     } catch (e) {
       return { error: { code: "blocked", message: String((e as Error).message ?? e), retry: "unsafe" } };
     }

@@ -5,6 +5,7 @@ import { useGen } from "../store/gen";
 import { useWs, takesOfScene, allCells, allScenes, type ShotEnv } from "../store/workspace";
 import { SceneLane, takeSrc } from "./SceneLane";
 import { useSceneFocus } from "../store/sceneFocus";
+import { useQueue } from "../store/queue";
 import { removeTakes } from "../lib/sceneTakes";
 import { useUi } from "../store/ui";
 import { CanvasTabs } from "./CanvasTabs";
@@ -467,16 +468,26 @@ function ViewZoom() {
         display: "flex",
         alignItems: "center",
         gap: 2,
+        /* ★★**해상도 표시와 떨어뜨린다** (사용자 지시 2026-08-25: *"해상도 표시랑 너무
+           붙어 있음"*). 둘은 성격이 다르다 — 왼쪽은 **이 그림의 값**이고 여기는 **보는 방식**
+           이라, 붙어 있으면 한 덩어리로 읽힌다. */
+        marginLeft: "var(--sp-4)",
         /* ★배치 중에는 **꽉차게로 잠긴다** — 그때는 흐리게 두어 「지금은 못 만진다」가 보인다 */
         opacity: positioning ? 0.4 : 1,
         pointerEvents: positioning ? "none" : undefined,
       }}
     >
-      <ViewBtn on={fit} onClick={() => useWs.getState().setPreview({ fit: true })}>
-        {tr("scenes.viewFit")}
+      {/* ★★**아이콘으로 말한다** (사용자 지시 2026-08-25). 글자 둘이 나란히 서면 이 줄에서
+          가장 큰 덩어리가 되는데, 정작 자주 누르는 것은 ＋ / − 다. 뜻은 툴팁이 든다. */}
+      <ViewBtn on={fit} onClick={() => useWs.getState().setPreview({ fit: true })} tip={tr("scenes.viewFit")}>
+        {Icon.fitBox}
       </ViewBtn>
-      <ViewBtn on={!fit && Math.abs(view.zoom - 1) < 0.001} onClick={() => setZoom(1)}>
-        {tr("scenes.viewActual")}
+      <ViewBtn
+        on={!fit && Math.abs(view.zoom - 1) < 0.001}
+        onClick={() => setZoom(1)}
+        tip={tr("scenes.viewActual")}
+      >
+        {Icon.oneToOne}
       </ViewBtn>
       <span style={{ width: 1, height: 16, background: "var(--line)", margin: "0 2px" }} />
       <ViewBtn onClick={() => bumpZoom(-1)} tip={tr("scenes.viewOut")}>
@@ -518,6 +529,8 @@ function ScenePreview() {
   const file = useSceneFocus((s) => s.file);
   /** ★만들어지는 중인 칸을 골랐나 — 그때는 **빈 화면**이다 (안내 문구도 안 띄운다) */
   const pendingSel = useSceneFocus((s) => s.pending);
+  /** 지금 대기 중인 칸들 — 휠이 이것도 지나간다 (아래 `walk` 의 ★★주) */
+  const queued = useQueue((q) => q.pending);
   const previews = usePreviews((s) => s.items);
 
   /* ★캐릭터 배치 — 큰 그림 위에 판을 겹친다 (`CharPositioner` 머리 주석).
@@ -547,11 +560,32 @@ function ScenePreview() {
   /** 지금 띄울 장 — ★**거르기 전 목록**에서 찾는다. 「별표만 보기」를 켜면 보고 있던 장이
    *  줄에서는 빠지는데, 그때 큰 그림까지 못 찾으면 미저장 그림이 깨진 주소로 바뀐다. */
   const cur = merged.find((r) => r.file === file);
+
+  /** ★★**휠은 「생성 중」 칸도 지나간다** (사용자 지시 2026-08-25: *"휠로 이미지 전환할 때
+   *  「생성 중」인 걸로는 전환이 안 됨. 클릭으로만 선택됨"*).
+   *
+   *  ★차례는 **씬 줄과 같아야** 한다 — 대기 칸이 앞(늦게 넣은 것이 먼저), 그다음이 나온 장이다
+   *    (`SceneRow` 의 `waits`·`takes`). 줄에서 보이는 차례와 휠이 다르면 넘길 때마다 튄다.
+   *  ★대기 칸은 **파일이 없다** — 그래서 목록의 원소를 파일이 아니라 «둘 중 하나»로 든다. */
+  const waits = queued
+    .filter((p) => p.setId === (sceneSet?.id ?? null) && p.cellId === cell)
+    .slice()
+    .reverse();
+  const walk: { file?: string; pending?: string }[] = [
+    ...waits.map((w) => ({ pending: w.id })),
+    ...shown.map((r) => ({ file: r.file })),
+  ];
   const step = (d: 1 | -1) => {
-    if (shown.length < 2) return;
-    const i = shown.findIndex((r) => r.file === file);
-    const next = shown[Math.min(shown.length - 1, Math.max(0, (i < 0 ? 0 : i) + d))];
-    if (next && next.file !== file) useSceneFocus.getState().focus(cell, next.file);
+    if (walk.length < 2) return;
+    const i = pendingSel
+      ? walk.findIndex((x) => x.pending === pendingSel)
+      : walk.findIndex((x) => x.file === file);
+    const next = walk[Math.min(walk.length - 1, Math.max(0, (i < 0 ? 0 : i) + d))];
+    if (!next) return;
+    const f = useSceneFocus.getState();
+    if (next.pending) {
+      if (next.pending !== pendingSel) f.focusPending(cell, next.pending);
+    } else if (next.file && next.file !== file) f.focus(cell, next.file);
   };
 
   /* ── 얼마로 볼까 (사용자 지시 2026-08-24) ────────────────────────────────

@@ -16,7 +16,8 @@
  */
 
 import { defineAction, err, nearBy, type ActionResult } from "./actions.ts";
-import { useWs, type DelTarget } from "../store/workspace";
+import { useWs, type DelTarget, type SceneSet } from "../store/workspace";
+import { findSetAt, findTab, whereOf } from "./findAt.ts";
 import { useCensor } from "../store/censor";
 import { useQueue } from "../store/queue";
 import { useUi } from "../store/ui";
@@ -29,13 +30,16 @@ import { t } from "../i18n";
    ★한 벌은 스토어에 있다 (`removeAt`) — 여기서는 **찾아 주고 말로 옮길** 뿐이다.
    사람이 버튼을 눌렀을 때와 **같은 함수**를 부른다 (선결 조건 3-1). */
 
-/** 이름이나 id 로 세트를 찾는다. ★못 찾으면 **비슷한 것 셋**을 얹어 준다 (2-4) —
- *  그것만 있으면 조수가 대개 한 번에 고친다. */
-function findSet(key: string) {
-  const spec = useWs.getState().spec;
-  const sets = (spec?.sets ?? []).filter((x) => x.kind === "set");
-  const hit = sets.find((x) => x.id === key || x.name === key);
-  return { hit, names: sets.map((x) => x.name) };
+/** 세트를 찾는다 — ★★규칙은 `lib/findAt` **하나**다 (2026-08-25).
+ *
+ *  예전에는 여기서 `find(x => x.id === key || x.name === key)` 로 **처음 걸리는 것**을 집었다.
+ *  「새 세트」 같은 기본 이름은 탭마다 있으므로 **다른 탭의 세트를 지우고** 성공이라 답할 수
+ *  있었다 (이 함수를 `delete_set`·`delete_scene`·`move_scene`·`apply` 가 함께 쓴다).
+ *  ★못 찾거나 여럿이면 그대로 오류로 바꿔 낸다 — 고르는 것은 코드가 할 일이 아니다. */
+function findSet(key: string, tab = "") {
+  const r = findSetAt(key, tab);
+  if ("hit" in r) return { hit: r.hit as SceneSet, miss: null };
+  return { hit: undefined, miss: err(r.miss.code, r.miss.message, { given: key, candidates: r.miss.candidates }) };
 }
 
 const BLOCK_WHY: Record<string, string> = {
@@ -72,7 +76,11 @@ async function doRemove(target: DelTarget): Promise<ActionResult> {
 function previewRemove(target: DelTarget): string {
   const p = useWs.getState().planRemove(target);
   if (p.blocked) return BLOCK_WHY[p.blocked];
-  const bits = [`「${p.name}」`];
+  /* ★★**어느 탭인지 함께 적는다** (사용자 승인 2026-08-25). 이름만 적으면 다른 탭의 같은
+     이름을 지우려는 것도 **똑같은 카드**로 보인다 — 그러면 승인 절차가 방어가 되지 않는다.
+     ★자리를 말로 옮기는 것은 `lib/findAt` 의 `whereOf` 하나다. */
+  const at = target.kind === "set" ? whereOf(target.id) : target.kind === "scene" ? whereOf(target.setId) : "";
+  const bits = [at && at.includes("탭") ? `${at} 안의 「${p.name}」` : `「${p.name}」`];
   if (p.inner) bits.push(`안에 든 ${p.inner}개`);
   if (p.files.length) bits.push(`그림 ${p.files.length}장 (휴지통으로)`);
   return bits.join(" · ") + " 가 사라집니다. 되돌리기로는 못 돌아옵니다.";
@@ -83,18 +91,18 @@ defineAction({
   title: "세트를 지웁니다",
   desc: "★**세트를 닫는다** — 그 안의 씬과 **그림도 함께 휴지통으로** 간다. "
     + "그 탭의 마지막 세트는 못 닫는다 (탭이 빈다).",
-  args: { set: { type: "string", desc: "세트 이름 또는 id", required: true } },
+  args: {
+    set: { type: "string", desc: "세트 **id** (이름은 탭마다 겹친다)", required: true },
+    tab: { type: "string", desc: "어느 탭의 세트인지 — 이름으로 줄 때 함께 주면 정확하다" },
+  },
   confirm: "hard",
   preview: (a) => {
     const { hit } = findSet(String(a.set ?? ""));
     return hit ? previewRemove({ kind: "set", id: hit.id }) : "그런 세트가 없습니다.";
   },
   run: async (a) => {
-    const { hit, names } = findSet(String(a.set ?? ""));
-    if (!hit)
-      return err("not_found", `그런 세트가 없습니다: ${a.set}`, {
-        what: "set", given: String(a.set ?? ""), candidates: nearBy(String(a.set ?? ""), names),
-      });
+    const { hit, miss } = findSet(String(a.set ?? ""), String(a.tab ?? ""));
+    if (!hit) return miss!;
     return doRemove({ kind: "set", id: hit.id });
   },
 });
@@ -106,7 +114,8 @@ defineAction({
     + "`set` 을 비우면 지금 보고 있는 세트에서 찾는다.",
   args: {
     scene: { type: "string", desc: "씬 이름 또는 id", required: true },
-    set: { type: "string", desc: "어느 세트에서 — 비우면 지금 보고 있는 세트" },
+    set: { type: "string", desc: "어느 세트에서 — 비우면 지금 보고 있는 세트 (**id** 가 정확하다)" },
+    tab: { type: "string", desc: "어느 탭의 세트인지 — 세트를 이름으로 줄 때 함께 준다" },
   },
   confirm: "hard",
   preview: (a) => {
@@ -123,11 +132,10 @@ defineAction({
 function pickScene(a: Record<string, any>): { target: DelTarget } | ReturnType<typeof err> {
   const ws = useWs.getState();
   const want = String(a.set ?? "").trim();
-  const set = want ? findSet(want).hit : ws.activeSet();
+  const found = want ? findSet(want, String(a.tab ?? "")) : { hit: ws.activeSet(), miss: null };
+  const set = found.hit;
   if (!set || set.kind !== "set")
-    return err("not_found", want ? `그런 세트가 없습니다: ${want}` : "열려 있는 세트가 없습니다.", {
-      what: "set", given: want, candidates: nearBy(want, findSet("").names),
-    });
+    return found.miss ?? err("not_found", "열려 있는 세트가 없습니다.", { retry: "never" });
   const key = String(a.scene ?? "").trim();
   const cells = set.cards.flatMap((k) => k.cells);
   const cell = cells.find((c) => c.id === key || c.name === key);
@@ -360,16 +368,16 @@ defineAction({
     scene: { type: "string", desc: "옮길 씬 이름 또는 id", required: true },
     before: { type: "string", desc: "이 씬 **앞**에 놓는다 — 비우면 맨 뒤" },
     set: { type: "string", desc: "어느 세트에서 — 비우면 지금 보고 있는 세트" },
+    tab: { type: "string", desc: "어느 탭의 세트인지 — 세트를 이름으로 줄 때 함께 준다" },
   },
   confirm: "none",
   run: async (a) => {
     const ws = useWs.getState();
     const want = String(a.set ?? "").trim();
-    const set = want ? findSet(want).hit : ws.activeSet();
+    const found = want ? findSet(want, String(a.tab ?? "")) : { hit: ws.activeSet(), miss: null };
+    const set = found.hit;
     if (!set || set.kind !== "set")
-      return err("not_found", want ? `그런 세트가 없습니다: ${want}` : "열려 있는 세트가 없습니다.", {
-        what: "set", given: want, candidates: nearBy(want, findSet("").names),
-      });
+      return found.miss ?? err("not_found", "열려 있는 세트가 없습니다.", { retry: "never" });
 
     /* ★씬은 **카드 안에** 있다. 옮길 자리는 「받는 카드 + 그 카드 안의 틈 번호」로 준다
        (`moveScene` 의 규약) — 그래서 `before` 가 어느 카드의 몇 번째인지 먼저 찾는다. */
@@ -418,13 +426,12 @@ defineAction({
   confirm: "none",
   run: async (a) => {
     const ws = useWs.getState();
-    const tabs = ws.spec?.tabs ?? [];
     const key = String(a.tab ?? "").trim();
-    const hit = tabs.find((c) => c.id === key || c.name === key);
-    if (!hit)
-      return err("not_found", `그런 탭이 없습니다: ${key}`, {
-        what: "tab", given: key, candidates: nearBy(key, tabs.map((c) => c.name)),
-      });
+    /* ★규칙은 `lib/findAt` 하나다 — 「새 탭」 같은 기본 이름이 겹치면 되묻는다 */
+    const found = findTab(key);
+    if ("miss" in found)
+      return err(found.miss.code, found.miss.message, { what: "tab", given: key, candidates: found.miss.candidates });
+    const hit = found.hit;
     if (ws.spec?.activeTab === hit.id) return { ok: true, did: `이미 「${hit.name}」 탭입니다` };
     ws.switchTab(hit.id);
     return {
@@ -454,7 +461,15 @@ defineAction({
     const list = (useCards.getState()[kind as "styles" | "characters" | "posesets"] ?? []) as
       { id: string; name: string }[];
     const key = String(a.card ?? "").trim();
-    const hit = list.find((c: { id: string; name: string }) => c.id === key || c.name === key);
+    /* ★★**id 가 먼저고, 같은 이름이 여럿이면 안 고른다** (2026-08-25). 덱은 언제나
+       **새로 추가**라 같은 이름이 쌓인다 — 처음 걸리는 것을 집으면 엉뚱한 그림체가 얹힌다.
+       백엔드의 카드 찾기(`agent.py` 의 `_find_card`)와 같은 규칙이다. */
+    const same = list.filter((c) => c.name === key);
+    if (!list.some((c) => c.id === key) && same.length > 1)
+      return err("ambiguous", `「${key}」 이름의 카드가 여럿입니다. id 로 골라 주세요.`, {
+        what: kind, given: key, candidates: same.map((c) => `${c.name}#${c.id}`),
+      });
+    const hit = list.find((c: { id: string; name: string }) => c.id === key) ?? same[0];
     if (!hit)
       return err("not_found", `그런 카드가 없습니다: ${key}`, {
         what: kind, given: key,
@@ -562,12 +577,10 @@ defineAction({
     const done = Object.entries(patch).map(([k, v]) => `${k}=${v}`).join(", ");
 
     if (what === "tab") {
-      const tabs = ws.spec?.tabs ?? [];
-      const hit = tabs.find((c) => c.id === key || c.name === key);
-      if (!hit)
-        return err("not_found", `그런 탭이 없습니다: ${key}`, {
-          what: "tab", given: key, candidates: nearBy(key, tabs.map((c) => c.name)),
-        });
+      const found = findTab(key);
+      if ("miss" in found)
+        return err(found.miss.code, found.miss.message, { what: "tab", given: key, candidates: found.miss.candidates });
+      const hit = found.hit;
       const wasTab = { name: hit.name };
       ws.renameTab(hit.id, String(patch.name));
       return { ok: true, did: `탭 「${hit.name}」 → ${done}`,
@@ -576,11 +589,8 @@ defineAction({
     }
 
     if (what === "set") {
-      const { hit, names } = findSet(key);
-      if (!hit)
-        return err("not_found", `그런 세트가 없습니다: ${key}`, {
-          what: "set", given: key, candidates: nearBy(key, names),
-        });
+      const { hit, miss } = findSet(key, String(a.tab ?? ""));
+      if (!hit) return miss!;
       const wasSet = { name: hit.name };
       ws.renameSet(hit.id, String(patch.name));
       return { ok: true, did: `세트 「${hit.name}」 → ${done}`,
