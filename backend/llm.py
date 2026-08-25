@@ -660,7 +660,13 @@ async def _gemini(key, model, system, messages, tools, max_tokens, url, effort="
     u = d.get("usageMetadata") or {}
     if not text and not calls:
         why = (d.get("promptFeedback") or {}).get("blockReason") or cand.get("finishReason") or "원인 불명"
-        return {"error": f"응답이 비어 있습니다 ({why})"}
+        # ★★**어느 필터가 걸렸는지 말해 준다** (사용자 지적 2026-08-25: 중단 후 다시 말했더니
+        #   `(SAFETY)` 만 뜨고 끝났다). 이름만으로는 무엇을 고쳐야 할지 알 수 없다 —
+        #   막은 갈래를 알면 그 대목을 바꿔 보거나 다른 모델로 옮길 수 있다.
+        #   ★`safetyRatings` 는 응답에 늘 있는 것이 아니므로 **있을 때만** 덧붙인다.
+        hit = [str(x.get("category", "")).replace("HARM_CATEGORY_", "")
+               for x in (cand.get("safetyRatings") or []) if x.get("blocked")]
+        return {"error": f"응답이 비어 있습니다 ({why}" + (" — " + ", ".join(hit) if hit else "") + ")"}
     return {
         "text": text,
         "tools": calls,

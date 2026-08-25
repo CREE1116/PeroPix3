@@ -929,7 +929,8 @@ function Row({ line }: { line: Line }) {
       onClick={at ? () => void openAt(at) : undefined}
       style={{
         display: "flex",
-        alignItems: "center",
+        // ★실패 줄은 여러 줄이 된다 — 가운데 맞춤이면 표시가 글 한가운데로 내려간다
+        alignItems: line.ok ? "center" : "flex-start",
         gap: "var(--sp-2)",
         fontSize: "var(--text-2xs)",
         fontFamily: "var(--font-mono)",
@@ -953,9 +954,14 @@ function Row({ line }: { line: Line }) {
           data-ai-tool-did={line.ok ? "" : undefined}
           style={{
             minWidth: 0,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
+            /* ★★**실패한 줄은 안 자른다** (사용자 지적 2026-08-25: *"오류 메시지가 … 으로
+                 나와서 전체 문장을 읽을 수가 없음"*). 오류는 **읽으라고 있는 글**이고,
+                 대개 뒤쪽에 「무엇을 주면 되는지」가 적혀 있어서 잘리면 쓸모가 없어진다.
+               ★성공한 줄은 그대로 한 줄로 자른다 — 열 줄씩 쌓이는 진행 표시라, 다 펴면
+                 정작 봐야 할 실패가 묻힌다. */
+            ...(line.ok
+              ? { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }
+              : { whiteSpace: "pre-wrap" as const, wordBreak: "break-word" as const }),
             // 성공한 것의 설명은 한 단 흐리게 — 실패 문구와 눈으로 갈린다
             //   ★고친 줄은 안 흐리다 (그 줄의 알맹이가 바로 이 문구다)
             color: !line.ok || at ? "inherit" : "var(--ink-faint)",
