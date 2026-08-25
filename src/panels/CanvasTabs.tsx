@@ -94,7 +94,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
               background: on ? "color-mix(in srgb, var(--accent) 14%, var(--surface))" : "var(--panel)",
               color: on ? "var(--ink)" : "var(--ink-dim)",
               fontSize: "var(--text-xs)",
-              fontWeight: on ? "var(--w-semi)" : 400,
+              fontWeight: on ? "var(--w-semi)" : "var(--w-normal)",
               // ★끌고 있는 것은 흐리게 — 잔상이 커서를 따라가므로 원본은 자리만 지킨다
               opacity: setOrd.dragIdx === i ? 0.35 : 1,
               ...hp.style,
@@ -253,7 +253,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                   background: on ? "color-mix(in srgb, var(--accent) 14%, var(--surface))" : "var(--panel)",
                   color: on ? "var(--ink)" : "var(--ink-dim)",
                   fontSize: "var(--text-xs)",
-                  fontWeight: on ? "var(--w-semi)" : 400,
+                  fontWeight: on ? "var(--w-semi)" : "var(--w-normal)",
                   // ★끌고 있는 것은 흐리게 (세트 줄과 같은 규칙)
                   opacity: tabOrd.dragIdx === i ? 0.35 : 1,
                   ...hp.style,

@@ -226,7 +226,7 @@ function SizePicker({ w, h, onPick }: { w: number; h: number; onPick: (w: number
                 background: on ? "var(--accent-bg)" : "var(--panel)",
                 color: on ? "var(--ink)" : "var(--ink-dim)",
                 fontSize: "var(--text-2xs)",
-                fontWeight: on ? "var(--w-semi)" : 400,
+                fontWeight: on ? "var(--w-semi)" : "var(--w-normal)",
               }}
             >
               <Ratio w={lw} h={lh} max={13} on={on} />

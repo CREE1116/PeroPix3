@@ -401,7 +401,7 @@ function Btn({
         padding: "var(--sp-3) var(--sp-7)",
         borderRadius: "var(--r-2)",
         fontSize: "var(--text-xs)",
-        fontWeight: primary ? 600 : 400,
+        fontWeight: primary ? "var(--w-semi)" : "var(--w-normal)",
         border: primary ? "1px solid var(--accent)" : "1px solid var(--line)",
         background: primary ? "var(--accent)" : "var(--surface2)",
         color: primary ? "var(--accent-on)" : "var(--ink-soft)",

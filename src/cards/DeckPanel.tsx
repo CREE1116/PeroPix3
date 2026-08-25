@@ -107,7 +107,7 @@ export function DeckPanel({
                 background: on ? "var(--surface)" : "transparent",
                 color: on ? "var(--ink)" : "var(--ink-dim)",
                 fontSize: "var(--text-2xs)",
-                fontWeight: on ? "var(--w-semi)" : 400,
+                fontWeight: on ? "var(--w-semi)" : "var(--w-normal)",
               }}
             >
               {t(`cards.short.${k}`)}
@@ -403,7 +403,7 @@ function FolderTab({
         background: zone.over ? "var(--accent-bg)" : on ? "var(--panel)" : "transparent",
         borderColor: zone.over || on ? "var(--accent)" : "var(--line)",
         color: on ? "var(--ink)" : "var(--ink-dim)",
-        fontWeight: on ? "var(--w-semi)" : 400,
+        fontWeight: on ? "var(--w-semi)" : "var(--w-normal)",
       }}
     >
       {label}

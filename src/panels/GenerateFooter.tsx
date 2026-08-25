@@ -441,7 +441,7 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
                   borderRight: i < 2 ? "1px solid var(--line)" : undefined,
                   background: on ? "var(--accent-bg)" : "transparent",
                   color: on ? "var(--accent)" : "var(--ink-dim)",
-                  fontWeight: on ? "var(--w-semi)" : 400,
+                  fontWeight: on ? "var(--w-semi)" : "var(--w-normal)",
                 }}
               >
                 {t(SEED_LABELS[i])}

@@ -90,7 +90,7 @@ function Btn({
         padding: "var(--sp-2) var(--sp-5)",
         borderRadius: "var(--r-2)",
         fontSize: "var(--text-xs)",
-        fontWeight: primary ? 600 : 400,
+        fontWeight: primary ? "var(--w-semi)" : "var(--w-normal)",
         border: primary ? "none" : "1px solid var(--line)",
         background: primary ? "var(--accent)" : "transparent",
         color: primary ? "var(--accent-on)" : "var(--ink-soft)",

@@ -44,7 +44,7 @@ export function BottomNav({ right }: { right?: React.ReactNode }) {
               alignItems: "center",
               padding: "0 var(--sp-7)",
               fontSize: "var(--text-md)",
-              fontWeight: on ? 600 : 400,
+              fontWeight: on ? "var(--w-semi)" : "var(--w-normal)",
               color: on ? "var(--ink)" : "var(--ink-dim)",
               borderRight: "1px solid var(--line-soft)",
             }}
@@ -116,7 +116,7 @@ function GalleryTab({ on, onClick }: { on: boolean; onClick: () => void }) {
         alignItems: "center",
         padding: "0 var(--sp-7)",
         fontSize: "var(--text-md)",
-        fontWeight: on ? 600 : 400,
+        fontWeight: on ? "var(--w-semi)" : "var(--w-normal)",
         color: zone.over ? "var(--accent)" : on ? "var(--ink)" : "var(--ink-dim)",
         borderRight: "1px solid var(--line-soft)",
         // ★받을 수 있을 때만 테두리를 보여 준다 — 평소에는 다른 단추와 같은 모습이다

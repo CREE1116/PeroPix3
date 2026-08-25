@@ -475,6 +475,18 @@ export function SceneLane() {
     return () => window.removeEventListener("keydown", onKey);
   }, [picked]);
 
+  /** ★★**훅은 이른 반환보다 위에 둔다** — 아래 `tab?.kind !== "set"` 에서 빠지므로,
+   *  그 밑에 두면 탭을 옮길 때마다 훅 개수가 달라져 **화면이 통째로 죽는다**
+   *  (*"Rendered fewer hooks than expected"*). 사용자 실측 2026-08-25: 워크스페이스·탭을
+   *  바꾸면 UI 가 안 그려졌다. 같은 함정을 `StyleSection` 이 먼저 밟았다.
+   *
+   *  서버가 지금 만들고 있는 씬 — 이 세트의 것일 때만 쓴다 (`store/queue` 의 `current_cell`) */
+  const nowCell = useQueue((q) =>
+    q.progress.current_cell && q.progress.current_cell.set_id === tab?.id
+      ? q.progress.current_cell.cell_id
+      : null,
+  );
+
   if (tab?.kind !== "set") return null;
 
   /** ★「캐릭터 전원」은 **켜진 캐릭터가 둘 이상일 때만** 낸다 (사용자 결정) —
@@ -507,12 +519,6 @@ export function SceneLane() {
   const h = Math.min(LANE_MAX, Math.max(LANE_MIN, laneSize));
   const w = h;
   const queued = pending.filter((p) => p.setId === tab.id);
-  /** ★서버가 지금 만들고 있는 씬 — 이 세트의 것일 때만 쓴다 (`store/queue` 의 `current_cell`) */
-  const nowCell = useQueue((q) =>
-    q.progress.current_cell && q.progress.current_cell.set_id === tab.id
-      ? q.progress.current_cell.cell_id
-      : null,
-  );
   const running = progress.total > progress.completed;
 
   /** 그 씬의 결과 (숨긴 것 제외).

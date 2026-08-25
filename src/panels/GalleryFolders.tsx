@@ -266,7 +266,7 @@ function Row({
         {parts.length > 0 && (
           <span style={{ color: "var(--ink-faint)" }}>{parts.join("/")}/</span>
         )}
-        <span style={{ fontWeight: on ? 600 : 400 }}>{leaf}</span>
+        <span style={{ fontWeight: on ? "var(--w-semi)" : "var(--w-normal)" }}>{leaf}</span>
       </span>
       <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
         {count}

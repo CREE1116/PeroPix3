@@ -117,7 +117,7 @@ export function StyleSection({ onThumb }: SectionProps) {
             /* ★여기는 **밝힐 내용이 없는 빈 자리**라 판 자체가 밝아진다. 그 위에 오면
                다른 자리와 **같은 알약**이 뜬다 (`DropVeil` 과 같은 말투) */
             color: over ? "var(--accent-on)" : "var(--ink-faint)",
-            fontWeight: over ? "var(--w-semi)" : 400,
+            fontWeight: over ? "var(--w-semi)" : "var(--w-normal)",
             background: active ? (over ? "var(--accent)" : "var(--surface)") : "transparent",
             boxShadow: active ? "0 2px 10px rgba(0,0,0,0.35)" : undefined,
           }}
@@ -598,8 +598,13 @@ function Tab({
       data-tip={full ? t("prompt.ucHasContent") : undefined}
       style={{
         padding: "2px 1px 3px",
-        fontSize: "var(--text-3xs)",
-        fontWeight: on ? 700 : 400,
+        /* ★★**딱지 층이 아니다** (사용자 지적 2026-08-25: *"왜 카드의 프롬프트, UC
+             컨텐츠 텍스트가 이 층위에 묶인 거 같지? 얘들은 원래 더 컸는데"*).
+             크기를 계층으로 옮길 때 0.72rem(≈11.5px) 을 `--text-3xs` 로 보냈는데,
+             그 층은 딱지(● CLI · 머리글)라 이후 조절을 그대로 따라가 작아졌다.
+             이것은 **고를 수 있는 것의 이름**이므로 곁들이는 값(`meta`) 크기를 쓴다. */
+        fontSize: TYPE.meta.fontSize,
+        fontWeight: on ? "var(--w-bold)" : "var(--w-normal)",
         color: full ? "var(--uc-c)" : on ? "var(--ink)" : "var(--ink-soft)",
         borderBottom: `2px solid ${on ? (full ? "var(--uc-c)" : "var(--accent)") : "transparent"}`,
       }}
