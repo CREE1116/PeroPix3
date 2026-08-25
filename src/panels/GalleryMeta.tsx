@@ -406,7 +406,7 @@ const Grid = ({ children }: { children: React.ReactNode }) => (
 function Field({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
   return (
     <div style={{ padding: "3px 0", minWidth: 0 }}>
-      <div style={{ fontSize: "0.62rem", color: "var(--ink-faint)" }}>{k}</div>
+      <div style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>{k}</div>
       <div
         style={{
           fontSize: "var(--text-2xs)",
@@ -429,7 +429,7 @@ const Label = ({ children }: { children: React.ReactNode }) => (
     style={{
       marginTop: "var(--sp-3)",
       marginBottom: "var(--sp-1)",
-      fontSize: "0.62rem",
+      fontSize: "var(--text-2xs)",
       color: "var(--ink-faint)",
     }}
   >

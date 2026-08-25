@@ -124,7 +124,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                 분자가 분모보다 큰 값까지 나왔다. 진행 상황은 생성 푸터의 큐 줄이 말한다. */}
             <span
               data-tip={tr("slots.count", { n: allCells(t).length })}
-              style={{ fontSize: "0.68rem", opacity: 0.7, fontVariantNumeric: "tabular-nums" }}
+              style={{ fontSize: "var(--text-3xs)", opacity: 0.7, fontVariantNumeric: "tabular-nums" }}
             >
               {allCells(t).length}
             </span>

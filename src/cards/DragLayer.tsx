@@ -116,7 +116,7 @@ export function DragLayer() {
               style={{
                 height: "38%",
                 padding: "5px 7px",
-                fontSize: "0.68rem",
+                fontSize: "var(--text-3xs)",
                 fontWeight: "var(--w-bold)",
                 color: "var(--ink)",
                 overflow: "hidden",

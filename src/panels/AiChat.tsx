@@ -1,3 +1,4 @@
+import { TYPE } from "../styles/type";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { useLlm, type Ask, type Confirm, type Line } from "../store/llm";
@@ -105,8 +106,7 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
             gap: 4,
             padding: "0 4px",
             color: ready ? "var(--ink-dim)" : "var(--warn)",
-            fontSize: "0.62rem",
-            letterSpacing: "0.04em",
+            ...TYPE.eyebrow,
           }}
         >
           <span
@@ -162,7 +162,7 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
               data-ai-locked
               style={{
                 padding: "var(--sp-2) var(--sp-4)",
-                fontSize: "0.62rem",
+                fontSize: "var(--text-2xs)",
                 color: "var(--ink-faint)",
                 borderBottom: "1px solid var(--line-soft)",
               }}
@@ -432,7 +432,7 @@ function ModelChip({ onOpenSettings }: { onOpenSettings?: () => void }) {
           border: `1px solid ${open ? "var(--accent)" : "var(--line)"}`,
           background: open ? "var(--accent-bg)" : "transparent",
           color: "var(--ink-dim)",
-          fontSize: "0.62rem",
+          fontSize: "var(--text-2xs)",
           whiteSpace: "nowrap",
         }}
       >
@@ -517,7 +517,7 @@ function ModelChip({ onOpenSettings }: { onOpenSettings?: () => void }) {
                 setOpen(false);
                 onOpenSettings?.();
               }}
-              style={{ justifySelf: "start", fontSize: "0.62rem", color: "var(--accent)", textDecoration: "underline" }}
+              style={{ justifySelf: "start", fontSize: "var(--text-2xs)", color: "var(--accent)", textDecoration: "underline" }}
             >
               {t("settings.title")}
             </button>
@@ -534,7 +534,7 @@ const popField: React.CSSProperties = {
   border: "1px solid var(--line)",
   borderRadius: "var(--r-2)",
   padding: "3px var(--sp-2)",
-  fontSize: "0.62rem",
+  fontSize: "var(--text-2xs)",
 };
 
 const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
@@ -634,7 +634,7 @@ function ConfirmCard({ c }: { c: Confirm }) {
         gap: "var(--sp-2)",
       }}
     >
-      <span style={{ fontSize: "0.62rem", letterSpacing: "0.06em", color: line }}>
+      <span style={{ ...TYPE.eyebrow, color: line }}>
         {t("ai.confirmHeader")}
       </span>
       <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink)", lineHeight: 1.6 }}>
@@ -706,7 +706,7 @@ function AskCard({ ask }: { ask: Ask }) {
       }}
     >
       {ask.header && (
-        <span style={{ fontSize: "0.62rem", letterSpacing: "0.06em", color: "var(--accent)" }}>
+        <span style={{ ...TYPE.eyebrow, color: "var(--accent)" }}>
           {ask.header}
         </span>
       )}
@@ -761,7 +761,7 @@ function AskCard({ ask }: { ask: Ask }) {
                 {o.label}
               </span>
               {o.description && (
-                <span style={{ display: "block", fontSize: "0.62rem", color: "var(--ink-faint)" }}>
+                <span style={{ display: "block", fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
                   {o.description}
                 </span>
               )}

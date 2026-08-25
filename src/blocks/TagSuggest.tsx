@@ -1,3 +1,4 @@
+import { TYPE } from "../styles/type";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -292,8 +293,7 @@ export function useTagSuggest(
               <span
                 style={{
                   flexShrink: 0,
-                  fontSize: "0.62rem",
-                  letterSpacing: "0.04em",
+                  ...TYPE.eyebrow,
                   color: TYPE_COLOR[tag.type] ?? "var(--ink-faint)",
                 }}
               >
@@ -305,7 +305,7 @@ export function useTagSuggest(
                   width: 42,
                   textAlign: "right",
                   fontFamily: "var(--font-mono)",
-                  fontSize: "0.62rem",
+                  fontSize: "var(--text-2xs)",
                   color: "var(--ink-faint)",
                 }}
               >

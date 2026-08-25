@@ -228,7 +228,9 @@ export function Chip({
         <b
           style={{
             fontFamily: "var(--font-mono)",
-            fontSize: "0.92em",
+            /* ★**상대값이라 그대로 둔다** — 칩 글자의 92%다. 토큰으로 바꾸면 칩 크기를
+                 바꿔도 이 표시만 안 따라온다 (계층의 뜻과 반대다). */
+              fontSize: "0.92em",
             color: (tag.w ?? 1) < 0 ? "var(--minus)" : "var(--accent)",
             /* ★★자리를 **미리 비워 두지 말 것** (사용자 지적 2026-08-22).
                `minWidth: 5ch` + 우측 정렬로 넉넉히 잡았더니 숫자 왼쪽에 빈칸이 크게 남고,

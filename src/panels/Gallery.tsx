@@ -534,7 +534,7 @@ function Big({
           position: "absolute",
           right: "var(--sp-5)",
           bottom: "var(--sp-2)",
-          fontSize: "0.62rem",
+          fontSize: "var(--text-2xs)",
           color: "rgba(255,255,255,0.35)",
         }}
       >

@@ -16,6 +16,7 @@ import { toggleCharCapped, useGen } from "../store/gen";
 import { useUi } from "../store/ui";
 import { useDropZone, useDragSource, useDrag } from "../cards/dragStore";
 import { flashStyle, useFlash } from "../store/ui";
+import { TYPE } from "../styles/type";
 import { applyCard } from "../lib/applyCard";
 import { zoneIcon } from "../cards/CardArt";
 import { DropVeil } from "../cards/DropVeil";
@@ -400,7 +401,7 @@ function StackPeek({ ch }: { ch: Char }) {
               border: "1px solid var(--line)",
               position: "relative",
               color: "#fff",
-              fontSize: "0.68rem",
+              fontSize: "var(--text-3xs)",
               fontWeight: "var(--w-bold)",
               lineHeight: 1.1,
               textShadow: "0 1px 2px rgba(0,0,0,0.75)",
@@ -438,7 +439,7 @@ function StackPeek({ ch }: { ch: Char }) {
               {/* 중간 단 — 잘리기 전 구간을 한 번 어둡게 눕혀 계단을 만든다 */}
               <span style={{ position: "absolute", inset: 0, background: BANNER_STEP }} />
             </span>
-            <b style={{ position: "relative", fontSize: "0.86rem", fontWeight: "var(--w-bold)" }}>
+            <b style={{ position: "relative", ...TYPE.cardName, fontWeight: "var(--w-bold)" }}>
               {c.name}
             </b>
             {front && (
@@ -510,7 +511,7 @@ export function JoinZone() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        fontSize: "0.74rem",
+        fontSize: "var(--text-2xs)",
         fontWeight: "var(--w-bold)",
         boxSizing: "border-box",
         /* ★★여기는 **아직 아무것도 없는 자리**라 밝힐 내용이 없다 — 그래서 판 자체가
@@ -597,7 +598,7 @@ function Tab({
       data-tip={full ? t("prompt.ucHasContent") : undefined}
       style={{
         padding: "2px 1px 3px",
-        fontSize: "0.72rem",
+        fontSize: "var(--text-3xs)",
         fontWeight: on ? 700 : 400,
         color: full ? "var(--uc-c)" : on ? "var(--ink)" : "var(--ink-soft)",
         borderBottom: `2px solid ${on ? (full ? "var(--uc-c)" : "var(--accent)") : "transparent"}`,

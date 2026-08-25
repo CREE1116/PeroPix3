@@ -23,7 +23,7 @@ function AskForModel({ url }: { url: string }) {
   const t = useI18n((s) => s.t);
   if (!url) return null;
   return (
-    <div data-llm-ask style={{ fontSize: "0.62rem", color: "var(--ink-faint)", lineHeight: 1.6 }}>
+    <div data-llm-ask style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)", lineHeight: 1.6 }}>
       {t("settings.modelMissing")}{" "}
       <button
         data-llm-ask-link
@@ -88,7 +88,7 @@ function ApproveBox() {
         />
         {t("settings.agentAskHard")}
       </label>
-      <span style={{ fontSize: "0.62rem", color: "var(--ink-faint)", lineHeight: 1.6 }}>
+      <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)", lineHeight: 1.6 }}>
         {t("settings.agentApproveHint")}
       </span>
     </div>
@@ -152,7 +152,7 @@ function GuideBox() {
       <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
         <span
           data-guide-len
-          style={{ fontSize: "0.62rem", color: over ? "var(--err)" : "var(--ink-faint)" }}
+          style={{ fontSize: "var(--text-2xs)", color: over ? "var(--err)" : "var(--ink-faint)" }}
         >
           {text.length} / {max}
         </span>
@@ -166,7 +166,7 @@ function GuideBox() {
           {t("settings.save")}
         </button>
       </div>
-      {err && <span style={{ fontSize: "0.62rem", color: "var(--err)" }}>{err}</span>}
+      {err && <span style={{ fontSize: "var(--text-2xs)", color: "var(--err)" }}>{err}</span>}
     </Group>
   );
 }
@@ -306,7 +306,7 @@ export function AiSettings() {
                     >
                       {c.label}
                     </span>
-                    <span style={{ display: "block", fontSize: "0.62rem", color: "var(--ink-faint)" }}>
+                    <span style={{ display: "block", fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
                       {!c.installed
                         ? t("settings.cliNone")
                         : c.drivable
@@ -418,7 +418,7 @@ export function AiSettings() {
             </button>
           </Line>
           {listErr && (
-            <span data-llm-models-err style={{ fontSize: "0.62rem", color: "var(--ink-faint)" }}>
+            <span data-llm-models-err style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
               {listErr}
             </span>
           )}
@@ -531,7 +531,7 @@ function ModeTab({
       >
         {title}
       </span>
-      <span style={{ display: "block", fontSize: "0.62rem", color: "var(--ink-faint)" }}>{sub}</span>
+      <span style={{ display: "block", fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>{sub}</span>
     </button>
   );
 }

@@ -29,4 +29,15 @@ export const TYPE = {
 
   /** 곁들이는 값 — 수·시각·힌트 */
   meta: { fontSize: "var(--text-2xs)", fontWeight: "var(--w-normal)" },
+
+  /** ★★**딱지** — 짧고 조용한 머리글 (`● CLI` · 「승인이 필요합니다」).
+   *
+   *  ★**자간이 역할에 들어 있다.** 이 크기는 자간이 있어야 읽힌다 — 크기만 꺼내 쓰면
+   *    자리마다 자간을 또 적게 되고, 그러면 계층을 만든 뜻이 없다.
+   *  ★긴 문장에 쓰지 말 것. 낱말 한둘짜리 머리글 자리다 — 설명·힌트는 `meta` 가 맡는다. */
+  eyebrow: {
+    fontSize: "var(--text-3xs)",
+    fontWeight: "var(--w-normal)",
+    letterSpacing: "0.06em",
+  },
 } as const;
