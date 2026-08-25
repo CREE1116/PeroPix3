@@ -79,6 +79,7 @@ function previewRemove(target: DelTarget): string {
 
 defineAction({
   id: "delete_set",
+  title: "세트를 지웁니다",
   desc: "★**세트를 닫는다** — 그 안의 씬과 **그림도 함께 휴지통으로** 간다. "
     + "그 탭의 마지막 세트는 못 닫는다 (탭이 빈다).",
   args: { set: { type: "string", desc: "세트 이름 또는 id", required: true } },
@@ -99,6 +100,7 @@ defineAction({
 
 defineAction({
   id: "delete_scene",
+  title: "씬을 지웁니다",
   desc: "★**씬 칸을 지운다** — 그 씬의 **그림도 함께 휴지통으로** 간다. "
     + "`set` 을 비우면 지금 보고 있는 세트에서 찾는다.",
   args: {
@@ -139,6 +141,7 @@ function pickScene(a: Record<string, any>): { target: DelTarget } | ReturnType<t
 
 defineAction({
   id: "cancel_queue",
+  title: "생성 큐를 비웁니다",
   desc: "★**생성 큐를 비운다** — 아직 시작 안 한 것이 취소된다. 이미 나간 장은 못 되돌린다 "
     + "(Anlas 가 이미 나갔다). 사용자가 «그만»·«취소» 라고 하면 쓴다.",
   confirm: "ask",
@@ -186,6 +189,7 @@ defineAction({
 
 defineAction({
   id: "censor_clear",
+  title: "검열 목록을 비웁니다",
   desc: "자동검열 목록을 **비운다** (원본 파일은 그대로다).",
   confirm: "ask",
   preview: () => `목록의 ${useCensor.getState().images.length}장을 뺍니다 (원본은 그대로).`,
@@ -198,6 +202,7 @@ defineAction({
 
 defineAction({
   id: "censor_run",
+  title: "자동검열을 돌립니다",
   desc: "★자동검열을 **돌린다** (목록에 든 그림 전부를 훑어 가릴 곳을 찾는다). "
     + "결과 저장은 사용자가 화면에서 따로 누른다.",
   confirm: "ask",
@@ -281,6 +286,7 @@ defineAction({
 
 defineAction({
   id: "generate",
+  title: "그림을 생성합니다",
   desc: "★**생성을 큐에 넣는다.** 그 세트의 잠기지 않은 씬 전부를 `count` 바퀴 돈다 "
     + "(씬이 하나면 count 장). 비우면 지금 보고 있는 세트. "
     + "★**기다릴 필요가 없다** — 큐는 넣는 순간의 프롬프트를 담으므로, 이어서 프롬프트를 "
@@ -440,6 +446,7 @@ defineAction({
 
 defineAction({
   id: "create_workspace",
+  title: "새 워크스페이스를 만듭니다",
   desc: "★**새 워크스페이스를 만들고 그리로 옮겨 간다.** 워크스페이스는 최상위 작업 공간이라 "
     + "생성 옵션·바이브가 넘어가지 않는다 — «새 작업 시작하자» 같은 요청에서 쓴다.",
   args: { name: { type: "string", desc: "워크스페이스 이름", required: true } },

@@ -267,7 +267,15 @@ async function runAction(action: string, args: Record<string, any>): Promise<Rec
       const risk = typeof def.confirm === "function" ? await def.confirm(args) : (def.confirm ?? "ask");
       if (needsAsk(risk)) {
         const body = def.preview ? await def.preview(args) : undefined;
-        const okay = await askApprove({ title: def.desc.split("—")[0].trim(), body, hard: risk === "hard" });
+        /* ★제목은 **사람이 읽는 한 줄**이다 — `desc` 는 LLM 용이라 길고 마크다운이 섞여 있어
+           카드가 설명서처럼 보인다 (QA 실측 2026-08-25). */
+        const okay = await askApprove({ title: def.title ?? def.id, body, hard: risk === "hard" });
+        /* ★★**「대기 중」과 「거절」을 가른다** (QA 실측 2026-08-25). 앞선 승인이 아직 안 끝난
+           것을 거절로 말하면 조수가 **사용자가 거절했다**고 전한다 — 사용자는 본 적도 없는데.
+           ★`retry: "safe"` 다: 앞의 것이 끝나면 그대로 다시 하면 된다. */
+        if (okay === "busy")
+          return { error: { code: "blocked", retry: "safe",
+                            message: "앞선 승인 요청이 아직 화면에 떠 있습니다. 그것을 먼저 처리해 주세요." } };
         // ★거절은 **오류가 아니다** — 조수가 다시 시도하지 않게 `never` 로 말한다
         if (!okay)
           return { error: { code: "refused", message: "사용자가 승인하지 않았습니다.", retry: "never" } };

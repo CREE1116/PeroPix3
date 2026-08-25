@@ -211,6 +211,9 @@ type S = Persisted & {
   setLeftWidth: (w: number) => void;
   setAiWidth: (w: number) => void;
   toggleAi: () => void;
+  /** ★★**AI 패널을 연다** (접혀 있으면 편다). 토글과 다르다 — 승인 카드처럼 **반드시 보여야
+   *  하는 것**이 뜰 때 쓰는 창구다 (`lib/approve`). 토글로 부르면 열린 것을 닫아 버린다. */
+  openAi: () => void;
   setRightWidth: (w: number) => void;
   setCols: (n: number) => void;
   setCurated: (v: boolean) => void;
@@ -299,6 +302,11 @@ export const useUi = create<S>((set, get) => ({
   setAiWidth: (w) => set({ aiWidth: w }),
   toggleAi: () => {
     set({ aiCollapsed: !get().aiCollapsed });
+    get().commitLayout();
+  },
+  openAi: () => {
+    if (!get().aiCollapsed) return;
+    set({ aiCollapsed: false });
     get().commitLayout();
   },
   setRightWidth: (w) => set({ rightWidth: { ...get().rightWidth, [get().mode]: w } }),

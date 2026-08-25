@@ -56,6 +56,10 @@ export type ActionDef = {
   id: string;
   /** 조수가 읽는 설명 — 언제 쓰는지까지 적는다 */
   desc: string;
+  /** ★★**승인 카드에 뜨는 한 줄** (사람이 읽는다). `desc` 를 그대로 쓰면 안 된다 —
+   *  그쪽은 LLM 용이라 길고 마크다운 표시가 섞여 있어, 카드가 설명서처럼 보인다
+   *  (QA 실측 2026-08-25). 승인이 뜰 수 있는 액션(`confirm` 이 none 이 아닌 것)은 반드시 적는다. */
+  title?: string;
   args?: Record<string, ArgSpec>;
   /** 물어야 하나. 함수면 인자를 보고 그때 정한다 (생성의 Anlas 판정) */
   confirm?: Risk | ((a: Record<string, any>) => Promise<Risk> | Risk);
