@@ -60,7 +60,7 @@ function Working({ last }: { last?: string }) {
 export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
   const t = useI18n((s) => s.t);
   // `id` = 지금 열려 있는 대화 (목록에서 어느 줄이 지금 것인지 표시)
-  const { cfg, lines, sending, error, ask, confirm, list, id: cur, title: chatTitle, cliSessionGone,
+  const { cfg, lines, wire, sending, error, ask, confirm, list, id: cur, title: chatTitle, cliSessionGone,
           loadConfig, restore, send, stop, newChat, open, remove } = useLlm();
   const [showList, setShowList] = useState(false);
   const { engine, exe, scanning, detect } = useCli();
@@ -114,11 +114,23 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
   // ★엔진마다 "준비됨"의 뜻이 다르다: API 는 키, CLI 는 몰 수 있는 실행 파일
   const ready = engine === "cli" ? !!exe : !!cfg?.hasKey;
   const noCli = engine === "cli" && !exe && !scanning;
-  /** 지금 도는 턴에서 **마지막으로 부른 도구** — 「무엇을 하느라 오래 걸리나」를 답한다.
-   *  ★결과가 온 줄만 본다 (`kind: "tool"`). 부르는 중인 것은 아직 이름이 없다. */
-  const lastTool = sending
-    ? [...lines].reverse().find((l) => l.kind === "tool")?.name
-    : undefined;
+  /** 지금 **실제로 돌고 있는 도구** — 부름(`tool_use`)은 갔는데 **결과가 아직 안 온 것**이다.
+   *
+   *  ★★사용자 지적 2026-08-26: 화면에 「generate 275초」가 떠서 **생성이 275초째 걸린 줄로**
+   *    읽혔는데, 실제로는 그 도구가 이미 끝났고(백엔드 큐는 비어 있었다) 기다리는 것은
+   *    **모델의 다음 말**이었다. 끝난 도구의 이름을 띄우면 그것이 도는 것처럼 읽힌다.
+   *  ★그래서 **결과가 없는 부름**만 이름을 낸다. 없으면 이름 없이 「일하는 중」만 띄운다 —
+   *    그때 기다리는 것은 도구가 아니라 모델이기 때문이다. */
+  const inFlight = (() => {
+    if (!sending) return undefined;
+    const done = new Set<string>();
+    for (const m of wire)
+      for (const b of m.content) if (b.type === "tool_result") done.add(b.tool_use_id);
+    for (let i = wire.length - 1; i >= 0; i--)
+      for (const b of [...wire[i].content].reverse())
+        if (b.type === "tool_use" && !done.has(b.id)) return b.name;
+    return undefined;
+  })();
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -350,7 +362,7 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
         ))}
         {ask && <AskCard ask={ask} />}
         {confirm && <ConfirmCard c={confirm} />}
-        {sending && <Working last={lastTool} />}
+        {sending && <Working last={inFlight} />}
         {/* ★없어진 세션은 **열자마자** 알린다 (사용자 지시 2026-08-12) — 말을 걸어 실패를
             겪고 나서 알게 되지 않도록. claude 는 기본 30일이 지난 기록을 지운다. */}
         {cliSessionGone && !error && (
