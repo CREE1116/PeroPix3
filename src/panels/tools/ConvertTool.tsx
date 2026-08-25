@@ -40,16 +40,21 @@ type Row = { saved?: string; error?: string };
 export function ConvertTool() {
   const t = useI18n((s) => s.t);
   const { items, add } = useConvertQueue();
-  const [fmt, setFmt] = useState("png");
-  const [strip, setStrip] = useState(false);
-  const [ren, setRen] = useState(false);
-  const [prefix, setPrefix] = useState("image");
-  const [start, setStart] = useState(1);
-  const [pad, setPad] = useState(3);
-  /** 저장 자리 — ★세 갈래다 (사용자 지시 2026-08-23). 「원본 옆에」는 걷었다:
-   *  같은 폴더에 번호 붙은 사본이 쌓여 원본과 뒤섞였다. */
-  const [mode, setMode] = useState<"overwrite" | "sub" | "folder">("sub");
-  const [dest, setDest] = useState("");
+  /* ★★**마지막에 쓰던 설정으로 연다** (사용자 지시 2026-08-26). 열 때마다 기본값으로
+     되돌아가면 같은 값을 매번 다시 맞춰야 한다 — 인핸스 창과 같은 사정이다
+     (`useUi.enhanceLast`). 남는 것은 **설정뿐**이고, 목록·진행·결과는 그 판에서 끝난다.
+     ★한 곳에서 든다 — 화면이 지역 상태로 또 들면 둘이 갈린다 (그 자리에서만 바뀐다). */
+  const last = useUi((s) => s.convertLast);
+  const put = useUi((s) => s.setConvertLast);
+  const { fmt, strip, ren, prefix, start, pad, mode, dest } = last;
+  const setFmt = (v: string) => put({ fmt: v });
+  const setStrip = (v: boolean) => put({ strip: v });
+  const setRen = (v: boolean) => put({ ren: v });
+  const setPrefix = (v: string) => put({ prefix: v });
+  const setStart = (v: number) => put({ start: v });
+  const setPad = (v: number) => put({ pad: v });
+  const setMode = (v: "overwrite" | "sub" | "folder") => put({ mode: v });
+  const setDest = (v: string) => put({ dest: v });
   const [busy, setBusy] = useState(false);
   /** 몇 장까지 끝났나 — 진행바가 이것만 본다 (v2 `convertProgressText` 의 `n / total`) */
   const [done, setDone] = useState(0);

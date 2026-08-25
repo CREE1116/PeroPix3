@@ -106,6 +106,23 @@ type Persisted = {
    *  열 때마다 3 으로 되돌아가면 같은 값을 매번 다시 맞춰야 한다. 배율은 여기 없다 —
    *  그것은 원본 크기가 정한다 (`lib/enhance.ts`). */
   enhanceLast: { mag: number; adv: boolean; strength: number; noise: number };
+  /** ★★**일괄 변환의 마지막 설정** (사용자 지시 2026-08-26). 열 때마다 기본값으로 되돌아가면
+   *  같은 값을 매번 다시 맞춰야 한다 — 인핸스(`enhanceLast`)와 같은 사정이다.
+   *  ★남기는 것은 **설정뿐**이다. 목록·진행·결과는 그 판에서 끝나는 값이라 안 남긴다.
+   *  ★`start`(시작 번호)도 남긴다 — 이어서 번호를 매기는 흐름이 흔하다. 되돌리려면
+   *    사용자가 그 칸에 1 을 적으면 된다 (코드가 대신 정하지 않는다). */
+  convertLast: {
+    fmt: string;
+    strip: boolean;
+    ren: boolean;
+    prefix: string;
+    start: number;
+    pad: number;
+    /** 저장 자리 — ★세 갈래다 (사용자 지시 2026-08-23). 「원본 옆에」는 걷었다:
+     *  같은 폴더에 번호 붙은 사본이 쌓여 원본과 뒤섞였다. */
+    mode: "overwrite" | "sub" | "folder";
+    dest: string;
+  };
   /** 해상도 탭(가로·세로·정방)마다 **마지막에 고른 크기** (사용자 지시 2026-08-22).
    *  탭을 누르면 목록만 갈리는 게 아니라 **그 크기가 바로 걸린다** — 세로로 뽑다가
    *  가로로 옮길 때 목록에서 한 번 더 고르지 않아도 된다. */
@@ -168,6 +185,8 @@ const DEFAULTS: Persisted = {
   convertOpenFolder: true,
   // v2 `enhanceLast` 의 초기값 그대로 (magnitude 3 = strength 0.5 · noise 0)
   enhanceLast: { mag: 3, adv: false, strength: 0.5, noise: 0 },
+  convertLast: { fmt: "png", strip: false, ren: false, prefix: "image", start: 1, pad: 3,
+                 mode: "sub", dest: "" },
   // 기본은 각 방향의 기본 해상도 (`SIZE_PRESETS` 의 ✦ 표시)
   sizeLast: { landscape: [1216, 832], portrait: [832, 1216], square: [1024, 1024] },
   laneSide: "bottom",
@@ -229,6 +248,8 @@ type S = Persisted & {
   setFmView: (v: "grid" | "list") => void;
   setConvertOpenFolder: (v: boolean) => void;
   setEnhanceLast: (v: { mag: number; adv: boolean; strength: number; noise: number }) => void;
+  /** 일괄 변환의 마지막 설정을 얹는다 (한 칸씩 바뀐다) */
+  setConvertLast: (v: Partial<Persisted["convertLast"]>) => void;
   /** 그 방향에서 마지막에 고른 크기를 적어 둔다 */
   setSizeLast: (dir: "landscape" | "portrait" | "square", wh: [number, number]) => void;
   setLaneSide: (v: "bottom" | "right") => void;
@@ -366,6 +387,11 @@ export const useUi = create<S>((set, get) => ({
     set({ enhanceLast: v });
     get().commitLayout();
   },
+  /** ★한 칸씩 바뀌므로 **덮어쓰지 않고 얹는다** */
+  setConvertLast: (v) => {
+    set({ convertLast: { ...get().convertLast, ...v } });
+    get().commitLayout();
+  },
   setSizeLast: (dir, wh) => {
     const cur = get().sizeLast[dir];
     if (cur && cur[0] === wh[0] && cur[1] === wh[1]) return;   // 같은 값이면 저장을 안 부른다
@@ -420,7 +446,7 @@ export const useUi = create<S>((set, get) => ({
     const { leftWidth, rightWidth, leftCollapsed, rightCollapsed, cols, laneSize, laneHeadW,
       laneHeight, font, aiWidth, aiCollapsed,
       notifyDone, notifySound, notifyVolume, perSlot, curated, agentAuto, agentAskHard,
-      tagSuggest, weightHl, fmView, convertOpenFolder, enhanceLast, sizeLast,
+      tagSuggest, weightHl, fmView, convertOpenFolder, enhanceLast, convertLast, sizeLast,
       laneSide, laneWidth, laneHeadH, view } = get();
     try {
       localStorage.setItem(
@@ -449,6 +475,7 @@ export const useUi = create<S>((set, get) => ({
           fmView,
           convertOpenFolder,
           enhanceLast,
+          convertLast,
           sizeLast,
           laneSide,
           laneWidth,
