@@ -107,13 +107,15 @@ def handle(msg: dict) -> None:
         except Exception as e:
             out = {"error": str(e)}
         bad = bool(out.get("error") or out.get("cancelled"))
-        reply(
-            mid,
-            {
-                "content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}],
-                "isError": bad,
-            },
-        )
+        # ★★**그림은 `image` 콘텐츠로 싣는다** (2026-08-24). 예전에는 결과를 통째로 `text`
+        #   로 쌌는데, 그러면 `read_image` 의 base64 가 **글자 뭉치**로 들어가 모델이 못 본다.
+        #   ★본문에서는 뺀다 — 같은 바이트를 두 번 실으면 컨텍스트가 두 배로 찬다.
+        imgs = out.pop("images", None) if isinstance(out, dict) else None
+        content: list[dict] = [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]
+        for im in imgs or []:
+            content.append({"type": "image", "data": im.get("b64", ""),
+                            "mimeType": im.get("mime", "image/webp")})
+        reply(mid, {"content": content, "isError": bad})
         return
 
     fail(mid, -32601, f"Unknown method: {method}")

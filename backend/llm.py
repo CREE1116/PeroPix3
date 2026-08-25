@@ -308,7 +308,34 @@ async def models(llm: dict) -> dict:
 
 
 # ── 앤트로픽 ──────────────────────────────────────────────────────
+def _anthropic_images(messages: list[dict]) -> list[dict]:
+    """정본의 그림 파트를 **앤트로픽 모양**으로 (2026-08-24, `read_image`).
+
+    ★정본이 앤트로픽 모양이라 다른 파트는 그대로 나가지만, 그림만은 우리가 정한 짧은 모양
+      (`{mime, b64}`)이라 여기서 편다 — 세 규격이 다 다르므로 정본을 어느 한쪽에 맞추지
+      않고 **각 어댑터가 옮긴다** (`_to_openai`·`_to_gemini` 와 같은 방식).
+    ★손대는 것은 그림 파트뿐이다 — 나머지는 원본 객체를 그대로 둔다."""
+    out = []
+    for m in messages:
+        c = m.get("content")
+        if not isinstance(c, list) or not any(
+            isinstance(b, dict) and b.get("type") == "image" and b.get("b64") for b in c
+        ):
+            out.append(m)
+            continue
+        parts = []
+        for b in c:
+            if isinstance(b, dict) and b.get("type") == "image" and b.get("b64"):
+                parts.append({"type": "image", "source": {
+                    "type": "base64", "media_type": b.get("mime", "image/webp"), "data": b["b64"]}})
+            else:
+                parts.append(b)
+        out.append({**m, "content": parts})
+    return out
+
+
 async def _anthropic(key, model, system, messages, tools, max_tokens, url, effort="") -> dict:
+    messages = _anthropic_images(messages)
     body: dict = {
         # ★여기만 `max_tokens` 를 **꼭** 보낸다 — Messages API 가 요구한다 (문서 확인).
         #   다른 경로는 안 보내고 모델 기본값을 쓴다 (`chat()` 주석).
@@ -402,7 +429,18 @@ def _to_openai(system: str, messages: list[dict], cache: bool = False) -> list[d
                 out.append(
                     {"role": "tool", "tool_call_id": b["tool_use_id"], "content": str(b.get("content", ""))}
                 )
-            if texts:
+            # ★★그림은 **user 메시지의 `image_url`** 로 간다 (2026-08-24, `read_image`).
+            #   ★`role:"tool"` 안에 넣지 않는다 — OpenAI 규격은 거기에 **글자만** 받는다.
+            #     그래서 프론트도 도구 결과 **뒤에** 따로 붙여 보낸다 (`store/llm.ts`).
+            shots = [b for b in content if b.get("type") == "image"]
+            if shots:
+                parts: list[dict] = [{"type": "text", "text": "\n".join(texts) or "(image)"}]
+                for b in shots:
+                    mime = b.get("mime", "image/webp")
+                    parts.append({"type": "image_url",
+                                  "image_url": {"url": f"data:{mime};base64,{b.get('b64', '')}"}})
+                out.append({"role": "user", "content": parts})
+            elif texts:
                 out.append({"role": "user", "content": "\n".join(texts)})
     return out
 
@@ -537,6 +575,10 @@ def _to_gemini(messages: list[dict]) -> list[dict]:
             elif t == "tool_result":
                 nm = names.get(b.get("tool_use_id", ""), "tool")
                 parts.append({"functionResponse": {"name": nm, "response": _as_obj(b.get("content"))}})
+            # ★그림은 `inlineData` 다 (2026-08-24, `read_image`) — 제미나이의 이름만 다르고
+            #   자리는 같다 (user 파트 안).
+            elif t == "image" and b.get("b64"):
+                parts.append({"inlineData": {"mimeType": b.get("mime", "image/webp"), "data": b["b64"]}})
         if parts:
             out.append({"role": role, "parts": parts})
     return out

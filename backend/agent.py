@@ -30,7 +30,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
+import base64
+
 import nai
+import thumbs
 import trash
 
 # 태그 사전은 프론트 자산이지만 **파일**이라 백엔드도 읽는다 (한 벌만 둔다)
@@ -140,6 +143,9 @@ def _tab_model(spec: dict) -> str:
             return str((c.get("gen") or {}).get("model") or nai.GenRequest.model)
     return nai.GenRequest.model
 
+
+#: ★한 턴에 실을 수 있는 그림 수 — 상한이 없으면 컨텍스트가 통째로 찬다 (2-7)
+MAX_IMAGES = 4
 
 #: 앱 액션 목록 — **빌드할 때** 프론트에서 뽑아 둔 것 (`scripts/gen-actions.mjs`)
 ACTIONS_JSON = Path(__file__).resolve().parent / "actions.json"
@@ -605,6 +611,17 @@ class Tools:
                 self._undo_change,
             ),
             (
+                "read_image",
+                "★**그림을 직접 본다.** 생성물을 눈으로 확인해야 하는 요청 — «방금 뽑은 거 "
+                "확인해서»·«이 그림이랑 비슷하게»·«잘 나왔어?» 에 쓴다. "
+                f"한 번에 최대 {MAX_IMAGES}장이고, 줄여서 싣는다 (긴 변 512). "
+                "★경로는 `list_files`·`get_workspace`(records) 가 준 것을 그대로 쓴다.",
+                obj({"files": arr("볼 그림들 — 워크스페이스 기준 상대경로", {"type": "string"}),
+                     "file": s("한 장만 볼 때"),
+                     "workspace": s("어느 워크스페이스인지 — 비우면 앱이 열어 둔 것")}),
+                self._read_image,
+            ),
+            (
                 "list_trash",
                 "★**휴지통에 든 것** — 최근에 버린 것부터. 지운 그림은 24시간 동안 여기 있다가 "
                 "앱을 켤 때 비워진다. 사용자가 «아까 지운 거 살려줘» 라고 하면 이걸로 먼저 찾는다. "
@@ -926,6 +943,50 @@ class Tools:
             return {"error": "그런 파일이 없습니다."}
         return self.meta.read(p) or {"error": "메타데이터가 없습니다."}
 
+    def _read_image(self, a: dict) -> dict:
+        """★★조수가 **그림을 실제로 본다** (사용자 결정 2026-08-24).
+
+        *"방금 생성한 이미지를 확인해서 비슷한 컨셉으로"* 를 받으려면 메타데이터의 프롬프트로
+        짐작하는 것이 아니라 그림 자체를 봐야 한다.
+
+        ★★**줄여서 싣는다** — 원본 PNG 는 한 장에 수 MB 라 컨텍스트가 통째로 찬다.
+          썸네일 규격(`thumbs.derive`, 긴 변 512 · WebP)을 그대로 쓴다. 새 규격을 만들지 말 것.
+        ★한 번에 여러 장을 실으면 역시 컨텍스트가 찬다 — **상한을 둔다**(`MAX_IMAGES`).
+        ★모양은 여기서 정하지 않는다: `{mime, b64}` 로만 주고, MCP 는 `image` 콘텐츠로,
+          BYOK 는 **도구 결과 다음의 사용자 메시지**로 각자 옮긴다. 규격이 달라서다
+          (OpenAI 계열은 `tool` 역할 메시지에 글자만 받는다)."""
+        files = a.get("files") or ([a["file"]] if a.get("file") else [])
+        files = [str(x) for x in files][:MAX_IMAGES]
+        if not files:
+            return {"error": "볼 그림을 주세요 (워크스페이스 기준 상대경로)."}
+        root = self._ws_root(a)
+        cache = root / ".thumbs" / "agent"
+        out, missing = [], []
+        for rel in files:
+            try:
+                p = self.files.under(root, rel)
+            except ValueError:
+                missing.append(rel)
+                continue
+            if not p.is_file():
+                missing.append(rel)
+                continue
+            small = thumbs.derive(p, cache / thumbs.flat_name(rel))
+            if small is None:
+                missing.append(rel)
+                continue
+            out.append({
+                "file": rel,
+                "mime": "image/webp",
+                "b64": base64.b64encode(small.read_bytes()).decode("ascii"),
+            })
+        if not out:
+            return {"error": f"그림을 찾지 못했습니다: {', '.join(missing[:3])}"}
+        r: dict[str, Any] = {"images": out, "did": f"그림 {len(out)}장을 봄"}
+        if missing:
+            r["missing"] = missing
+        return r
+
     # ── 휴지통 (선결 조건 3-9) ──────────────────────────────────
     def _list_trash(self, a: dict) -> dict:
         """★잘못 지운 것을 조수가 되살릴 수 있게 하는 **첫 걸음**이다.
@@ -1114,6 +1175,18 @@ Principles:
   are undone through you. When they say "undo that" or "put it back", call **list_changes**
   and then **undo_change** with the id. Some things cannot be undone - a queued generation
   has already spent Anlas. Say so plainly instead of acting as if it worked.
+- ★**Deleted images live in the trash for 24 hours** - and that includes what the user
+  deleted themselves, which `list_changes` does not cover. When something was deleted and
+  they want it back, call **list_trash**, then **restore_files** with the rows it gave you.
+  A restored file may come back under a new name; tell them the name you got back.
+- ★**You can look at the images.** When the request depends on what a picture actually
+  looks like, call **read_image** with paths from `list_files` or from the `records` in
+  `get_workspace`. Do not guess from the prompt text when you can look.
+- ★**Deleting and generating ask the user first.** The app puts an approval card in the
+  chat and waits; you do not need to ask in text beforehand, and you cannot skip it. If it
+  comes back refused, stop and say so - do not try another route to the same thing.
+- ★**Changing a scene's position renames its image files** so the numbers stay in order.
+  That is expected, not a side effect to warn about.
 - ★**You never modify the app itself** (its code or config files). You have no tool for it.
   If the user asks for an app change, tell them **why and where to go**: editing the app
   directly **breaks on the next update** - the change is lost or the app stops working.

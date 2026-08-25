@@ -33,7 +33,14 @@ type Part =
        *  그 서명이 사라진다 (`backend/llm.py` 의 `_to_gemini` 주석). */
       raw?: unknown;
     }
-  | { type: "tool_result"; tool_use_id: string; content: string };
+  | { type: "tool_result"; tool_use_id: string; content: string }
+  /** ★★조수가 **본** 그림 (2026-08-24, `read_image`).
+   *
+   *  ★`tool_result` 안이 아니라 **그 뒤의 사용자 메시지**에 실린다 — OpenAI 규격은
+   *    `tool` 역할 메시지에 글자만 받기 때문이다 (오픈라우터가 그 규격이다).
+   *    세 규격(앤트로픽·OpenAI·제미나이)에서 다 도는 공통 분모가 이것뿐이다.
+   *  ★공급자별 모양으로 옮기는 것은 **백엔드**가 한다 (`backend/llm.py`). */
+  | { type: "image"; mime: string; b64: string };
 
 export type Wire = { role: "user" | "assistant"; content: Part[] };
 
@@ -460,19 +467,45 @@ export const useLlm = create<S>((set, get) => ({
 
         // 도구 실행 — ★백엔드가 **데이터**를 만진다 (화면 조작이 아니다)
         const results: Part[] = [];
+        /** ★★도구가 돌려준 **그림** — 도구 결과 **다음에** 따로 붙인다 (아래 ★★주) */
+        const shots: { file: string; mime: string; b64: string }[] = [];
         for (const c of calls) {
           const out = await api<Record<string, unknown>>("/api/agent/call", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ name: c.name, input: c.input }),
           }).catch((e) => ({ error: String((e as Error).message ?? e) }));
+          const body = { ...(out ?? { ok: true }) } as Record<string, unknown>;
+          /* ★★**그림은 `tool_result` 안에 넣지 않는다** (2026-08-24).
+             앤트로픽은 받지만 **OpenAI 규격은 `tool` 역할 메시지에 글자만** 받는다 —
+             오픈라우터가 그 규격이라 우리 기본 공급자에서 깨진다. 세 규격(앤트로픽·
+             OpenAI·제미나이)에서 다 도는 공통 분모는 **도구 결과 뒤에 사용자 메시지로
+             붙이는 것**이라, 여기서는 빼 두고 아래에서 따로 싣는다.
+             ★본문에서 빼는 또 다른 까닭: 같은 바이트를 두 번 실으면 컨텍스트가 두 배가 된다. */
+          const got = body.images as { file: string; mime: string; b64: string }[] | undefined;
+          if (Array.isArray(got)) {
+            shots.push(...got);
+            delete body.images;
+            body.images_shown = got.map((x) => x.file);
+          }
           results.push({
             type: "tool_result",
             tool_use_id: c.id,
-            content: JSON.stringify(out ?? { ok: true }),
+            content: JSON.stringify(body),
           });
         }
         push({ role: "user", content: results });
+        if (shots.length) {
+          /* ★그림을 **사용자 메시지로** 붙인다. 백엔드가 공급자별 모양으로 옮긴다
+             (`backend/llm.py`) — 여기서는 규격을 하나만 안다. */
+          push({
+            role: "user",
+            content: [
+              { type: "text", text: `[${shots.map((x) => x.file).join(", ")}]` },
+              ...shots.map((x) => ({ type: "image" as const, mime: x.mime, b64: x.b64 })),
+            ],
+          });
+        }
       }
     } catch (e) {
       set({ error: String((e as Error).message ?? e) });
