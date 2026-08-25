@@ -275,7 +275,41 @@ function Sheet({
                 cached={!!(vibeFile ?? cached)!.encoded}
               />
             ) : canApply ? (
-              <ImportPicks pick={pick} onPick={setPick} />
+              /* ★★**고르는 목록과 「가져오기」는 한 덩이다** (사용자 지시 2026-08-25:
+                   *"저 체크박스는 「가져오기」랑만 관련 있는 건데 같은 그룹처럼 보이지가 않음"*).
+                 체크 상자가 아래 단추 줄과 떨어져 있으면, 그 체크가 **어느 단추에 걸리는지**가
+                 화면에 안 나타난다 — 베이스·바이브·갤러리 단추에도 걸리는 것처럼 읽힌다.
+                 그래서 테두리 하나로 묶고 **단추를 그 안에** 넣는다. */
+              <div
+                data-drop-import
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "var(--sp-3)",
+                  padding: "var(--sp-3)",
+                  borderRadius: "var(--r-3)",
+                  border: "1px solid var(--line)",
+                  background: "var(--surface2)",
+                }}
+              >
+                <ImportPicks pick={pick} onPick={setPick} />
+                <button
+                  data-drop-apply
+                  disabled={busy}
+                  onClick={applySettings}
+                  data-tip={t("drop.applyHint")}
+                  style={{
+                    ...btn,
+                    width: "100%",
+                    justifyContent: "center",
+                    background: "var(--accent)",
+                    color: "var(--accent-on)",
+                    borderColor: "var(--accent)",
+                  }}
+                >
+                  {t("drop.apply")}
+                </button>
+              </div>
             ) : (
               <div style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)", lineHeight: 1.6 }}>
                 {t("drop.noMeta")}
@@ -284,11 +318,11 @@ function Sheet({
           </div>
         </div>
 
-        {/* 무엇으로 쓸까 — ★**이 그림에 뜻이 있는 것만** 낸다. 눌러야 실패하는 단추를 두지 않는다.
+        {/* **이 그림으로 할 다른 일** — 가져오기와 달리 고를 것이 없는, 한 번 누르면 끝나는 것들.
+            ★**이 그림에 뜻이 있는 것만** 낸다. 눌러야 실패하는 단추를 두지 않는다.
             ★★**「취소」는 없다** (사용자 지시 2026-08-23) — 머리의 `×` 와 하는 일이 같다.
-              같은 일을 두 자리에 두면 어느 것이 무엇인지 흐려진다.
-            ★★단추는 **오른쪽 아래**에 모으고, 「설정 적용」이 **맨 오른쪽**이다 — 눈이 마지막에
-              닿는 자리가 가장 흔히 누르는 것이어야 한다. */}
+            ★★「가져오기」는 **여기 없다** (2026-08-25) — 체크 목록과 한 덩이라 그 상자 안에 있다.
+              이 줄로 도로 내리지 말 것: 그러면 체크가 어느 단추에 걸리는지가 다시 흐려진다. */}
         <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: "var(--sp-2)" }}>
           {/* ★★프롬프트·설정을 **읽는 것**은 EXIF 리더의 일이다 (사용자 지시 2026-08-23).
               여기서는 보내기만 한다 — 이미 읽어 둔 것을 그대로 넘기므로 다시 안 물어본다. */}
@@ -337,17 +371,6 @@ function Sheet({
               style={btn}
             >
               {t("drop.toGallery")}
-            </button>
-          )}
-          {canApply && (
-            <button
-              data-drop-apply
-              disabled={busy}
-              onClick={applySettings}
-              data-tip={t("drop.applyHint")}
-              style={{ ...btn, background: "var(--accent)", color: "var(--accent-on)", borderColor: "var(--accent)" }}
-            >
-              {t("drop.apply")}
             </button>
           )}
         </div>

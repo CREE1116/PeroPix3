@@ -9,8 +9,9 @@ import { useGallery } from "../store/gallery";
 import { useDragSource, dragSourceStyle } from "../cards/dragStore";
 import { keepThumb, keepUrl } from "../lib/imgUrl";
 import { api } from "../lib/backend";
-import { ImageActions } from "./ImageActions";
+import { ImageActions, iconBtn } from "./ImageActions";
 import { cloneMetaToNewTab } from "./GalleryMeta";
+import { hasMeta } from "../lib/metaApply";
 import type { ImageMeta } from "../store/gallery";
 import { Icon } from "../components/Icon";
 import { onNearBottom } from "../lib/nearBottom";
@@ -424,6 +425,37 @@ function Big({
   /** 보관함 그림의 메타데이터 — 「프롬프트 보기」와 「새 탭으로 복제」가 같은 것을 쓴다 */
   const loadMeta = async () =>
     (await api<{ meta: ImageMeta | null }>(`/api/keep/meta?file=${encodeURIComponent(file)}`)).meta;
+  /** ★★**설정이 없는 그림은 복제를 안 낸다** (사용자 지시 2026-08-25: *"갤러리에 메타데이터
+   *  없는 이미지는 새 탭으로 복제 비활성화"*). 예전에는 단추가 그대로 있고 눌러도 아무 일이
+   *  없었다 — 눌러야 실패하는 단추를 두지 않는다는 규칙과 같은 자리다.
+   *  ★그래서 **열 때 한 번 읽어 둔다.** 누른 뒤에 읽으면 그때는 이미 늦다. */
+  const [meta, setMeta] = useState<ImageMeta | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setMeta(null);
+    void loadMeta()
+      .then((m) => alive && setMeta(m))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file]);
+  /** 크게 보다가 지운다 — ★한 번 묻고, 지운 뒤에는 닫는다 (없어진 그림을 띄워 둘 수 없다) */
+  const onDelete = async () => {
+    if (
+      !(await ask({
+        title: t("gallery.removeConfirm", { n: 1 }),
+        ok: t("common.delete"),
+        cancel: t("common.cancel"),
+        danger: true,
+      }))
+    )
+      return;
+    await useGallery.getState().remove(useWs.getState().current, [file]);
+    onClose();
+  };
+
   /** 이름 고치기 — ★규칙은 **앱에 하나**다 (`useRename`): 단추를 다시 누르면 저장하고 끝.
    *  ★예전에는 여기만 손으로 만들었고, Esc 로 물린 직후의 `blur` 가 옛 값으로 이름을
    *    되돌리는 것을 `ref` 로 막고 있었다. 훅에서는 `Esc` 가 입력칸을 **접어 버리므로**
@@ -483,10 +515,29 @@ function Big({
             loadMeta={loadMeta}
             /* ★보관함 그림에는 워크스페이스 파일이 없다 — 그림에 남은 설정으로 새 탭을 만든다 */
             hideSettings
-            onClone={async () => {
-              const m = await loadMeta();
-              if (m) await cloneMetaToNewTab(m, file);
-            }}
+            /* ★설정이 없는 그림에는 **아예 안 낸다** (위 `meta` 의 ★★주) */
+            onClone={
+              hasMeta(meta)
+                ? async () => {
+                    const m = await loadMeta();
+                    if (m) await cloneMetaToNewTab(m, file);
+                  }
+                : undefined
+            }
+            /* ★★**지우는 단추가 여기 있어야 한다** (사용자 지시 2026-08-25: *"갤러리 이미지
+                 보는 곳에 삭제 버튼이 없음"*). 그리드에서는 골라서 지우지만, 크게 보다가
+                 「이건 아니다」 하는 자리가 바로 여기다 — 닫고 다시 골라야 했다.
+               ★지운 뒤에는 **닫는다.** 없어진 그림을 계속 띄워 둘 수 없다. */
+            extra={
+              <button
+                data-gallery-big-del
+                onClick={() => void onDelete()}
+                data-tip={t("gallery.remove")}
+                style={{ ...iconBtn, color: "var(--err)" }}
+              >
+                {Icon.trash}
+              </button>
+            }
             /* ★같은 줄에 「탐색기에서 열기」를 둔다 — 뿌리만 보관함으로 갈아 끼운다.
                자리마다 다른 버튼을 만들면 어디서는 되고 어디서는 안 되는 상태가 생긴다. */
             revealPath={file}

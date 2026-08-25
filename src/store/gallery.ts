@@ -86,7 +86,8 @@ type S = {
   clearPick: () => void;
   isStarred: (file: string) => boolean;
   toggleStar: (file: string) => Promise<void>;
-  remove: (ws: string) => Promise<number>;
+  /** ★`only` 를 주면 그 파일만 지운다 (안 주면 골라 둔 것) */
+  remove: (ws: string, only?: string[]) => Promise<number>;
   /** @param only 끌어다 놓은 파일들 (없으면 고른 것 전부) */
   moveTo: (ws: string, dest: string, only?: string[]) => Promise<number>;
   /** ★작업 폴더의 그림을 **보관함으로 복사**한다 (원본은 그대로). 생성 옵션은 PNG 가 안고 간다.
@@ -288,8 +289,10 @@ export const useGallery = create<S>((set, get) => ({
   /** ★보관함의 삭제도 **휴지통을 거친다** (사용자 결정 2026-08-18, v2-port-audit D7).
    *  ★별표·「이 그림은 어디서 왔나」까지 함께 되돌린다 — 되살렸는데 별표가 빠져 있으면
    *    반쪽짜리 되돌리기다 (`backend/keep.py` `restore`). */
-  async remove(ws) {
-    const files = [...get().picked];
+  async remove(ws, only) {
+    /* ★내려준 것이 있으면 **그것만** 지운다 (큰 그림의 지우기가 쓴다, 2026-08-25) —
+       그 화면에서 지우는 것은 **보고 있는 한 장**이지 골라 둔 묶음이 아니다. */
+    const files = only ?? [...get().picked];
     if (!files.length) return 0;
     const r = await api<{
       deleted: string[];
@@ -301,7 +304,7 @@ export const useGallery = create<S>((set, get) => ({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ files }),
     });
-    set({ picked: new Set() });
+    if (!only) set({ picked: new Set() });
     await get().load(ws);
     if (r.trashed?.length)
       undoToast(t("common.trashed", { n: r.trashed.length }), t("common.undo"), async () => {

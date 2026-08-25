@@ -528,7 +528,9 @@ function PromptView({ meta, onClose }: { meta: ImageMeta; onClose: () => void })
 }
 
 /** 아이콘만 있는 단추 — 글자 단추와 **같은 높이**로 선다 (줄이 들쭉날쭉하면 안 된다) */
-const iconBtn: React.CSSProperties = {
+/** ★단추 모양은 이 줄이 정본이다 — `extra` 로 끼워 넣는 쪽도 같은 자를 쓴다
+ *  (갤러리의 지우기 단추). 자리마다 새로 만들면 한 줄 안에서 크기가 갈린다. */
+export const iconBtn: React.CSSProperties = {
   display: "grid",
   placeItems: "center",
   border: "1px solid var(--line)",

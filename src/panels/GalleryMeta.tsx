@@ -1,5 +1,5 @@
+import { Icon } from "../components/Icon";
 import { t, useI18n } from "../i18n";
-import { useState } from "react";
 import { makeBlock, parseSegs } from "../lib/blocks";
 import { useGen } from "../store/gen";
 import { DEFAULT_CENTER } from "../lib/charPos";
@@ -22,7 +22,6 @@ import { metaParams } from "../lib/metaApply";
 export function GalleryMeta() {
   const t = useI18n((s) => s.t);
   const { focus, meta } = useGallery();
-  const [flash, setFlash] = useState(false);
 
   // ★고른 그림이 없을 때 조작 안내를 또 적지 않는다 — 그 안내는 그리드 위 툴바에 이미 있다.
   //   여기는 "왜 비어 있는지"만 한 줄로 말한다.
@@ -49,19 +48,10 @@ export function GalleryMeta() {
     );
   }
 
-  /** ★★「설정 불러오기」가 아니라 **「새 탭으로 복제」**다 (사용자 지시 2026-08-19).
-   *
-   *  예전 이름은 **어디에 불러오는지**를 말하지 않아서, 지금 보고 있던 탭의 프롬프트가
-   *  통째로 갈리는 줄 모르고 누르게 됐다. 지금은 **새 탭을 만들고 거기에** 되돌린다 —
-   *  워크스페이스 그림의 「새 탭으로 복제」와 같은 뜻이다 (`workspace.cloneToNewTab`).
-   *  ★다른 점 하나: 갤러리 그림에는 생성 시점 스냅샷(`env`)이 없다. 그래서 되돌릴 수 있는
-   *    것은 **그림에 남은 것 전부**다 — 프롬프트·캐릭터·생성 옵션·해상도·시드·바이브. */
-  const onClone = async () => {
-    if (!focus) return;
-    await cloneMetaToNewTab(meta, focus);
-    setFlash(true);
-    setTimeout(() => setFlash(false), 1600);
-  };
+  /* ★★**「새 탭으로 복제」는 그림 아래 단추 줄에 있다** (`ImageActions` 의 `onClone`).
+     사용자 지시 2026-08-25: *"갤러리에 「새 탭으로 복제」 버튼이 중복임. 오른쪽에 크게
+     있을 이유가 없으니 오른쪽 큰 버튼 제거."* 이 패널은 **보는 자리**로 남는다.
+     여기에 단추를 다시 두지 말 것 — 같은 일을 두 자리에 두면 어느 것이 무엇인지 흐려진다. */
 
   return (
     <Frame>
@@ -69,36 +59,6 @@ export function GalleryMeta() {
         <MetaBody m={meta} />
       </div>
 
-      <div
-        style={{
-          flexShrink: 0,
-          padding: "var(--sp-3) var(--sp-4)",
-          borderTop: "1px solid var(--line-soft)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--sp-2)",
-        }}
-      >
-        {/* ★「NAI 원본은 복원되지 않는다」는 알림을 걷었다 (사용자 지적 2026-08-19).
-            UC 프리셋도 퀄리티 태그도 **모델별 표로 떼어내 되돌린다** (`backend/meta.py` —
-            표는 `nai.py` 하나를 본다). 못 되돌리는 것이 없으므로 경고할 것도 없다. */}
-        {/* ★적용은 **하나**다 (사용자 지시 2026-08-05). 「프롬프트만」을 따로 두지 않는다 —
-            프롬프트는 적용하는 것이 아니라 **보는 것**이고, 그건 큰 그림 아래
-            「프롬프트 보기」가 한다 (ImageActions). */}
-        <button
-          data-gallery-apply-all
-          onClick={() => void onClone()}
-          data-tip={t("act.cloneHint")}
-          style={{
-            ...applyBtn,
-            background: flash ? "var(--ok)" : "var(--accent)",
-            color: flash ? "#fff" : "var(--accent-on)",
-            borderColor: flash ? "var(--ok)" : "var(--accent)",
-          }}
-        >
-          {flash ? t("act.cloned") : t("act.clone")}
-        </button>
-      </div>
     </Frame>
   );
 }
@@ -159,14 +119,6 @@ export async function cloneMetaToNewTab(m: ImageMeta, file: string) {
  *
  *  ★블록 하나에 통째로 넣는다. 원래 어떤 블록으로 나뉘어 있었는지는 이미지에 안 남아 있고
  *    (NAI 는 합쳐진 문자열만 저장한다), 임의로 쪼개면 사용자가 안 만든 구조가 생긴다. */
-const applyBtn: React.CSSProperties = {
-  flex: 1,
-  padding: "var(--sp-2)",
-  borderRadius: "var(--r-2)",
-  border: "1px solid var(--line)",
-  fontSize: "var(--text-xs)",
-  transition: "background 120ms",
-};
 
 /** 그 그림의 **설정·해상도·시드만** 얹는다 (프롬프트는 안 건드린다).
  *
@@ -481,11 +433,39 @@ const Label = ({ children }: { children: React.ReactNode }) => (
   </div>
 );
 
+/** 글 한 덩이 — ★**복사 단추가 딸린다** (사용자 지시 2026-08-25: *"갤러리의 메타데이터의
+ *  각 프롬프트에 복사 버튼 추가"*). 프롬프트를 다른 데로 옮기려면 지금까지는 끌어 골라야
+ *  했는데, 여러 줄이라 자주 어긋났다. */
 function Text({ label, body, dim, mark }: { label: string; body?: string; dim?: boolean; mark?: string }) {
+  const t = useI18n((s) => s.t);
   if (!body) return null;
+  const copy = () => {
+    void navigator.clipboard?.writeText(body);
+    toast(t("act.copied"));
+  };
   return (
     <>
-      <Label>{label}</Label>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--sp-2)",
+          marginTop: "var(--sp-3)",
+          marginBottom: "var(--sp-1)",
+        }}
+      >
+        <span style={{ flex: 1, minWidth: 0, fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
+          {label}
+        </span>
+        <button
+          data-gallery-copy={mark}
+          onClick={copy}
+          data-tip={t("act.copy")}
+          style={{ display: "grid", color: "var(--ink-faint)", padding: "0 2px" }}
+        >
+          {Icon.copy}
+        </button>
+      </div>
       <div
         data-gallery-field={mark}
         style={{
