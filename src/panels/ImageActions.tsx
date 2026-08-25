@@ -41,6 +41,7 @@ export function ImageActions({
   onClone,
   onLeave,
   extra,
+  right,
 }: {
   /** 원본 주소 — i2i·인페인트가 이걸 읽어 베이스 이미지로 만든다 */
   url: string;
@@ -79,6 +80,10 @@ export function ImageActions({
   onLeave?: () => void;
   /** 이 줄에 함께 두고 싶은 것 (싱글의 「별표만 보기」) */
   extra?: React.ReactNode;
+  /** ★**오른쪽 무리**에 서는 것 (사용자 지시 2026-08-25: *"확대축소는 오른쪽에
+   *  배치해. 좌측 버튼들과 섞지 말고"*). 왼쪽은 **이 그림에 하는 일**(지우기·강화·
+   *  보관…)이고, 오른쪽은 **보는 방식과 이 그림의 값**이다 — 성격이 다르다. */
+  right?: React.ReactNode;
 }) {
   const t = useI18n((s) => s.t);
   const [busy, setBusy] = useState(false);
@@ -402,6 +407,11 @@ export function ImageActions({
             {dims.w}×{dims.h}
           </span>
         )}
+        {/* ★★**맨 오른쪽 끝**이다 (사용자 지시 2026-08-25: *"확대축소는 최우측에. 현재
+            위치는 시드 때문에 자꾸 위치가 바뀜"*). 시드·해상도는 **있을 때만** 뜨는 값이라
+            (미저장 그림에는 없다) 그 앞에 두면 그림을 넘길 때마다 좌우로 밀린다.
+            줄의 끝에 붙여 두면 무엇이 있든 자리가 하나다. */}
+        {right}
         </span>
       </div>
 

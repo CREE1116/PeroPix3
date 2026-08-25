@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useI18n } from "../i18n";
 
 /** ★키를 조립하지 않는다 — i18n 검사가 동적 접두사를 잡는다 (`i18n.test.ts`) */
@@ -118,20 +118,6 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
   /** ★**지금 누르면 Anlas 가 나가는가.** 무료 구간(`cost.free`)이 아니고 값이 0보다 클 때다 —
    *  「자동 승인」이 갈리는 기준과 **같은 물음**이다 (`lib/appActions` 의 생성 위험도). */
   const paid = !cost.free && cost.total > 0;
-  /** ★**무료에서 유료로 막 넘어갔는가** — 그 순간만 딱지가 두 번 뛴다.
-   *  색만 바꿔 두면 「바뀌는 순간」을 못 본다. 설정(스텝·해상도)을 만지다 무료 구간을
-   *  벗어나는 것이 바로 사용자가 놓치던 경우다 (사용자 지시 2026-08-25). */
-  const [justPaid, setJustPaid] = useState(false);
-  const wasPaid = useRef(paid);
-  useEffect(() => {
-    if (paid && !wasPaid.current) {
-      setJustPaid(true);
-      const h = setTimeout(() => setJustPaid(false), 1100);
-      wasPaid.current = paid;
-      return () => clearTimeout(h);
-    }
-    wasPaid.current = paid;
-  }, [paid]);
   /** ★토큰이 없으면 NAI 생성이 통째로 안 된다. v2 는 누르는 순간 토큰 창을 띄웠고
    *  (`index.html:15859-15862`), 우리는 토큰을 넣는 창구가 **설정 하나**뿐이라 그리로
    *  데려간다. 지금까지는 검사가 없어 눌러 놓고 실패를 기다려야 했다 (감사 C5). */
@@ -259,18 +245,12 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
       {!compact && (
         <span
           data-gen-cost={paid ? "paid" : "free"}
-          className={justPaid ? "paid-pop" : undefined}
           style={{
             fontVariantNumeric: "tabular-nums",
-            ...(paid
-              ? {
-                  fontWeight: "var(--w-bold)",
-                  color: "var(--accent-on)",
-                  background: "var(--warn)",
-                  borderRadius: "var(--r-1)",
-                  padding: "1px 6px",
-                }
-              : { opacity: 0.82 }),
+            /* ★★**색만 바꾼다** (사용자 지시 2026-08-25: *"anlas 소모 강조가 너무 촌스러워.
+                 그냥 폰트 색을 바꿔 주는 정도로만 해도 됨"*). 한때 경고색 바탕에 흰 글자
+                 딱지였는데 단추 위에서 너무 튀었다. 흐림을 걷고 색을 바꾸는 것으로 충분하다. */
+            ...(paid ? { color: "var(--warn)" } : { opacity: 0.82 }),
           }}
         >
           {cost.free ? t("gen.countFree", { n: count }) : t("gen.countCost", { n: count, a: cost.total })}

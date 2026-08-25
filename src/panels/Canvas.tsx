@@ -321,6 +321,8 @@ function SceneActions() {
                 )
         }
         onClone={cloneToNewTab}
+        /* ★배율 조절 — 그림 위 겹침에서 이 줄의 **오른쪽**으로 (`ViewZoom` 머리 주석) */
+        right={<ViewZoom />}
         dims={dims}
         /* ★미저장이면 누를 때 저장하고 그 경로로 연다 (`revealPath` 는 함수도 받는다) */
         revealPath={un ? async () => { const f = await ensureSaved(); return f && `${ws}/${f}`; } : `${ws}/${file}`}
@@ -342,8 +344,6 @@ function SceneActions() {
         }}
         extra={
           <>
-            {/* ★배율 조절 — 그림 위에 겹쳐 있던 것을 이 줄로 내렸다 (`ViewZoom` 머리 주석) */}
-            <ViewZoom />
             {/* ★미저장이면 「삭제」 자리에 **「저장」** — 저장하면 이 줄이 그대로 「삭제」가 된다 */}
             {un ? (
               <button
