@@ -309,10 +309,18 @@ class Tools:
                                    undoable=False, why="이미 Anlas 를 쓴 생성입니다")
             return out
         if out.get("at") and out.get("did"):
+            # ★★**되돌릴 수 없는 것을 되돌릴 수 있다고 적지 않는다** (2026-08-24).
+            #   앱이 `undoable: false` 와 까닭을 실어 보내면 그대로 적는다 — 그러면
+            #   `list_changes` 에 그렇게 뜨고 `undo_change` 가 까닭을 말하며 멈춘다.
+            #   ★안 그러면 조수가 「되돌렸습니다」라고 말해 놓고 아무 일도 안 일어난다.
+            can = out.pop("undoable", True)
             out["at"] = self._mark(name, str(out["did"]), dict(out["at"]),
-                                   before=out.pop("before", None), after=out.pop("after", None))
+                                   before=out.pop("before", None), after=out.pop("after", None),
+                                   undoable=bool(can), why=str(out.pop("why", "") or ""))
         out.pop("before", None)
         out.pop("after", None)
+        out.pop("undoable", None)
+        out.pop("why", None)
         return out
 
     # ── 사용자 지침 ──────────────────────────────────────────────

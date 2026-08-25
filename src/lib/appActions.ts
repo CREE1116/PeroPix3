@@ -52,7 +52,19 @@ async function doRemove(target: DelTarget): Promise<ActionResult> {
     });
   const p = r.plan;
   const files = p.files.length ? ` (그림 ${p.files.length}장도 휴지통으로)` : "";
-  return { ok: true, did: `${p.name} 을(를) 지움${files}`, at: { kind: "prompt" } };
+  /* ★★**되돌릴 수 없다고 이력에 적는다** (2026-08-24). 삭제는 `clearUndo` 를 돌아
+     되돌리기 로그를 비우므로 `undo_change` 로는 못 돌아온다 — 그렇게 적어 두지 않으면
+     조수가 「되돌렸습니다」라고 말해 놓고 아무 일도 안 일어난다.
+     ★그림만은 휴지통에서 꺼낼 수 있다 (24시간) — 그 길을 까닭에 적어 조수가 안내하게 한다. */
+  return {
+    ok: true,
+    did: `${p.name} 을(를) 지움${files}`,
+    at: { kind: "prompt" },
+    undoable: false,
+    why: p.files.length
+      ? "지운 것은 되돌리기로 못 돌아옵니다. 그림은 list_trash·restore_files 로 24시간 안에 꺼낼 수 있습니다."
+      : "지운 것은 되돌리기로 못 돌아옵니다.",
+  };
 }
 
 /** 승인 카드에 띄울 문구 — **무엇이 사라지는지 미리 세어** 보여 준다 */
@@ -444,5 +456,122 @@ defineAction({
     const made = useWs.getState().current;
     return { ok: true, workspace: made, did: `워크스페이스 「${made}」 을 만들고 옮겨 감`,
       at: { kind: "prompt", workspace: made ?? undefined } };
+  },
+});
+
+/* ── 값 편집의 범용 창구 (`apply`) ────────────────────────────
+   ★★**액션을 수십 개로 늘어놓지 않는다** (사용자 목표 ①, 2026-08-24). 이름 바꾸기·잠금 같은
+     단순한 값에 액션을 하나씩 만들면 **예외 케이스를 코드로 열거하는 방식**이 되어 반드시
+     빠뜨리는 것이 생긴다. 창구 하나가 **허용 목록 안에서** 넓게 받는다.
+   ★그래도 자유형은 아니다: 무엇(`what`)·어느 것(`id`)·어떤 값(`set`)의 세 칸이 형식으로
+     서 있고, 값 이름은 아래 표 밖으로 못 나간다 — 1판의 자유형 `patch` 가 조수의 오타를
+     그대로 저장하던 문제를 여기서 막는다.
+   ★★블록·프롬프트 편집은 **여기 없다** (설계 2-3). 블록에는 "사용자가 직접 친 글을 그대로
+     NAI 에 보낸다"는 규칙이 있어서(`lib/blocks.ts` 의 `src`), 일반 편집으로 태그만 갈아
+     끼우면 **같은 시드에서 다른 그림이 나온다.** `edit_current_prompt` 가 그 규칙을 지킨다. */
+
+/** 무엇에 · 어떤 값을 걸 수 있나. ★여기 없는 이름은 **거절한다** (조용히 버리지 않는다) */
+const APPLY: Record<string, { fields: Record<string, "string" | "boolean">; label: string }> = {
+  tab: { label: "탭", fields: { name: "string" } },
+  set: { label: "세트", fields: { name: "string" } },
+  scene: { label: "씬", fields: { name: "string", locked: "boolean" } },
+  sceneCard: { label: "씬 카드", fields: { name: "string", locked: "boolean", folded: "boolean" } },
+};
+
+defineAction({
+  id: "apply",
+  desc: "★**이름·잠금 같은 단순한 값을 고친다.** «세트 이름을 표정으로»·«미소 씬 잠가줘» 가 "
+    + "이것이다. `what` 은 tab·set·scene·sceneCard 중 하나이고, `set` 에 고칠 값을 준다. "
+    + "고칠 수 있는 값 — tab·set: name / scene: name·locked / sceneCard: name·locked·folded. "
+    + "★프롬프트·블록은 여기가 아니라 `edit_current_prompt` 로 고친다.",
+  args: {
+    what: { type: "string", desc: '"tab" | "set" | "scene" | "sceneCard"', required: true },
+    id: { type: "string", desc: "그것의 이름 또는 id", required: true },
+    set: { type: "object", desc: '고칠 값 — 예: {"name": "표정"} · {"locked": true}', required: true },
+  },
+  confirm: "none",
+  run: async (a) => {
+    const what = String(a.what ?? "").trim();
+    const spec = APPLY[what];
+    if (!spec)
+      return err("unknown_field", `그런 대상이 없습니다: ${what}`, {
+        candidates: Object.keys(APPLY), retry: "safe",
+      });
+    const patch = (a.set ?? {}) as Record<string, unknown>;
+    const bad = Object.keys(patch).filter((k) => !spec.fields[k]);
+    if (bad.length)
+      return err("unknown_field", `${spec.label}에 고칠 수 없는 값입니다: ${bad.join(", ")}`, {
+        candidates: Object.keys(spec.fields), retry: "safe",
+      });
+    if (!Object.keys(patch).length) return err("unknown_field", "고칠 값을 주세요.");
+    for (const [k, v] of Object.entries(patch)) {
+      if (spec.fields[k] === "string" && !String(v ?? "").trim())
+        return err("unknown_field", `${k} 가 비어 있습니다.`, { retry: "safe" });
+    }
+
+    const ws = useWs.getState();
+    const key = String(a.id ?? "").trim();
+    const done = Object.entries(patch).map(([k, v]) => `${k}=${v}`).join(", ");
+
+    if (what === "tab") {
+      const tabs = ws.spec?.tabs ?? [];
+      const hit = tabs.find((c) => c.id === key || c.name === key);
+      if (!hit)
+        return err("not_found", `그런 탭이 없습니다: ${key}`, {
+          what: "tab", given: key, candidates: nearBy(key, tabs.map((c) => c.name)),
+        });
+      ws.renameTab(hit.id, String(patch.name));
+      return { ok: true, did: `탭 「${hit.name}」 → ${done}`,
+        at: { kind: "prompt", workspace: ws.current ?? undefined, tab: hit.id } };
+    }
+
+    if (what === "set") {
+      const { hit, names } = findSet(key);
+      if (!hit)
+        return err("not_found", `그런 세트가 없습니다: ${key}`, {
+          what: "set", given: key, candidates: nearBy(key, names),
+        });
+      ws.renameSet(hit.id, String(patch.name));
+      return { ok: true, did: `세트 「${hit.name}」 → ${done}`,
+        at: { kind: "prompt", workspace: ws.current ?? undefined, set: hit.id } };
+    }
+
+    /* 씬·씬카드 — ★둘 다 **세트 안**에 산다 (`sets[].cards[].cells`). 지금 보고 있는
+       세트에서 찾는다: 다른 세트의 것을 고치려면 먼저 그 세트를 연다 (`switch_tab`·생성). */
+    const cur = ws.activeSet();
+    if (cur?.kind !== "set") return err("no_workspace", "열려 있는 세트가 없습니다.", { retry: "never" });
+
+    if (what === "sceneCard") {
+      const card = cur.cards.find((k) => k.id === key || k.name === key);
+      if (!card)
+        return err("not_found", `그런 씬 카드가 없습니다: ${key}`, {
+          what: "sceneCard", given: key, candidates: nearBy(key, cur.cards.map((k) => k.name)),
+        });
+      ws.setCard(cur.id, card.id, patch as never);
+      return { ok: true, did: `씬 카드 「${card.name}」 → ${done}`,
+        at: { kind: "prompt", workspace: ws.current ?? undefined, set: cur.id } };
+    }
+
+    const cells = cur.cards.flatMap((k) => k.cells);
+    const cell = cells.find((c) => c.id === key || c.name === key);
+    if (!cell)
+      return err("not_found", `그런 씬이 없습니다: ${key}`, {
+        what: "scene", given: key, candidates: nearBy(key, cells.map((c) => c.name)),
+      });
+    /* ★씬은 카드 안에 있어 전용 setter 가 없다 — 카드를 통째로 갈아 끼운다.
+       ★★이름이 바뀌면 **파일 이름도 따라가야** 한다 (3-8): 파일 앞 조각이
+         `<번호>_<씬 이름>` 이라 이름만 바꾸면 옛 이름이 파일에 그대로 남는다. */
+    ws.patchSet(cur.id, {
+      cards: cur.cards.map((k) => ({
+        ...k,
+        cells: k.cells.map((c) => (c.id === cell.id ? { ...c, ...patch } : c)),
+      })),
+    } as never);
+    if (patch.name) void ws.renumberSet(cur.id);
+    return {
+      ok: true,
+      did: `씬 「${cell.name}」 → ${done}` + (patch.name ? " (파일 이름도 함께 갱신)" : ""),
+      at: { kind: "prompt", workspace: ws.current ?? undefined, set: cur.id, scene: cell.id },
+    };
   },
 });

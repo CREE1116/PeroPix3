@@ -151,6 +151,27 @@
           "required": true
         }
       }
+    },
+    {
+      "id": "apply",
+      "desc": "★**이름·잠금 같은 단순한 값을 고친다.** «세트 이름을 표정으로»·«미소 씬 잠가줘» 가 이것이다. `what` 은 tab·set·scene·sceneCard 중 하나이고, `set` 에 고칠 값을 준다. 고칠 수 있는 값 — tab·set: name / scene: name·locked / sceneCard: name·locked·folded. ★프롬프트·블록은 여기가 아니라 `edit_current_prompt` 로 고친다.",
+      "args": {
+        "what": {
+          "type": "string",
+          "desc": "",
+          "required": true
+        },
+        "id": {
+          "type": "string",
+          "desc": "그것의 이름 또는 id",
+          "required": true
+        },
+        "set": {
+          "type": "object",
+          "desc": "",
+          "required": true
+        }
+      }
     }
   ]
 }
