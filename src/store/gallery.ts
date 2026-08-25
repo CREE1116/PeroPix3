@@ -61,6 +61,13 @@ type S = {
   items: GalleryImage[];
   folder: string;
   /** 크게 보고 메타데이터를 읽을 한 장 */
+  /** ★★**바이브 칸을 보고 있나** (사용자 지시 2026-08-25: *"갤러리 쪽에 vibe 전용 공간
+   *  만들어서 거기에 보관"*). v2 도 갤러리 그리드를 **모드로 갈아 끼워** 썼다
+   *  (`docs/v2-feature-catalog` 「Vibe 캐시 뷰어」). 폴더 하나로 위장하지 않는 까닭:
+   *  바이브 캐시는 **워크스페이스 밖의 전역 자산**이라(`data/vibe-cache`) 폴더 목록과
+   *  섞이면 옮기기·지우기가 그쪽 규칙을 따라야 하는 것처럼 보인다. */
+  vibeMode: boolean;
+  setVibeMode: (on: boolean) => void;
   focus: string | null;
   meta: ImageMeta | null;
   metaFor: string | null;
@@ -120,6 +127,8 @@ export const useGallery = create<S>((set, get) => ({
   folders: [],
   items: [],
   folder: ALL,
+  vibeMode: false,
+  setVibeMode: (on) => set({ vibeMode: on, focus: null }),
   focus: null,
   meta: null,
   metaFor: null,
@@ -263,6 +272,7 @@ export const useGallery = create<S>((set, get) => ({
   },
 
   async setFolder(ws, folder) {
+    set({ vibeMode: false });   // ★폴더를 고르면 바이브 칸에서 빠져나온다 (v2 와 같다)
     set({ folder, picked: new Set() });
     await get().load(ws);
   },

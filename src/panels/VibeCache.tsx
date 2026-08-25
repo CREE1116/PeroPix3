@@ -34,7 +34,11 @@ type Detail = {
  *    받으면 돈이 다시 나간다. 예전에는 썸네일 주소만 알고 그림 자리를 비워 둬서
  *    **생성이 500 으로 죽었다** (빈 그림을 다시 인코딩하려다 났다).
  */
-export function VibeCache({ onClose }: { onClose: () => void }) {
+/** ★★**두 자리에서 쓴다** (사용자 지시 2026-08-25: *"갤러리 쪽에 vibe 전용 공간 만들어서
+ *  거기에 보관"*). `onClose` 를 주면 **창**으로 뜨고(이미지 입력 패널의 단추), 안 주면
+ *  **그 자리에 그대로** 그려진다 (갤러리의 바이브 칸).
+ *  ★한 벌로 둔다 — 목록을 두 번 만들면 한쪽에서 지운 것이 다른 쪽에 남는다. */
+export function VibeCache({ onClose }: { onClose?: () => void }) {
   const t = useI18n((s) => s.t);
   const [items, setItems] = useState<Entry[] | null>(null);
   const [base, setBase] = useState("");
@@ -73,7 +77,10 @@ export function VibeCache({ onClose }: { onClose: () => void }) {
         encoded_info_extracted: d.info_extracted,
       });
       if (!ok) return toast(t("imgIn.vibeFull", { n: MAX_VIBES }), "warn");
-      onClose();
+      /* ★창이면 꺼내 쓴 뒤 닫는다. 갤러리 칸에서는 **그대로 머문다** —
+         거기서는 여러 개를 이어서 꺼내는 것이 자연스럽다. */
+      toast(t("imgIn.vibeFileCached"));
+      onClose?.();
     } catch (e) {
       toast(String(e), "warn");
     } finally {
@@ -117,42 +124,19 @@ export function VibeCache({ onClose }: { onClose: () => void }) {
     }
   };
 
-  return (
-    <div
-      data-vibe-cache
-      onPointerDown={(e) => e.target === e.currentTarget && onClose()}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 80,
-        background: "rgba(6,8,12,0.6)",
-        display: "grid",
-        placeItems: "center",
-        padding: "var(--sp-6)",
-      }}
-    >
-      <div
-        style={{
-          background: "var(--bg)",
-          border: "1px solid var(--line)",
-          borderRadius: "var(--r-4)",
-          padding: "var(--sp-5)",
-          width: "min(760px, 92vw)",
-          maxHeight: "82vh",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--sp-4)",
-        }}
-      >
+  const body = (
+    <>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)" }}>
           <b style={{ fontSize: "var(--text-md)" }}>{t("imgIn.cacheTitle")}</b>
           <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>
             {t("imgIn.cacheHint")}
           </span>
           <span style={{ flex: 1 }} />
-          <button data-vibe-cache-close onClick={onClose} style={{ color: "var(--ink-faint)", display: "grid" }}>
-            {Icon.close}
-          </button>
+          {onClose && (
+            <button data-vibe-cache-close onClick={onClose} style={{ color: "var(--ink-faint)", display: "grid" }}>
+              {Icon.close}
+            </button>
+          )}
         </div>
 
         {items === null ? (
@@ -233,6 +217,48 @@ export function VibeCache({ onClose }: { onClose: () => void }) {
             ))}
           </div>
         )}
+    </>
+  );
+
+  /* ★그 자리에 그대로 그린다 (갤러리의 바이브 칸) — 창으로 뜨는 것은 `onClose` 가 있을 때만 */
+  if (!onClose)
+    return (
+      <div
+        data-vibe-cache="inline"
+        style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: "var(--sp-3)", padding: "var(--sp-4)" }}
+      >
+        {body}
+      </div>
+    );
+
+  return (
+    <div
+      data-vibe-cache
+      onPointerDown={(e) => e.target === e.currentTarget && onClose()}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 80,
+        background: "rgba(6,8,12,0.6)",
+        display: "grid",
+        placeItems: "center",
+        padding: "var(--sp-6)",
+      }}
+    >
+      <div
+        style={{
+          background: "var(--bg)",
+          border: "1px solid var(--line)",
+          borderRadius: "var(--r-4)",
+          padding: "var(--sp-5)",
+          width: "min(760px, 92vw)",
+          maxHeight: "82vh",
+          display: "flex",
+          flexDirection: "column",
+          gap: "var(--sp-4)",
+        }}
+      >
+        {body}
       </div>
     </div>
   );

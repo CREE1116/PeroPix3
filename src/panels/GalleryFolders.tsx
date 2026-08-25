@@ -19,7 +19,8 @@ export function GalleryFolders() {
   const ws = useWs((s) => s.current);
   // ★목록을 불러오는 것은 **중앙(Gallery)** 이다 — 이 패널은 접으면 언마운트되므로
   //   (Shell 이 접힌 쪽을 렌더하지 않는다) 여기서 불러오면 접었을 때 갤러리가 빈다.
-  const { folders, folder, items, setFolder, newFolder, dropFolder, reveal, moveTo } = useGallery();
+  const { folders, folder, items, setFolder, newFolder, dropFolder, reveal, moveTo, vibeMode, setVibeMode } =
+    useGallery();
   /** 그림을 끌어다 놓으면 그 폴더로 옮긴다 (사용자 지시 2026-08-19) */
   const moveFiles = async (files: string[], dest: string) => {
     try {
@@ -106,6 +107,36 @@ export function GalleryFolders() {
             onDropFiles={(files) => void moveFiles(files, f.path)}
           />
         ))}
+
+        {/* ★★**바이브 칸** (사용자 지시 2026-08-25: *"v2에 있던 바이브 캐시 저장해 두는
+            공간이 사라졌음 … 갤러리 쪽에 vibe 전용 공간 만들어서 거기에 보관"*).
+            구워 둔 인코딩은 **Anlas 로 산 자산**이라 잃으면 다시 지불한다 — 그림 폴더와
+            같은 자리에서 늘 보이는 편이 맞다.
+            ★예전에는 이미지 입력 패널의 작은 단추 하나뿐이었고, 그 칸은 **모델이 바이브를
+              안 받으면 통째로 사라진다**(V5). 그래서 캐시로 가는 길까지 함께 없어졌다.
+            ★폴더가 아니다 — 워크스페이스 밖의 전역 자산이라(`data/vibe-cache`) 옮기기·
+              지우기 규칙이 폴더와 다르다. 목록에서 한 칸 띄워 둔다. */}
+        <button
+          data-keep-vibe
+          data-on={vibeMode ? "" : undefined}
+          onClick={() => setVibeMode(!vibeMode)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--sp-2)",
+            width: "100%",
+            marginTop: "var(--sp-2)",
+            padding: "var(--sp-2) var(--sp-3)",
+            borderRadius: "var(--r-2)",
+            border: `1px solid ${vibeMode ? "var(--accent)" : "transparent"}`,
+            background: vibeMode ? "var(--accent-bg)" : "transparent",
+            fontSize: "var(--text-xs)",
+            color: vibeMode ? "var(--ink)" : "var(--ink-soft)",
+          }}
+        >
+          <span style={{ display: "grid", color: "var(--ink-faint)" }}>{Icon.duplicate}</span>
+          {t("imgIn.cacheTitle")}
+        </button>
 
         {/* ★앱 안에서 하위 폴더를 만들 길 (v2 `POST /api/gallery/folders`).
             전에는 탐색기로 나가야만 폴더를 만들 수 있었다 (v2-port-audit C6). */}

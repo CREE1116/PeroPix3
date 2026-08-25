@@ -11,7 +11,9 @@ import { keepThumb, keepUrl } from "../lib/imgUrl";
 import { api } from "../lib/backend";
 import { ImageActions, iconBtn } from "./ImageActions";
 import { cloneMetaToNewTab } from "./GalleryMeta";
+import { VibeCache } from "./VibeCache";
 import { hasMeta } from "../lib/metaApply";
+import { nextAfter } from "../lib/pickNext";
 import type { ImageMeta } from "../store/gallery";
 import { Icon } from "../components/Icon";
 import { onNearBottom } from "../lib/nearBottom";
@@ -33,7 +35,7 @@ export function Gallery() {
   const ws = useWs((s) => s.current);
   /** ★별표는 **보관함이 든다** — 워크스페이스가 아니다 (store/gallery.ts `starred` 주석) */
   const { items, folders, picked, focus, meta, loading, total, hasMore, load, more, setFocus,
-          togglePick, pickAll, clearPick, remove, moveTo, isStarred, toggleStar, rename } =
+          togglePick, pickAll, clearPick, remove, moveTo, isStarred, toggleStar, rename, vibeMode } =
     useGallery();
   // ★바닥에 닿기 전에 다음 쪽을 당긴다 (v2 방식, lib/nearBottom)
   const onScroll = onNearBottom(() => void more(ws));
@@ -85,6 +87,13 @@ export function Gallery() {
     //   창 전체를 덮어 우 패널의 버튼까지 가린다 (실측으로 밟았다 — 배경 클릭으로 처리돼
     //   "불러오기"가 눌리지 않고 크게 보기만 닫혔다). 그림 정보는 크게 보는 중에도 보여야 한다.
     <div style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      {/* ★★**바이브 칸이면 그리드 대신 그것을 그린다** (v2 와 같은 모드 갈아 끼우기).
+          목록·툴바를 함께 감추는 까닭: 별표·고르기·옮기기는 **그림 폴더의 규칙**이라
+          전역 자산인 캐시에는 뜻이 없다 (`store/gallery` 의 `vibeMode` ★★주). */}
+      {vibeMode ? (
+        <VibeCache />
+      ) : (
+      <>
       <Toolbar
         picked={picked.size}
         total={total || items.length}
@@ -147,6 +156,9 @@ export function Gallery() {
         </div>
       )}
 
+      </>
+      )}
+
       {focus && (
         <Big
           url={keepUrl(base, focus)}
@@ -160,6 +172,11 @@ export function Gallery() {
           onClose={() => void setFocus(ws, null)}
           onPrev={idx > 0 ? () => void setFocus(ws, shown[idx - 1].file) : undefined}
           onNext={idx >= 0 && idx < shown.length - 1 ? () => void setFocus(ws, shown[idx + 1].file) : undefined}
+          /* ★★**지우면 옆 그림으로 넘어간다** (사용자 지시 2026-08-25). 지울 때마다 창이
+              닫히면, 여러 장을 훑어 내며 고르는 흐름이 매번 끊긴다.
+             ★어디로 갈지는 **지우기 전에** 정한다 — 지운 뒤에는 그 장이 목록에서 빠져
+              자리를 잃는다 (`lib/pickNext` 의 ★★주). 씬 줄과 같은 규칙이다. */
+          nextOf={(file) => nextAfter(shown.map((x) => x.file), file)}
         />
       )}
     </div>
@@ -406,6 +423,7 @@ function Big({
   onClose,
   onPrev,
   onNext,
+  nextOf,
 }: {
   url: string;
   name: string;
@@ -418,6 +436,8 @@ function Big({
   onClose: () => void;
   onPrev?: () => void;
   onNext?: () => void;
+  /** 이 그림을 지우면 어디로 갈까 (없으면 닫는다) */
+  nextOf?: (file: string) => string | null;
 }) {
   const t = useI18n((s) => s.t);
   const box = useRef<HTMLDivElement>(null);
@@ -452,8 +472,11 @@ function Big({
       }))
     )
       return;
+    // ★넘어갈 자리를 **먼저** 잡는다 (`nextOf` 의 ★★주)
+    const next = nextOf?.(file) ?? null;
     await useGallery.getState().remove(useWs.getState().current, [file]);
-    onClose();
+    if (next) await useGallery.getState().setFocus(useWs.getState().current, next);
+    else onClose();   // 마지막 한 장이었다 — 볼 것이 없으면 닫는다
   };
 
   /** 이름 고치기 — ★규칙은 **앱에 하나**다 (`useRename`): 단추를 다시 누르면 저장하고 끝.

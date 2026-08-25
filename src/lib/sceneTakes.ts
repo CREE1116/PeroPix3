@@ -1,3 +1,4 @@
+import { nextAfter } from "./pickNext";
 import { newestFirst, takesOfScene, type Rec } from "./takes";
 import { allCells, useWs } from "../store/workspace";
 import { usePreviews, withPreviews } from "../store/previews";
@@ -50,13 +51,9 @@ export function stepTake(d: 1 | -1): boolean {
  *  ★여러 장을 지울 때는 **함께 사라지는 것을 건너뛴다.** 안 그러면 방금 지운 장을 가리켜
  *    큰 자리가 텅 빈다 (한 장짜리와 같은 결함이 여러 장에서 되살아난다). */
 export function pickAfterRemoving(cellId: string, file: string | string[]): string | null {
-  const gone = new Set(Array.isArray(file) ? file : [file]);
-  const list = visibleTakes(cellId);
-  const at = list.findIndex((r) => gone.has(r.file));
-  if (at < 0) return null;
-  for (let i = at + 1; i < list.length; i++) if (!gone.has(list[i].file)) return list[i].file;
-  for (let i = at - 1; i >= 0; i--) if (!gone.has(list[i].file)) return list[i].file;
-  return null;
+  /* ★규칙 자체는 `lib/pickNext` 하나다 — 갤러리도 같은 것을 쓴다 (2026-08-25).
+     여기서는 **어느 목록인가**만 정한다. */
+  return nextAfter(visibleTakes(cellId).map((r) => r.file), file);
 }
 
 /** 고른 것을 **휴지통으로** 보낸다 — 여러 장 고른 상태면 **전부**, 아니면 보고 있는 한 장.
