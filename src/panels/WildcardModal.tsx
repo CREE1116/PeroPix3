@@ -1,3 +1,4 @@
+import { composing } from "../lib/ime";
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { Icon } from "../components/Icon";
@@ -280,7 +281,7 @@ export function WildcardModal() {
                 value={preview}
                 onChange={(e) => setPreview(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") setOut(resolveWildcards(preview, pools));
+                  if (e.key === "Enter" && !composing(e)) setOut(resolveWildcards(preview, pools));
                 }}
                 placeholder={t("wc.previewPlaceholder")}
                 style={{

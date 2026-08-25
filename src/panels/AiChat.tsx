@@ -1,3 +1,4 @@
+import { composing } from "../lib/ime";
 import { TYPE } from "../styles/type";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n";
@@ -23,7 +24,7 @@ import { Icon } from "../components/Icon";
  *  ★**경과 시간이 진짜 신호다.** 점은 CSS 로 도니까 자바스크립트가 멈춰도 계속 움직이지만,
  *    초가 올라가는 것은 앱이 살아 있다는 뜻이다.
  *  ★마지막으로 부른 도구 이름을 함께 낸다 — 무엇을 하느라 오래 걸리는지가 보인다. */
-function Working({ last, onStop }: { last?: string; onStop: () => void }) {
+function Working({ last }: { last?: string }) {
   const t = useI18n((s) => s.t);
   const [sec, setSec] = useState(0);
   useEffect(() => {
@@ -47,16 +48,6 @@ function Working({ last, onStop }: { last?: string; onStop: () => void }) {
       </span>
       <span>{last || t("ai.working")}</span>
       <span style={{ color: "var(--ink-ghost)" }}>{t("ai.elapsed", { s: String(sec) })}</span>
-      {/* ★★**여기서도 멈출 수 있다** (사용자 지적 2026-08-25: *"중단 불가능함"*).
-          아래 단추는 하나뿐이라(2026-08-15 결정) **뭔가 쳐 놓으면 「보내기」로 바뀐다** —
-          그 사이에는 멈출 창구가 없었다. 도는 중에만 보이는 이 자리가 그것을 메운다. */}
-      <button
-        data-ai-stop-inline
-        onClick={onStop}
-        style={{ color: "var(--ink-dim)", textDecoration: "underline", padding: "0 2px" }}
-      >
-        {t("ai.stop")}
-      </button>
     </div>
   );
 }
@@ -351,7 +342,7 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
         ))}
         {ask && <AskCard ask={ask} />}
         {confirm && <ConfirmCard c={confirm} />}
-        {sending && <Working last={lastTool} onStop={stop} />}
+        {sending && <Working last={lastTool} />}
         {/* ★없어진 세션은 **열자마자** 알린다 (사용자 지시 2026-08-12) — 말을 걸어 실패를
             겪고 나서 알게 되지 않도록. claude 는 기본 30일이 지난 기록을 지운다. */}
         {cliSessionGone && !error && (
@@ -399,7 +390,14 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
+            /* ★★**조합 중의 Enter 는 글자를 맺는 것이지 보내는 것이 아니다**
+                 (사용자 지적 2026-08-25: *"보내기 버튼이 중단으로 변경 안 됨"*).
+               한글을 치면 마지막 음절이 **조합 중**인 채로 Enter 가 온다. 그대로 보내면
+               입력칸을 비운 **뒤에** 그 음절이 맺히면서 다시 들어와, 칸이 비지 않는다.
+               단추는 「도는 중 + 칸이 비었을 때」만 「중단」이 되므로 **영영 「보내기」로
+               남고, 멈출 방법이 없어진다.** 보내진 글에서도 끝 음절이 잘려 나간다.
+               ★`isComposing` 을 못 주는 옛 브라우저는 `keyCode 229` 로 같은 것을 말한다. */
+            if (e.key === "Enter" && !e.shiftKey && !composing(e)) {
               e.preventDefault();
               submit();
             }

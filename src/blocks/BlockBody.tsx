@@ -1,3 +1,4 @@
+import { composing } from "../lib/ime";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { caretAfterTag, parseSegs, serializeBlock, type Block } from "../lib/blocks";
@@ -351,7 +352,7 @@ export function BlockBody({
               /* ★★`Enter` = **저장하고 끝낸다**, `Shift+Enter` = 저장하고 **다음 것**
                  (사용자 지시 2026-08-19). 예전에는 맨 Enter 가 새 블록을 만들어서,
                  한 블록만 고치려던 사람이 빈 블록을 계속 만들게 됐다. */
-              if (e.key === "Enter") {
+              if (e.key === "Enter" && !composing(e)) {
                 e.preventDefault();
                 // ★고친 내용과 "다음 것"을 **한 번에** 넘긴다 — 따로 부르면 뒤 호출이
                 //   앞 호출의 결과를 못 보고 덮어쓴다 (둘 다 같은 목록을 들고 있다)

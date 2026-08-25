@@ -1,3 +1,4 @@
+import { composing } from "../lib/ime";
 import { TYPE } from "../styles/type";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -224,7 +225,7 @@ export function useTagSuggest(
       setSel((s) => Math.max(s - 1, 0));
       return true;
     }
-    if (e.key === "Enter" || e.key === "Tab") {
+    if ((e.key === "Enter" && !composing(e)) || e.key === "Tab") {
       e.preventDefault();
       if (items[sel]) insert(items[sel]);
       return true;

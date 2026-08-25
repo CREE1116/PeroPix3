@@ -1,3 +1,4 @@
+import { composing } from "../lib/ime";
 import { useEffect, useRef, useState } from "react";
 import { TYPE } from "../styles/type";
 import { useUi, flashStyle, useFlash } from "../store/ui";
@@ -291,7 +292,7 @@ function Section({
                 setAdding(null);
               }}
               onKeyDown={(e) => {
-                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                if (e.key === "Enter" && !composing(e)) (e.target as HTMLInputElement).blur();
                 if (e.key === "Escape") setAdding(null);
               }}
               placeholder={t("cards.newFolder")}

@@ -1,3 +1,4 @@
+import { composing } from "../lib/ime";
 import { useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { useWs } from "../store/workspace";
@@ -143,7 +144,7 @@ export function GalleryFolders() {
             }}
             onBlur={() => void addFolder()}
             onKeyDown={(e) => {
-              if (e.key === "Enter") e.currentTarget.blur();
+              if (e.key === "Enter" && !composing(e)) e.currentTarget.blur();
               else if (e.key === "Escape") {
                 draft.current = "";
                 setAdding(null);
