@@ -188,10 +188,53 @@ const titleOf = (wire: Wire[]) => {
   return "";
 };
 
+/** 대화에 붙일 이름을 **LLM 에게 짓게 한다** (사용자 요청 2026-08-25 — 클로드 코드처럼).
+ *
+ *  ★★`titleOf`(첫 발화 60자)는 **열쇠가 없을 때의 폴백**으로 남는다. 첫 발화를 그대로 자르면
+ *    「아까 만든 캐릭터 말인데 눈 색을 좀…」 같은 줄이 목록에 그대로 남아 무엇에 관한
+ *    대화였는지 알 수 없다.
+ *  ★**한 대화에 한 번만** 돈다 — `title` 이 차면 다시 안 부른다 (`save` 가 매 턴 부른다).
+ *  ★도구를 안 실은 **한 번짜리 호출**이다. 실패하면 조용히 물러난다 — 이름은 있으면 좋은 것이지
+ *    대화를 막을 일이 아니다.
+ *  ★★CLI 로 도는 중이어도 **BYOK 열쇠가 있으면 그쪽으로** 짓는다. 이름 하나 때문에 CLI 를
+ *    한 번 더 띄우면 몇 초가 들고 사용자의 요금제도 깎인다. 열쇠가 없으면 폴백을 쓴다. */
+const NAME_SYS =
+  "You name a chat. Read the user's first message and reply with a short title only " +
+  "(at most 20 characters, no quotes, no punctuation at the end). " +
+  "Write it in the same language as the message. Say what the chat is about, not what the user asked you to do.";
+
+async function nameChat(id: string) {
+  const s = useLlm.getState();
+  if (s.id !== id || s.title || !s.cfg?.hasKey) return;
+  const first = titleOf(s.wire);
+  if (!first) return;
+  try {
+    const r = await api<{ text?: string; error?: string }>("/api/llm/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        system: NAME_SYS,
+        messages: [{ role: "user", content: [{ type: "text", text: first }] }],
+        maxTokens: 32,
+      }),
+    });
+    // ★한 줄만 쓴다 — 설명을 덧붙여 오는 공급자가 있다
+    const name = (r.text ?? "").split("\n")[0].trim().replace(/^["'「]|["'」]$/g, "").slice(0, 40);
+    // 그 사이 다른 대화로 옮겼으면 붙이지 않는다 (`open` 이 막는 함정과 같다)
+    if (!name || useLlm.getState().id !== id || useLlm.getState().title) return;
+    useLlm.setState({ title: name });
+    await save(useLlm.getState());   // ★`title` 이 찼으므로 여기서 다시 불려도 되돌아온다
+  } catch {
+    /* 이름이 없으면 첫 발화로 보인다 — 폴백이 이미 있다 */
+  }
+}
+
 type S = {
   cfg: LlmConfig | null;
   /** 지금 열려 있는 대화 */
   id: string;
+  /** 이 대화의 이름 — 비면 아직 안 지어진 것이다 (`nameChat`) */
+  title: string;
   wire: Wire[];
   lines: Line[];
   list: ChatInfo[];
@@ -243,6 +286,7 @@ export const useLlm = create<S>((set, get) => ({
   modelsErr: "",
   modelsLoading: false,
   id: newId(),
+  title: "",
   wire: [],
   lines: [],
   list: [],
@@ -329,11 +373,14 @@ export const useLlm = create<S>((set, get) => ({
     //   고르는 것(이때는 이미 내용이 들어 있다)까지 막으면 안 된다.
     const before = get().wire;
     try {
-      const d = await api<{ id: string; wire: Wire[]; session?: string }>(`/api/chats/${id}`);
+      const d = await api<{ id: string; title?: string; wire: Wire[]; session?: string }>(
+        `/api/chats/${id}`,
+      );
       if (get().sending || get().wire !== before) return;
       // ★세션 id 도 되살린다 — 이게 없으면 이어 열 때마다 CLI 가 첫 메시지부터 시작한다
       set({
         id: d.id,
+        title: d.title ?? "",
         wire: d.wire ?? [],
         lines: linesOf(d.wire ?? []),
         error: "",
@@ -363,7 +410,7 @@ export const useLlm = create<S>((set, get) => ({
     // ★턴이 도는 중에는 안 바꾼다 — 돌던 응답이 **새 대화에 붙는다** (2026-08-08 확인)
     if (get().sending) return;
     // ★CLI 세션도 함께 끊는다 — 안 그러면 새 대화인데 저쪽은 옛 맥락을 들고 있다
-    set({ id: newId(), wire: [], lines: [], error: "", ask: null, confirm: null, cliSession: null,
+    set({ id: newId(), title: "", wire: [], lines: [], error: "", ask: null, confirm: null, cliSession: null,
           cliSessionGone: false, queued: [] });
   },
 
@@ -738,7 +785,8 @@ async function save(s: S) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         wire: s.wire,
-        title: titleOf(s.wire),
+        // ★지어진 이름이 있으면 그것이다 — 첫 발화 자르기는 폴백이다 (`nameChat`)
+        title: s.title || titleOf(s.wire),
         session: s.cliSession ?? "",
         // ★어디서 시작했는지 — 목록 라벨용 (백엔드가 첫 저장 때만 박는다)
         workspace: useWs.getState().current,
@@ -748,4 +796,7 @@ async function save(s: S) {
   } catch {
     /* 저장이 실패해도 화면의 대화는 그대로 이어진다 */
   }
+  /* ★이름이 아직 없으면 여기서 짓는다 — **턴이 끝나는 자리가 여기 하나**라 다른 곳에
+     매달면 CLI 경로와 API 경로 둘에 같은 것을 적게 된다. 안에서 한 번만 돈다. */
+  void nameChat(s.id);
 }

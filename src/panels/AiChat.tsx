@@ -19,12 +19,14 @@ import { Icon } from "../components/Icon";
 export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
   const t = useI18n((s) => s.t);
   // `id` = 지금 열려 있는 대화 (목록에서 어느 줄이 지금 것인지 표시)
-  const { cfg, lines, sending, error, ask, confirm, list, id: cur, cliSessionGone,
+  const { cfg, lines, sending, error, ask, confirm, list, id: cur, title: chatTitle, cliSessionGone,
           loadConfig, restore, send, stop, newChat, open, remove } = useLlm();
   const [showList, setShowList] = useState(false);
   const { engine, exe, scanning, detect } = useCli();
   const ws = useWs((s) => s.current);
   const tab = useWs((s) => s.activeSet());
+  const wsTab = useWs((s) => s.activeTabOf());
+
   const mode = useUi((s) => s.mode);
   const [text, setText] = useState("");
   const end = useRef<HTMLDivElement>(null);
@@ -62,16 +64,19 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
   };
 
   const modeLabel = MODES.find((m) => m.id === mode)?.label ?? mode;
+  /** 조수가 보고 있는 곳 — ★**탭까지** 넣는다 (사용자 지적 2026-08-25: 이 줄에 탭이 빠져
+   *  있었다). 화면에는 안 보이고 툴팁으로만 나간다. */
+  const route = [ws || "—", modeLabel, wsTab?.name, tab?.name].filter(Boolean).join(" · ");
   // ★엔진마다 "준비됨"의 뜻이 다르다: API 는 키, CLI 는 몰 수 있는 실행 파일
   const ready = engine === "cli" ? !!exe : !!cfg?.hasKey;
   const noCli = engine === "cli" && !exe && !scanning;
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      {/* 지금 보고 있는 것 */}
+      {/* 지금 대화 — 이름과 엔진·모델 표시가 한 줄에 앉는다 */}
       <div
         data-ai-context
-        data-tip={t("ai.contextHint")}
+        data-tip={t("ai.contextAt", { at: route })}
         style={{
           flexShrink: 0,
           display: "flex",
@@ -79,7 +84,7 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
           gap: "var(--sp-2)",
           padding: "4px var(--sp-4)",
           borderBottom: "1px solid var(--line)",
-          /* ★★**딱지 층이다** (사용자 지시 2026-08-25). 「지금 어디를 보고 있나」를 조용히
+          /* ★★**딱지 층이다** (사용자 지시 2026-08-25). 대화 이름을 조용히
              알리는 줄이라, 아래의 엔진·모델 표시와 **같은 층**으로 읽혀야 한다. */
           ...TYPE.eyebrow,
           color: "var(--ink-faint)",
@@ -87,15 +92,20 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
           overflow: "hidden",
         }}
       >
-        <span style={{ color: "var(--ink-dim)" }}>{ws || "—"}</span>
-        <span>·</span>
-        <span>{modeLabel}</span>
-        {tab && (
-          <>
-            <span>·</span>
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{tab.name}</span>
-          </>
-        )}
+        {/* ★★**대화 이름을 보인다** (사용자 지시 2026-08-25: *"저 위치에 사실 유저는 저
+             루트를 볼 필요가 없으니까 표시하지 말고 현재 채팅방 제목을 띄우는 게 낫다"*).
+             ★경로는 없어지지 않고 **툴팁으로 내려갔다** — 조수가 어디를 보고 있는지는
+               가끔 확인할 일이 있다. 거기에는 빠져 있던 **탭**도 넣는다 (같은 지적). */}
+        <span
+          style={{
+            color: "var(--ink-dim)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {chatTitle || t("ai.newChatTitle")}
+        </span>
         <span style={{ flex: 1 }} />
         {/* ★지금 무엇으로 도는가 — 누르면 설정이 열린다 */}
         <button
