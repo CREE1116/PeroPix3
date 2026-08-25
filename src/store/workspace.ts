@@ -3,7 +3,7 @@ import { api, type TrashEntry } from "../lib/backend";
 import { usePrompt, defaultBase, defaultUc, type Char, type Thumb } from "./prompt";
 import { t } from "../i18n";
 import { toast, undoToast } from "./toast";
-import { clearUndo, pushUndo } from "../lib/undo";
+import { clearUndo, dropUndoZone, pushUndo } from "../lib/undo";
 import { makeBlock, parseSegs, type Block } from "../lib/blocks";
 import { wrapSetTabInCard } from "../lib/sceneCards";
 export { takesOf, takesOfScene, dedupeByFile, type Rec } from "../lib/takes";
@@ -298,7 +298,7 @@ type S = {
   ) => Promise<{ file: string; cell: string } | null>;
   /** ★지우기 = **휴지통으로 이동**. 파일이 실제로 자리에서 없어지고, `Ctrl+Z` 로 되돌아온다.
    *  비우는 것은 앱을 켤 때 (24시간 지난 것) — `backend/trash.py` 머리 주석. */
-  deleteFiles: (files: string[]) => Promise<void>;
+  deleteFiles: (files: string[], opts?: { undo?: boolean }) => Promise<void>;
   isDeleted: (file: string) => boolean;
   activeSet: () => SceneSet | undefined;
   setActiveTab: (id: string) => void;
@@ -989,7 +989,7 @@ export const useWs = create<S>((set, get) => ({
     return { file: r.file, cell: cell.id };
   },
 
-  async deleteFiles(files) {
+  async deleteFiles(files, opts = {}) {
     const { current, spec } = get();
     if (!current || !spec || !files.length) return;
     const r = await api<{ moved: { file: string; at: string }[] }>(
@@ -998,7 +998,12 @@ export const useWs = create<S>((set, get) => ({
     );
     // ★목록에서도 뺀다 — 파일은 없어졌지만 레코드는 남아 있어서, 표시를 안 하면 깨진 칸이 된다
     const cur = spec.selection.deleted;
-    pushUndo(t("common.undoImages"), () => get().restoreSelection("deleted", cur, r.moved));
+    /* ★★**되돌릴 수 없는 삭제의 일부면 항목을 안 남긴다** (`undo: false`, 2026-08-25).
+       세트·씬을 지우면서 함께 보낸 그림은, `Ctrl+Z` 로 그림만 되살려 봐야 담길 씬이
+       이미 없어 **갈 자리 없는 그림**이 된다 (`removeAt` 의 ★★주).
+       ★그림 자체는 휴지통에 있으므로 24시간 안에 꺼낼 수 있다 — 잃는 것은 없다. */
+    if (opts.undo !== false)
+      pushUndo(t("common.undoImages"), () => get().restoreSelection("deleted", cur, r.moved));
     const next = [...new Set([...cur, ...files])];
     set({ spec: { ...spec, selection: { ...spec.selection, deleted: next } } });
     queueSave(get);
@@ -1342,7 +1347,8 @@ export const useWs = create<S>((set, get) => ({
 
   planRemove(target) {
     const spec = get().spec;
-    if (!spec) return { kind: target.kind, name: "", files: [], inner: 0, hard: true, blocked: "not_found" };
+    if (!spec)
+      return { kind: target.kind, name: "", files: [], inner: 0, hard: true, zones: [], blocked: "not_found" };
     return planDelete(spec, get().records, (f) => get().isDeleted(f), target);
   },
 
@@ -1351,8 +1357,12 @@ export const useWs = create<S>((set, get) => ({
     if (plan.blocked) return { ok: false, blocked: plan.blocked };
 
     /* ★★**그림을 먼저 보낸다.** 대상이 사라진 뒤에는 어느 그림이 그것이었는지 화면이
-       더는 묶어 주지 못한다 (`delPlan.ts` 머리 주석의 ③). 순서가 곧 안전장치다. */
-    if (plan.files.length) await get().deleteFiles(plan.files);
+       더는 묶어 주지 못한다 (`delPlan.ts` 머리 주석의 ③). 순서가 곧 안전장치다.
+       ★★`undo: false` — 이 그림들은 **되돌릴 수 없는 삭제의 일부**다. 되돌리기 항목을
+         남기면 `Ctrl+Z` 가 그림만 되살리는데, 그때는 담길 씬이 이미 없어 **갈 자리 없는
+         그림**이 된다 (2026-08-22 사용자 지적의 정체가 이것이다).
+         ★대신 그림 자체는 휴지통에서 24시간 안에 꺼낸다 (`list_trash`·`restore_files`). */
+    if (plan.files.length) await get().deleteFiles(plan.files, { undo: false });
 
     if (target.kind === "tab") get().removeTab(target.id);
     else if (target.kind === "set") get().closeSet(target.id);
@@ -1366,12 +1376,14 @@ export const useWs = create<S>((set, get) => ({
       });
     }
 
-    /* ★★**되돌리기 로그를 비운다** (`lib/undo.ts` 머리: *"세트·탭·씬·카드를 지우면 그 안의
-       것을 되돌릴 방법이 사라지므로, 로그를 그대로 두면 Ctrl+Z 가 엉뚱한 것을 되살린다"*).
-       ★예전에는 **씬·씬카드에서만** 돌고 세트·탭 닫기에서는 안 돌았다 (화면 코드에 흩어져
-       있어서 갈렸다). 그래서 세트를 닫은 뒤 Ctrl+Z 를 누르면 방금 휴지통에 보낸 그림이
-       **갈 자리가 없는 채로** 돌아왔다. 한 벌로 모으면서 규칙대로 맞춘다. */
-    clearUndo();
+    /* ★★**지운 자리의 되돌리기만 뺀다** (사용자 정정 2026-08-25).
+       예전에는 여기서 `clearUndo()` 로 **로그를 통째로 비웠다**(2026-08-22). 그러면 지운
+       것과 **상관없는 사용자 편집까지** 함께 날아간다 — 특히 조수가 지웠을 때 사용자는
+       자기 되돌리기를 예고 없이 잃는다. 2026-08-22 지적의 요지도 *"다른 슬롯에서 지운
+       이미지가 복구됨"* 이라 **범위가 틀린 것**이었지, 「전부 비워라」가 아니었다.
+       ★자리 목록은 `planRemove` 가 준다 (`lib/delPlan` 의 `zones`).
+       ★조수가 고친 자리를 사람의 Ctrl+Z 에서 빼는 것(`dropUndoZone`)과 **같은 장치**다. */
+    for (const z of plan.zones) dropUndoZone(z);
     return { ok: true, plan };
   },
 

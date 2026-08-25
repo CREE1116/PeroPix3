@@ -800,19 +800,15 @@ class Tools:
         cur = self._find_card(kind, str(a["id"]))
         if not cur:
             return {"error": "그런 카드가 없습니다."}
-        # ★덮어쓰기 전에 직전 내용을 남긴다 — 사람이 확인할 창구가 없는 경로라 되돌릴 길을 둔다
-        bak = Path(self.cards.root) / kind / ".bak"
-        bak.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        (bak / f"{cur['id']}-{stamp}.json").write_text(
-            json.dumps(cur, ensure_ascii=False), encoding="utf-8"
-        )
+        # ★★**`.bak` 파일을 따로 남기지 않는다** (사용자 지적 2026-08-25). 바로 아래
+        #   `_mark(..., before=cur)` 가 **같은 내용을 이력에 담고**, `undo_change` 가 그것으로
+        #   실제로 되살린다 — 두 벌이었다. 원래 근거였던 *"사람이 확인할 창구가 없는 경로"* 도
+        #   약해졌다: 지금은 앱이 켜진 채 돌고 사용자가 조수에게 「되돌려」라고 말하면 된다.
         saved = self.cards.save(kind, self._card_body(kind, a, cur))
         self.notify("cards")
-        did = (f"{_KIND_KO.get(kind, kind)} 카드 덮어씀 — {saved.get('name')} "
-               f"(직전 내용은 .bak/{cur['id']}-{stamp}.json)")
+        did = f"{_KIND_KO.get(kind, kind)} 카드 덮어씀 — {saved.get('name')}"
         at = {"kind": "card", "cardKind": kind, "id": saved.get("id")}
-        return {"ok": True, "id": saved.get("id"), "backup": f"{cur['id']}-{stamp}.json",
+        return {"ok": True, "id": saved.get("id"),
                 "did": did, "at": self._mark("update_card", did, at, before=cur, after=saved)}
 
     def _list_changes(self, a: dict) -> dict:
@@ -835,6 +831,18 @@ class Tools:
             return {"error": f"되돌릴 수 없습니다: {row.get('why') or row.get('did')}"}
         at = row.get("at") or {}
         kind = at.get("kind")
+
+        # ★★**되돌리는 법을 변경이 스스로 들고 온다** (2026-08-25).
+        #   `before` 가 `{action, args}` 면 그 액션을 그 인자로 부르면 되돌아간다 —
+        #   이름 바꾸기·잠금 같은 것은 **반대 값으로 같은 액션을 부르는 것**이 곧 되돌리기다.
+        #   ★갈래마다 되돌리는 코드를 새로 적지 않아도 되고, 액션이 늘어도 여기가 안 늘어난다.
+        undo = row.get("before")
+        if isinstance(undo, dict) and undo.get("action") and isinstance(undo.get("args"), dict):
+            r = await self.app.do(str(undo["action"]), dict(undo["args"]), timeout=120.0)
+            if r.get("error"):
+                return r
+            did = f"되돌림 — {row.get('did')}"
+            return {"ok": True, "did": did, "at": self._mark("undo_change", did, at)}
         if kind == "card":
             ck, cid = at.get("cardKind"), at.get("id")
             before = row.get("before")

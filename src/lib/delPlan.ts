@@ -3,7 +3,7 @@
  *  ★★삭제는 **다섯 단계**다 (`docs/agent-actions-design.md` 3-1):
  *
  *      ① 그림 모으기 → ② 묻기 → ③ 그림을 **먼저** 휴지통으로 → ④ 대상 제거
- *      → ⑤ 되돌리기 로그 비우기(`clearUndo`)
+ *      → ⑤ **지운 자리의** 되돌리기 빼기(`zones`)
  *
  *    예전에는 ①③⑤ 가 **화면 코드에만** 있어서, 스토어 함수(`closeSet`·`removeTab`)를
  *    직접 부르면 그 단계가 통째로 빠졌다. 조수가 그렇게 부르면 *"파일은 남았는데 앱에서
@@ -37,12 +37,21 @@ export type DelPlan = {
   files: string[];
   /** 딸려 사라지는 것의 수 — 탭이면 세트 수, 세트·씬카드면 씬 수 */
   inner: number;
-  /** ★★**되돌릴 수 없다** — 실행하면 `clearUndo()` 를 돈다.
+  /** ★★**되돌릴 수 없다** — `Ctrl+Z` 로도 `undo_change` 로도 안 돌아온다.
    *
    *  자동 승인(2-5)이 이 값을 본다. 지금은 **넷 다 참**이다: 안에 든 씬·프롬프트는
    *  되돌릴 방법이 없고, 그림만 휴지통에서 돌아와 봐야 갈 자리가 없다.
    *  ★그림 자체는 24시간 안에 휴지통에서 꺼낼 수 있다 (3-9) — 「되돌리기」와 다른 길이다. */
   hard: boolean;
+  /** ★★**사람의 `Ctrl+Z` 에서 빼야 할 자리들** (2026-08-25).
+   *
+   *  지운 것 안에 있던 편집은 되돌릴 자리가 없어져, 그대로 두면 `Ctrl+Z` 가 **엉뚱한 것**을
+   *  되살린다 (2026-08-22 사용자 지적). 예전에는 그 자리에서 로그를 **통째로 비웠는데**
+   *  (`clearUndo`), 그러면 지운 것과 **상관없는 사용자 편집까지** 함께 날아간다 —
+   *  특히 조수가 지웠을 때는 사용자가 자기 되돌리기를 예고 없이 잃는다.
+   *  ★자리 이름은 화면이 쓰는 것과 같다: 씬은 `scene-<id>`(`SceneLane` 의 `libZone`),
+   *    프롬프트는 `<base|charId>-<p|uc>`(`PromptSections`). */
+  zones: string[];
   blocked?: DelBlock;
 };
 
@@ -75,16 +84,25 @@ export function planDelete(
   target: DelTarget,
 ): DelPlan {
   const none = (kind: DelTarget["kind"]): DelPlan => ({
-    kind, name: "", files: [], inner: 0, hard: true, blocked: "not_found",
+    kind, name: "", files: [], inner: 0, hard: true, zones: [], blocked: "not_found",
   });
+  const sceneZones = (cells: Cell[]) => cells.map((c) => `scene-${c.id}`);
 
   if (target.kind === "tab") {
     const tab = (spec.tabs ?? []).find((c) => c.id === target.id);
     if (!tab) return none("tab");
     const mine = spec.sets.filter((x) => x.kind === "set" && x.tabId === target.id);
     const files = mine.flatMap((t) => filesOfSet(records, t, deleted));
+    /* ★탭이 사라지면 **그 탭의 프롬프트도** 사라진다 (프롬프트는 탭에 산다) — 편집기가
+       다른 탭 것으로 갈리므로 프롬프트 자리의 되돌리기도 함께 뺀다.
+       ★캐릭터 자리는 id 를 모르므로 **베이스만** 뺀다: 남는 것이 있어도 `Ctrl+Z` 가
+         엉뚱한 것을 되살리지는 않는다 (그 자리의 편집이었던 것은 맞다). */
+    const zones = [
+      ...mine.flatMap((t) => (isSet(t) ? sceneZones(cellsOf(t)) : [])),
+      "base-p", "base-uc",
+    ];
     return {
-      kind: "tab", name: tab.name, files, inner: mine.length, hard: true,
+      kind: "tab", name: tab.name, files, inner: mine.length, hard: true, zones,
       // ★마지막 탭은 지우지 않는다 — 세트가 설 자리가 없어진다 (`removeTab` 의 주석)
       blocked: (spec.tabs ?? []).length <= 1 ? "last_tab" : undefined,
     };
@@ -98,7 +116,7 @@ export function planDelete(
     const siblings = spec.sets.filter((x) => x.kind === "set" && x.tabId === t.tabId);
     return {
       kind: "set", name: t.name, files: filesOfSet(records, t, deleted),
-      inner: cellsOf(t).length, hard: true,
+      inner: cellsOf(t).length, hard: true, zones: sceneZones(cellsOf(t)),
       blocked: siblings.length <= 1 ? "last_set" : undefined,
     };
   }
@@ -114,7 +132,8 @@ export function planDelete(
         .filter((r) => !deleted(r.file))
         .map((r) => r.file),
     );
-    return { kind: "sceneCard", name: card.name, files, inner: card.cells.length, hard: true };
+    return { kind: "sceneCard", name: card.name, files, inner: card.cells.length, hard: true,
+             zones: sceneZones(card.cells) };
   }
 
   const cell = cellsOf(t).find((c) => c.id === target.cellId);
@@ -122,5 +141,5 @@ export function planDelete(
   const files = takesOf(records, { id: t.id, name: t.name, idOnly: t.idOnly }, cell)
     .filter((r) => !deleted(r.file))
     .map((r) => r.file);
-  return { kind: "scene", name: cell.name, files, inner: 0, hard: true };
+  return { kind: "scene", name: cell.name, files, inner: 0, hard: true, zones: [`scene-${cell.id}`] };
 }

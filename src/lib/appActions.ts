@@ -52,7 +52,7 @@ async function doRemove(target: DelTarget): Promise<ActionResult> {
     });
   const p = r.plan;
   const files = p.files.length ? ` (그림 ${p.files.length}장도 휴지통으로)` : "";
-  /* ★★**되돌릴 수 없다고 이력에 적는다** (2026-08-24). 삭제는 `clearUndo` 를 돌아
+  /* ★★**되돌릴 수 없다고 이력에 적는다** (2026-08-24). 삭제는 그 자리의 되돌리기를 빼므로
      되돌리기 로그를 비우므로 `undo_change` 로는 못 돌아온다 — 그렇게 적어 두지 않으면
      조수가 「되돌렸습니다」라고 말해 놓고 아무 일도 안 일어난다.
      ★그림만은 휴지통에서 꺼낼 수 있다 (24시간) — 그 길을 까닭에 적어 조수가 안내하게 한다. */
@@ -478,6 +478,17 @@ const APPLY: Record<string, { fields: Record<string, "string" | "boolean">; labe
   sceneCard: { label: "씬 카드", fields: { name: "string", locked: "boolean", folded: "boolean" } },
 };
 
+/** ★★**되돌리는 법을 변경이 스스로 들고 온다** (2026-08-25).
+ *
+ *  이름 바꾸기·잠금 같은 것은 **반대 값으로 같은 액션을 부르는 것**이 곧 되돌리기다.
+ *  그래서 `before` 에 「어떤 액션을 어떤 인자로」를 담아 보내면, 백엔드가 그것을 그대로
+ *  다시 불러 준다 (`agent.py` 의 `_undo_change`) — 갈래마다 되돌리는 코드를 새로 적지 않는다.
+ *  ★`id` 는 **반드시 id** 로 담는다: 이름으로 담으면 이름을 바꾼 뒤에 못 찾는다. */
+const undoApply = (what: string, id: string, was: Record<string, unknown>) => ({
+  action: "apply",
+  args: { what, id, set: was },
+});
+
 defineAction({
   id: "apply",
   desc: "★**이름·잠금 같은 단순한 값을 고친다.** «세트 이름을 표정으로»·«미소 씬 잠가줘» 가 "
@@ -520,9 +531,11 @@ defineAction({
         return err("not_found", `그런 탭이 없습니다: ${key}`, {
           what: "tab", given: key, candidates: nearBy(key, tabs.map((c) => c.name)),
         });
+      const wasTab = { name: hit.name };
       ws.renameTab(hit.id, String(patch.name));
       return { ok: true, did: `탭 「${hit.name}」 → ${done}`,
-        at: { kind: "prompt", workspace: ws.current ?? undefined, tab: hit.id } };
+        at: { kind: "prompt", workspace: ws.current ?? undefined, tab: hit.id },
+        before: undoApply("tab", hit.id, wasTab) };
     }
 
     if (what === "set") {
@@ -531,9 +544,11 @@ defineAction({
         return err("not_found", `그런 세트가 없습니다: ${key}`, {
           what: "set", given: key, candidates: nearBy(key, names),
         });
+      const wasSet = { name: hit.name };
       ws.renameSet(hit.id, String(patch.name));
       return { ok: true, did: `세트 「${hit.name}」 → ${done}`,
-        at: { kind: "prompt", workspace: ws.current ?? undefined, set: hit.id } };
+        at: { kind: "prompt", workspace: ws.current ?? undefined, set: hit.id },
+        before: undoApply("set", hit.id, wasSet) };
     }
 
     /* 씬·씬카드 — ★둘 다 **세트 안**에 산다 (`sets[].cards[].cells`). 지금 보고 있는
@@ -547,9 +562,13 @@ defineAction({
         return err("not_found", `그런 씬 카드가 없습니다: ${key}`, {
           what: "sceneCard", given: key, candidates: nearBy(key, cur.cards.map((k) => k.name)),
         });
+      const wasCard = Object.fromEntries(
+        Object.keys(patch).map((k) => [k, (card as Record<string, unknown>)[k]]),
+      );
       ws.setCard(cur.id, card.id, patch as never);
       return { ok: true, did: `씬 카드 「${card.name}」 → ${done}`,
-        at: { kind: "prompt", workspace: ws.current ?? undefined, set: cur.id } };
+        at: { kind: "prompt", workspace: ws.current ?? undefined, set: cur.id },
+        before: undoApply("sceneCard", card.id, wasCard) };
     }
 
     const cells = cur.cards.flatMap((k) => k.cells);
@@ -561,6 +580,10 @@ defineAction({
     /* ★씬은 카드 안에 있어 전용 setter 가 없다 — 카드를 통째로 갈아 끼운다.
        ★★이름이 바뀌면 **파일 이름도 따라가야** 한다 (3-8): 파일 앞 조각이
          `<번호>_<씬 이름>` 이라 이름만 바꾸면 옛 이름이 파일에 그대로 남는다. */
+    /* ★옛 값을 먼저 뜬다 — 고친 뒤에는 무엇이었는지 알 길이 없다 */
+    const wasCell = Object.fromEntries(
+      Object.keys(patch).map((k) => [k, (cell as Record<string, unknown>)[k]]),
+    );
     ws.patchSet(cur.id, {
       cards: cur.cards.map((k) => ({
         ...k,
@@ -572,6 +595,7 @@ defineAction({
       ok: true,
       did: `씬 「${cell.name}」 → ${done}` + (patch.name ? " (파일 이름도 함께 갱신)" : ""),
       at: { kind: "prompt", workspace: ws.current ?? undefined, set: cur.id, scene: cell.id },
+      before: undoApply("scene", cell.id, wasCell),
     };
   },
 });
