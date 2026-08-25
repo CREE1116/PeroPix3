@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "actions": "node scripts/gen-actions.mjs",
+    "build": "npm run actions && tsc -b && vite build",
     "preview": "vite preview",
     "tauri": "tauri"
   },
