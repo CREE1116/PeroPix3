@@ -476,6 +476,18 @@ export const useLlm = create<S>((set, get) => ({
             body: JSON.stringify({ name: c.name, input: c.input }),
           }).catch((e) => ({ error: String((e as Error).message ?? e) }));
           const body = { ...(out ?? { ok: true }) } as Record<string, unknown>;
+          /* ★★**그림을 못 받는 모델에는 안 싣는다** (설계 2-7). 모델 목록이 `vision` 을
+             실어 주는데(`backend/llm.py` 의 `input_modalities`) 아무도 안 보고 있었다 —
+             그대로 보내면 **400** 이 나고, 조수는 왜 실패했는지 모른다.
+             ★대신 무엇을 봤어야 하는지 **글로 알려 준다**: 조수가 메타데이터로 갈아탈 수 있게. */
+          const cur = get().models.find((m) => m.id === get().cfg?.model);
+          if (Array.isArray(body.images) && cur && cur.vision === false) {
+            const names = (body.images as { file: string }[]).map((x) => x.file);
+            delete body.images;
+            body.images_skipped = names;
+            body.note = "지금 모델은 그림을 못 봅니다. read_image 대신 read_image_meta 로 "
+              + "프롬프트를 읽거나, 설정에서 그림을 보는 모델로 바꿔 주세요.";
+          }
           /* ★★**그림은 `tool_result` 안에 넣지 않는다** (2026-08-24).
              앤트로픽은 받지만 **OpenAI 규격은 `tool` 역할 메시지에 글자만** 받는다 —
              오픈라우터가 그 규격이라 우리 기본 공급자에서 깨진다. 세 규격(앤트로픽·

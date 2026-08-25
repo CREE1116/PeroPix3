@@ -147,6 +147,23 @@ def _tab_model(spec: dict) -> str:
 #: ★한 턴에 실을 수 있는 그림 수 — 상한이 없으면 컨텍스트가 통째로 찬다 (2-7)
 MAX_IMAGES = 4
 
+#: ★★**승인 기준은 하나다 — 앱 액션이든 백엔드 도구든** (사용자 지시 2026-08-25).
+#:
+#:    hard : **생성물이 지워지거나**, 되돌릴 수 없는데 **비용이 큰 것**
+#:    ask  : 되돌릴 수 있지만 **수정폭이 큰 것** (카드를 통째로 갈아 끼우는 등)
+#:    none : 자주 하고 **위험이 낮은 것** — 사용 편의를 우선한다 (같은 지시)
+#:
+#: ★여기 없는 이름은 `none` 이다 (읽기 도구가 대부분이다).
+#: ★앱 액션의 위험도는 `src/lib/appActions.ts` 가 든다 — **같은 낱말**을 쓴다.
+TOOL_RISK = {
+    # 되돌릴 수 있지만 통째로 갈아 끼운다
+    "update_card": "ask",   # `undo_change` 가 옛 내용으로 되살린다 (회귀로 확인)
+    "write_guide": "ask",   # 지침 **전문**을 갈아 끼운다. 되살아난다
+    "move_files": "ask",    # ★자동 되돌리기가 없다 (파일은 그대로지만 복구 경로가 없다)
+    # ★만들거나 되살리는 쪽은 **잃는 것이 없다** → none
+    #   create_card · create_folder · restore_files · 읽기 전부
+}
+
 #: 앱 액션 목록 — **빌드할 때** 프론트에서 뽑아 둔 것 (`scripts/gen-actions.mjs`)
 ACTIONS_JSON = Path(__file__).resolve().parent / "actions.json"
 _actions_cache: list[dict] | None = None
@@ -193,6 +210,29 @@ def _is_action(name: str) -> bool:
     return any(a["name"] == name for a in _actions())
 
 
+
+def fail(code: str, message: str, retry: str = "safe", **extra) -> dict:
+    """조수가 **스스로 고칠 수 있는** 오류 (설계 2-4).
+
+    ★★`retry` 를 반드시 싣는다 — **시간 초과는 `unsafe`** 다. 예전에는 "앱이 제때 답하지
+      않았습니다"만 와서 조수가 그냥 다시 시도했고, 생성이면 **Anlas 가 두 배로** 나갔다.
+    ★`candidates` 를 얹으면 대개 한 번에 고친다 (비슷한 이름 셋).
+    ★앱 액션도 같은 모양을 쓴다 (`src/lib/actions.ts` 의 `err`) — 두 경로가 갈리면
+      조수가 오류를 다루는 법을 두 벌 배워야 한다."""
+    out = {"code": code, "message": message, "retry": retry}
+    out.update({k: v for k, v in extra.items() if v})
+    return {"error": out}
+
+
+def near_by(want: str, names: list[str]) -> list[str]:
+    """비슷한 이름 셋 — 맞춤법 교정이 아니라 **골라 주기**다 (`lib/actions.ts` 의 `nearBy`)."""
+    w = (want or "").strip().lower()
+    if not w:
+        return names[:3]
+    hit = [n for n in names if w in n.lower() or n.lower() in w]
+    return (hit or names)[:3]
+
+
 def _tab_gen(spec: dict) -> dict:
     """지금 탭의 **생성 옵션 전부** — 모델·크기·스텝·시드·CFG… (선결 조건 3-6).
 
@@ -222,7 +262,8 @@ class App:
 
     async def do(self, action: str, args: dict, timeout: float = 60.0) -> dict:
         if not self.clients:
-            return {"error": "앱이 안 켜져 있습니다. PeroPix 를 켜고 다시 시켜 주세요."}
+            # ★앱을 켜면 그대로 다시 하면 된다 → safe
+            return fail("app_off", "앱이 안 켜져 있습니다. PeroPix 를 켜고 다시 시켜 주세요.")
         cid = uuid.uuid4().hex[:8]
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
         self._waiting[cid] = fut
@@ -237,11 +278,14 @@ class App:
                 continue
         if not sent:
             self._waiting.pop(cid, None)
-            return {"error": "앱에 보내지 못했습니다."}
+            return fail("app_off", "앱에 보내지 못했습니다.")
         try:
             return await asyncio.wait_for(fut, timeout)
         except asyncio.TimeoutError:
-            return {"error": "앱이 제때 답하지 않았습니다."}
+            # ★★**시간 초과는 `unsafe`** 다 (설계 2-4). 앱이 이미 실행했을 수 있어서,
+            #   조수가 그냥 다시 시도하면 **생성이 두 번 나가고 Anlas 가 두 배로** 든다.
+            return fail("timeout", "앱이 제때 답하지 않았습니다. 이미 실행됐을 수 있으니 "
+                        "다시 시키기 전에 상태를 먼저 확인하세요.", retry="unsafe")
         finally:
             self._waiting.pop(cid, None)
 
@@ -327,7 +371,7 @@ class Tools:
     def _read_guide(self, a: dict) -> dict:
         """지금 지침 **전문**. 고치기 전에 반드시 이걸로 읽는다 (통째로 덮어쓰므로)."""
         if not self.guide:
-            return {"error": "지침 저장소가 없습니다."}
+            return fail("blocked", "지침 저장소가 없습니다.", retry="never")
         return {"text": self.guide.read()}
 
     def _write_guide(self, a: dict) -> dict:
@@ -337,7 +381,7 @@ class Tools:
           **지침**이라, "지금까지의 지침을 종합해 봐" 같은 일이 안 됐다.
         ★직전 내용은 `data/.guide-bak/` 에 남는다 — 자유 편집이라 한 번에 다 날릴 수 있다."""
         if not self.guide:
-            return {"error": "지침 저장소가 없습니다."}
+            return fail("blocked", "지침 저장소가 없습니다.", retry="never")
         r = self.guide.write(str(a.get("text") or ""))
         if r.get("error"):
             return r
@@ -374,6 +418,49 @@ class Tools:
             out.append(a)
         return out
 
+    def _what(self, name: str, a: dict) -> str:
+        """승인 카드에 뜰 **한 줄** — 무엇을 하려는지 사람 말로.
+
+        ★도구 설명(`_table` 의 둘째 칸)을 쓰면 안 된다. 그쪽은 LLM 용이라 길고 ★표시가
+          섞여 있어 카드가 설명서처럼 보인다 (QA 실측 2026-08-25, 앱 액션에서 밟은 자리)."""
+        if name == "update_card":
+            cur = self._find_card(str(a.get("kind", "")), str(a.get("id", "")))
+            return f"카드 「{(cur or {}).get('name', a.get('id'))}」 를 통째로 덮어씁니다"
+        if name == "write_guide":
+            n = len(str(a.get("text") or "").splitlines())
+            return f"조수 지침을 통째로 갈아 끼웁니다 ({n}줄)"
+        if name == "move_files":
+            return f"그림 {len(a.get('files') or [])}장을 「{a.get('dest', '')}」 로 옮깁니다"
+        return name
+
+    async def approve(self, name: str, what: str) -> dict | None:
+        """★★**백엔드 도구도 같은 승인을 지난다** (사용자 지시 2026-08-25: *"백엔드든 뭐든
+        동일 규칙을 적용해야됨"*).
+
+        예전에는 앱 액션만 승인 카드를 지나고 백엔드 도구(카드 덮어쓰기·지침·파일 이동)는
+        **아무것도 안 묻고 바로** 했다 — 기준이 두 벌이었다.
+        ★묻는 자리는 앱이다 (`ask_approve` → `lib/approve`): 자동 승인 설정도 거기 있고,
+          카드도 거기서 그린다. 백엔드는 **위험도만** 정해 넘긴다.
+        ★승인이 필요 없으면 `None`, 막혔으면 그대로 돌려줄 오류를 준다."""
+        risk = TOOL_RISK.get(name, "none")
+        if risk == "none":
+            return None
+        # ★앱 통로 자체가 없는 구성(회귀 하네스 등)에서는 묻지 않는다 — 여기서 죽으면
+        #   승인과 무관한 테스트까지 함께 넘어진다 (`test_guide` 가 그렇게 깨졌다)
+        if self.app is None:
+            return None
+        if not self.app.clients:
+            # ★앱이 없으면 물을 수 없다 — 조용히 실행하지 않는다 (기준을 건너뛰는 셈이 된다)
+            return fail("app_off", "승인이 필요한 작업입니다. PeroPix 를 켜고 다시 시켜 주세요.")
+        r = await self.app.do("ask_approve", {"title": what, "risk": risk}, timeout=600.0)
+        if r.get("error"):
+            return r
+        if r.get("okay"):
+            return None
+        if r.get("busy"):
+            return fail("blocked", "앞선 승인 요청이 아직 화면에 떠 있습니다. 그것을 먼저 처리해 주세요.")
+        return fail("refused", "사용자가 승인하지 않았습니다.", retry="never")
+
     async def call(self, name: str, args: dict) -> dict:
         # ★★표에 없는 이름이라도 **액션 목록에 있으면 앱에 시킨다** (2026-08-24).
         #   ★기다리는 시간이 넉넉해야 한다: 되돌릴 수 없는 일 앞에서는 앱이 **승인 카드**를
@@ -395,6 +482,11 @@ class Tools:
                 #   (조수는 실패로 보고했는데 실제로는 지워진다).
                 out = await self.app.do(name, args or {}, timeout=600.0)
                 return self._mark_app(name, out)
+            # ★★**실행 전에 승인을 지난다** — 앱 액션과 같은 기준이다 (`approve`).
+            #   ★무엇을 하려는지 한 줄로 보여 준다: 카드·지침은 이름을, 파일은 장 수를.
+            gate = await self.approve(name, self._what(name, args or {}))
+            if gate is not None:
+                return gate
             try:
                 out = fn(args or {})
                 if inspect.isawaitable(out):
@@ -402,7 +494,8 @@ class Tools:
                 return out if isinstance(out, dict) else {"result": out}
             except Exception as e:
                 return {"error": f"{type(e).__name__}: {e}"}
-        return {"error": f"모르는 도구: {name}"}
+        return fail("not_found", f"모르는 도구: {name}", retry="never",
+                    candidates=near_by(name, [x["name"] for x in self.specs()]))
 
     # ── 표 ──────────────────────────────────────────────────────
     def _table(self) -> list[tuple[str, str, dict, Callable]]:
@@ -674,13 +767,15 @@ class Tools:
         if not name:
             lst = self.store.list()
             if not lst:
-                return {"error": "워크스페이스가 없습니다."}
+                return fail("not_found", "워크스페이스가 없습니다.", retry="never")
             # ★앱이 안 알려 줬을 때만 여기 온다 (헤드리스 MCP). **가장 최근에 고친 것**을
             #   고른다 — 이름순 첫 번째(옛 동작)는 아무 뜻이 없다.
             name = max(lst, key=lambda x: str(x.get("updatedAt") or ""))["name"]
         spec = self.store.load(name)
         if spec is None:
-            return {"error": f"그런 워크스페이스가 없습니다: {name}"}
+            return fail("not_found", f"그런 워크스페이스가 없습니다: {name}",
+                        what="workspace", given=name,
+                        candidates=near_by(name, [x["name"] for x in self.store.list()]))
         sets = []
         for t in spec.get("sets", []):
             row = {"id": t.get("id"), "kind": t.get("kind"), "name": t.get("name")}
@@ -755,7 +850,10 @@ class Tools:
     def _get_card(self, a: dict) -> dict:
         c = self._find_card(str(a["kind"]), str(a["id"]))
         if not c:
-            return {"error": "그런 카드가 없습니다."}
+            # ★★비슷한 이름 셋을 얹는다 — 종류가 틀렸는지 이름이 틀렸는지 조수가 가른다
+            names = [str(x.get("name")) for x in self.cards.list(str(a["kind"]))]
+            return fail("not_found", f"그런 카드가 없습니다: {a['id']}",
+                        what=str(a["kind"]), given=str(a["id"]), candidates=near_by(str(a["id"]), names))
         out: dict[str, Any] = {"id": c.get("id"), "name": c.get("name")}
         if "base" in c:
             out["base"] = _view(c.get("base"))
@@ -799,7 +897,9 @@ class Tools:
         kind = str(a["kind"])
         cur = self._find_card(kind, str(a["id"]))
         if not cur:
-            return {"error": "그런 카드가 없습니다."}
+            names = [str(x.get("name")) for x in self.cards.list(kind)]
+            return fail("not_found", f"그런 카드가 없습니다: {a['id']}",
+                        what=kind, given=str(a["id"]), candidates=near_by(str(a["id"]), names))
         # ★★**`.bak` 파일을 따로 남기지 않는다** (사용자 지적 2026-08-25). 바로 아래
         #   `_mark(..., before=cur)` 가 **같은 내용을 이력에 담고**, `undo_change` 가 그것으로
         #   실제로 되살린다 — 두 벌이었다. 원래 근거였던 *"사람이 확인할 창구가 없는 경로"* 도
@@ -823,12 +923,12 @@ class Tools:
         ★★**되돌릴 수 있는 것만** 되돌린다. 이미 Anlas 를 쓴 생성처럼 못 되돌리는 것은
           까닭을 말하고 끝낸다 — 조용히 아무것도 안 하면 사용자는 됐다고 믿는다."""
         if not self.log:
-            return {"error": "변경 이력이 없습니다."}
+            return fail("blocked", "변경 이력이 없습니다.", retry="never")
         row = self.log.get(str(a["id"]))
         if not row:
-            return {"error": "그런 변경이 없습니다. list_changes 로 다시 보세요."}
+            return fail("not_found", "그런 변경이 없습니다. list_changes 로 다시 보세요.")
         if not row.get("undoable", True):
-            return {"error": f"되돌릴 수 없습니다: {row.get('why') or row.get('did')}"}
+            return fail("blocked", f"되돌릴 수 없습니다: {row.get('why') or row.get('did')}", retry="never")
         at = row.get("at") or {}
         kind = at.get("kind")
 
@@ -864,7 +964,7 @@ class Tools:
             # ★앱이 되돌린다 — 프롬프트는 **화면이 들고 있는 사본**이라 파일만 고칠 수 없다
             before = row.get("before")
             if not isinstance(before, dict):
-                return {"error": "되돌릴 내용이 남아 있지 않습니다."}
+                return fail("blocked", "되돌릴 내용이 남아 있지 않습니다.", retry="never")
             r = await self.app.do("restore_prompt", before, timeout=120.0)
             if r.get("error"):
                 return r
@@ -872,7 +972,7 @@ class Tools:
             return {"ok": True, "did": did, "at": self._mark("undo_change", did, at)}
         # ★파일 옮기기·폴더 만들기는 **아직 안 되돌린다** — 그 사이 사용자가 또 옮겼을 수 있어
         #   되돌리기가 오히려 어지럽힌다. 무엇을 했는지는 말해 준다.
-        return {"error": f"이 변경은 아직 자동으로 못 되돌립니다: {row.get('did')}"}
+        return fail("blocked", f"이 변경은 아직 자동으로 못 되돌립니다: {row.get('did')}", retry="never")
 
     def _search_tags(self, a: dict) -> dict:
         """★★**밑줄과 띄어쓰기를 같은 것으로 본다.** 단부루 덤프는 `high_complexity` 꼴이고
@@ -957,7 +1057,7 @@ class Tools:
     def _read_meta(self, a: dict) -> dict:
         p = self.files.under(self._ws_root(a), str(a["file"]))
         if not p.is_file():
-            return {"error": "그런 파일이 없습니다."}
+            return fail("not_found", f"그런 파일이 없습니다: {a['file']}", what="file", given=str(a["file"]))
         return self.meta.read(p) or {"error": "메타데이터가 없습니다."}
 
     def _read_image(self, a: dict) -> dict:
@@ -975,7 +1075,7 @@ class Tools:
         files = a.get("files") or ([a["file"]] if a.get("file") else [])
         files = [str(x) for x in files][:MAX_IMAGES]
         if not files:
-            return {"error": "볼 그림을 주세요 (워크스페이스 기준 상대경로)."}
+            return fail("unknown_field", "볼 그림을 주세요 (워크스페이스 기준 상대경로).")
         root = self._ws_root(a)
         cache = root / ".thumbs" / "agent"
         out, missing = [], []
@@ -1016,7 +1116,7 @@ class Tools:
     def _restore_files(self, a: dict) -> dict:
         items = [x for x in (a.get("items") or []) if isinstance(x, dict) and x.get("at")]
         if not items:
-            return {"error": "되살릴 것을 주세요 (list_trash 의 줄을 그대로)."}
+            return fail("unknown_field", "되살릴 것을 주세요 (list_trash 의 줄을 그대로).")
         root = self._ws_root(a)
         r = trash.restore_at(root, items)
         back, missing = r.get("restored") or [], r.get("missing") or []

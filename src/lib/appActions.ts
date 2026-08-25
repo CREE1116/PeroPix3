@@ -144,7 +144,8 @@ defineAction({
   title: "생성 큐를 비웁니다",
   desc: "★**생성 큐를 비운다** — 아직 시작 안 한 것이 취소된다. 이미 나간 장은 못 되돌린다 "
     + "(Anlas 가 이미 나갔다). 사용자가 «그만»·«취소» 라고 하면 쓴다.",
-  confirm: "ask",
+  // ★none 으로 내렸다 (사용자 결정 2026-08-25): 아직 안 만든 것을 안 만드는 일이다 — 잃는 것이 없고 자주 한다
+  confirm: "none",
   preview: () => {
     const q = useQueue.getState();
     const left = Math.max(0, q.progress.total - q.progress.completed);
@@ -191,7 +192,8 @@ defineAction({
   id: "censor_clear",
   title: "검열 목록을 비웁니다",
   desc: "자동검열 목록을 **비운다** (원본 파일은 그대로다).",
-  confirm: "ask",
+  // ★none 으로 내렸다 (사용자 결정 2026-08-25): 목록만 비운다 — **원본 파일은 그대로**다
+  confirm: "none",
   preview: () => `목록의 ${useCensor.getState().images.length}장을 뺍니다 (원본은 그대로).`,
   run: async () => {
     const n = useCensor.getState().images.length;
@@ -205,7 +207,8 @@ defineAction({
   title: "자동검열을 돌립니다",
   desc: "★자동검열을 **돌린다** (목록에 든 그림 전부를 훑어 가릴 곳을 찾는다). "
     + "결과 저장은 사용자가 화면에서 따로 누른다.",
-  confirm: "ask",
+  // ★none 으로 내렸다 (사용자 결정 2026-08-25): 훑기만 한다 — 저장은 사용자가 따로 누른다
+  confirm: "none",
   preview: () => `${useCensor.getState().images.length}장을 훑습니다.`,
   run: async () => {
     const c = useCensor.getState();
@@ -450,7 +453,8 @@ defineAction({
   desc: "★**새 워크스페이스를 만들고 그리로 옮겨 간다.** 워크스페이스는 최상위 작업 공간이라 "
     + "생성 옵션·바이브가 넘어가지 않는다 — «새 작업 시작하자» 같은 요청에서 쓴다.",
   args: { name: { type: "string", desc: "워크스페이스 이름", required: true } },
-  confirm: "ask",
+  // ★none 으로 내렸다 (사용자 결정 2026-08-25): 만들기만 한다 — 잃는 것이 없다
+  confirm: "none",
   preview: (a) => `새 워크스페이스 「${String(a.name ?? "").trim()}」 을 만들고 그리로 옮겨 갑니다.`,
   run: async (a) => {
     const name = String(a.name ?? "").trim();

@@ -293,6 +293,20 @@ async function runAction(action: string, args: Record<string, any>): Promise<Rec
 export const runLegacyAction = (action: string, args: Record<string, any>) => legacyAction(action, args);
 
 async function legacyAction(action: string, args: Record<string, any>): Promise<Record<string, unknown>> {
+  /* ★★**백엔드 도구의 승인 요청** (사용자 지시 2026-08-25: *"백엔드든 뭐든 동일 규칙"*).
+     카드 덮어쓰기·지침·파일 이동은 백엔드가 실행하지만 **묻는 자리는 여기**다 —
+     자동 승인 설정도 승인 카드도 앱에 있기 때문이다. 백엔드는 위험도만 정해 넘긴다
+     (`backend/agent.py` 의 `TOOL_RISK`·`approve`). */
+  if (action === "ask_approve") {
+    const { askApprove, needsAsk } = await import("../lib/approve");
+    const risk = (args.risk === "hard" ? "hard" : "ask") as "hard" | "ask";
+    // ★자동 승인 설정을 **여기서도 그대로** 본다 — 기준이 두 벌이 되면 안 된다
+    if (!needsAsk(risk)) return { okay: true };
+    const okay = await askApprove({ title: String(args.title ?? ""), hard: risk === "hard" });
+    if (okay === "busy") return { busy: true };
+    return { okay: !!okay };
+  }
+
   try {
     if (action === "generate") {
       const { useGen } = await import("./gen");
