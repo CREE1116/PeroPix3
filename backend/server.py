@@ -1550,6 +1550,11 @@ async def _process_job(job: dict) -> None:
                 return
             # ★단위(셀)마다 다른 값만 base 위에 덮는다 — 나머지 설정은 공유한다
             one = qb.base.model_copy(update={k: v for k, v in unit.items() if v is not None})
+            # ★★**지금 만드는 씬을 알린다** (사용자 실측 2026-08-25). 화면이 자기 대기 목록의
+            #   맨 앞을 「생성 중」으로 찍고 있었는데, 배치가 겹치면 그 순서가 실제와 어긋나
+            #   **엉뚱한 칸에 「생성 중」이 뜨고 그림은 「대기 중」 칸에 나타났다.**
+            Q.current_cell = {"set_id": one.set_id, "cell_id": one.cell_id}
+            await Q.broadcast({"type": "job_progress", "job_id": job_id, "progress": Q.progress()})
             try:
                 r = await _generate_one(one)
             except Exception as e:

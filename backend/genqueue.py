@@ -29,6 +29,11 @@ class GenerationQueue:
     def __init__(self) -> None:
         self.queue: deque[dict] = deque()
         self.current_job: dict | None = None
+        #: ★★**지금 만들고 있는 씬** (`{set_id, cell_id}`) — 화면의 「생성 중」 표시가 이것을 본다.
+        #:  예전에는 화면이 **자기 대기 목록의 첫 칸**을 「생성 중」으로 찍었는데, 배치가 겹치면
+        #:  그 순서가 실제 진행과 어긋나 **엉뚱한 칸에 「생성 중」이 뜨고 그림은 「대기 중」 칸에
+        #:  나타났다** (사용자 실측 2026-08-25). 무엇을 만드는지는 **여기가 정본**이다.
+        self.current_cell: dict | None = None
         self.current_job_id: str | None = None
         self.cancel_current = False
         self.is_processing = False
@@ -163,6 +168,8 @@ class GenerationQueue:
             "completed": self.completed_images,
             "total": self.total_images,
             "queue_length": len(self.queue),
+            # ★없으면 `None` — 화면은 그때만 옛 방식(맨 앞 대기 칸)으로 물러선다
+            "current_cell": self.current_cell,
         }
 
 
@@ -183,6 +190,7 @@ async def run_loop(q: GenerationQueue, process_job) -> None:
                     await q.broadcast({"type": "job_error", "job_id": job["id"], "error": str(e)})
                 q.is_processing = False
                 q.current_job = None
+                q.current_cell = None
                 q.current_job_id = None
                 q.cancel_current = False
         await asyncio.sleep(0.1)

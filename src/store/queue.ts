@@ -29,7 +29,17 @@ import { t } from "../i18n";
  *      실제로 렌더한 집합으로 판정하므로, 브로드캐스트가 앞서도 복원분을 안 건너뛴다.
  */
 
-export type QueueProgress = { completed: number; total: number; queue_length: number };
+export type QueueProgress = {
+  completed: number;
+  total: number;
+  queue_length: number;
+  /** ★★**서버가 지금 만들고 있는 씬** (2026-08-25). 화면의 「생성 중」 표시가 이것을 본다 —
+   *  예전에는 화면이 **자기 대기 목록의 맨 앞**을 찍었는데, 배치가 겹치면 그 순서가 실제
+   *  진행과 어긋나 **엉뚱한 칸에 「생성 중」이 뜨고 그림은 「대기 중」 칸에 나타났다**
+   *  (사용자 실측). 무엇을 만드는지는 서버가 정본이다.
+   *  ★옛 백엔드는 안 준다 — 없으면 화면이 옛 방식으로 물러선다. */
+  current_cell?: { set_id: string | null; cell_id: string | null } | null;
+};
 
 /** 큐가 지금 어느 상태인가 — v2 `statusText` 이식 (`index.html:16119-16127, 16467-16493`).
  *
@@ -631,6 +641,8 @@ function handle(m: Record<string, any>, set: Setter, get: () => S) {
       break;
     case "queued":
     case "job_start":
+    // ★장마다 온다 — **지금 만드는 씬**을 실어 온다 (`current_cell`)
+    case "job_progress":
       takeProgress(m.progress, set);
       break;
     case "job_done":

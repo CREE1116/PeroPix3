@@ -505,6 +505,12 @@ export function SceneLane() {
   const h = Math.min(LANE_MAX, Math.max(LANE_MIN, laneSize));
   const w = h;
   const queued = pending.filter((p) => p.setId === tab.id);
+  /** ★서버가 지금 만들고 있는 씬 — 이 세트의 것일 때만 쓴다 (`store/queue` 의 `current_cell`) */
+  const nowCell = useQueue((q) =>
+    q.progress.current_cell && q.progress.current_cell.set_id === tab.id
+      ? q.progress.current_cell.cell_id
+      : null,
+  );
   const running = progress.total > progress.completed;
 
   /** 그 씬의 결과 (숨긴 것 제외).
@@ -853,7 +859,18 @@ export function SceneLane() {
                 onPickPending={(cellId, id) => useSceneFocus.getState().focusPending(cellId, id)}
                 takes={takesOfCell}
                 queuedOf={(cellId) => queued.filter((p) => p.cellId === cellId)}
-                firstWaiting={running ? (queued[0]?.id ?? null) : null}
+                /* ★★**서버가 말하는 씬**의 대기 칸에 「생성 중」을 붙인다 (2026-08-25).
+                   예전에는 `queued[0]`(내 목록의 맨 앞)을 찍었는데, 배치가 겹치면 그 순서가
+                   실제 진행과 어긋나 **엉뚱한 칸에 「생성 중」이 뜨고 그림은 「대기 중」 칸에
+                   나타났다** (사용자 실측). 무엇을 만드는지는 서버가 안다.
+                   ★옛 백엔드(값을 안 주는 경우)에서는 지금까지 하던 대로 물러선다. */
+                firstWaiting={
+                  running
+                    ? (nowCell
+                        ? (queued.find((p) => p.cellId === nowCell)?.id ?? null)
+                        : (queued[0]?.id ?? null))
+                    : null
+                }
                 view={view}
                 headw={headw}
                 base={base}
@@ -1792,6 +1809,9 @@ function SceneRow(
             <button
               key={q.id}
               data-pending-cell={q.id}
+              /* ★지금 만들고 있는 칸인가 — 서버가 알려 준 것이다 (`current_cell`).
+                 회귀·QA 가 이 표식으로 「생성 중이 맞는 자리에 붙었나」를 잰다 */
+              data-run={run ? "" : undefined}
               /* ★★**클릭을 여기서 멈춘다** (사용자 지적 2026-08-23: *"생성 중인 이미지도
                    선택 가능하게 고쳤다는데 선택이 안 된다"*). 고르기 자체는 되고 있었는데,
                    그 click 이 씬 줄(`[data-scene]`)까지 올라가면 줄의 `onFocus` 가 뒤이어

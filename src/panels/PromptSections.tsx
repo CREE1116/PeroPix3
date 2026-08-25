@@ -56,6 +56,11 @@ function useThumbDrop(section: string, onAsk: (img: DragImage) => void) {
 
 /* ── 스타일 섹션 = Base ───────────────────────────────────────── */
 export function StyleSection({ onThumb }: SectionProps) {
+  /* ★★훅은 **이른 반환보다 위**에 둔다 (`hooksInJsx` 와 같은 함정, 2026-08-25 에 밟았다).
+     아래에 「카드를 뺐으면 단추만」 갈래가 있어서, 그 뒤에 훅을 두면 렌더마다 훅 개수가
+     달라져 **화면이 통째로 죽는다** (*"Rendered fewer hooks than expected"*).
+     ★열쇠는 `lib/agentAt` 이 만드는 말과 같아야 한다: `prompt:base`. */
+  const flashBase = useFlash("prompt:base");
   const t = useI18n((s) => s.t);
   const { base, baseUc, style, styleOn, setStyleOn, update, setStyle } = usePrompt();
   /** 접힘은 **저장되는 작업 상태**다 (`useUi.view.fold`) — 탭을 옮겨도 새로고침해도 남는다 */
@@ -121,8 +126,6 @@ export function StyleSection({ onThumb }: SectionProps) {
       </div>
     );
 
-  // ★베이스(=스타일) 섹션의 강조 열쇠 — `lib/agentAt` 이 만드는 말과 같아야 한다
-  const flashBase = useFlash("prompt:base");
   return (
     /* ★★**조수가 고친 자리를 강조한다** (사용자 지적 2026-08-25: *"스타일·캐릭터·씬을
        눌렀는데 하단의 생성 설정쪽을 강조함"*). 프롬프트 섹션에는 강조 표식이 **아예 없어서**
@@ -248,8 +251,10 @@ export function CharSection({
   }, [active]);
 
   /* ★★강조 열쇠는 **id 와 이름 둘 다** 본다 — 조수는 사람이 부르는 **이름**으로 자리를
-     가리키는데(`edit_current_prompt` 의 `area`), 화면이 아는 것은 id 다. */
-  const flashChar = useFlash(`prompt:${ch.id}`) || useFlash(`prompt:${ch.name}`);
+     가리키는데(`edit_current_prompt` 의 `area`), 화면이 아는 것은 id 다.
+     ★훅을 두 번 부르지 않는다: `||` 로 이으면 뒤엣것이 **조건부 호출**이 된다. */
+  const flashChar = useUi((u) =>
+    u.flashes.includes(`prompt:${ch.id}`) || u.flashes.includes(`prompt:${ch.name}`));
   const name = ch.name || t("cards.charN", { n: index + 1 });
   return (
     <>
