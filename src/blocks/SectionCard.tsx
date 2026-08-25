@@ -1,3 +1,4 @@
+import { TYPE } from "../styles/type";
 import { useState, type ReactNode, type PointerEvent } from "react";
 import { useRename } from "../components/useRename";
 import { Icon } from "../components/Icon";
@@ -223,14 +224,13 @@ export function SectionCard({
                 borderRadius: "var(--r-1)",
                 padding: "0 4px",
                 color: "#fff",
-                fontSize: "0.86rem",
-                fontWeight: "var(--w-bold)",
+                ...TYPE.cardName,
               }}
             />
           ) : (
             <b
               onDoubleClick={onRename && ((e) => { e.stopPropagation(); rename.toggle(); })}
-              style={{ fontSize: "0.86rem", fontWeight: "var(--w-bold)", cursor: onRename ? "text" : undefined }}
+              style={{ ...TYPE.cardName, cursor: onRename ? "text" : undefined }}
             >
               {name}
             </b>

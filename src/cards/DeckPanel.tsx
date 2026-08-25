@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { TYPE } from "../styles/type";
 import { useUi, flashStyle, useFlash } from "../store/ui";
 import { useI18n } from "../i18n";
 import { useCards, type AnyCard, type CardKind } from "../store/cards";
@@ -528,8 +529,12 @@ function PanelCard({
                쓰는 **가장 작은 글자**라, 더 줄일 자리가 아니라는 뜻이기도 하다.
              ★칸이 84px 이라 그만큼 **일찍 말줄임**된다. 이름을 더 보이려면 두 줄로 풀어야
                하는데 그건 칸 모양이 달라지는 일이라 여기서 하지 않았다. */
-          fontSize: "var(--text-2xs)",
-          fontWeight: "var(--w-semi)",
+          /* ★★**세 자리의 카드 이름을 하나로 맞췄다** (사용자 지시 2026-08-25).
+             프롬프트는 13.8/bold, 덱은 12/semi, 씬은 12.8/bold 로 갈려 있었다 —
+             같은 카드인데 화면마다 다른 물건으로 보였다.
+             ★칸이 84px 이라 **말줄임이 조금 일찍** 온다. 이름을 더 보이려면 칸을 넓히거나
+               두 줄로 푸는 쪽이지, 이 자리만 글자를 줄이는 쪽이 아니다. */
+          ...TYPE.cardName,
           lineHeight: 1.2,
           overflow: "hidden",
           textOverflow: "ellipsis",
