@@ -550,6 +550,10 @@ const Field = ({ label, children }: { label: string; children: React.ReactNode }
  *
  *  ★규칙은 `lib/chatMd` 에 순수 함수로 있다 (회귀가 붙어 있다) — 여기서는 **그리기만** 한다.
  *  ★`dangerouslySetInnerHTML` 을 안 쓴다: 조각 목록을 받아 React 요소로 만든다. */
+/** 아스키(영문·숫자·기호)뿐인가 — 고정폭 글꼴을 씌워도 되는지 가른다.
+ *  ★`--font-mono` 는 토큰 주석 그대로 **영문·숫자 자리에만** 쓴다 (Consolas 에 한글이 없다). */
+const isAscii = (v: string) => /^[ -~]*$/.test(v);
+
 function Md({ text }: { text: string }) {
   const blocks = useMemo(() => chatBlocks(text), [text]);
   const draw = (segs: Seg[], key: number) => (
@@ -561,7 +565,13 @@ function Md({ text }: { text: string }) {
           <code
             key={i}
             style={{
-              fontFamily: "var(--font-mono)",
+              /* ★★**한글에는 고정폭 글꼴을 안 씌운다** (사용자 지적 2026-08-25: *"왜 이렇게
+                 글씨가 깨지지"*). `--font-mono` 는 토큰 주석 그대로 **영문·숫자 자리에만**
+                 쓰는 것이다 — Consolas 에 한글 글립이 없어, 한글이 섞이면 글자마다 다른
+                 글꼴로 떨어져 **줄이 들쭉날쭉해진다.**
+                 ★조수는 태그(`long hair`)만이 아니라 이름(`키키`)도 백틱으로 감싼다.
+                   그래서 **내용을 보고** 정한다: 아스키뿐일 때만 고정폭. */
+              fontFamily: isAscii(s.v) ? "var(--font-mono)" : "inherit",
               fontSize: "0.92em",
               background: "var(--panel)",
               border: "1px solid var(--line)",
