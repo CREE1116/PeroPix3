@@ -171,6 +171,8 @@ TOOL_RISK = {
 #: 앱 액션 목록 — **빌드할 때** 프론트에서 뽑아 둔 것 (`scripts/gen-actions.mjs`)
 ACTIONS_JSON = Path(__file__).resolve().parent / "actions.json"
 _actions_cache: list[dict] | None = None
+#: 캐시를 찍은 시점의 파일 시각 — 파일이 바뀌면 다시 읽는다 (아래 ★★주)
+_actions_mtime: float = -1.0
 
 
 def _actions() -> list[dict]:
@@ -180,9 +182,19 @@ def _actions() -> list[dict]:
       올려서, 코드가 갱신돼도 소켓이 그대로면 **도구가 0개**로 보였다 (이 파일 머리 주석).
     ★파일이 없으면 **빈 목록**이다 (개발 중에 아직 안 뽑았을 수 있다). 앱 도구가 통째로
       사라지므로 콘솔에 남긴다 — 조용히 비면 「도구가 없다」의 원인을 못 찾는다."""
-    global _actions_cache
-    if _actions_cache is not None:
+    global _actions_cache, _actions_mtime
+    # ★★**파일이 바뀌면 다시 읽는다** (2026-08-25). 예전에는 한 번 읽고 영영 들고 있어서,
+    #   액션을 더하고 `gen-actions.mjs` 를 돌려도 **돌고 있던 백엔드에는 안 보였다** —
+    #   조수는 없는 도구를 부를 수 없으니 그냥 넘어가고, 화면에는 아무 까닭도 안 남는다.
+    #   (실측: `name_chat` 을 더한 직후 조수가 이름을 안 짓고 작업을 시작했다.)
+    #   ★`stat` 한 번은 도구 목록을 낼 때만 도는 값싼 일이다.
+    try:
+        mtime = ACTIONS_JSON.stat().st_mtime
+    except OSError:
+        mtime = -1.0
+    if _actions_cache is not None and mtime == _actions_mtime:
         return _actions_cache
+    _actions_mtime = mtime
     out: list[dict] = []
     try:
         raw = json.loads(ACTIONS_JSON.read_text(encoding="utf-8"))

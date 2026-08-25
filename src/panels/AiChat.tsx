@@ -16,6 +16,51 @@ import { Icon } from "../components/Icon";
  *  ★**지금 보고 있는 것**을 머리에 한 줄로 건다. "무엇을 알고 있는지" 를 사용자가 눈으로
  *    확인할 수 있어야 시킬 말을 정할 수 있다 (Studio 의 `crumb` 과 같은 장치).
  *  ★스트리밍이 아니라 **도구 줄**로 진행을 보인다 — 무엇을 만졌는지가 글자보다 중요하다. */
+/** **도는 중임을 알리는 표시** — 점 셋이 차례로 밝아지고, 경과 시간이 흐른다.
+ *
+ *  ★★사용자 지적 2026-08-25: *"ai가 작업중인 동적인 표시가 필요함. 멈춘 건지 작업 중인지
+ *    알 수 없음."* 예전에는 「일하는 중…」 글자 하나였다 — 화면이 멎은 것과 구분이 안 됐다.
+ *  ★**경과 시간이 진짜 신호다.** 점은 CSS 로 도니까 자바스크립트가 멈춰도 계속 움직이지만,
+ *    초가 올라가는 것은 앱이 살아 있다는 뜻이다.
+ *  ★마지막으로 부른 도구 이름을 함께 낸다 — 무엇을 하느라 오래 걸리는지가 보인다. */
+function Working({ last, onStop }: { last?: string; onStop: () => void }) {
+  const t = useI18n((s) => s.t);
+  const [sec, setSec] = useState(0);
+  useEffect(() => {
+    const t0 = Date.now();
+    const h = setInterval(() => setSec(Math.floor((Date.now() - t0) / 1000)), 1000);
+    return () => clearInterval(h);
+  }, []);
+  return (
+    <div
+      data-ai-working
+      style={{ display: "flex", alignItems: "center", gap: 6, ...TYPE.meta, color: "var(--ink-faint)" }}
+    >
+      <span style={{ display: "flex", gap: 3 }}>
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="think-dot"
+            style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--accent)" }}
+          />
+        ))}
+      </span>
+      <span>{last || t("ai.working")}</span>
+      <span style={{ color: "var(--ink-ghost)" }}>{t("ai.elapsed", { s: String(sec) })}</span>
+      {/* ★★**여기서도 멈출 수 있다** (사용자 지적 2026-08-25: *"중단 불가능함"*).
+          아래 단추는 하나뿐이라(2026-08-15 결정) **뭔가 쳐 놓으면 「보내기」로 바뀐다** —
+          그 사이에는 멈출 창구가 없었다. 도는 중에만 보이는 이 자리가 그것을 메운다. */}
+      <button
+        data-ai-stop-inline
+        onClick={onStop}
+        style={{ color: "var(--ink-dim)", textDecoration: "underline", padding: "0 2px" }}
+      >
+        {t("ai.stop")}
+      </button>
+    </div>
+  );
+}
+
 export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
   const t = useI18n((s) => s.t);
   // `id` = 지금 열려 있는 대화 (목록에서 어느 줄이 지금 것인지 표시)
@@ -70,6 +115,11 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
   // ★엔진마다 "준비됨"의 뜻이 다르다: API 는 키, CLI 는 몰 수 있는 실행 파일
   const ready = engine === "cli" ? !!exe : !!cfg?.hasKey;
   const noCli = engine === "cli" && !exe && !scanning;
+  /** 지금 도는 턴에서 **마지막으로 부른 도구** — 「무엇을 하느라 오래 걸리나」를 답한다.
+   *  ★결과가 온 줄만 본다 (`kind: "tool"`). 부르는 중인 것은 아직 이름이 없다. */
+  const lastTool = sending
+    ? [...lines].reverse().find((l) => l.kind === "tool")?.name
+    : undefined;
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -301,9 +351,7 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
         ))}
         {ask && <AskCard ask={ask} />}
         {confirm && <ConfirmCard c={confirm} />}
-        {sending && (
-          <div style={{ fontSize: "var(--text-2xs)", color: "var(--ink-faint)" }}>{t("ai.working")}</div>
-        )}
+        {sending && <Working last={lastTool} onStop={stop} />}
         {/* ★없어진 세션은 **열자마자** 알린다 (사용자 지시 2026-08-12) — 말을 걸어 실패를
             겪고 나서 알게 되지 않도록. claude 는 기본 30일이 지난 기록을 지운다. */}
         {cliSessionGone && !error && (

@@ -689,6 +689,7 @@ export const ja: Dict = {
     pickN: "これで ({n})",
     pickNone: "選んでください",
     working: "作業中…",
+    elapsed: "{s}秒",
     cliExit: "CLI がコード {code} で終了しました。",
     cliSessionGone: "セッション情報が見つかりませんでした。この会話は続けられません。",
     cliSessionGoneNew: "新しい会話を始める",

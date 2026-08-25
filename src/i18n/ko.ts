@@ -708,6 +708,7 @@ export const ko: Dict = {
     pickN: "이걸로 ({n})",
     pickNone: "고르세요",
     working: "일하는 중…",
+    elapsed: "{s}초",
     cliExit: "CLI 가 코드 {code} 로 끝났습니다.",
     cliSessionGone: "세션 정보를 찾지 못했습니다. 이 대화는 이어서 진행할 수 없습니다.",
     cliSessionGoneNew: "새 대화 시작",

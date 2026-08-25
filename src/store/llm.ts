@@ -442,6 +442,7 @@ export const useLlm = create<S>((set, get) => ({
     const push = (m: Wire) => {
       const wire = [...get().wire, m];
       set({ wire, lines: linesOf(wire) });
+      saveSoon(); // ★턴 도중의 줄도 파일에 남는다 (`saveSoon` 머리 주석)
     };
     set({ sending: true, error: "" });
     // ★★**말을 건 그 자리에서 저장한다** (사용자 지적 2026-08-15). 예전에는 턴이 끝나야
@@ -610,6 +611,7 @@ export function cliEvent(ev: Record<string, any>, agent = "claude-code") {
   const push = (m: Wire) => {
     const wire = [...useLlm.getState().wire, m];
     useLlm.setState({ wire, lines: linesOf(wire) });
+    saveSoon(); // ★CLI 가 흘려보내는 줄도 그 자리에서 남긴다
   };
   const strip = (n: string) => n.replace(/^mcp__peropix__/, "");
 
@@ -758,6 +760,24 @@ function codexEvent(ev: Record<string, any>, push: (m: Wire) => void) {
  *  ★스토어에 안 넣는다: 대화와 함께 저장될 값이 아니고, 다음 턴에 공급자로 되돌아가면 안 된다
  *    (`useLlm.error` 를 대화에 안 담는 것과 같은 이유). */
 let cliErr: string[] = [];
+
+/** **곧 저장한다** — 턴 도중의 줄을 잃지 않기 위한 자리 (사용자 지적 2026-08-25:
+ *  *"ai가 작업중 남기는 로그들이 다른 세션을 켰다가 돌아오거나 새로고침 등을 하면 전부
+ *  사라짐. 로그를 남기는 순간부터 세션에 계속 남아 있어야 함."*).
+ *
+ *  ★예전에는 **턴이 끝나야** 저장했다 (`run` 의 `finally`·CLI 의 `turn_end`). 도구를 열 번
+ *    부르는 긴 턴에서 새로고침하거나 다른 대화를 열면 그 열 줄이 통째로 없어졌다 —
+ *    화면에만 있었고 파일에는 없었다.
+ *  ★**0.5초로 묶는다.** 줄마다 PUT 을 던지면 긴 턴에서 저장이 수십 번 돈다. 묶어도
+ *    「남기는 순간부터 남아 있다」는 지켜진다 — 잃는 폭이 최대 0.5초다. */
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+function saveSoon() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    void save(useLlm.getState());
+  }, 500);
+}
 
 /** 한 턴이 끝날 때마다 통째로 저장한다 — 대화는 길어야 수십 줄이라 부분 저장이 필요 없다 */
 async function save(s: S) {

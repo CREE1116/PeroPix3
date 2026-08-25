@@ -691,6 +691,7 @@ export const en = {
     pickN: "Use these ({n})",
     pickNone: "Pick one or more",
     working: "Working…",
+    elapsed: "{s}s",
     cliExit: "The CLI exited with code {code}.",
     cliSessionGone: "Session data not found. This conversation cannot be continued.",
     cliSessionGoneNew: "Start a new chat",
