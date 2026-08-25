@@ -555,12 +555,14 @@ const Field = ({ label, children }: { label: string; children: React.ReactNode }
 const isAscii = (v: string) => /^[ -~]*$/.test(v);
 
 function Md({ text }: { text: string }) {
+  /* ★굵기는 **토큰**을 쓴다 (`--w-bold` = 620). 700 은 한글 획이 겹친다 —
+     굵기 상한을 한 단 낮춰 잡은 까닭이 `styles/tokens.css` 굵기 절에 있다. */
   const blocks = useMemo(() => chatBlocks(text), [text]);
   const draw = (segs: Seg[], key: number) => (
     <span key={key}>
       {segs.map((s, i) =>
         s.t === "b" ? (
-          <strong key={i} style={{ fontWeight: 700 }}>{s.v}</strong>
+          <strong key={i} style={{ fontWeight: "var(--w-bold)" }}>{s.v}</strong>
         ) : s.t === "code" ? (
           <code
             key={i}
@@ -598,7 +600,7 @@ function Md({ text }: { text: string }) {
           </div>
         ) : b.k === "h" ? (
           // ★크기는 안 키운다 — 채팅 줄에서 제목이 커지면 요란해진다. 굵기로만 가른다
-          <div key={i} style={{ fontWeight: 700, marginTop: i ? 4 : 0 }}>{draw(b.segs, i)}</div>
+          <div key={i} style={{ fontWeight: "var(--w-bold)", marginTop: i ? 4 : 0 }}>{draw(b.segs, i)}</div>
         ) : (
           <div key={i}>{draw(b.segs, i)}</div>
         ),

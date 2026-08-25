@@ -209,7 +209,7 @@ export function SectionCard({
             alignItems: "baseline",
             gap: "var(--sp-3)",
             color: "#fff",
-            textShadow: "0 1px 5px rgba(0,0,0,0.55)",
+            textShadow: "0 1px 2px rgba(0,0,0,0.75)",
           }}
         >
           {rename.editing ? (

@@ -8,6 +8,14 @@ import { LANE_MAX, LANE_MIN, useUi } from "../store/ui";
 import { allCells, useWs, takesOfScene, type Rec, type SceneCard, type Slot } from "../store/workspace";
 import { newestFirst } from "../lib/takes";
 import { applyCard } from "../lib/applyCard";
+
+/** 씬 카드 이름의 크기 — ★★**스타일·캐릭터 카드와 같아야 한다** (`blocks/SectionCard`).
+ *
+ *  예전에는 여기만 `0.8rem` 이라 같은 굵기(`--w-bold` 620)인데도 **한글 획이 서로 겹쳤다**
+ *  (사용자 지적 2026-08-25: *"세트 카드 이름은 좀 겹침"*). 굵기의 상한(620)은 큰 글자를
+ *  기준으로 잡은 값이라, 크기를 낮추면 그 상한이 과해진다.
+ *  ★굵기를 낮추는 대신 **크기를 맞췄다** — 카드 이름은 한 종류로 읽혀야 한다. */
+const CARD_NAME = "0.86rem";
 import { imgUrl, thumbUrlOf } from "../lib/imgUrl";
 import { Icon } from "../components/Icon";
 import { Ratio, RATIO_LANDSCAPE, RATIO_PORTRAIT } from "../components/Ratio";
@@ -1014,10 +1022,10 @@ export function SceneLane() {
                   alignItems: "baseline",
                   gap: "var(--sp-3)",
                   color: "#fff",
-                  textShadow: "0 1px 5px rgba(0,0,0,0.55)",
+                  textShadow: "0 1px 2px rgba(0,0,0,0.75)",
                 }}
               >
-                <b style={{ fontSize: "0.8rem", fontWeight: "var(--w-bold)" }}>{dragCard.name}</b>
+                <b style={{ fontSize: CARD_NAME, fontWeight: "var(--w-bold)" }}>{dragCard.name}</b>
               </span>
             </div>
           ) : (
@@ -1378,7 +1386,7 @@ function CardGroup(p: GroupProps) {
               alignItems: "baseline",
               gap: "var(--sp-3)",
               color: "#fff",
-              textShadow: "0 1px 5px rgba(0,0,0,0.55)",
+              textShadow: "0 1px 2px rgba(0,0,0,0.75)",
             }}
           >
             {/* ★카드 순서 그립 — 머리 누르기(접기)·머리 끌기(덱에 저장)와 뜻이 달라 **전용 손잡이**를
@@ -1398,7 +1406,7 @@ function CardGroup(p: GroupProps) {
                   e.stopPropagation();
                   rename.toggle();
                 }}
-                style={{ fontSize: "0.8rem", fontWeight: "var(--w-bold)", cursor: "text" }}
+                style={{ fontSize: CARD_NAME, fontWeight: "var(--w-bold)", cursor: "text" }}
               >
                 {p.card.name}
               </b>
@@ -1413,7 +1421,7 @@ function CardGroup(p: GroupProps) {
                   borderRadius: "var(--r-1)",
                   padding: "0 4px",
                   color: "#fff",
-                  fontSize: "0.8rem",
+                  fontSize: CARD_NAME,
                   fontWeight: "var(--w-bold)",
                 }}
               />

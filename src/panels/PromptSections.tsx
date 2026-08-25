@@ -403,7 +403,7 @@ function StackPeek({ ch }: { ch: Char }) {
               fontSize: "0.68rem",
               fontWeight: "var(--w-bold)",
               lineHeight: 1.1,
-              textShadow: "0 1px 3px rgba(0,0,0,0.6)",
+              textShadow: "0 1px 2px rgba(0,0,0,0.75)",
               display: "flex",
               alignItems: "center",
               gap: 8,
