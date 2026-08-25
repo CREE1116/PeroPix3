@@ -20,20 +20,17 @@ import { usePreviews, withPreviews } from "../store/previews";
 import { api } from "../lib/backend";
 import { wheelIsOver } from "../lib/wheelAt";
 import {
-  ZOOM_MAX,
-  ZOOM_MIN,
   canPan,
   centerPan,
   clampPan,
   drawSize,
   fitScale,
-  keepCenter,
   percent,
-  stepZoom,
-  zoomFrom,
   type Pan,
-  type Size,
 } from "../lib/zoomView";
+/* ★배율을 정하는 일은 **자리(pan)를 아는 곳**에 있다 (`store/previewBox`) — 조절 단추가
+   이 파일의 다른 줄로 내려가면서, 계산도 둘이 함께 읽는 자리로 옮겼다 (2026-08-25) */
+import { bumpZoom, setZoom, usePreviewBox } from "../store/previewBox";
 import { applyMetaParams, applyMetaVibes } from "./GalleryMeta";
 import { hasMeta } from "../lib/metaApply";
 import { CharPositioner } from "./CharPositioner";
@@ -186,9 +183,13 @@ function SceneActions() {
   const many = useSceneFocus((s) => s.picked).length;
   const previews = usePreviews((s) => s.items);
   const [enhance, setEnhance] = useState<string[] | null>(null);
-  const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
+  /* ★★**해상도는 프리뷰가 잰 값 그대로**다 (`store/previewBox` 의 `nat`, 2026-08-25).
+     예전에는 여기 `dims` 라는 별도 상태를 두었는데 **채우는 곳이 없어 영영 안 떴다** —
+     실제 크기는 하나뿐이니 재는 곳도 하나여야 한다 (사용자 지시: *"생성된 이미지 하단에
+     해당 이미지의 해상도도 표기. 시드 옆에"*). */
+  const nat = usePreviewBox((s) => s.nat);
+  const dims = nat.w ? nat : null;
   const [saving, setSaving] = useState(false);
-  useEffect(() => setDims(null), [file]);
   if (!file) return null;
 
   /** ★★미저장 그림에도 **같은 줄**이 붙는다 (사용자 지시 2026-08-19).
@@ -341,6 +342,8 @@ function SceneActions() {
         }}
         extra={
           <>
+            {/* ★배율 조절 — 그림 위에 겹쳐 있던 것을 이 줄로 내렸다 (`ViewZoom` 머리 주석) */}
+            <ViewZoom />
             {/* ★미저장이면 「삭제」 자리에 **「저장」** — 저장하면 이 줄이 그대로 「삭제」가 된다 */}
             {un ? (
               <button
@@ -441,6 +444,66 @@ function ViewBtn({
   );
 }
 
+/** **배율 조절** — 시드가 있는 아래 줄에 선다.
+ *
+ *  ★★자리를 옮긴 까닭 (사용자 지시 2026-08-25): *"이미지 배율 조정 UI를 아래의 시드 있는
+ *    곳으로 내려 줘. **꽉차게 봤을 때 이미지를 가림.**"* 예전에는 그림 오른쪽 아래에
+ *    겹쳐 있었는데, 「꽉차게」로 보면 그림이 무대를 꽉 채우므로 겹치는 자리가 곧
+ *    **그림 위**였다. 가리지 않는 자리는 그림 **바깥**뿐이다.
+ *  ★재는 값은 스토어에서 온다 (`store/previewBox`) — 무대 크기·그림 실제 크기는 프리뷰가
+ *    재고, 여기서는 읽기만 한다. */
+function ViewZoom() {
+  const tr = useI18n((s) => s.t);
+  const { nat, box } = usePreviewBox();
+  const view = useWs((s) => s.spec?.preview) ?? { fit: true, zoom: 1 };
+  const positioning = useUi((u) => u.positioning);
+  const fit = view.fit || positioning;
+  const scale = fit ? fitScale(box, nat) : view.zoom;
+  if (!nat.w) return null;
+  return (
+    <div
+      data-preview-view
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 2,
+        /* ★배치 중에는 **꽉차게로 잠긴다** — 그때는 흐리게 두어 「지금은 못 만진다」가 보인다 */
+        opacity: positioning ? 0.4 : 1,
+        pointerEvents: positioning ? "none" : undefined,
+      }}
+    >
+      <ViewBtn on={fit} onClick={() => useWs.getState().setPreview({ fit: true })}>
+        {tr("scenes.viewFit")}
+      </ViewBtn>
+      <ViewBtn on={!fit && Math.abs(view.zoom - 1) < 0.001} onClick={() => setZoom(1)}>
+        {tr("scenes.viewActual")}
+      </ViewBtn>
+      <span style={{ width: 1, height: 16, background: "var(--line)", margin: "0 2px" }} />
+      <ViewBtn onClick={() => bumpZoom(-1)} tip={tr("scenes.viewOut")}>
+        −
+      </ViewBtn>
+      {/* ★지금 몇 %인가 — 꽉차게일 때는 **그때 실제 배율**을 보여 준다 (자동이라는 뜻).
+          ★고정폭이다 — 100% ↔ 37% 를 오갈 때 옆 단추가 밀리면 눌러 둔 자리를 놓친다 */}
+      <span
+        data-preview-pct
+        style={{
+          minWidth: 44,
+          textAlign: "center",
+          fontSize: "var(--text-2xs)",
+          fontFamily: "var(--font-mono)",
+          fontVariantNumeric: "tabular-nums",
+          color: fit ? "var(--ink-faint)" : "var(--ink)",
+        }}
+      >
+        {`${percent(scale)}%`}
+      </span>
+      <ViewBtn onClick={() => bumpZoom(1)} tip={tr("scenes.viewIn")}>
+        +
+      </ViewBtn>
+    </div>
+  );
+}
+
 function ScenePreview() {
   const tr = useI18n((s) => s.t);
   /** 큰 그림을 카드 커버로 끄는 출발점 (`dir: "image"`) */
@@ -495,9 +558,11 @@ function ScenePreview() {
        보고 있으면 「왜 이러지」가 된다. 배율만 남고 자리는 가운데에서 시작한다. */
   const view = useWs((s) => s.spec?.preview) ?? { fit: true, zoom: 1 };
   const boxRef = useRef<HTMLDivElement | null>(null);
-  const [box, setBox] = useState<Size>({ w: 0, h: 0 });
-  const [nat, setNat] = useState<Size>({ w: 0, h: 0 });
-  const [pan, setPan] = useState<Pan>({ x: 0, y: 0 });
+  /* ★★재는 값은 **스토어에 둔다** (`store/previewBox`, 2026-08-25) — 배율 단추가 이 줄이
+     아니라 아래 시드 줄로 내려갔고(사용자 지시), 해상도 표시도 같은 값을 읽는다.
+     지역 상태로 두면 그 둘이 값을 못 본다. */
+  const { box, nat, pan } = usePreviewBox();
+  const { setBox, setNat, setPan } = usePreviewBox.getState();
   /** ★배치판이 열려 있으면 **꽉차게로 되돌린다** — 그 판은 그림 위에 좌표를 찍는 도구라
    *  두 사각형이 어긋나면 엉뚱한 자리를 찍는다 (`CharPositioner` 머리 주석 1번). */
   const fit = view.fit || positioning;
@@ -529,13 +594,6 @@ function ScenePreview() {
   // ★상자·배율이 바뀌면 **밖으로 나간 만큼만** 도로 붙든다 (`clampPan`)
   useEffect(() => setPan((p) => clampPan(p, box, draw)), [box.w, box.h, draw.w, draw.h]);
 
-  const setZoom = (z: number) => {
-    const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
-    setPan((p) => keepCenter(p, box, draw, drawSize(nat, next)));
-    useWs.getState().setPreview({ fit: false, zoom: next });
-  };
-  /** 휠(Ctrl) 한 칸 — 「꽉차게」에서 만지면 **보이던 크기에서** 이어진다 */
-  const bumpZoom = (d: 1 | -1) => setZoom(stepZoom(zoomFrom(box, nat, fit, view.zoom), d));
 
   const drag = useRef<{ x: number; y: number; p: Pan } | null>(null);
 
@@ -688,61 +746,6 @@ function ScenePreview() {
       )}
       </div>
 
-      {/* ★★보기 컨트롤 — **오른쪽 아래에 겹친다** (그림을 가리지 않는 자리).
-          ★그림이 없으면 안 띄운다. 조절할 것이 없는데 단추만 떠 있으면 안 눌리는 UI가 된다. */}
-      {file && (
-        <div
-          data-preview-view
-          style={{
-            position: "absolute",
-            right: "var(--sp-4)",
-            bottom: "var(--sp-4)",
-            zIndex: 3,
-            display: "flex",
-            alignItems: "center",
-            gap: 2,
-            padding: 2,
-            borderRadius: "var(--r-2)",
-            border: "1px solid var(--line)",
-            background: "var(--panel-solid, var(--panel))",
-            /* ★배치 중에는 **꽉차게로 잠긴다** (`fit` 의 ★주) — 그때는 흐리게 두어
-               「지금은 못 만진다」가 보이게 한다 */
-            opacity: positioning ? 0.4 : 1,
-            pointerEvents: positioning ? "none" : undefined,
-          }}
-        >
-          <ViewBtn on={fit} onClick={() => useWs.getState().setPreview({ fit: true })}>
-            {tr("scenes.viewFit")}
-          </ViewBtn>
-          <ViewBtn
-            on={!fit && Math.abs(view.zoom - 1) < 0.001}
-            onClick={() => setZoom(1)}
-          >
-            {tr("scenes.viewActual")}
-          </ViewBtn>
-          <span style={{ width: 1, height: 16, background: "var(--line)", margin: "0 2px" }} />
-          <ViewBtn onClick={() => bumpZoom(-1)} tip={tr("scenes.viewOut")}>
-            −
-          </ViewBtn>
-          {/* ★지금 몇 %인가 — 꽉차게일 때는 **그때 실제 배율**을 보여 준다 (자동이라는 뜻) */}
-          <span
-            data-preview-pct
-            style={{
-              minWidth: 44,
-              textAlign: "center",
-              fontSize: "var(--text-2xs)",
-              fontFamily: "var(--font-mono)",
-              fontVariantNumeric: "tabular-nums",
-              color: fit ? "var(--ink-faint)" : "var(--ink)",
-            }}
-          >
-            {nat.w ? `${percent(scale)}%` : "—"}
-          </span>
-          <ViewBtn onClick={() => bumpZoom(1)} tip={tr("scenes.viewIn")}>
-            +
-          </ViewBtn>
-        </div>
-      )}
 
     </div>
   );

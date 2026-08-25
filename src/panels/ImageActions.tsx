@@ -370,6 +370,13 @@ export function ImageActions({
               fontSize: "var(--text-2xs)",
               fontFamily: "var(--font-mono)",
               fontVariantNumeric: "tabular-nums",
+              /* ★★**자리를 미리 잡아 둔다** (사용자 지시 2026-08-25: *"고정폭으로. 시드랑
+                   해상도 텍스트 길이 변해도 UI 막 이동 안 하게"*). 시드는 한 자리에서
+                   열 자리까지 오가는데, 장을 넘길 때마다 옆 표시가 따라 밀리면 눈이 쫓아간다.
+                 ★`ch` 는 고정폭 글꼴의 **글자 한 칸**이라 자릿수와 정확히 맞는다
+                   (`seed ` 다섯 칸 + 열 자리). */
+              minWidth: "15ch",
+              textAlign: "right",
               cursor: "pointer",
               textDecoration: seedHot ? "underline" : undefined,
               color: seedHot ? "var(--accent)" : "var(--ink-faint)",
@@ -384,11 +391,15 @@ export function ImageActions({
             style={{
               flexShrink: 0,
               fontSize: "var(--text-2xs)",
-              color: "var(--ink-faint)",
+              /* ★시드와 **같은 글꼴·같은 요령**이다 — 한 덩어리로 읽히고 폭도 안 흔들린다 */
+              fontFamily: "var(--font-mono)",
               fontVariantNumeric: "tabular-nums",
+              minWidth: "11ch",
+              textAlign: "right",
+              color: "var(--ink-faint)",
             }}
           >
-            {dims.w} × {dims.h}
+            {dims.w}×{dims.h}
           </span>
         )}
         </span>
