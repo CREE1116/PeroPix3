@@ -10,6 +10,7 @@ import { useSub } from "./sub";
 import { useAnlasMeter } from "./anlasMeter";
 import { localTs } from "../lib/takes";
 import type { Block } from "../lib/blocks";
+import { err } from "../lib/actions";
 import { useSceneFocus } from "./sceneFocus";
 import { allCells, useWs } from "./workspace";
 import { useUi } from "./ui";
@@ -392,7 +393,27 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
          여는 편이 옳기도 하다 — 사용자가 바뀐 자리를 그 자리에서 본다. */
       const want = String(args.set ?? "").trim();
       if (want) {
-        const hit = useWs.getState().spec?.sets.find((x) => x.id === want || x.name === want);
+        /* ★★**같은 이름의 세트가 여러 탭에 있다** (사용자 지적 2026-08-25: 고쳤다는데 화면은
+             그대로였다). 예전에는 목록에서 **처음 걸리는 것**을 집었는데, 「새 세트」 같은
+             기본 이름은 탭마다 하나씩 있어서 **엉뚱한 탭을 고치고 성공이라고 답했다.**
+           ★그래서 (1) id 가 맞으면 그것, (2) 이름이면 **지금 탭 안**에서 먼저 찾고,
+             (3) 그래도 여럿이면 **고르지 않고 되묻는다** — 코드가 짐작할 자리가 아니다. */
+        const all = useWs.getState().spec?.sets ?? [];
+        const byId = all.find((x) => x.id === want);
+        const named = all.filter((x) => x.name === want);
+        const here = named.filter(
+          (x) => (x as { tabId?: string }).tabId === useWs.getState().spec?.activeTab,
+        );
+        const hit = byId ?? (here.length === 1 ? here[0] : named.length === 1 ? named[0] : null);
+        if (!hit && named.length > 1) {
+          const tabs = useWs.getState().spec?.tabs ?? [];
+          const where = named.map(
+            (x) => `${tabs.find((c) => c.id === (x as { tabId?: string }).tabId)?.name ?? "?"}/${x.id}`,
+          );
+          return err("ambiguous", `「${want}」 이름의 세트가 여럿입니다. id 로 골라 주세요.`, {
+            candidates: where,
+          });
+        }
         if (!hit) return { error: `그런 세트가 없습니다: ${want}` };
         /* ★세트는 **탭에 속한다**(`tabId`). 다른 탭의 세트를 열면서 탭을 안 옮기면
            화면의 윗줄과 아랫줄이 어긋난 채로 남는다 (`workspace.switchTab` 참조). */
@@ -404,6 +425,15 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
       const spec = ws.spec;
       const set = spec?.sets.find((x) => x.id === spec?.activeSet);
       if (!set) return { error: "열려 있는 세트가 없습니다." };
+
+      /* ★★**어느 탭인지 함께 말한다** (사용자 지적 2026-08-25: *"메인 프롬프트를 변경했다고
+           했는데 실제론 변경되지 않음"*). 세트 이름만 적으면 **다른 탭의 같은 이름**을 고쳐도
+           같은 문장이 나와, 사용자는 어긋난 것을 알아챌 수가 없다. 탭 이름을 앞에 붙이면
+           보고 있는 탭과 다른 순간 바로 보인다. */
+      const tabName =
+        (spec?.tabs ?? []).find((c) => c.id === ((set as { tabId?: string }).tabId ?? spec?.activeTab))
+          ?.name ?? "";
+      const where = tabName ? `「${tabName}」 탭의 「${set.name}」 세트` : `「${set.name}」 세트`;
 
       const area = String(args.area ?? "base");
       const label = String(args.label ?? "블록");
@@ -427,7 +457,7 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
         if (!found) return { error: `그런 씬이 없습니다: ${wantScene}` };
         useWs.getState().patchSet(set.id, { cards: next } as never);
         dropHumanUndo(`scene-${(found as { id: string }).id}`);
-        const did = `「${set.name}」 세트의 씬 「${(found as { name: string }).name}」을 고침`;
+        const did = `${where}의 씬 「${(found as { name: string }).name}」을 고침`;
         return {
           ok: true, scene: (found as { name: string }).name, did,
           at: { kind: "prompt" as const, workspace: ws.current ?? undefined,
@@ -460,7 +490,7 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
         const what = area === "base" ? "베이스 프롬프트" : "베이스 UC";
         return {
           ok: true, area, label, at,
-          did: `「${set.name}」 세트의 ${what}에 「${label}」을 ${verb}`,
+          did: `${where}의 ${what}에 「${label}」을 ${verb}`,
           before: { set: set.id, area, blocks: before },
           after: { set: set.id, area, blocks: usePrompt.getState()[area] },
         };
@@ -486,8 +516,8 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
       return {
         ok: true, area: ch.name, label, at: { ...at, area: ch.name },
         did: created
-          ? `「${set.name}」 세트에 캐릭터 「${ch.name}」을 만들고 「${label}」을 ${verb}`
-          : `「${set.name}」 세트의 ${what}에 「${label}」을 ${verb}`,
+          ? `${where}에 캐릭터 「${ch.name}」을 만들고 「${label}」을 ${verb}`
+          : `${where}의 ${what}에 「${label}」을 ${verb}`,
         before: { set: set.id, area: ch.id, part: field, blocks: before, created },
         after: { set: set.id, area: ch.id, part: field, blocks: now?.[field] ?? [] },
       };

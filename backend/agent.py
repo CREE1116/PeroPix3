@@ -720,6 +720,10 @@ class Tools:
                 "mode=\"add\" 는 블록을 새로 붙이고, \"replace\" 는 같은 이름의 블록을 갈아 끼운다 "
                 "(없으면 새로 붙는다). "
                 "★`set` 을 주면 **그 세트**를, 비우면 지금 보고 있는 세트를 고친다. "
+                "★★같은 이름의 세트가 여러 탭에 있으면 **고르지 않고 되묻는다** — id 로 줘라 "
+                "(그냥 이름으로 주면 엉뚱한 탭을 고치고 성공이라 답하던 자리다). "
+                "★답에는 **어느 탭의 어느 세트**를 고쳤는지가 적혀 있다 — 사용자가 보고 있는 "
+                "탭과 다르면 성공이라고 말하지 말고 그 사실을 알려라. "
                 "★`area` 에 없는 캐릭터 이름을 주면 **그 자리를 새로 만든다.** "
                 "앱이 켜져 있어야 한다.",
                 obj(
@@ -1316,6 +1320,19 @@ Principles:
   (3) just your reply (nothing is touched).
   **When the wording does not say which, ask before you make anything.** Making a card when
   they meant (1) leaves the result nowhere they can see.
+- ★★**Respect where the user already keeps things.** Some people write character tags in
+  the base prompt (or in a style card) instead of a `characters` entry - that is a valid
+  layout, not a mistake. To change such a character, **edit the block it already lives in**.
+  Two things you must not do: do not silently move it into a `characters` entry, and
+  **never cancel it from the UC side** - adding `witch hat` to the undesired content while
+  the tag still sits in the base is not a change, it is two tags fighting, and the result
+  is worse than either. Remove or replace the tag where it is written.
+  **When it is genuinely ambiguous which place they meant, ask** (`ask_user`) - one short
+  question costs less than rewriting their prompt the wrong way.
+- ★★**Check the result of your own edit before you report it.** `edit_current_prompt`
+  answers with **which tab and set** it touched; if that is not the tab the user is looking
+  at, say so instead of reporting success. When the user says the change is not there,
+  **call get_workspace again and compare** - do not restate what you believe you did.
 - **"Change X" defaults to (1)** - people usually mean what is on screen right now.
 - **When a name comes up, find where it lives first.** Look at the current set's `characters`
   with get_workspace; if it is not there, look in the deck with list_cards. **If it is in

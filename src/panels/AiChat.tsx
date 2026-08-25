@@ -930,7 +930,8 @@ function Row({ line }: { line: Line }) {
       style={{
         display: "flex",
         // ★실패 줄은 여러 줄이 된다 — 가운데 맞춤이면 표시가 글 한가운데로 내려간다
-        alignItems: line.ok ? "center" : "flex-start",
+        // ★줄이 여러 줄이 되므로 표시는 늘 위에 붙는다
+        alignItems: "flex-start",
         gap: "var(--sp-2)",
         fontSize: "var(--text-2xs)",
         fontFamily: "var(--font-mono)",
@@ -954,14 +955,14 @@ function Row({ line }: { line: Line }) {
           data-ai-tool-did={line.ok ? "" : undefined}
           style={{
             minWidth: 0,
-            /* ★★**실패한 줄은 안 자른다** (사용자 지적 2026-08-25: *"오류 메시지가 … 으로
-                 나와서 전체 문장을 읽을 수가 없음"*). 오류는 **읽으라고 있는 글**이고,
-                 대개 뒤쪽에 「무엇을 주면 되는지」가 적혀 있어서 잘리면 쓸모가 없어진다.
-               ★성공한 줄은 그대로 한 줄로 자른다 — 열 줄씩 쌓이는 진행 표시라, 다 펴면
-                 정작 봐야 할 실패가 묻힌다. */
-            ...(line.ok
-              ? { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }
-              : { whiteSpace: "pre-wrap" as const, wordBreak: "break-word" as const }),
+            /* ★★**채팅창은 아무것도 안 자른다** (사용자 지시 2026-08-25: *"조수 채팅에서
+                 에딧 내역도 … 으로 축소되어 안 보임. 채팅창에서는 모든 걸 줄바꿈해서 항상
+                 전체 내용이 보이게"*).
+               ★한때 성공한 줄만 한 줄로 잘랐는데, **무엇을 고쳤는지가 바로 그 줄에 적힌다** —
+                 「베이스 프롬프트에 … 를 갈아 끼움」이 잘리면 무엇이 바뀌었는지 알 길이 없다.
+                 진행 표시가 길어지는 것보다 읽을 수 없는 편이 나쁘다. */
+            whiteSpace: "pre-wrap" as const,
+            wordBreak: "break-word" as const,
             // 성공한 것의 설명은 한 단 흐리게 — 실패 문구와 눈으로 갈린다
             //   ★고친 줄은 안 흐리다 (그 줄의 알맹이가 바로 이 문구다)
             color: !line.ok || at ? "inherit" : "var(--ink-faint)",
