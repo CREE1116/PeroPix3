@@ -705,6 +705,7 @@ export const ja: Dict = {
     untitled: "(タイトルなし)",
     pickN: "これで ({n})",
     pickNone: "選んでください",
+    askOther: "自分で書く",
     working: "作業中…",
     elapsed: "{s}秒",
     cliExit: "CLI がコード {code} で終了しました。",

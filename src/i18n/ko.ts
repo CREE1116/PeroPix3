@@ -724,6 +724,7 @@ export const ko: Dict = {
     untitled: "(제목 없음)",
     pickN: "이걸로 ({n})",
     pickNone: "고르세요",
+    askOther: "직접 적기",
     working: "일하는 중…",
     elapsed: "{s}초",
     cliExit: "CLI 가 코드 {code} 로 끝났습니다.",

@@ -91,9 +91,12 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
     void detect();
   }, [loadConfig, restore, detect]);
 
+  /* ★★**물음·승인 카드가 뜨면 그리로 따라간다** (사용자 지적 2026-08-26: *"ask 가 떴을 때
+     하단으로 자동 스크롤을 안 해 줘서 선택지가 가려져 있음"*). 줄 수가 안 늘고 **카드만**
+     뜨는 경우라, 딸림값이 `lines.length` 뿐이면 화면이 그대로 있는다. */
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" });
-  }, [lines.length, sending]);
+  }, [lines.length, sending, ask, confirm]);
 
   // ★도는 중에도 말을 걸 수 있다 (사용자 지시 2026-08-15) — 줄은 바로 뜨고, 지금 턴이
   //   끝나는 대로 이어서 처리된다. 그래서 `sending` 으로 막지 않는다.
@@ -755,6 +758,8 @@ function ConfirmCard({ c }: { c: Confirm }) {
 function AskCard({ ask }: { ask: Ask }) {
   const t = useI18n((s) => s.t);
   const [picked, setPicked] = useState<string[]>([]);
+  /** 고를 것에 없는 답 — 카드 안에서 바로 적는다 (아래 ★★주) */
+  const [text, setText] = useState("");
   const multi = !!ask.multi;
 
   return (
@@ -836,6 +841,51 @@ function AskCard({ ask }: { ask: Ask }) {
         );
       })}
 
+      {/* ★★**직접 적는 칸** (사용자 지적 2026-08-26: *"ask에서 직접입력 항목에 입력란이 없어서
+          매번 새로 채팅해서 말해야 함"*). 고를 것에 없는 답이 있을 때 새 대화 줄을 쓰면
+          조수는 그것을 **물음의 답이 아니라 새 요청**으로 받는다 — 물음은 답을 못 받은 채 남는다.
+          ★여럿 고르기에서는 **고른 것과 함께** 실어 보낸다 (「이것들 + 이것도」가 자연스럽다).
+          ★Enter 로도 보낸다 — 한글 조합 중의 Enter 는 거른다 (`lib/ime`). */}
+      <div style={{ display: "flex", gap: "var(--sp-2)" }}>
+        <input
+          data-ai-ask-text
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !composing(e) && text.trim()) {
+              e.preventDefault();
+              ask.answer(multi ? [...picked, text.trim()] : [text.trim()]);
+            }
+          }}
+          placeholder={t("ai.askOther")}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            border: "1px solid var(--line)",
+            borderRadius: "var(--r-2)",
+            background: "var(--panel)",
+            color: "var(--ink)",
+            padding: "3px var(--sp-3)",
+            fontSize: "var(--text-2xs)",
+          }}
+        />
+        <button
+          data-ai-ask-send
+          disabled={!text.trim()}
+          onClick={() => ask.answer(multi ? [...picked, text.trim()] : [text.trim()])}
+          style={{
+            flexShrink: 0,
+            border: "1px solid var(--line)",
+            borderRadius: "var(--r-2)",
+            background: text.trim() ? "var(--panel)" : "transparent",
+            color: text.trim() ? "var(--ink)" : "var(--ink-ghost)",
+            padding: "3px var(--sp-3)",
+            fontSize: "var(--text-2xs)",
+          }}
+        >
+          {t("ai.send")}
+        </button>
+      </div>
       {multi && (
         <button
           data-ai-confirm

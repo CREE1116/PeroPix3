@@ -707,6 +707,7 @@ export const en = {
     untitled: "(untitled)",
     pickN: "Use these ({n})",
     pickNone: "Pick one or more",
+    askOther: "Type your own",
     working: "Working…",
     elapsed: "{s}s",
     cliExit: "The CLI exited with code {code}.",
