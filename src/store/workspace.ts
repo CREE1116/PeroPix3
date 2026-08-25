@@ -7,7 +7,7 @@ import { clearUndo, pushUndo } from "../lib/undo";
 import { makeBlock, parseSegs, type Block } from "../lib/blocks";
 import { wrapSetTabInCard } from "../lib/sceneCards";
 export { takesOf, takesOfScene, dedupeByFile, type Rec } from "../lib/takes";
-import { dedupeByFile } from "../lib/takes";
+import { dedupeByFile, takesOf } from "../lib/takes";
 import type { Rec } from "../lib/takes";
 import { moveTo } from "../lib/moveTo";
 import { planDelete, type DelPlan, type DelTarget } from "../lib/delPlan";
@@ -348,6 +348,9 @@ type S = {
    *  (v2 `index.html:11860-12002` 의 슬롯 드래그. 그쪽은 슬롯이 한 줄이라 카드 층이 없었다).
    *  `toIndex` 는 **틈 번호**다 (0..n, `useReorder` 규약과 같다). 음수면 그 카드의 끝. */
   moveScene: (setId: string, cellId: string, toCardId: string, toIndex: number) => void;
+  /** ★씬 자리가 바뀌면 **파일 이름의 씬 번호도 따라간다** (사용자 지시 2026-08-24).
+   *  끌어다 놓아도, 조수가 시켜도 **같은 길**을 지난다. */
+  renumberSet: (setId: string) => Promise<void>;
   /** 카드 자체의 순서. `toIndex` 도 **틈 번호**다 */
   moveCard: (setId: string, cardId: string, toIndex: number) => void;
 
@@ -1416,6 +1419,7 @@ export const useWs = create<S>((set, get) => ({
             : k,
         ),
       });
+      void get().renumberSet(setId);
       return;
     }
 
@@ -1428,6 +1432,7 @@ export const useWs = create<S>((set, get) => ({
         return k;
       }),
     });
+    void get().renumberSet(setId);
   },
 
   /** 카드 순서 — 그 카드의 씬 전부가 함께 움직인다 (번호는 위 `moveScene` 주석과 같다) */
@@ -1441,6 +1446,64 @@ export const useWs = create<S>((set, get) => ({
     const put = toIndex < 0 ? rest.length : Math.min(rest.length, toIndex > at ? toIndex - 1 : toIndex);
     if (put === at) return;
     get().patchSet(setId, { cards: [...rest.slice(0, put), tab.cards[at], ...rest.slice(put)] });
+    // ★카드가 움직이면 그 안의 씬 번호가 통째로 밀린다 (번호는 **탭 안에서 통째로** 센다)
+    void get().renumberSet(setId);
+  },
+
+  /** ★★**씬 자리가 바뀌면 파일 이름의 번호도 따라간다** (사용자 지시 2026-08-24).
+   *
+   *  *"LLM 지시랑 별도로 앱에서 씬 위치 변경되면 씬 넘버에 따른 파일 네이밍은 자동으로
+   *  변경해줘야함."* — 그래서 **끌어다 놓아도** 이 길을 지난다 (조수도 같은 함수를 부른다).
+   *
+   *  ★번호는 `gen.ts` 가 생성할 때 매기는 것과 **같은 규칙**이다: `allCells(tab)` 에서의
+   *    자리 + 1 (탭 안에서 통째로 센다). 여기서 다르게 세면 화면의 줄 앞 번호와
+   *    파일 이름이 갈린다.
+   *  ★이름 규칙 자체는 **서버가** 갖는다 (`workspace.renumber`) — 프론트에 옮겨 적으면
+   *    생성이 짓는 이름과 개명이 짓는 이름이 갈린다.
+   *  ★바뀐 경로는 색인·「지운 것」 목록에도 반영한다 — 안 하면 화면이 없는 파일을 가리킨다.
+   *  ★조용히 실패해도 앱은 돈다 (이름만 옛것으로 남는다) — 자리 이동 자체를 막지는 않는다. */
+  async renumberSet(setId) {
+    const { current, spec, records } = get();
+    const tab = spec?.sets.find((x) => x.id === setId);
+    if (!current || !spec || tab?.kind !== "set") return;
+    /* ★값으로 가져오면 순환이 된다 (`gen.ts` 가 이 파일을 부른다) — **부를 때** 싣는다.
+       그때는 두 파일이 다 실려 있다 (`gen.ts` 의 ★★주와 같은 함정). */
+    const { useGen } = await import("./gen");
+    const excludeNo = !!useGen.getState().params.exclude_slot_number;
+    const cells = allCells(tab);
+    const items = cells.flatMap((c, i) =>
+      takesOf(records, { id: tab.id, name: tab.name, idOnly: tab.idOnly }, c).map((r) => ({
+        file: r.file,
+        cell_no: i + 1,
+        cell: c.name,
+        exclude_no: excludeNo,
+      })),
+    );
+    if (!items.length) return;
+    try {
+      const r = await api<{ pairs: { file: string; to: string }[] }>(
+        `/api/workspaces/${encodeURIComponent(current)}/renumber`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) },
+      );
+      const moves = new Map(r.pairs.filter((p) => p.file !== p.to).map((p) => [p.file, p.to]));
+      if (!moves.size) return;
+      const now = get().spec;
+      if (!now) return;
+      set({
+        records: get().records.map((x) => (moves.has(x.file) ? { ...x, file: moves.get(x.file)! } : x)),
+        // ★「지운 것」 목록도 경로로 적혀 있다 — 안 옮기면 지운 표시가 풀린다
+        spec: {
+          ...now,
+          selection: {
+            ...now.selection,
+            deleted: now.selection.deleted.map((f) => moves.get(f) ?? f),
+          },
+        },
+      });
+      queueSave(get);
+    } catch {
+      /* 이름만 옛것으로 남는다 — 자리 이동은 이미 됐다 */
+    }
   },
 
   renameSet(id, name) {

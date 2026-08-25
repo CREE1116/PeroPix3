@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -326,6 +327,90 @@ class Store:
         path = self.next_name(d, lead, fmt, ws)
         path.write_bytes(data)
         return self.rel(ws, path)
+
+    def renumber(self, ws: str, items: list[dict]) -> dict:
+        """씬 자리가 바뀌면 **파일 이름의 씬 번호도 따라간다** (선결 조건 3-8, 2026-08-24).
+
+        `items` 는 `[{file, cell_no, cell, exclude_no}]` — **바뀐 뒤의** 번호·이름이다.
+        누가 어느 씬인지는 화면이 안다(`cell_id` 로 묶는다). 여기서는 **이름 규칙**만 안다.
+
+        ★★왜 서버가 하나: 이름 규칙(`file_lead`·`next_name`)이 여기 있다. 프론트에 옮겨
+          적으면 생성이 짓는 이름과 개명이 짓는 이름이 갈린다.
+        ★★**두 단계로 바꾼다.** 씬 둘이 자리를 맞바꾸면(사용자 예: 미소 ↔ 슬픔) 중간에
+          **이름이 겹친다** — 먼저 임시 이름으로 전부 옮기고 나서 제 이름을 준다.
+          한 번에 하면 뒤엣것이 앞엣것을 덮거나 `next_name` 이 엉뚱한 번호를 준다.
+        ★함께 고치는 것 셋 — 파일 · 색인(`records.jsonl`) · 곁파일(`records-env.jsonl`).
+          하나라도 빠지면 **그림이 화면에서 사라진다** (색인이 없는 경로를 가리킨다).
+        ★썸네일은 안 건드린다: 파생 캐시는 다시 구워지고, 꽂아 둔 것은 `tid` 로 복사돼
+          있어 원본 경로와 무관하다 (`thumbs.py` 머리 주석).
+        """
+        base = self.dir_of(ws)
+        plan: list[tuple[Path, str, str]] = []   # (지금 경로, 새 접두, 확장자)
+        for it in items:
+            rel = str(it.get("file") or "")
+            # ★★워크스페이스 **밖으로 못 나간다** — 경로는 조수가 줄 수도 있는 값이다
+            try:
+                src = (base / rel).resolve()
+                src.relative_to(base.resolve())
+            except (ValueError, OSError):
+                continue
+            if not src.is_file():
+                continue
+            lead = file_lead(it.get("cell_no"), it.get("cell"), bool(it.get("exclude_no")))
+            # ★이미 그 접두면 손대지 않는다 — 쓸데없이 순번을 흔들지 않는다
+            if lead and src.name.startswith(f"{lead}_"):
+                continue
+            if not lead and "_" not in src.name:
+                continue
+            plan.append((src, lead, src.suffix.lstrip(".")))
+        if not plan:
+            return {"pairs": []}
+
+        # ① 임시 이름으로 비켜 둔다 (맞바꿈에서 겹치는 것을 막는다)
+        stash: list[tuple[Path, str, str]] = []
+        for src, lead, ext in plan:
+            tmp = src.with_name(f".renum-{uuid.uuid4().hex[:8]}.{ext}")
+            src.rename(tmp)
+            stash.append((tmp, lead, ext))
+
+        # ② 제 이름을 준다
+        pairs = []
+        for tmp, lead, ext in stash:
+            dst = self.next_name(tmp.parent, lead, ext, ws)
+            tmp.rename(dst)
+            pairs.append({"file": self.rel(ws, dst), "to": self.rel(ws, dst)})
+        # ★짝은 **옛 경로 → 새 경로**여야 한다 (위에서 tmp 를 거쳤으므로 다시 맞춘다)
+        for (src, _, _), p in zip(plan, pairs):
+            p["file"] = self.rel(ws, src)
+
+        self._rewrite_paths(ws, {p["file"]: p["to"] for p in pairs})
+        return {"pairs": pairs}
+
+    def _rewrite_paths(self, ws: str, moves: dict[str, str]) -> None:
+        """색인과 곁파일의 `file` 을 새 경로로 바꾼다 (`renumber` 전용).
+
+        ★append-only 인 파일을 **통째로 다시 쓰는** 유일한 자리다. 그래서 임시 파일에 쓴 뒤
+          바꿔치기한다 — 쓰다 죽어도 앞의 것이 남는다."""
+        d = self.dir_of(ws)
+        for name in (RECORDS_NAME, ENV_NAME):
+            p = d / name
+            if not p.is_file():
+                continue
+            out = []
+            for line in p.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    out.append(line)      # ★못 읽는 줄은 **그대로 둔다** (버리지 않는다)
+                    continue
+                if isinstance(row, dict) and row.get("file") in moves:
+                    row["file"] = moves[row["file"]]
+                out.append(json.dumps(row, ensure_ascii=False))
+            tmp = p.with_suffix(p.suffix + ".tmp")
+            tmp.write_text("\n".join(out) + "\n", encoding="utf-8")
+            tmp.replace(p)
 
     def append_record(self, ws: str, rec: dict) -> None:
         """레코드 한 줄. ★무거운 것은 **곁파일로 갈라** 적는다 (`ENV_NAME` 머리 주석).

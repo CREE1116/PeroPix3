@@ -156,7 +156,18 @@ defineAction({
   run: async (a) => {
     const files = (a.files ?? []).map((x: unknown) => String(x)).filter(Boolean);
     if (!files.length) return err("not_found", "넣을 그림을 주세요.");
-    await useCensor.getState().addImages(files.map((rel: string) => ({ name: rel.split("/").pop() ?? rel, rel })));
+    const ws = useWs.getState().current;
+    if (!ws) return err("no_workspace", "열려 있는 워크스페이스가 없습니다.", { retry: "never" });
+    /* ★★**경로 기준이 둘이라 여기서 옮긴다** (선결 조건 3-7, 2026-08-24).
+       조수의 파일 도구는 **워크스페이스 폴더** 기준인데(`agent._ws_root`), 검열이 받는
+       `rel` 은 **아웃풋 루트** 기준이다(`server._censor_open` 의 `files.under(WS_ROOT, rel)`).
+       `list_files` 결과를 그대로 넣으면 「그림을 찾지 못했습니다」가 난다.
+       ★기준을 아웃풋 루트로 통일하고, 어긋나는 쪽(조수)이 **경계에서** 워크스페이스 이름을
+         앞에 붙인다 — 검열 화면·드롭이 쓰는 값을 건드리지 않는 쪽이 안전하다. */
+    const rels = files.map((f: string) => `${ws}/${f.replace(/^\/+/, "")}`);
+    await useCensor.getState().addImages(
+      rels.map((rel: string) => ({ name: rel.split("/").pop() ?? rel, rel })),
+    );
     return { ok: true, did: `검열에 ${files.length}장 넣음`, at: { kind: "censor" } };
   },
 });
@@ -285,5 +296,64 @@ defineAction({
     if (out && typeof out === "object" && "error" in out)
       return err("blocked", String((out as { error: unknown }).error), { retry: "never" });
     return { ...(out as object), ok: true, did: String((out as { did?: string }).did ?? t("ai.queued")) } as ActionResult;
+  },
+});
+
+/* ── 씬 자리 옮기기 ────────────────────────────────────────────
+   ★★*"미소 씬이랑 슬픔 씬 위치를 바꿔줘"* 가 이것이다 (사용자 시나리오 2026-08-24).
+     자리를 옮기면 **파일 이름의 씬 번호도 따라간다** (`renumberSet`) — 사람이 끌어다
+     놓았을 때와 **같은 길**이라 조수가 시켜도 자동으로 맞는다. */
+
+defineAction({
+  id: "move_scene",
+  desc: "★**씬 자리를 옮긴다.** «미소를 맨 앞으로»·«미소와 슬픔 자리를 바꿔줘» 가 이것이다. "
+    + "자리가 바뀌면 **그림 파일 이름의 씬 번호도 따라간다.** "
+    + "`before` 를 주면 그 씬 앞으로, 비우면 맨 뒤로 간다.",
+  args: {
+    scene: { type: "string", desc: "옮길 씬 이름 또는 id", required: true },
+    before: { type: "string", desc: "이 씬 **앞**에 놓는다 — 비우면 맨 뒤" },
+    set: { type: "string", desc: "어느 세트에서 — 비우면 지금 보고 있는 세트" },
+  },
+  confirm: "none",
+  run: async (a) => {
+    const ws = useWs.getState();
+    const want = String(a.set ?? "").trim();
+    const set = want ? findSet(want).hit : ws.activeSet();
+    if (!set || set.kind !== "set")
+      return err("not_found", want ? `그런 세트가 없습니다: ${want}` : "열려 있는 세트가 없습니다.", {
+        what: "set", given: want, candidates: nearBy(want, findSet("").names),
+      });
+
+    /* ★씬은 **카드 안에** 있다. 옮길 자리는 「받는 카드 + 그 카드 안의 틈 번호」로 준다
+       (`moveScene` 의 규약) — 그래서 `before` 가 어느 카드의 몇 번째인지 먼저 찾는다. */
+    const key = String(a.scene ?? "").trim();
+    const named = set.cards.flatMap((k) => k.cells.map((c) => ({ card: k, cell: c })));
+    const mine = named.find((x) => x.cell.id === key || x.cell.name === key);
+    if (!mine)
+      return err("not_found", `그런 씬이 없습니다: ${key}`, {
+        what: "scene", given: key, candidates: nearBy(key, named.map((x) => x.cell.name)),
+      });
+
+    const beforeKey = String(a.before ?? "").trim();
+    let toCard = mine.card.id;
+    let toIndex = -1; // 맨 뒤
+    if (beforeKey) {
+      const target = named.find((x) => x.cell.id === beforeKey || x.cell.name === beforeKey);
+      if (!target)
+        return err("not_found", `그런 씬이 없습니다: ${beforeKey}`, {
+          what: "scene", given: beforeKey, candidates: nearBy(beforeKey, named.map((x) => x.cell.name)),
+        });
+      if (target.cell.id === mine.cell.id) return { ok: true, did: "이미 그 자리입니다" };
+      toCard = target.card.id;
+      toIndex = target.card.cells.findIndex((c) => c.id === target.cell.id);
+    }
+
+    ws.moveScene(set.id, mine.cell.id, toCard, toIndex);
+    const where = beforeKey ? `「${beforeKey}」 앞으로` : "맨 뒤로";
+    return {
+      ok: true,
+      did: `씬 「${mine.cell.name}」 을 ${where} 옮김 (파일 번호도 함께 갱신)`,
+      at: { kind: "prompt" },
+    };
   },
 });
