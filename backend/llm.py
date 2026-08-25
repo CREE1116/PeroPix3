@@ -213,7 +213,22 @@ VERTEX_THINKING: dict[str, dict] = {
     # ★이름이 `gemini-3.1-pro` 가 아니다 — 그건 404 다 (실측 2026-08-08)
     "gemini-3.1-pro-preview": {"efforts": ["high", "medium", "low"], "default": "high"},
 }
-VERTEX_MODELS = list(VERTEX_THINKING)
+
+# ★★**고를 수 있는 것 전부** — 위 표는 「추론 단계를 아는 것」일 뿐이다 (2026-08-25).
+#   사용자 요청으로 둘을 더했는데, **단계 목록은 실제로 불러 보기 전에는 적지 않는다** —
+#   모델마다 받는 값이 달라서(3.1 Pro 는 MINIMAL 이 400) 짐작해 적으면 그 순간 깨진다.
+#   표에 없으면 `_gemini` 가 `thinkingConfig` 를 **아예 안 보내므로**, 모델 기본 추론으로
+#   그냥 돈다. 즉 **쓰는 데는 지장이 없고, 강도 드롭다운만 안 뜬다.**
+#   ★단계를 확인하면 위 표에 옮겨 적는다 (그때 드롭다운이 생긴다).
+VERTEX_MODELS = [
+    # ★2026-08-25 GA (구글 문서 확인) — 지금의 주력 워크호스
+    "gemini-3.7-flash",
+    *VERTEX_THINKING,
+    # ★2.5 는 **추론 규격이 다르다**: 단계가 아니라 `thinkingBudget`(토큰 수)이다.
+    #   그래서 여기서는 단계를 안 보낸다 (위 ★★주). ★**2026-10-16 은퇴 예정**이므로
+    #   그 뒤로는 404 가 된다 (구글 문서: 2.5 Pro·Flash·Flash-Lite 은퇴일).
+    "gemini-2.5-pro",
+]
 # OpenAI 목록에는 대화용이 아닌 것도 섞여 온다 — 이름으로 걸러 낸다
 NOT_CHAT = ("embedding", "tts", "whisper", "dall-e", "moderation", "audio", "realtime", "image", "search")
 
@@ -232,7 +247,8 @@ async def models(llm: dict) -> dict:
         #   물어볼 창구가 없으므로 **실측한 것**을 적는다 (XHIGH 는 400 이라 빠져 있다).
         #   `locked` 인 이유: 제미나이는 추론이 필수다. 사실상 끄는 것은 `minimal` 이다.
         out = []
-        for m, spec_t in VERTEX_THINKING.items():
+        for m in VERTEX_MODELS:
+            spec_t = VERTEX_THINKING.get(m) or {}
             row = {"id": m}
             if spec_t.get("efforts"):
                 row["efforts"] = spec_t["efforts"]
