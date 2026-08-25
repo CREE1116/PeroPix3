@@ -60,7 +60,7 @@ const GAP = 6;
 export function SceneLane() {
   const t = useI18n((s) => s.t);
   const base = useGen((g) => g.base);
-  const { records, current: ws, activeSet, isDeleted,
+  const { records, current: ws, activeSet, isDeleted, isStarred, toggleStar,
     patchSet, setCard, addCard, removeCard, addSlot, moveScene, moveCard } = useWs();
   const pending = useQueue((s) => s.pending);
   // ★구독해서 읽는다. `getState()` 로 읽으면 진행이 바뀌어도 다시 그리지 않아
@@ -481,6 +481,8 @@ export function SceneLane() {
    *  바꾸면 UI 가 안 그려졌다. 같은 함정을 `StyleSection` 이 먼저 밟았다.
    *
    *  서버가 지금 만들고 있는 씬 — 이 세트의 것일 때만 쓴다 (`store/queue` 의 `current_cell`) */
+  /** ★「별표만 보기」 — 훅이라 **이른 반환보다 위**에 둔다 (바로 아래 `nowCell` 의 ★★주) */
+  const starOnly = useUi((u) => u.laneStarOnly);
   const nowCell = useQueue((q) =>
     q.progress.current_cell && q.progress.current_cell.set_id === tab?.id
       ? q.progress.current_cell.cell_id
@@ -530,7 +532,15 @@ export function SceneLane() {
   const cells = allCells(tab);
   const all = withPreviews(records, ws, previews);
   const takesOfCell = (c: Slot) =>
-    takesOfScene(all, tab, cells, c).filter((r) => !isDeleted(r.file));
+    takesOfScene(all, tab, cells, c)
+      .filter((r) => !isDeleted(r.file))
+      .filter((r) => !starOnly || isStarred(r.file));
+  /** 별을 단 장이 **몇 개인가** — 거르기 전 목록에서 센다 (거른 뒤에 세면 늘 전부다).
+   *  ★단추에 적어 두는 까닭: 0 이면 눌러도 화면이 비므로, 누르기 전에 알아야 한다. */
+  const starCount = cells.reduce(
+    (n, c) => n + takesOfScene(all, tab, cells, c).filter((r) => !isDeleted(r.file) && isStarred(r.file)).length,
+    0,
+  );
 
   /** 카드마다 **앞선 카드들의 씬 수**.
    *  ★줄 앞 번호는 **탭 안에서 통째로** 센다 — 그 값이 곧 파일 이름 앞의 번호이기 때문이다
@@ -680,6 +690,32 @@ export function SceneLane() {
           }}
         >
           <Ratio {...(vert ? RATIO_PORTRAIT : RATIO_LANDSCAPE)} max={13} />
+        </button>
+        {/* ★★**별표만 보기** (2026-08-22 에 걷었다가 사용자 지시로 되살렸다 2026-08-25).
+            뽑은 장이 수십이 되면 마음에 든 것을 다시 찾는 데 시간이 든다 — 별을 달아 두고
+            그것만 본다.
+            ★거르는 중에는 **개수를 안 적는다** — 「전체 보기 (3)」 은 3장이 전부라는 말로 읽힌다.
+            ★★거르기는 `visibleTakes` **하나**가 한다 — 줄과 큰 그림이 같은 목록을 봐야
+              휠로 넘길 때 걸러진 장이 큰 그림에 뜨지 않는다. */}
+        <button
+          data-star-filter
+          data-on={starOnly ? "" : undefined}
+          onClick={() => useUi.getState().setLaneStarOnly(!starOnly)}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 3,
+            height: 22,
+            padding: "0 var(--sp-2)",
+            borderRadius: "var(--r-1)",
+            border: `1px solid ${starOnly ? "var(--warn)" : "transparent"}`,
+            color: starOnly ? "var(--warn)" : "var(--ink-faint)",
+            fontSize: "var(--text-2xs)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {starOnly ? Icon.star12On : Icon.star12}
+          {starOnly ? t("canvas.starAll") : `${t("canvas.starOnly")} (${starCount})`}
         </button>
         <b style={{ fontSize: "var(--text-2xs)", color: "var(--ink-dim)" }}>{t("scenes.title")}</b>
         {/* ★씬 프롬프트가 payload 의 **어디로 들어가나** — 왼쪽 컨테이너 이름(베이스 프롬프트 /
@@ -866,6 +902,8 @@ export function SceneLane() {
                 onPick={pick}
                 onPickPending={(cellId, id) => useSceneFocus.getState().focusPending(cellId, id)}
                 takes={takesOfCell}
+                isStarred={isStarred}
+                onStar={toggleStar}
                 queuedOf={(cellId) => queued.filter((p) => p.cellId === cellId)}
                 /* ★★**서버가 말하는 씬**의 대기 칸에 「생성 중」을 붙인다 (2026-08-25).
                    예전에는 `queued[0]`(내 목록의 맨 앞)을 찍었는데, 배치가 겹치면 그 순서가
@@ -1160,6 +1198,9 @@ type GroupProps = {
   /** ★만들어지는 중인 칸을 고른다 — 프리뷰는 빈 화면이 된다 */
   onPickPending: (cellId: string, id: string) => void;
   takes: (c: Slot) => Rec[];
+  /** 별표 — ★갤러리(보관함)의 별표와 다른 것이다 (`store/workspace` 의 `selection`) */
+  isStarred: (f: string) => boolean;
+  onStar: (f: string) => void;
   queuedOf: (cellId: string) => { id: string }[];
   firstWaiting: string | null;
   /** 스크롤 컨테이너의 보이는 구간 (가로). 이 밖의 칸은 안 그린다 */
@@ -1947,7 +1988,33 @@ function SceneRow(
                 >
                   {t("scenes.unsaved")}
                 </span>
-              ) : null}
+              ) : (
+                /* ★★**썸네일 위의 별** (2026-08-22 에 걷었다가 되살렸다 2026-08-25).
+                   ★평소에는 **안 보이고**(`opacity: 0`), 커서를 올리거나 별이 달려 있을 때만
+                     보인다 — 늘 떠 있으면 수십 장이 별 밭이 된다 (`.thumb-star` 규칙).
+                   ★12px 은 썸네일 위에서 작았다 → 18px (사용자 지시 2026-08-18).
+                   ★미저장 그림에는 안 붙는다 — 별표는 **파일 경로**로 저장되므로 아직
+                     파일이 아닌 것에는 달 자리가 없다 (위 갈래가 그것을 가른다). */
+                <span
+                  data-take-star={r.file}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    p.onStar(r.file);
+                  }}
+                  style={{
+                    position: "absolute",
+                    right: 1,
+                    top: 0,
+                    display: "grid",
+                    color: p.isStarred(r.file) ? "var(--warn)" : "rgba(255,255,255,0.8)",
+                    opacity: p.isStarred(r.file) ? 1 : 0,
+                    filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.7))",
+                  }}
+                  className="thumb-star"
+                >
+                  {p.isStarred(r.file) ? Icon.star18On : Icon.star18}
+                </span>
+              )}
             </button>
           );
         })}

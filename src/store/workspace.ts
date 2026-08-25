@@ -231,7 +231,11 @@ export type Spec = {
    *    덱의 캐릭터 카드(`cards.short.characters`). */
   tabs?: WsTab[];
   activeTab?: string;
-  selection: { deleted: string[] };
+  /** ★★**비파괴 선별** — 지움과 별표 두 갈래다. 별표는 2026-08-22 에 사용자 지시로
+   *  걷었다가 2026-08-25 에 되살렸다 (*"씬 히스토리에서 별표 표시하는 거랑 별표만 보기
+   *  기능 다시 되살려 줘"*). 갤러리(보관함)의 별표와는 **다른 것**이다 — 그쪽은 서버가
+   *  들고(`keep.py`) 워크스페이스를 넘나든다. */
+  selection: { deleted: string[]; starred?: string[] };
 };
 
 export type WsInfo = { name: string; id?: string | null; updatedAt?: string | null };
@@ -258,18 +262,21 @@ type S = {
 
   /** ★비파괴 선별 — 파일을 지우지 않고 목록에만 넣는다 (PeroPixfy 의 deletions 방식).
    *  원본이 살아 있어야 되돌릴 수 있다. */
-  setSelection: (kind: "deleted", files: string[], on: boolean) => void;
+  setSelection: (kind: "deleted" | "starred", files: string[], on: boolean) => void;
   /** 선별을 그때 상태로 되돌린다 — **되돌리기 로그가 담아 둔 길**이다 (`lib/undo`).
    *  화면에서 직접 부르지 않는다.
    *  ★옛 이름은 `undoSelection` 이었다. 그때는 이 파일이 자기 스택을 들고 있었는데,
    *    스택이 둘이면 부르는 쪽이 순서를 정하게 되고 그것이 곧 엉뚱한 것이 되살아나는 길이었다
    *    (사용자 지시 2026-08-22 로 전역 로그 하나가 됐다 — `lib/undo` 머리 ★★주). */
   restoreSelection: (
-    kind: "deleted",
+    kind: "deleted" | "starred",
     before: string[],
     trashed?: { file: string; at: string }[],
   ) => void;
   toggleDeleted: (file: string) => void;
+  /** 별표를 켜고 끈다 (씬 히스토리) — ★갤러리의 별표와 다른 자리다 */
+  toggleStar: (file: string) => void;
+  isStarred: (file: string) => boolean;
   /** 「새 탭으로 복제」 — 그림 한 장을 **씬 하나짜리 새 탭**으로 옮긴다 (원본은 그대로).
    *  돌려주는 것은 그림이 앉은 자리(새 파일 · 그 씬의 id). 만들 수 없으면 null.
    *
@@ -409,7 +416,7 @@ const newSpec = (name: string): Spec => ({
   //   달라서 첫 탭만 「탭 1」이었다. 이름을 짓는 말은 하나면 된다 (`chars.newName`).
   tabs: [{ id: "ch_1", name: t("tab.newName"), prompt: freshPrompt() }],
   activeTab: "ch_1",
-  selection: { deleted: [] },
+  selection: { deleted: [], starred: [] },
 });
 
 /** 옛 워크스페이스를 새 구조로 옮긴다 — **탭에 프롬프트가 없으면 spec.prompt 를 씨앗으로.**
@@ -795,12 +802,16 @@ export const useWs = create<S>((set, get) => ({
     set({ records: cur.map((x, i) => (i === at ? r : x)) });
     const spec = get().spec;
     if (!spec) return;
-    const { deleted } = spec.selection;
-    if (!deleted.includes(r.file)) return;
+    const { deleted, starred = [] } = spec.selection;
+    if (!deleted.includes(r.file) && !starred.includes(r.file)) return;
     set({
       spec: {
         ...spec,
-        selection: { ...spec.selection, deleted: deleted.filter((f) => f !== r.file) },
+        selection: {
+          ...spec.selection,
+          deleted: deleted.filter((f) => f !== r.file),
+          starred: starred.filter((f) => f !== r.file),
+        },
       },
     });
     queueSave(get);
@@ -813,14 +824,17 @@ export const useWs = create<S>((set, get) => ({
   setSelection(kind, files, on) {
     const spec = get().spec;
     if (!spec || files.length === 0) return;
-    const cur = spec.selection[kind];
+    const cur = spec.selection[kind] ?? [];
     const touched = new Set(files);
     const next = on
       ? [...cur, ...files.filter((f) => !cur.includes(f))]
       : cur.filter((f) => !touched.has(f));
     if (next.length === cur.length && on) return;
     // ★되돌리는 방법을 **그때 만들어** 로그에 담는다 (`lib/undo`)
-    pushUndo(t("common.undoHidden"), () => get().restoreSelection(kind, cur));
+    /* ★문구를 갈라 쓴다 — 별표를 되돌렸는데 「숨김을 되돌렸다」고 하면 무엇을 되돌렸는지가 어긋난다 */
+    pushUndo(t(kind === "starred" ? "common.undoStar" : "common.undoHidden"), () =>
+      get().restoreSelection(kind, cur),
+    );
     set({ spec: { ...spec, selection: { ...spec.selection, [kind]: next } } });
     queueSave(get);
   },
@@ -1009,6 +1023,13 @@ export const useWs = create<S>((set, get) => ({
     queueSave(get);
   },
   isDeleted: (file) => !!get().spec?.selection.deleted.includes(file),
+
+  toggleStar(file) {
+    get().setSelection("starred", [file], !get().isStarred(file));
+  },
+
+  /** ★`?? []` — 별표가 없던 시절에 저장된 워크스페이스에는 이 칸이 아예 없다 */
+  isStarred: (file) => !!get().spec?.selection.starred?.includes(file),
 
   activeSet: () => get().spec?.sets.find((t) => t.id === get().spec!.activeSet),
 

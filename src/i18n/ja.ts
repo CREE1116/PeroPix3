@@ -746,6 +746,7 @@ export const ja: Dict = {
     undoText: "テキスト編集",
     undoImages: "画像削除",
     undoHidden: "画像を隠す",
+    undoStar: "星を戻しました",
   },
 
   scenes: {

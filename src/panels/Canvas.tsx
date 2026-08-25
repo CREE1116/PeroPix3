@@ -510,7 +510,10 @@ function ScenePreview() {
   const startDrag = useDragSource();
   const { base } = useGen();
   const ws = useWs((s) => s.current);
-  const { records, activeSet, isDeleted } = useWs();
+  const { records, activeSet, isDeleted, isStarred } = useWs();
+  /** ★씨 줄과 **같은 거르기**를 건다 — 줄에서 안 보이는 장이 휠로
+   *  넘어오면 둘이 어긋난다 (`lib/sceneTakes` 의 거르기와 같은 규칙) */
+  const starOnly = useUi((u) => u.laneStarOnly);
   const cell = useSceneFocus((s) => s.cell);
   const file = useSceneFocus((s) => s.file);
   /** ★만들어지는 중인 칸을 골랐나 — 그때는 **빈 화면**이다 (안내 문구도 안 띄운다) */
@@ -538,6 +541,7 @@ function ScenePreview() {
     sceneSet && scene
       ? [...takesOfScene(merged, sceneSet, allCells(sceneSet), scene.cell)]
           .filter((r) => !isDeleted(r.file))
+          .filter((r) => !starOnly || isStarred(r.file))
           .reverse()
       : [];
   /** 지금 띄울 장 — ★**거르기 전 목록**에서 찾는다. 「별표만 보기」를 켜면 보고 있던 장이

@@ -246,6 +246,13 @@ type S = Persisted & {
   toggleLeft: () => void;
   toggleRight: () => void;
   /** 방금 바뀐 자리들 — 키를 담아 두고 잠깐 뒤 스스로 지운다 */
+  /** 씬 히스토리를 **별표만** 보여 주나 (2026-08-22 에 걷었다가 2026-08-25 에 되살렸다).
+   *
+   *  ★**저장하지 않는다** — 거르는 상태로 앱을 켜면 그림이 사라진 것처럼 보인다.
+   *  ★스토어에 두는 까닭은 **줄과 큰 그림이 다른 컴포넌트**라서다 (`sceneFocus` 와 같은
+   *    사정). 줄만 거르면 휠로 넘길 때 걸러진 장이 큰 그림에 떠서 둘이 어긋난다. */
+  laneStarOnly: boolean;
+  setLaneStarOnly: (v: boolean) => void;
   flashes: string[];
   /** 그중 **그 자리로 데려갈** 것 (`reveal(..., scroll)`) */
   flashScroll: string[];
@@ -381,6 +388,8 @@ export const useUi = create<S>((set, get) => ({
     set({ rightCollapsed: !get().rightCollapsed });
     get().commitLayout();
   },
+  laneStarOnly: false,
+  setLaneStarOnly: (v) => set({ laneStarOnly: v }),
   flashes: [],
   flashScroll: [],
   reveal: (side, key, scroll = false) => {
