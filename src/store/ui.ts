@@ -100,6 +100,11 @@ type Persisted = {
   /** 파일 관리의 보기 — 썸네일 격자 / 이름·크기·수정일 목록 (v2 `fmViewThumbnail`·`fmViewList`) */
   fmView: "grid" | "list";
   /** 변환이 끝나면 저장한 폴더를 연다 (v2 `convertOpenFolder`, 기본 켬) */
+  /** ★★**그리는 중인 그림을 보여 줄까** (사용자 지시 2026-08-26, 기본 켬).
+   *  NAI 가 생성 중에 흘려 주는 프레임을 대기 칸과 큰 그림에 깐다.
+   *  ★**결과는 달라지지 않는다** — 보는 방식만 달라진다. 그래서 생성 옵션(`gen.params`)이
+   *    아니라 화면 설정에 둔다: 탭마다 갈릴 값이 아니고, 그림에도 안 남는다. */
+  streamPreview: boolean;
   convertOpenFolder: boolean;
   /** 씬 줄의 PIP — 칸에 커서를 올리면 그 장이 떠 있는 창에 크게 뜬다 (v2 `pipModeEnabled`) */
   /** ★인핸스 창을 **마지막에 쓴 강도로** 연다 (v2 `enhanceLast`, index.html:24045).
@@ -182,6 +187,7 @@ const DEFAULTS: Persisted = {
   tagSuggest: true,
   weightHl: true,
   fmView: "grid",
+  streamPreview: true,
   convertOpenFolder: true,
   // v2 `enhanceLast` 의 초기값 그대로 (magnitude 3 = strength 0.5 · noise 0)
   enhanceLast: { mag: 3, adv: false, strength: 0.5, noise: 0 },
@@ -250,6 +256,7 @@ type S = Persisted & {
   setEnhanceLast: (v: { mag: number; adv: boolean; strength: number; noise: number }) => void;
   /** 일괄 변환의 마지막 설정을 얹는다 (한 칸씩 바뀐다) */
   setConvertLast: (v: Partial<Persisted["convertLast"]>) => void;
+  setStreamPreview: (v: boolean) => void;
   /** 그 방향에서 마지막에 고른 크기를 적어 둔다 */
   setSizeLast: (dir: "landscape" | "portrait" | "square", wh: [number, number]) => void;
   setLaneSide: (v: "bottom" | "right") => void;
@@ -393,6 +400,10 @@ export const useUi = create<S>((set, get) => ({
     get().commitLayout();
   },
   /** ★한 칸씩 바뀌므로 **덮어쓰지 않고 얹는다** */
+  setStreamPreview: (v) => {
+    set({ streamPreview: v });
+    get().commitLayout();
+  },
   setConvertLast: (v) => {
     set({ convertLast: { ...get().convertLast, ...v } });
     get().commitLayout();
@@ -451,7 +462,7 @@ export const useUi = create<S>((set, get) => ({
     const { leftWidth, rightWidth, leftCollapsed, rightCollapsed, cols, laneSize, laneHeadW,
       laneHeight, font, aiWidth, aiCollapsed,
       notifyDone, notifySound, notifyVolume, perSlot, curated, agentAuto, agentAskHard,
-      tagSuggest, weightHl, fmView, convertOpenFolder, enhanceLast, convertLast, sizeLast,
+      tagSuggest, weightHl, fmView, streamPreview, convertOpenFolder, enhanceLast, convertLast, sizeLast,
       laneSide, laneWidth, laneHeadH, view } = get();
     try {
       localStorage.setItem(
@@ -478,6 +489,7 @@ export const useUi = create<S>((set, get) => ({
           tagSuggest,
           weightHl,
           fmView,
+          streamPreview,
           convertOpenFolder,
           enhanceLast,
           convertLast,

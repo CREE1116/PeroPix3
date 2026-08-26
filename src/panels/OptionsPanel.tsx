@@ -23,6 +23,8 @@ export function OptionsPanel() {
   const p = useGen((s) => s.params);
   const set = useGen((s) => s.set);
   const t = useI18n((s) => s.t);
+  /** 그리는 중인 그림 보기 — ★생성 옵션이 아니라 **화면 설정**이다 (아래 ★★주) */
+  const stream = useUi((u) => u.streamPreview);
   /** 값 하나를 **되돌릴 수 있게** 바꾼다 (사용자 지시 2026-08-22:
    *  *"생성옵션 패널에 있는 숫자, 텍스트 입력은 전부 undo 리스트에 들어가야함"*).
    *
@@ -76,11 +78,21 @@ export function OptionsPanel() {
               {/* ★V5 에는 Variety+ 자체가 없다 (`cfgDelay` 거짓) — 서버가 값을 지운다.
                   ★그러면 묶음도 **통째로 안 낸다** — 넷이 빠져 나가면서 이 묶음에 남은 것이
                     Variety+ 하나뿐이라, 이름표만 선 빈 칸이 된다 */}
-              {cap.cfg_delay && (
-                <Group label={t("options.misc")}>
+              {/* ★★**그리는 중인 그림 보기** (사용자 지시 2026-08-26). 여기 있는 다른 값과 달리
+                  **결과를 바꾸지 않는다** — 보는 방식이라 화면 설정에 담긴다
+                  (`useUi.streamPreview`, 탭마다 갈리지 않고 그림에도 안 남는다).
+                  ★그래도 자리는 여기다: 생성할 때의 이야기라 여기서 찾는다. */}
+              <Group label={t("options.misc")}>
+                <Check
+                  label={t("options.streamPreview")}
+                  checked={stream}
+                  onChange={(v) => useUi.getState().setStreamPreview(v)}
+                />
+                {/* ★V5 에는 Variety+ 자체가 없다 (`cfgDelay` 거짓) — 서버가 값을 지운다 */}
+                {cap.cfg_delay && (
                   <Check label={t("options.varietyPlus")} checked={p.variety_plus} onChange={(v) => set("variety_plus", v)} />
-                </Group>
-              )}
+                )}
+              </Group>
         </div>
       </Category>
 

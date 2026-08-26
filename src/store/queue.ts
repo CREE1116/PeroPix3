@@ -62,6 +62,14 @@ type S = {
   /** 상태 문구용 — 진행률만으로는 「실패」와 「완료」를 가를 수 없다 */
   phase: QueuePhase;
   pending: Pending[];
+  /** ★★**그리는 중인 중간 그림** — 칸별 최신 한 장 (사용자 지시 2026-08-26).
+   *
+   *  ★열쇠는 **칸**(`cell_id`)이다: 어느 대기 칸 위에 그릴지가 그것으로 정해진다.
+   *  ★한 장만 든다 — 프레임은 계속 오고, 지난 것은 볼 일이 없다 (몇백 KB 짜리 base64 라
+   *    쌓아 두면 메모리가 는다).
+   *  ★그림이 나오면 **지운다** (`consumePending`) — 끝난 칸에 중간 그림이 남으면
+   *    완성본 위에 흐린 미리보기가 겹친다. */
+  steps: Record<string, string>;
   /** 이미 화면에 반영한 seq — 중복 렌더 방지의 근거 */
   seen: Set<number>;
   lastSeq: number;
@@ -133,6 +141,7 @@ export const useQueue = create<S>((set, get) => ({
   progress: EMPTY,
   phase: "idle",
   pending: [],
+  steps: {},
   seen: new Set(),
   lastSeq: 0,
   error: "",
@@ -218,7 +227,11 @@ export const useQueue = create<S>((set, get) => ({
       await api("/api/generate/queue", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ base, items, count }),
+        /* ★★**그리는 중인 그림을 흘려 줄까** (`useUi.streamPreview`, 사용자 지시 2026-08-26).
+           서버는 이 값으로 스트리밍 주소를 쓸지 정한다 (`backend/nai.generate_streaming`).
+           ★끄면 결과는 그대로고 중간 그림만 안 온다 — **보는 방식**이라 매 요청에 실어 보낸다
+             (탭마다 갈릴 값이 아니라 지금 화면 설정이다). */
+        body: JSON.stringify({ base: { ...base, stream: useUi.getState().streamPreview }, items, count }),
       });
     } catch (e) {
       // 보내지 못했으면 잡아 둔 자리를 도로 뺀다
@@ -766,6 +779,16 @@ function handle(m: Record<string, any>, set: Setter, get: () => S) {
       batchOk++;
       break;
     }
+    /* ★★**그리는 중인 그림** (사용자 지시 2026-08-26) — 서버가 NAI 스트림에서 받은 프레임을
+       그대로 넘긴다 (`backend/server.py` 의 `image_step`). 그 칸 위에 덮어 그린다. */
+    case "image_step": {
+      const cell = String(m.cell_id ?? "");
+      if (!cell || !m.b64) break;
+      // ★다른 워크스페이스의 것은 이 화면과 무관하다 (큐는 앱 전체가 공유한다)
+      if (m.workspace && m.workspace !== useWs.getState().current) break;
+      set({ steps: { ...get().steps, [cell]: `data:image/png;base64,${m.b64}` } });
+      break;
+    }
     case "image":
       render(m, set, get);
       batchOk++;
@@ -944,6 +967,13 @@ function applyStatus(status: Record<string, any> | undefined, set: Setter, get: 
 /** 이 장에 해당하는 대기 하나를 지운다 (같은 슬롯의 맨 앞 것).
  *  ★저장된 그림과 미저장 그림이 **같이 쓴다** — 어느 쪽이든 대기 칸은 하나 줄어야 한다. */
 function consumePending(m: Record<string, any>, set: Setter, get: () => S) {
+  /* ★그 칸의 중간 그림을 놓는다 — 완성본이 왔는데 남겨 두면 그 위에 흐린 미리보기가 겹친다 */
+  const cell = String(m.cell_id ?? "");
+  if (cell && get().steps[cell]) {
+    const steps = { ...get().steps };
+    delete steps[cell];
+    set({ steps });
+  }
   const pend = get().pending;
   const at = pend.findIndex(
     (p) => p.setId === (m.set_id ?? null) && p.cellId === (m.cell_id ?? null),

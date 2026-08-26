@@ -531,6 +531,8 @@ function ScenePreview() {
   const pendingSel = useSceneFocus((s) => s.pending);
   /** 지금 대기 중인 칸들 — 휠이 이것도 지나간다 (아래 `walk` 의 ★★주) */
   const queued = useQueue((q) => q.pending);
+  /** 지금 고른 칸에 **그리는 중인 그림** (`store/queue` 의 `steps`) */
+  const stepImg = useQueue((q) => (cell ? (q.steps[cell] ?? "") : ""));
   const previews = usePreviews((s) => s.items);
 
   /* ★캐릭터 배치 — 큰 그림 위에 판을 겹친다 (`CharPositioner` 머리 주석).
@@ -768,10 +770,22 @@ function ScenePreview() {
             fontSize: "var(--text-md)",
           }}
         >
-          {/* ★★만들어지는 중인 칸을 골랐으면 **빈 화면**이다 (사용자 지시 2026-08-22) —
-              「골라 주세요」를 띄우면 안 고른 것처럼 보인다. 골라 둔 자리가 맞다는 것은
-              씬 칸 쪽의 표시가 말해 준다. */}
-          {pendingSel ? null : tr("scenes.pickOne")}
+          {/* ★★**그리는 중이면 그 그림을 띄운다** (사용자 지시 2026-08-26). 대기 칸을 골라 둔
+              사람은 «그 자리에 무엇이 나오나»를 보고 있는 것이라, 큰 자리가 비어 있으면
+              기다림이 그대로 빈 화면이다. 씬 줄의 칸에 까는 것과 **같은 그림**이다
+              (`store/queue` 의 `steps`).
+              ★★만들어지는 중인 칸을 골랐는데 **아직 첫 프레임도 안 왔으면** 빈 화면이다
+                (사용자 지시 2026-08-22) — 「골라 주세요」를 띄우면 안 고른 것처럼 보인다. */}
+          {stepImg ? (
+            <img
+              data-scene-step
+              src={stepImg}
+              alt=""
+              style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", opacity: 0.92 }}
+            />
+          ) : pendingSel ? null : (
+            tr("scenes.pickOne")
+          )}
         </div>
       )}
 

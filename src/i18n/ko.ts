@@ -417,6 +417,7 @@ export const ko: Dict = {
     qpLight: "Light",
     qpNone: "None",
     varietyPlus: "Variety+",
+    streamPreview: "그리는 중인 그림 보기",
     transparentBg: "Transparent BG",
     transparentBgHint: "프롬프트에 transparent background 를 넣고 알파를 살려 받는다. V5 부터 된다.",
   },

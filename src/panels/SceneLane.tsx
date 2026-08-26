@@ -514,6 +514,8 @@ export function SceneLane() {
    *  서버가 지금 만들고 있는 씬 — 이 세트의 것일 때만 쓴다 (`store/queue` 의 `current_cell`) */
   /** ★「별표만 보기」 — 훅이라 **이른 반환보다 위**에 둔다 (바로 아래 `nowCell` 의 ★★주) */
   const starOnly = useUi((u) => u.laneStarOnly);
+  /** 칸별 **그리는 중인 그림** — 훅이라 이른 반환보다 위에 둔다 */
+  const steps = useQueue((q) => q.steps);
   const nowCell = useQueue((q) =>
     q.progress.current_cell && q.progress.current_cell.set_id === tab?.id
       ? q.progress.current_cell.cell_id
@@ -901,6 +903,11 @@ export function SceneLane() {
           /* ★올리는 것은 **줄 전체**다 (위 `boxRef`) — 물들이는 것은 카드 위에 뜨는
              겹이 한다 (`data-set-drop-hint`), 바탕을 칠하면 카드에 가린다 */
           background: "var(--bg)",
+          /* ★★**머리에서 한 칸 띄운다** (사용자 지시 2026-08-26: *"세로 모드일 때 씬 카드가
+             씬 헤드랑 딱 붙어 있음. 가로 모드일 때처럼 간격 벌려 줘"*).
+             아래 모드에서는 카드 배너가 머리줄 **아래로 이어져** 한 기둥으로 읽히는데,
+             세로 모드에서는 머리가 옆에 서므로 그냥 두면 두 덩이가 맞붙는다. */
+          ...(vert ? { paddingLeft: GAP } : null),
         }}
       >
         {!tab.cards.length ? (
@@ -938,6 +945,7 @@ export function SceneLane() {
                 onPick={pick}
                 onPickPending={(cellId, id) => useSceneFocus.getState().focusPending(cellId, id)}
                 takes={takesOfCell}
+                stepOf={(id) => steps[id] ?? ""}
                 isStarred={isStarred}
                 onStar={toggleStar}
                 queuedOf={(cellId) => queued.filter((p) => p.cellId === cellId)}
@@ -1234,6 +1242,8 @@ type GroupProps = {
   /** ★만들어지는 중인 칸을 고른다 — 프리뷰는 빈 화면이 된다 */
   onPickPending: (cellId: string, id: string) => void;
   takes: (c: Slot) => Rec[];
+  /** 그 칸에 그리는 중인 중간 그림 (없으면 빈 문자열) — `store/queue` 의 `steps` */
+  stepOf: (cellId: string) => string;
   /** 별표 — ★갤러리(보관함)의 별표와 다른 것이다 (`store/workspace` 의 `selection`) */
   isStarred: (f: string) => boolean;
   onStar: (f: string) => void;
@@ -1920,6 +1930,19 @@ function SceneRow(
                 fontSize: 11,
                 cursor: "pointer",
                 color: on || run ? "var(--accent)" : "var(--ink-faint)",
+                /* ★★**그리는 중인 그림을 칸에 깐다** (사용자 지시 2026-08-26). NAI 가 흘려 준
+                   중간 프레임이다 (`store/queue` 의 `steps`) — 기다리는 동안 무엇이 나오고
+                   있는지가 보이고, 잘못 가고 있으면 일찍 끊을 수 있다.
+                   ★글자는 그 위에 남는다 (「생성 중」) — 아직 끝난 것이 아니기 때문이다. */
+                ...(p.stepOf(c.id)
+                  ? {
+                      backgroundImage: `url(${p.stepOf(c.id)})`,
+                      backgroundSize: "cover",
+                      backgroundPosition: "center",
+                      color: "#fff",
+                      textShadow: "0 1px 3px rgba(0,0,0,0.8)",
+                    }
+                  : null),
               }}
             >
               {run ? t("slots.running") : t("slots.queued")}

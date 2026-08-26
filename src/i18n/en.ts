@@ -407,6 +407,7 @@ export const en = {
     qpLight: "Light",
     qpNone: "None",
     varietyPlus: "Variety+",
+    streamPreview: "Show the image as it draws",
     transparentBg: "Transparent BG",
     transparentBgHint: "Adds \"transparent background\" to the prompt and keeps the alpha channel. V5 only.",
   },

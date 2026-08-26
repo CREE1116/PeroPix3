@@ -405,6 +405,7 @@ export const ja: Dict = {
     qpLight: "軽い",
     qpNone: "なし",
     varietyPlus: "Variety+",
+    streamPreview: "描画中の画像を見る",
     transparentBg: "透過背景",
     transparentBgHint: "プロンプトに transparent background を追加し、アルファを保持します。V5 のみ。",
   },

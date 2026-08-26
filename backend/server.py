@@ -297,6 +297,10 @@ class RestoreBody(BaseModel):
 
 
 class GenBody(BaseModel):
+    #: ★★**중간 그림을 흘려 볼까** (사용자 지시 2026-08-26, 기본 켬). NAI 가 생성 중에
+    #   주는 프레임을 그대로 앱에 넘긴다 (`nai.generate_streaming`). 꺼도 결과는 같다 —
+    #   **보는 방식**만 달라진다. 화면이 옵션으로 켜고 끈다.
+    stream: bool = True
     # 어디에 저장할지
     workspace: str = "새 작업"
     # ★세트 이름 — 저장 경로 한 칸이 된다 (`docs/terms-plan.md` 의 낱말표)
@@ -1242,7 +1246,23 @@ async def _generate_one(body: GenBody) -> dict:
     # ★vibe 인코딩은 **조립 전에** 한다 — 유료 호출이라 캐시 판정이 여기서 끝나야 한다
     await nai.encode_vibes(req, nai_token(), vibes)
     payload = nai.build_payload(req)
-    png, seed = await nai.generate_with_payload(payload, nai_token())
+    if body.stream:
+        # ★★**중간 그림을 흘린다** — 그리는 동안 보여 주면 기다림이 짧게 느껴지고, 잘못 가고
+        #   있으면 일찍 끊을 수 있다. 앞 몇 스텝은 `nai` 가 건너뛴다 (잡음이라 오해를 부른다).
+        # ★칸을 지목해 보낸다 — 어느 대기 칸 위에 그릴지는 그 열쇠로 정해진다
+        async def _step(img: bytes, step: int) -> None:
+            await Q.broadcast({
+                "type": "image_step",
+                "workspace": body.workspace,
+                "set_id": body.set_id, "cell_id": body.cell_id,
+                "step": step,
+                # ★프레임은 그림 **바이트**다 (zip 이 아니다) — 화면이 바로 걸 수 있게 실어 보낸다
+                "b64": base64.b64encode(img).decode("ascii"),
+            })
+
+        png, seed = await nai.generate_streaming(payload, nai_token(), _step)
+    else:
+        png, seed = await nai.generate_with_payload(payload, nai_token())
 
     # ★인페인트 결과를 **보낸 원본 위에 소프트 마스크로 되붙인다** (7절).
     #   NAI 결과는 마스크 밖도 미세하게 달라져서, 그대로 저장하면 고치지 않은 자리가 바뀐다.

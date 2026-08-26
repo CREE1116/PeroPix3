@@ -11,6 +11,8 @@
 from __future__ import annotations
 
 import io
+import json
+from collections.abc import Awaitable, Callable
 import math
 import random
 import re
@@ -894,6 +896,85 @@ async def generate_with_payload(payload: dict, token: str) -> tuple[bytes, int]:
         # 응답은 이미지 한 장이 든 zip 이다.
         with zipfile.ZipFile(io.BytesIO(res.content)) as zf:
             return zf.read(zf.namelist()[0]), seed
+
+
+#: ★★**스트리밍 엔드포인트** — 평범한 생성과 **주소가 다르다** (공홈 번들 실측 2026-08-26:
+#   `/ai/generate-image-stream`). 여기로 보내면서 `parameters.stream = "msgpack"` 을 얹으면
+#   중간 그림이 흘러온다.
+STREAM_ENDPOINT = "https://image.novelai.net/ai/generate-image-stream"
+
+#: ★앞 몇 스텝은 버린다 — 공홈도 그렇게 한다 (`5 * !rawIntermediates`). 초반 몇 장은
+#  형태가 안 잡힌 잡음이라, 보여 주면 「망했나」로 읽힌다.
+STREAM_SKIP_STEPS = 5
+
+
+async def generate_streaming(
+    payload: dict,
+    token: str,
+    on_step: Callable[[bytes, int], Awaitable[None]] | None = None,
+) -> tuple[bytes, int]:
+    """생성하면서 **중간 그림을 흘려준다** (사용자 지시 2026-08-26).
+
+    ★★규격은 공홈 번들에서 그대로 읽었다 (`reference/nai-web-2026-08-21`):
+      · 주소가 다르다 (`/ai/generate-image-stream`) · `parameters.stream = "msgpack"`
+      · 몸통은 **길이 접두 msgpack 프레임**의 연속이다:
+          `4바이트 빅엔디언 길이` + 그만큼의 msgpack 맵
+      · 맵의 `event_type` 이 셋이다
+          `intermediate` → `image`(바이트) · `samp_ix` · `step_ix`
+          `final`        → `image` · `samp_ix`
+          `error`        → `message` · `samp_ix`
+      · `step_ix` 가 되돌아가는 프레임은 **버린다** (순서가 뒤집혀 오는 일이 있다)
+
+    ★**끝 그림은 zip 이 아니라 이미지 바이트 그대로** 온다 — 평범한 경로(zip)와 다르다.
+    ★중간 그림을 흘리다 실패해도 생성 자체는 이어 간다 (`on_step` 의 예외를 삼킨다) —
+      미리보기 때문에 그림을 잃으면 안 된다.
+    """
+    if not token:
+        raise RuntimeError("NAI 토큰이 설정되지 않았습니다.")
+    import msgpack
+
+    body = json.loads(json.dumps(payload))          # 원본을 안 건드린다 (기록에 남는 것이다)
+    body.setdefault("parameters", {})["stream"] = "msgpack"
+    seed = body["parameters"]["seed"]
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+    buf = bytearray()
+    best: dict[int, int] = {}                        # samp_ix → 지금까지 본 가장 늦은 step
+    final: bytes | None = None
+    async with httpx.AsyncClient(timeout=300) as client:
+        async with client.stream("POST", STREAM_ENDPOINT, headers=headers, json=body) as res:
+            if res.status_code != 200:
+                raw = await res.aread()
+                raise RuntimeError(f"NAI API {res.status_code}: {raw[:500].decode('utf-8', 'replace')}")
+            async for chunk in res.aiter_bytes():
+                buf += chunk
+                while len(buf) >= 4:
+                    size = int.from_bytes(buf[:4], "big")
+                    if len(buf) < 4 + size:
+                        break
+                    frame, buf[:] = buf[4:4 + size], buf[4 + size:]
+                    try:
+                        ev = msgpack.unpackb(bytes(frame), raw=False)
+                    except Exception as e:
+                        print(f"[nai] 스트림 프레임을 못 읽었습니다 (건너뜀): {e}")
+                        continue
+                    kind = ev.get("event_type")
+                    if kind == "error":
+                        raise RuntimeError(f"NAI 스트림 오류: {ev.get('message')}")
+                    if kind == "final":
+                        final = bytes(ev.get("image") or b"")
+                    elif kind == "intermediate" and on_step:
+                        ix, step = int(ev.get("samp_ix", 0)), int(ev.get("step_ix", 0))
+                        if step < STREAM_SKIP_STEPS or step <= best.get(ix, -1):
+                            continue          # 초반 잡음이거나 뒤집혀 온 프레임
+                        best[ix] = step
+                        try:
+                            await on_step(bytes(ev.get("image") or b""), step)
+                        except Exception as e:
+                            print(f"[nai] 중간 그림 전달 실패 (무시): {e}")
+    if not final:
+        raise RuntimeError("NAI 스트림이 끝 그림 없이 닫혔습니다.")
+    return final, seed
 
 
 async def generate(req: GenRequest, token: str) -> tuple[bytes, int]:
