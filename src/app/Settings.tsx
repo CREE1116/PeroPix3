@@ -39,6 +39,8 @@ export function Settings({
   const setTheme = useTheme((s) => s.set);
   const font = useUi((s) => s.font);
   const setFont = useUi((s) => s.setFont);
+  /** 그리는 중인 그림 보기 — ★결과를 바꾸지 않는 **보는 방식**이라 여기 산다 */
+  const stream = useUi((s) => s.streamPreview);
   const notify = useUi((s) => s.notifyDone);
   const sound = useUi((s) => s.notifySound);
   const setSound = useUi((s) => s.setNotifySound);
@@ -292,6 +294,22 @@ export function Settings({
                 </Group>
 
                 <Group label={t("settings.queue")} help={t("settings.notifyHint")}>
+                  {/* ★★**그리는 중인 그림 보기** (사용자 지시 2026-08-26:
+                      *"스트리밍 온오프 옵션은 생성부가 아니고 옵션 패널에 넣어"*).
+                      한때 생성 옵션 패널에 있었는데, 거기 있는 값들과 달리 **결과를 바꾸지
+                      않는다** — 알림·소리와 같은 성격이라 이 묶음이 제자리다. */}
+                  <label
+                    style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", cursor: "pointer" }}
+                    title={t("settings.streamPreviewHint")}
+                  >
+                    <input
+                      type="checkbox"
+                      data-stream-preview
+                      checked={stream}
+                      onChange={(e) => useUi.getState().setStreamPreview(e.target.checked)}
+                    />
+                    {t("settings.streamPreview")}
+                  </label>
                   <label
                     style={{
                       // ★누를 자리는 **글자 끝까지만** (빈 곳을 눌러도 켜지지 않게)
