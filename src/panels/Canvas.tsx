@@ -107,6 +107,15 @@ function SceneStage() {
     grip.current?.addEventListener("pointerup", up);
   };
 
+  /** 씬 줄과 큰 그림 사이의 **크기 손잡이**.
+   *
+   *  ★★**보이는 알갱이를 걷었다** (사용자 지시 2026-08-26: *"핸들러는 안 보이게 하고 그냥
+   *    경계선을 핸들러 삼아 조정하게. 해당 핸들러 때문에 여백이 너무 크게 생김"*).
+   *    11px 짜리 띠에 위쪽 여백까지 붙어 있어, 손잡이 하나가 두 줄 사이를 크게 벌렸다.
+   *  ★대신 **경계선 자체**가 손잡이다: 두께 1px 의 선을 그리되, 잡는 자리는 그 선을 중심으로
+   *    양쪽 4px 씩(총 9px)이다 — 보이는 것은 선이고 잡히는 것은 그보다 넓다.
+   *    ★`margin` 을 음수로 줘서 **자리를 안 먹는다** — 그래야 여백이 안 는다.
+   *  ★커서 모양이 「여기를 끌 수 있다」를 말한다 (선을 두껍게 만들지 않는다). */
   const handle = (
     <div
       ref={grip}
@@ -114,20 +123,21 @@ function SceneStage() {
       onPointerDown={drag}
       style={{
         flexShrink: 0,
-        ...(side
-          ? { width: 11, margin: "var(--sp-3) 0 0", cursor: "col-resize" }
-          : { height: 11, margin: "var(--sp-3) var(--sp-4) 0", cursor: "row-resize" }),
-        display: "grid",
-        placeItems: "center",
         position: "relative",
+        zIndex: 2,
+        ...(side
+          ? { width: 9, margin: "0 -4px", cursor: "col-resize" }
+          : { height: 9, margin: "-4px 0", cursor: "row-resize" }),
       }}
     >
+      {/* ★보이는 것은 **선 하나**다 — 손잡이 한가운데에 둔다 */}
       <span
         style={{
-          ...(side ? { width: 5, height: 44 } : { width: 44, height: 5 }),
-          borderRadius: 3,
-          background: "var(--line-strong)",
-          opacity: 0.85,
+          position: "absolute",
+          background: "var(--line)",
+          ...(side
+            ? { top: 0, bottom: 0, left: 4, width: 1 }
+            : { left: 0, right: 0, top: 4, height: 1 }),
         }}
       />
     </div>

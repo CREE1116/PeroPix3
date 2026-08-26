@@ -489,11 +489,42 @@ function migrate(spec: Spec): Spec {
     tabList = [{ id: "ch_1", name: t("tab.newName"), prompt: { base: defaultBase(), baseUc: defaultUc() } }];
     changed = true;
   }
+  /* ★★**세트가 하나도 없는 탭을 두지 않는다** (사용자 지시 2026-08-26: *"세트가 하나도 없으면
+       생성이 불가능하기 때문에, 탭과 세트가 하나도 없는 상태가 되면 무조건 기본값을 만들어
+       줘야 할 듯"*). 실제로 그런 워크스페이스가 나왔다 (조수가 테스트하다 지운 것으로 보인다).
+     ★지우는 창구는 마지막 세트를 막고 있지만(`planRemove` 의 `last_set`), 막는 것과 **고치는
+       것**은 다르다 — 이미 그렇게 된 파일은 아무도 되돌려 주지 않았다. 여는 자리에서 메운다.
+     ★모양은 새 워크스페이스·새 탭의 세트와 **같다**: 카드 없이 시작한다 (사용자 지시
+       2026-08-20). 탭이 생기는 길마다 기본값이 갈리지 않게 여기서도 같은 모양을 쓴다. */
+  for (const c of tabList) {
+    if (sets2.some((x) => x.kind === "set" && (x as { tabId?: string }).tabId === c.id)) continue;
+    sets2 = [
+      ...sets2,
+      {
+        id: "tab_" + Math.random().toString(36).slice(2, 8),
+        kind: "set",
+        name: t("set.newSet"),
+        tabId: c.id,
+        idOnly: true,
+        cards: [],
+        cellSeq: 0,
+        cardSeq: 0,
+      } as SceneSet,
+    ];
+    changed = true;
+  }
   const activeTab = spec.activeTab && tabList.some((c) => c.id === spec.activeTab)
     ? spec.activeTab
     : tabList[0].id;
   if (activeTab !== spec.activeTab) changed = true;
-  return changed ? { ...spec, sets: sets2, tabs: tabList, activeTab } : spec;
+  /* ★활성 세트도 **살아 있는 것**을 가리켜야 한다 — 없어진 것을 가리키면 화면이 빈 채로 뜨고,
+     생성은 「열려 있는 세트가 없습니다」로 막힌다. 그 탭의 첫 세트로 되돌린다. */
+  const mine = sets2.filter((x) => x.kind === "set" && (x as { tabId?: string }).tabId === activeTab);
+  const activeSet = spec.activeSet && sets2.some((x) => x.id === spec.activeSet)
+    ? spec.activeSet
+    : (mine[0]?.id ?? sets2[0]?.id ?? spec.activeSet);
+  if (activeSet !== spec.activeSet) changed = true;
+  return changed ? { ...spec, sets: sets2, tabs: tabList, activeTab, activeSet } : spec;
 }
 
 /** 선별 되돌리기 스택 — **서버에 저장하지 않는다.**
