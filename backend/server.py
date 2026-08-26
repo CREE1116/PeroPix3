@@ -1576,6 +1576,17 @@ async def _process_job(job: dict) -> None:
                                    "progress": Q.progress()})
                 continue
             msg = {"type": "image", "job_id": job_id, **r}
+            # ★★**썸네일을 미리 구워 둔다** (사용자 지적 2026-08-26: *"생성 완료 알림이 오고
+            #   1초 정도 지나야 이미지가 뜸"*). 화면이 쓰는 것은 원본이 아니라 파생 썸네일인데
+            #   (`/api/thumb`), 그것이 **첫 요청 때** 구워졌다 — 열고·디코드하고·LANCZOS 로
+            #   줄이고·webp 로 다시 쓰는 값을 **알림을 본 뒤에** 치르는 셈이었다.
+            #   ★알림보다 **먼저** 굽는다: 「완료」가 곧 「띄울 수 있다」가 된다.
+            #   ★굽다 실패해도 그냥 넘어간다 — 요청 때 다시 구우면 되고(예전 경로 그대로),
+            #     여기서 막으면 그림 자체를 못 받는다.
+            try:
+                await asyncio.to_thread(store.thumb_path, r.get("workspace", ""), r["file"])
+            except Exception as e:
+                print(f"[queue] 썸네일 미리 굽기 실패 (무시): {e}")
             # ★seq 를 먼저 부여하고(사본 저장), 그 뒤에 progress 를 덧붙인다.
             #   순서를 바꾸면 복원분에 그때그때의 진행률이 섞여 들어간다.
             Q.add_completed_image(msg)
