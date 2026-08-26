@@ -460,6 +460,8 @@ export const en = {
     ready: "Downloaded. It applies when you restart.",
     restart: "Restart now",
     cancel: "Cancel",
+    restartBusy: "Restart now?",
+    restartBusyBody: "A generation is running. Restarting now discards it, and the Anlas already spent will not come back.",
     applying: "Installing. The app will restart shortly.",
     building: "v{v} is still being built. Check again in a moment.",
     notes: "Release notes",

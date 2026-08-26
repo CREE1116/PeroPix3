@@ -44,10 +44,24 @@ fn apply_update(app: tauri::AppHandle) -> Result<(), String> {
         state.kill();
     }
     update::apply(&root).map_err(|e| format!("갈아 끼우지 못했습니다: {e}"))?;
+    /* ★★**띄우기 전에 자물쇠를 놓는다** (2026-08-27에 잡았다). 안 놓으면 새로 뜬 앱이
+         「이 폴더의 PeroPix 가 이미 실행 중」으로 보고 **곧바로 스스로 닫는다** — 업데이트가
+         끝나면 앱이 사라지는 셈이다. `app.exit(0)` 은 아래에서 부르므로, 그때까지 우리는
+         아직 살아 있다.
+       ★놓는 것은 자물쇠뿐이다 — 창·백엔드는 그대로 두고 순서만 앞당긴다. */
+    if let Some(l) = app.try_state::<InstanceLock>() {
+        if let Ok(mut g) = l.0.lock() {
+            g.take();
+        }
+    }
     update::relaunch(&root).map_err(|e| format!("다시 켜지 못했습니다: {e}"))?;
     app.exit(0);
     Ok(())
 }
+
+/// 같은 폴더를 두 번 열지 못하게 잡아 둔 표식 — **놓을 수 있게** 들고 있는다.
+/// ★업데이트가 새 판을 띄우기 직전에 놓는다 (`apply_update` 의 ★★주).
+struct InstanceLock(std::sync::Mutex<Option<std::fs::File>>);
 
 /// 웹뷰(WebView2)의 저장소를 **앱 폴더 안**으로 끌어온다 (사용자 지적 2026-08-26).
 ///
@@ -117,8 +131,11 @@ pub fn run() {
         eprintln!("[app] 이 폴더의 PeroPix 가 이미 실행 중입니다 — 창을 안 띄웁니다");
         return;
     };
-    // ★자물쇠는 앱이 끝날 때까지 들고 있어야 한다 (핸들을 닫으면 풀린다)
-    let _lock = lock;
+    /* ★자물쇠는 앱이 끝날 때까지 들고 있어야 한다 (핸들을 닫으면 풀린다).
+       ★★**놓을 수 있게 들고 있는다** (2026-08-27). 업데이트가 새 판을 띄울 때, 옛
+         프로세스가 이 자물쇠를 쥔 채로 띄우면 **새로 뜬 쪽이 곧바로 죽는다** — 같은 폴더를
+         두 번 여는 것으로 보이기 때문이다. `apply_update` 가 띄우기 직전에 여기서 놓는다. */
+    let lock = std::sync::Mutex::new(Some(lock));
     // ★웹뷰가 만들어지기 전에 저장소 자리를 정한다 (아래 ★주)
     use_local_webview_profile();
     // ★지난 업데이트가 남긴 옛 파일을 치운다 — 그때는 우리가 그 exe 위에서 돌고 있었다
@@ -127,7 +144,9 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![backend_url, app_root, update_staged, apply_update])
-        .setup(|app| {
+        .setup(move |app| {
+            // ★`apply_update` 가 새 판을 띄우기 전에 자물쇠를 놓을 수 있게 맡겨 둔다
+            app.manage(InstanceLock(lock));
             match backend::spawn() {
                 Ok(child) => {
                     app.manage(backend::Backend(Mutex::new(Some(child))));

@@ -474,6 +474,8 @@ export const ko: Dict = {
     ready: "받았습니다. 다시 켜면 적용됩니다.",
     restart: "지금 다시 켜기",
     cancel: "그만두기",
+    restartBusy: "지금 다시 켤까요?",
+    restartBusyBody: "그림을 만드는 중입니다. 지금 다시 켜면 진행 중인 그림이 사라지고, 이미 나간 Anlas 는 돌아오지 않습니다.",
     applying: "설치 중입니다. 곧 다시 켜집니다.",
     building: "새 버전 v{v} 을 준비하는 중입니다. 잠시 뒤에 다시 확인해 주세요.",
     notes: "릴리즈 노트",

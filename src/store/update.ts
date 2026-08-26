@@ -62,6 +62,14 @@ export const useUpdate = create<S>((set, get) => ({
   finish: (ok, cancelled) => {
     set({ phase: ok ? "staged" : "idle", done: 0, total: 0 });
     if (!ok && !cancelled) toast(t("update.failed"), "warn");
+    /* ★★**다 받으면 한 번 더 알린다** (사용자 지시 2026-08-26: *"모달을 꺼도 설치 다되면
+       토스트 한 번 더 띄워서 재시작 할 수 있게"*). 받는 동안 설정을 열어 두라고 요구할 수는
+       없으니, 끝났다는 소식은 **모달 밖으로** 나와야 한다. 단추까지 붙여 그 자리에서 끝낸다. */
+    if (ok)
+      toast(t("update.ready"), "ok", {
+        label: t("update.restart"),
+        run: () => void useUpdate.getState().restart(),
+      });
   },
   setStaged: (v) => set({ phase: v ? "staged" : "idle" }),
 
@@ -100,6 +108,12 @@ export const useUpdate = create<S>((set, get) => ({
 
   async start() {
     if (get().phase !== "idle") return;
+    /* ★★**누르면 설정의 업데이트 칸을 연다** (사용자 지시 2026-08-26: *"그냥 지금
+       업데이트하기 하면 모달을 띄우는 게 나을듯. 거기서 보라고"*). 알림을 눌렀는데 아무
+       변화가 없으면 안 눌린 줄 안다 — 누른 결과가 곧바로 보여야 한다.
+       ★모달을 닫아도 괜찮다: 타이틀바 띠가 진행을 잇고, 다 받으면 토스트가 다시 부른다. */
+    const { useUi } = await import("./ui");
+    useUi.getState().openSettings("general");
     set({ phase: "downloading", done: 0, total: get().info?.size ?? 0 });
     try {
       const r = await api<{ ok: boolean; error?: string }>("/api/update/stage", { method: "POST" });
@@ -131,6 +145,22 @@ export const useUpdate = create<S>((set, get) => ({
    *  *"다운 받은 후 설치중 프로그레스가 없음"*). 실패했을 때만 되돌린다. */
   async restart() {
     if (get().phase === "applying") return;
+    /* ★★**그림을 만드는 중이면 먼저 묻는다** (사용자 결정 2026-08-26).
+       다시 켜기는 사이드카를 **즉시** 죽인다. 그러면 돌고 있던 생성이 통째로 사라지는데,
+       NAI 에는 이미 요청이 갔으므로 **Anlas 는 나간 뒤**다. 되돌릴 방법이 없어서 묻는다.
+       ★큐를 대신 세우지 않는다 — 기다릴지 버릴지는 사용자가 정할 일이다. */
+    const { useQueue } = await import("./queue");
+    if (useQueue.getState().phase === "running") {
+      const { ask } = await import("./ask");
+      const go = await ask({
+        title: t("update.restartBusy"),
+        body: t("update.restartBusyBody"),
+        ok: t("update.restart"),
+        cancel: t("common.cancel"),
+        danger: true,
+      });
+      if (!go) return;
+    }
     set({ phase: "applying" });
     try {
       const { invoke } = await import("@tauri-apps/api/core");
