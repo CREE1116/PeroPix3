@@ -433,6 +433,7 @@ export const ko: Dict = {
   },
   canvas: {
     hideHint: "휴지통으로 보냅니다 (Ctrl+Z 로 되돌립니다 · 24시간 뒤 비워집니다)",
+    hideManyHint: "고른 {n}장을 휴지통으로 보냅니다 (Ctrl+Z 로 되돌립니다 · 24시간 뒤 비워집니다)",
     starOnly: "별표만 보기",
     laneToRight: "씬을 오른쪽으로 (세로 그림을 크게 볼 때)",
     laneToBottom: "씬을 아래로 되돌리기",

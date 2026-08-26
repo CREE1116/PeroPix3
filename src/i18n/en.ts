@@ -422,6 +422,7 @@ export const en = {
   },
   canvas: {
     hideHint: "Moves to trash (Ctrl+Z undoes; emptied after 24h)",
+    hideManyHint: "Moves the {n} selected images to trash (Ctrl+Z undoes; emptied after 24h)",
     starOnly: "Starred only",
     laneToRight: "Move scenes to the right (better for tall images)",
     laneToBottom: "Move scenes back to the bottom",

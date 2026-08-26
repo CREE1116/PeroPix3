@@ -305,7 +305,8 @@ export function ImageActions({
             onClick={() => void runUpscale()}
             // ★1024x1024 를 넘으면 **공홈도 막는다.** 눌러야 실패하는 버튼을 두지 않는다
             disabled={busy || cost < 0}
-            data-tip={cost < 0 ? t("upscale.tooLarge") : `${t("upscale.button")} — ${t("upscale.hint", { a: cost })}`}
+            /* ★안내는 한 열쇠에 통째로 담는다 — 코드에서 이으면 잇는 기호가 번역을 안 탄다 */
+            data-tip={cost < 0 ? t("upscale.tooLarge") : t("upscale.hint", { a: cost })}
             style={{ ...btn, display: "inline-flex", alignItems: "center", opacity: cost < 0 ? 0.45 : 1 }}
           >
             {/* ★이름은 아이콘이 말하고(툴팁도 있다), **값은 글자로 남긴다** —
@@ -340,7 +341,11 @@ export function ImageActions({
           <button
             data-act-keep
             onClick={() => void onKeep()}
-            data-tip={`${t("gallery.keep")} — ${t("gallery.keepHint")}`}
+            /* ★★**문구를 코드에서 잇지 않는다** (사용자 지적 2026-08-26: *"코드에서 조합하는
+                 툴팁이 존재해? 그럼 언어 대응이 안 되는 거 아니야?"*). 조각은 번역돼도
+                 **잇는 기호와 어순은 코드에 박혀** 언어가 바뀌어도 안 바뀐다. 안내는 한 열쇠에
+                 통째로 담고, 여기서는 그것만 띄운다. */
+            data-tip={t("gallery.keepHint")}
             style={iconBtn}
           >
             {Icon.images}

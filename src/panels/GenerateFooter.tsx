@@ -279,7 +279,8 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
           data-queue-cancel="compact"
           onClick={() => void cancelQueue()}
           disabled={!running || cancelled}
-          data-tip={`${t("queue.cancel")} — ${t("queue.cancelHint")}`}
+          /* ★안내는 한 열쇠에 통째로 담는다 — 코드에서 이으면 잇는 기호가 번역을 안 탄다 */
+          data-tip={t("queue.cancelHint")}
           style={{
             ...qbtn,
             width: "100%",

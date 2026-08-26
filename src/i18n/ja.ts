@@ -420,6 +420,7 @@ export const ja: Dict = {
   },
   canvas: {
     hideHint: "ゴミ箱へ移動します (Ctrl+Z で戻せます・24時間後に空に)",
+    hideManyHint: "選んだ {n} 枚をゴミ箱へ移動します (Ctrl+Z で戻せます・24時間後に空に)",
     starOnly: "星のみ表示",
     laneToRight: "シーンを右へ（縦長の画像を大きく見るとき）",
     laneToBottom: "シーンを下に戻す",
