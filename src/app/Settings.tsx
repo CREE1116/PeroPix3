@@ -300,7 +300,9 @@ export function Settings({
                       않는다** — 알림·소리와 같은 성격이라 이 묶음이 제자리다. */}
                   <label
                     style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", cursor: "pointer" }}
-                    title={t("settings.streamPreviewHint")}
+                    /* ★툴팁은 **우리가 그린다** (`components/Tip`) — 브라우저 기본 `title` 은
+                       뜨는 데 1초쯤 걸리고 모양도 우리 것이 아니라, 이 하나만 따로 논다 */
+                    data-tip={t("settings.streamPreviewHint")}
                   >
                     <input
                       type="checkbox"
