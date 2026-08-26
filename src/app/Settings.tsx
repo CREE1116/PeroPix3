@@ -6,6 +6,7 @@ import { playDoneSound } from "../lib/notifySound";
 import { useUi, FONTS, type SettingsTabId } from "../store/ui";
 import { useSub } from "../store/sub";
 import { useHealth } from "../store/health";
+import { mb, useUpdate } from "../store/update";
 import { ask } from "../store/ask";
 import { openExternal } from "../lib/openExternal";
 import { toast } from "../store/toast";
@@ -382,8 +383,16 @@ export function Settings({
                   )}
                 </Group>
 
-                {/* ★앱 정보 — 버전은 백엔드가 준다(`/api/health`). 화면에 박아 두면 어긋난다.
-                    ★업데이트 확인은 여기 없다: 배포처가 안 정해져 있다 (감사 E절 「보류」). */}
+                {/* ★★**업데이트** (사용자 지시 2026-08-26 — 「보류」였던 자리다: 배포처가
+                     포터블 zip 으로 정해지면서 풀렸다).
+                   ★단추는 **하나**다. 패치를 받을지 전체를 받을지는 앱이 정하고, 사용자에게는
+                     **받는 양만** 숫자로 보인다 (사용자 지시: *"「이번엔 전체를 받아야 합니다」
+                     라는 문구를 볼 필요가 있음?"*). */}
+                <Group label={t("update.title")}>
+                  <UpdateBox />
+                </Group>
+
+                {/* ★앱 정보 — 버전은 백엔드가 준다(`/api/health`). 화면에 박아 두면 어긋난다. */}
                 <Group label={t("settings.about")}>
                   <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)", flexWrap: "wrap" }}>
                     <span
@@ -516,3 +525,89 @@ const btn: React.CSSProperties = {
   padding: "4px var(--sp-4)",
   fontSize: "var(--text-2xs)",
 };
+
+
+/** 업데이트 칸 — 확인 · 받기 · 다시 켜기. **한 줄기로 이어진다.**
+ *
+ *  ★★상태가 곧 화면이다: 아무것도 모름 → 「업데이트 확인」 / 새 판 있음 → 「지금 업데이트」 /
+ *    받는 중 → 진행률 / 받아 둠 → 「지금 다시 켜기」. 갈래마다 단추를 따로 두지 않는다.
+ *  ★부팅 때 이미 조용히 확인해 두므로(`App`), 여기 들어오면 대개 답이 나와 있다. */
+function UpdateBox() {
+  const t = useI18n((s) => s.t);
+  const { info, checking, busy, done, total, staged } = useUpdate();
+  const u = useUpdate.getState();
+
+  if (staged)
+    return (
+      <Row>
+        <span style={dim}>{t("update.ready")}</span>
+        <button data-update-restart onClick={() => void u.restart()} style={accentBtn}>
+          {t("update.restart")}
+        </button>
+      </Row>
+    );
+
+  if (busy)
+    return (
+      <Row>
+        <span style={dim}>
+          {t("update.downloading", { done: mb(done), total: mb(total || info?.size || 0) })}
+        </span>
+        {/* ★막대는 **받은 만큼**이다 — 총량을 모르면(0) 채우지 않는다 */}
+        <div style={{ flex: 1, height: 4, background: "var(--line)", borderRadius: 2, overflow: "hidden" }}>
+          <div
+            data-update-bar
+            style={{
+              width: total ? `${Math.min(100, (done / total) * 100)}%` : "0%",
+              height: "100%",
+              background: "var(--accent)",
+              transition: "width 0.2s",
+            }}
+          />
+        </div>
+      </Row>
+    );
+
+  if (info?.has_update && info.building)
+    return <span style={dim}>{t("update.building", { v: info.latest })}</span>;
+
+  if (info?.has_update)
+    return (
+      <Row>
+        <button data-update-now onClick={() => void u.start()} style={accentBtn}>
+          {t("update.now")}
+        </button>
+        <span style={dim}>
+          v{info.latest} · {mb(info.size ?? 0)}
+        </span>
+        {info.url && (
+          <button data-update-notes onClick={() => openExternal(info.url!)} style={{ ...btn, display: "inline-flex", gap: "var(--sp-2)" }}>
+            {Icon.external}
+            {t("update.notes")}
+          </button>
+        )}
+      </Row>
+    );
+
+  return (
+    <Row>
+      <button data-update-check disabled={checking} onClick={() => void u.check()} style={btn}>
+        {checking ? t("update.checking") : t("update.check")}
+      </button>
+    </Row>
+  );
+}
+
+const dim = { fontSize: "var(--text-2xs)", color: "var(--ink-dim)" } as const;
+const accentBtn = {
+  padding: "var(--sp-2) var(--sp-4)",
+  borderRadius: "var(--r-1)",
+  background: "var(--accent)",
+  color: "var(--accent-on)",
+} as const;
+
+function Row({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)", flexWrap: "wrap" }}>{children}</div>
+  );
+}

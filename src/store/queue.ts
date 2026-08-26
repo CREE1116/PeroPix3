@@ -792,6 +792,16 @@ function handle(m: Record<string, any>, set: Setter, get: () => S) {
       set({ steps: { ...get().steps, [cell]: `data:${mime};base64,${m.b64}` } });
       break;
     }
+    /* ★★**업데이트 진행률·완료** (사용자 지시 2026-08-26). 받는 것은 백엔드가 하고
+       (`backend/update.py`), 화면은 그 소식만 받아 막대를 그린다. */
+    case "update_progress":
+      void import("./update").then(({ useUpdate }) =>
+        useUpdate.getState().setProgress(Number(m.done ?? 0), Number(m.total ?? 0)),
+      );
+      break;
+    case "update_staged":
+      void import("./update").then(({ useUpdate }) => useUpdate.getState().setStaged(!!m.ok));
+      break;
     case "image":
       render(m, set, get);
       batchOk++;

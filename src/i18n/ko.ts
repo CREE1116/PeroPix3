@@ -464,6 +464,20 @@ export const ko: Dict = {
     lastOne: "마지막 탭은 지울 수 없습니다.",
   },
 
+  update: {
+    title: "업데이트",
+    check: "업데이트 확인",
+    checking: "확인 중",
+    latest: "최신 버전입니다",
+    found: "새 버전 v{v} ({size})",
+    now: "지금 업데이트",
+    downloading: "받는 중 {done} / {total}",
+    ready: "받았습니다. 다시 켜면 적용됩니다.",
+    restart: "지금 다시 켜기",
+    building: "새 버전 v{v} 을 준비하는 중입니다. 잠시 뒤에 다시 확인해 주세요.",
+    notes: "릴리즈 노트",
+    failed: "업데이트를 확인하지 못했습니다",
+  },
   settings: {
     tokenChecking: "확인 중…",
     tokenRemoved: "토큰을 지웠습니다",

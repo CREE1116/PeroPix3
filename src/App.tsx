@@ -170,6 +170,11 @@ export function App() {
           //   ★**생성보다 먼저 준비돼야 한다.** 비어 있으면 `#이름` 이 그대로 프롬프트에
           //   나간다. 좌 패널에 매달면 패널을 접었을 때 안 읽힌다 (CLAUDE.md 「잊기 쉬운 것」).
           void useWildcards.getState().load().catch(() => {});
+          /* ★★**부팅 때 한 번 조용히 업데이트를 확인한다** (사용자 지시 2026-08-26 · v2 와 같은
+             몸짓). 있으면 토스트가 뜨고 그 자리에 「지금 업데이트」 단추가 붙는다.
+             ★맨 뒤에 둔다 — 네트워크를 타는 일이라 화면이 뜨는 것을 늦추면 안 된다.
+             ★실패는 삼킨다 (`check(true)`) — 인터넷이 없다고 시끄러우면 안 된다. */
+          void import("./store/update").then(({ useUpdate }) => useUpdate.getState().check(true));
           return;
         } catch {
           await new Promise((r) => setTimeout(r, 400));

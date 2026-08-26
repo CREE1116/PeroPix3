@@ -448,6 +448,20 @@ export const ja: Dict = {
     lastOne: "最後のタブは削除できません。",
   },
 
+  update: {
+    title: "アップデート",
+    check: "更新を確認",
+    checking: "確認中",
+    latest: "最新版です",
+    found: "新しいバージョン v{v}（{size}）",
+    now: "今すぐ更新",
+    downloading: "ダウンロード中 {done} / {total}",
+    ready: "受け取りました。再起動すると適用されます。",
+    restart: "今すぐ再起動",
+    building: "v{v} を準備中です。少し経ってからもう一度確認してください。",
+    notes: "リリースノート",
+    failed: "更新を確認できませんでした",
+  },
   settings: {
     tokenChecking: "確認中…",
     tokenRemoved: "トークンを削除しました",

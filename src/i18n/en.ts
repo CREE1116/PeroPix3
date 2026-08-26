@@ -450,6 +450,20 @@ export const en = {
     lastOne: "The last tab cannot be deleted.",
   },
 
+  update: {
+    title: "Update",
+    check: "Check for updates",
+    checking: "Checking",
+    latest: "You are up to date",
+    found: "New version v{v} ({size})",
+    now: "Update now",
+    downloading: "Downloading {done} / {total}",
+    ready: "Downloaded. It applies when you restart.",
+    restart: "Restart now",
+    building: "v{v} is still being built. Check again in a moment.",
+    notes: "Release notes",
+    failed: "Could not check for updates",
+  },
   settings: {
     tokenChecking: "Checking…",
     tokenRemoved: "Token removed",
