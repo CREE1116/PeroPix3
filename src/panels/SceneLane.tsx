@@ -2072,12 +2072,21 @@ function SceneRow(
                   }}
                   style={{
                     position: "absolute",
-                    right: 1,
-                    top: 0,
+                    right: 2,
+                    top: 1,
                     display: "grid",
                     color: p.isStarred(r.file) ? "var(--warn)" : "rgba(255,255,255,0.8)",
                     opacity: p.isStarred(r.file) ? 1 : 0,
-                    filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.7))",
+                    /* ★★**어두운 받침을 깐다** (사용자 지적 2026-08-27: *"별표한 게 너무
+                       안 보임. 일러스트 위에 있어서 일러스트랑 섞여서 보여"*). 그림자만으로는
+                       밝거나 주황빛인 그림 위에서 별이 묻힌다 — 그림이 무엇이든 **뒤가 어두우면**
+                       읽힌다. 별 자체는 색으로 켜짐/꺼짐을 말한다 (`--warn` 대 흰색).
+                     ★값은 **갤러리와 같은 것**이다 (`panels/Gallery` 의 `.thumb-star`) —
+                       그쪽에는 처음부터 받침이 있었고 여기만 빠져 있었다. 같은 자리에 선
+                       같은 표식이라 모양이 갈리면 안 된다. */
+                    padding: "1px 2px",
+                    borderRadius: 3,
+                    background: "rgba(10,14,20,0.55)",
                   }}
                   className="thumb-star"
                 >
