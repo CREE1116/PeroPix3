@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { uniqueName } from "../lib/uniqueName";
 import { useI18n } from "../i18n";
 import { SectionCard } from "../blocks/SectionCard";
 import { BlockList } from "../blocks/BlockList";
@@ -256,7 +257,7 @@ function PoseBody({
             붙으면 같은 카드가 화면마다 달라 보인다. */}
       <button
         data-card-editor-addcell
-        onClick={() => onChange([...cells, { name: t("slots.newName", { n: cells.length + 1 }), blocks: [] }])}
+        onClick={() => onChange([...cells, { name: uniqueName(t("slots.newName"), cells.map((c) => c.name)), blocks: [] }])}
         style={{
           margin: "var(--sp-2) 10px 0",
           padding: "2px var(--sp-3)",

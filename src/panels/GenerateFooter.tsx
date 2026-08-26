@@ -46,7 +46,7 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
    *  잠깐이지만 그 사이에 아무 반응이 없으면 **안 눌린 줄 안다.** 그동안 눌린 모양으로 두고
    *  다시 못 누르게 한다 — 그 뒤로는 `running` 이 이어받는다. */
   const [firing, setFiring] = useState(false);
-  const tab = useWs((s) => s.activeSet());
+  const tab = useWs((s) => s.activeSceneGroup());
   const img = useImageInput();
   /** ★그 모델에서 되는 것 — 값 계산이 **보내는 것과 같아야** 한다 (`lib/naiModels.ts`) */
   const cap = modelCaps(params.model);
@@ -59,8 +59,8 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
   const usage = (sub?.tier ?? 0) >= 3 ? (sub?.usage ?? null) : null;
 
   // ★탭은 언제나 씬 탭이다 (싱글 폐기 2026-08-11) — 옛 싱글 탭은 열 때 옮겨진다.
-  //   그래도 한 번 좁히는 이유는 `SceneSet` 이 옛 파일을 읽으려고 두 갈래를 남겨 두기 때문이다.
-  const sceneSet = tab?.kind === "set" ? tab : null;
+  //   그래도 한 번 좁히는 이유는 `SceneGroup` 이 옛 파일을 읽으려고 두 갈래를 남겨 두기 때문이다.
+  const sceneSet = tab?.kind === "sceneGroup" ? tab : null;
   const perSlot = useUi((s) => s.perSlot);
   const setPerSlot = useUi((s) => s.setPerSlot);
   /** ★잠긴 것은 생성에서 빠지므로 장 수도 그만큼 줄여야 한다.

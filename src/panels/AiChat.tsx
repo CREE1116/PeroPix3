@@ -65,7 +65,7 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
   const [showList, setShowList] = useState(false);
   const { engine, exe, scanning, detect } = useCli();
   const ws = useWs((s) => s.current);
-  const tab = useWs((s) => s.activeSet());
+  const tab = useWs((s) => s.activeSceneGroup());
   const wsTab = useWs((s) => s.activeTabOf());
 
   const mode = useUi((s) => s.mode);

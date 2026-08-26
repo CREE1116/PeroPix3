@@ -43,11 +43,11 @@ import { CharPositioner } from "./CharPositioner";
  *    옮겨 주던 길도 2026-08-24 에 걷었다. 큰 그림·히스토리 줄·별표만 보기가
  *    있던 자리는 `SceneLane` + `ScenePreview` + `SceneActions` 가 이어받았다. */
 export function Canvas() {
-  const { activeSet } = useWs();
+  const { activeSceneGroup } = useWs();
   /** ★마스크를 칠하는 동안 **이 자리가 편집기로 바뀐다** (사용자 결정 2026-08-13).
    *  모달로 띄우면 칠하는 동안 프롬프트도 결과도 못 본다. 생성 버튼은 그동안 「인페인트」다. */
   const editing = useImageInput((s) => s.editing);
-  const tab = activeSet();
+  const tab = activeSceneGroup();
   if (!tab) return null;
 
   return (
@@ -61,7 +61,7 @@ export function Canvas() {
       }}
     >
       {/* ★씬 세트 줄 — 이 층이 가르는 것이 바로 아래 결과라 여기 붙는다 (사용자 제안 2026-08-05) */}
-      <CanvasTabs part="sets" />
+      <CanvasTabs part="sceneGroups" />
 
       {/* ★씬 칸 (2026-08-11) — 그릇 + 얹은 카드 + 씬 줄. 위는 **고른 한 장**의 프리뷰다 */}
       {editing ? <MaskEditor /> : <SceneStage />}
@@ -273,7 +273,7 @@ function SceneActions() {
    *  ★★기준은 하나다: **그 그림을 뽑을 때의 구조를 그대로 재현한다**
    *    (사용자 지시 2026-08-19: *"스타일/캐릭터/슬롯 구조 그대로 재현"*).
    *    나뉘어 온다:
-   *      구조 → **그 그림이 나온 탭과 씬**에서 (`cloneToNewTab`, 레코드의 `set_id`·`cell_id`)
+   *      구조 → **그 그림이 나온 탭과 씬**에서 (`cloneToNewTab`, 레코드의 `scene_group_id`·`cell_id`)
    *             스타일 카드 · 베이스/네거티브 블록 · **캐릭터 카드** ·
    *             그 씬의 블록 · **카드 공통 접두** · 씬 프롬프트 목적지
    *             ★접두와 목적지를 빼면 같은 씬이라도 **다른 프롬프트가 나간다** (`gen.ts` 참조)
@@ -542,7 +542,7 @@ function ScenePreview() {
   const startDrag = useDragSource();
   const { base } = useGen();
   const ws = useWs((s) => s.current);
-  const { records, activeSet, isDeleted, isStarred } = useWs();
+  const { records, activeSceneGroup, isDeleted, isStarred } = useWs();
   /** ★씨 줄과 **같은 거르기**를 건다 — 줄에서 안 보이는 장이 휠로
    *  넘어오면 둘이 어긋난다 (`lib/sceneTakes` 의 거르기와 같은 규칙) */
   const starOnly = useUi((u) => u.laneStarOnly);
@@ -566,8 +566,8 @@ function ScenePreview() {
    *  ★**씬 줄에 보이는 순서를 따른다.** 줄은 최신이 왼쪽이므로, 아래로 굴리면
    *    오른쪽(더 오래된 것)으로 간다. 저장 순서로 세면 줄과 반대로 움직인다
    *    (싱글 쪽에서 한 번 밟은 함정이다). */
-  const tab = activeSet();
-  const sceneSet = tab?.kind === "set" ? tab : null;
+  const tab = activeSceneGroup();
+  const sceneSet = tab?.kind === "sceneGroup" ? tab : null;
   const scene = sceneSet ? allScenes(sceneSet).find((x) => x.cell.id === cell) : null;
   // ★씬 줄과 **같은 창구**로 고른다 — 갈 씬이 없는 결과는 첫 씬이 받으므로(감사 D6),
   //   여기서 `takesOf` 를 쓰면 줄에는 보이는 그림을 휠로 못 넘긴다
@@ -591,7 +591,7 @@ function ScenePreview() {
    *    (`SceneRow` 의 `waits`·`takes`). 줄에서 보이는 차례와 휠이 다르면 넘길 때마다 튄다.
    *  ★대기 칸은 **파일이 없다** — 그래서 목록의 원소를 파일이 아니라 «둘 중 하나»로 든다. */
   const waits = queued
-    .filter((p) => p.setId === (sceneSet?.id ?? null) && p.cellId === cell)
+    .filter((p) => p.groupId === (sceneSet?.id ?? null) && p.cellId === cell)
     .slice()
     .reverse();
   const walk: { file?: string; pending?: string }[] = [

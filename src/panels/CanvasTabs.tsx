@@ -7,7 +7,7 @@ import { EditableName } from "../components/EditableName";
 import { api } from "../lib/backend";
 import { toast } from "../store/toast";
 import { useState } from "react";
-import { allCells, useWs, type SceneSet } from "../store/workspace";
+import { allCells, useWs, type SceneGroup } from "../store/workspace";
 import { ask } from "../store/ask";
 import { useGen } from "../store/gen";
 import { Icon } from "../components/Icon";
@@ -27,12 +27,12 @@ import { Icon } from "../components/Icon";
  *    씬 탭**이고, 옛 싱글 탭을 옮겨 주던 길도 2026-08-24 에 걷었다.
  *
  *  ★★**화면 이름**(사용자 결정 2026-08-18): 위층 = 「탭」, 아래층 = 「세트」.
- *    코드 식별자도 같은 이름이다 (`spec.tabs`·`spec.sets` — `shared/terms.json`).
+ *    코드 식별자도 같은 이름이다 (`spec.tabs`·`spec.sceneGroups` — `shared/terms.json`).
  *    아래 그림의 「캐릭터」도 이제 화면에서는 「탭」이다. 아래층 문구(`tabs.*`)에
  *    「탭」을 되살리지 말 것. 두 줄이 같은 이름이 되면 구별이 안 된다. */
-export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) {
-  const { spec, setActiveTab, renameSet, addSet,
-    switchTab, addTab, renameTab, moveTab, moveSet, planRemove, removeAt } = useWs();
+export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sceneGroups" }) {
+  const { spec, setActiveTab, renameSceneGroup, addSceneGroup,
+    switchTab, addTab, renameTab, moveTab, moveSceneGroup, planRemove, removeAt } = useWs();
   const tr = useI18n((s) => s.t);
   const [editing, setEditing] = useState<string | null>(null);
   const [editingChar, setEditingChar] = useState<string | null>(null);
@@ -45,12 +45,12 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
        (`SceneLane` 의 `onDragSave`). 그래서 여기서 몸짓이 겹칠 일도 없다.
      ★훅은 **`spec` 검사보다 앞**이다 — 조건부 훅은 규칙 위반이라 워크스페이스를 못 읽은
        순간 화면이 통째로 죽는다 (`StyleSection` 이 같은 함정을 밟았다). */
-  const setOrd = useReorder(0, moveSet, { axis: "x", tapSafe: true });
+  const setOrd = useReorder(0, moveSceneGroup, { axis: "x", tapSafe: true });
   const tabOrd = useReorder(0, moveTab, { axis: "x", tapSafe: true });
   if (!spec) return null;
 
-  const inGroup = spec.sets.filter(
-    (t): t is Extract<SceneSet, { kind: "set" }> => t.kind === "set" && t.tabId === spec.activeTab,
+  const inGroup = spec.sceneGroups.filter(
+    (t): t is Extract<SceneGroup, { kind: "sceneGroup" }> => t.kind === "sceneGroup" && t.tabId === spec.activeTab,
   );
   const tabs = spec.tabs ?? [];
 
@@ -107,7 +107,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
               mark="tab"
               btn={false}
               name={t.name}
-              onRename={(v) => renameSet(t.id, v)}
+              onRename={(v) => renameSceneGroup(t.id, v)}
               ctrl={{ editing: editing === t.id, setEditing: (v) => setEditing(v ? t.id : null) }}
               style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
               inputStyle={{
@@ -139,7 +139,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                      **관리가 안 되기** 때문이다.
                    ★**휴지통을 지난다** (`deleteFiles`). 24시간 유예가 있어 되살릴 수 있고,
                      이 앱에서 지우는 창구는 전부 그리로 가기로 되어 있다 (`backend/trash.py`).
-                   ★**묶는 키는 `set_id`** 다. 폴더는 **탭 이름**으로 짓기 때문에
+                   ★**묶는 키는 `scene_group_id`** 다. 폴더는 **탭 이름**으로 짓기 때문에
                      (`workspace.out_dir`), 폴더를 지우면 같은 이름의 다른 탭 그림까지 지운다. */
                 /* ★★**한 벌은 스토어에 있다** (`removeAt`, 2026-08-24). 여기서 하는 것은
                      **묻는 것뿐**이다 — 그림 모으기·휴지통·되돌리기 로그 비우기가 전부
@@ -148,22 +148,22 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                 onClick={(e) => {
                   e.stopPropagation();
                   void (async () => {
-                    const plan = planRemove({ kind: "set", id: t.id });
+                    const plan = planRemove({ kind: "sceneGroup", id: t.id });
                     if (plan.blocked) return;
                     if (
                       plan.files.length &&
                       !(await ask({
-                        title: tr("set.closeConfirm", { name: t.name, n: plan.files.length }),
-                        body: tr("set.closeConfirmBody"),
+                        title: tr("sceneGroup.closeConfirm", { name: t.name, n: plan.files.length }),
+                        body: tr("sceneGroup.closeConfirmBody"),
                         ok: tr("common.delete"),
                         cancel: tr("common.cancel"),
                       }))
                     )
                       return;
-                    await removeAt({ kind: "set", id: t.id });
+                    await removeAt({ kind: "sceneGroup", id: t.id });
                   })();
                 }}
-                data-tip={tr("set.closeSet")}
+                data-tip={tr("sceneGroup.closeSet")}
                 data-scene-set-close
                 style={{ color: "var(--ink-faint)", padding: 0, display: "grid" }}
               >
@@ -180,8 +180,8 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
         // ★씬 하나로 시작한다 (사용자 지시 2026-08-04) — 필요한 만큼은 `씬 추가`로 는다.
         //   셋으로 시작하면 안 쓸 씬을 먼저 지워야 했다
         /* ★씬 없이 만든다 — 씬 줄에서 `+` 로 시작한다 (새 워크스페이스와 같다) */
-        onClick={() => addSet(tr("set.newSet"), [])}
-        data-tip={tr("set.newSetTab")}
+        onClick={() => addSceneGroup(tr("sceneGroup.newSet"), [])}
+        data-tip={tr("sceneGroup.newSetTab")}
         data-scene-set-add="set"
         style={{
           border: "1px solid var(--line)",
@@ -206,7 +206,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
 
   // ★어느 자리에 그리는지가 층을 가른다: 씬 세트 줄은 캔버스 위, 캐릭터 줄은 세 기둥 위.
   //   둘 다 안 그리면 **탭이 통째로 사라진다** (실측 2026-08-05).
-  if (part === "sets") return setRow;
+  if (part === "sceneGroups") return setRow;
 
   return (
     <div>
@@ -302,7 +302,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sets" }) 
                               t: plan.inner,
                               n: plan.files.length,
                             }),
-                            body: tr("set.closeConfirmBody"),
+                            body: tr("sceneGroup.closeConfirmBody"),
                             ok: tr("common.delete"),
                             cancel: tr("common.cancel"),
                           }))
@@ -380,10 +380,10 @@ function SaveHint() {
   const { current, spec } = useWs();
   const cell = useGen((s) => s.cell);
   const tr = useI18n((s) => s.t);
-  /* ★★찾는 것은 **세트**이므로 열쇠도 `activeSet` 이다. 2026-08-24 개명 때 옛 이름
+  /* ★★찾는 것은 **세트**이므로 열쇠도 `activeSceneGroup` 이다. 2026-08-24 개명 때 옛 이름
      (`activeTab` 이 세트를 가리키던 시절)이 남아 아무것도 못 찾았고, 그래서 이 줄이
      **화면에서 통째로 사라졌다** (사용자 지적: *"상단에 뜨던 저장경로 표시가 사라졌어"*). */
-  const set = spec?.sets.find((x) => x.id === spec.activeSet);
+  const set = spec?.sceneGroups.find((x) => x.id === spec.activeSceneGroup);
   if (!set) return null;
   /** 화면에 적힌 그 자리 — 탐색기로 열 때도 **같은 문자열**을 쓴다 (둘이 갈리면 안 된다).
    *

@@ -68,8 +68,8 @@ export function applyCard(kind: CardKind, c: AnyCardLike): { error?: string; did
   }
 
   // 포즈세트 — 지금 세트 위에 씬 카드로 얹는다
-  const cur = useWs.getState().activeSet();
-  if (cur?.kind !== "set") return { error: "열려 있는 세트가 없습니다." };
+  const cur = useWs.getState().activeSceneGroup();
+  if (cur?.kind !== "sceneGroup") return { error: "열려 있는 세트가 없습니다." };
   if (!Array.isArray(c.cells) || !c.cells.length)
     return { error: `「${c.name}」 에는 씬이 없습니다.` };
   useWs.getState().addCard(cur.id, {

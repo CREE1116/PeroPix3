@@ -4,6 +4,7 @@ import { TYPE } from "../styles/type";
 import { useUi, flashStyle, useFlashAt } from "../store/ui";
 import { useI18n } from "../i18n";
 import { useCards, type AnyCard, type CardKind } from "../store/cards";
+import { uniqueName } from "../lib/uniqueName";
 import { useDrag, useDragSource, useDropZone, dragSourceStyle, type DragImage, type SectionThumb } from "./dragStore";
 import { DropVeil } from "./DropVeil";
 import { CardEditor } from "./CardEditor";
@@ -185,13 +186,17 @@ function Section({
    *  ★씬 세트는 **칸 하나를 얹어** 만든다. 빈 채로 두면 갓 만든 카드가 「씬이 없는 카드」로
    *    떠서 고장처럼 보인다 (칸을 더 넣고 빼는 것은 편집기가 한다). */
   const addCard = async () => {
-    const name = kind === "styles" ? t("cards.newStyle") : kind === "characters" ? t("cards.newChar") : t("cards.newSet");
+    /* ★★덱 카드도 **같은 이름 규칙**이다 (사용자 지시 2026-08-27) — 겹치면 번호가 붙는다.
+       예전에는 여기만 규칙이 없어서 「새 스타일」이 몇 장이고 그대로 쌓였다.
+       ★겹침은 **그 종류 안에서** 본다 (스타일끼리·캐릭터끼리) — 종류가 다르면 섞일 일이 없다. */
+    const base = kind === "styles" ? t("cards.newStyle") : kind === "characters" ? t("cards.newChar") : t("cards.newSet");
+    const name = uniqueName(base, (useCards.getState()[kind] ?? []).map((c) => c.name));
     const blank =
       kind === "styles"
         ? { name, base: [], uc: [] }
         : kind === "characters"
           ? { name, prompt: [], uc: [] }
-          : { name, cells: [{ name: t("slots.newName", { n: 1 }), blocks: [] }] };
+          : { name, cells: [{ name: t("slots.newName"), blocks: [] }] };
     const saved = await useCards.getState().save(kind, { ...blank, folder: here }).catch(() => null);
     if (saved) onEdit(saved);
   };

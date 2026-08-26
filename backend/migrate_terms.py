@@ -23,7 +23,7 @@ import json
 from pathlib import Path
 
 #: 이 판까지 옮겼다는 표. 앞으로 또 옮길 일이 생기면 숫자를 올린다
-SPEC_VERSION = 2
+SPEC_VERSION = 3
 
 SPEC_NAME = "workspace.json"
 RECORDS_NAME = "records.jsonl"
@@ -34,8 +34,12 @@ def migrate_spec(old: dict) -> dict | None:
 
     ★`chars` 도 `tabs` 도 없는 아주 옛 파일이면 빈 목록으로 세워 준다 — 화면의
       `ensure*` 가 채우던 자리다. 여기서 만들어 두면 그쪽이 옛 열쇠를 안 봐도 된다."""
-    if int(old.get("specVersion") or 0) >= SPEC_VERSION:
+    at = int(old.get("specVersion") or 0)
+    if at >= SPEC_VERSION:
         return None
+    # ★이미 v2 면 낱말만 옮기면 된다 — v2 의 자리 맞바꾸기를 또 돌리면 안 된다
+    if at >= 2:
+        return _v3(old)
 
     sets = list(old.get("tabs") or [])       # 옛 `tabs` 가 세트다
     tabs = list(old.get("chars") or [])      # 옛 `chars` 가 탭이다
@@ -59,6 +63,27 @@ def migrate_spec(old: dict) -> dict | None:
     if old.get("activeTab") is not None:
         out["activeSet"] = old.get("activeTab")
     out["specVersion"] = SPEC_VERSION
+    return _v3(out)
+
+
+def _v3(sp: dict) -> dict:
+    """v2 → v3: **「세트」를 「씬 그룹」으로** (사용자 결정 2026-08-27).
+
+    ★★영어 `set` 이 이 분야에서는 **촬영장**을 뜻해서, `scene set` 이 「장면 여럿의 묶음」으로
+      안 읽혔다. 화면·코드·조수 계약을 한꺼번에 `sceneGroup` 으로 옮겼고 (`shared/terms.json`),
+      저장 파일도 여기서 따라간다.
+    ★열쇠 이름만 바뀐다 — **값도 구조도 그대로**다. 자리를 맞바꾸는 v2 와 달리 순서 문제가 없다.
+    ★`kind` 리터럴도 함께 옮긴다 (`"set"` → `"sceneGroup"`). 화면의 가드가 그것을 본다."""
+    out = dict(sp)
+    if "sets" in out:
+        out["sceneGroups"] = out.pop("sets")
+    if "activeSet" in out:
+        out["activeSceneGroup"] = out.pop("activeSet")
+    out["sceneGroups"] = [
+        {**g, "kind": "sceneGroup"} if g.get("kind") == "set" else g
+        for g in (out.get("sceneGroups") or [])
+    ]
+    out["specVersion"] = SPEC_VERSION
     return out
 
 
@@ -66,13 +91,18 @@ def migrate_record(line: dict) -> dict | None:
     """레코드 한 줄 → 새 열쇠. 바꿀 것이 없으면 `None`.
 
     ★`tab`·`tab_id` 는 **세트**를 가리키던 이름이다 (`tab`= 세트 이름, `tab_id`= 세트 id)."""
-    if "tab" not in line and "tab_id" not in line:
+    if not any(k in line for k in ("tab", "tab_id", "set", "set_id")):
         return None
     out = dict(line)
     if "tab" in out:
         out["set"] = out.pop("tab")
     if "tab_id" in out:
         out["set_id"] = out.pop("tab_id")
+    # v3 — 낱말만 옮긴다 (위 ★★주)
+    if "set" in out:
+        out["scene_group"] = out.pop("set")
+    if "set_id" in out:
+        out["scene_group_id"] = out.pop("set_id")
     return out
 
 
@@ -139,7 +169,7 @@ def migrate_dir(d: Path, log: list[str]) -> bool:
         except Exception as e:
             log.append(f"[낱말 이전] {d.name}: 레코드를 못 옮겼습니다 ({e!r})")
 
-    log.append(f"[낱말 이전] {d.name}: 탭 {len(new.get('tabs') or [])}개 · 세트 {len(new.get('sets') or [])}개")
+    log.append(f"[낱말 이전] {d.name}: 탭 {len(new.get('tabs') or [])}개 · 씬 그룹 {len(new.get('sceneGroups') or [])}개")
     return True
 
 

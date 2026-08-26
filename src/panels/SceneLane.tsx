@@ -60,8 +60,8 @@ const GAP = 6;
 export function SceneLane() {
   const t = useI18n((s) => s.t);
   const base = useGen((g) => g.base);
-  const { records, current: ws, activeSet, isDeleted, isStarred, toggleStar,
-    patchSet, setCard, addCard, removeCard, addSlot, moveScene, moveCard } = useWs();
+  const { records, current: ws, activeSceneGroup, isDeleted, isStarred, toggleStar,
+    patchSceneGroup, setCard, addCard, removeCard, addSlot, moveScene, moveCard } = useWs();
   const pending = useQueue((s) => s.pending);
   // ★구독해서 읽는다. `getState()` 로 읽으면 진행이 바뀌어도 다시 그리지 않아
   //   「생성 중」이 영영 안 뜬다 (사용자 지적 2026-08-14)
@@ -89,7 +89,7 @@ export function SceneLane() {
   const startDrag = useDragSource();
   // ★씬 프롬프트 목적지 — 켜져 있는 캐릭터만 고를 수 있다 (꺼진 캐릭터는 payload 에 없다)
   const chars = usePrompt((s) => s.chars).filter((c) => c.on);
-  const tab = activeSet();
+  const tab = activeSceneGroup();
 
   /** 지금 보고 있는 씬과 장 — ★프리뷰가 다른 컴포넌트라 스토어로 나눠 갖는다 */
   const focus = useSceneFocus();
@@ -109,7 +109,7 @@ export function SceneLane() {
    *  씬만 고르고 그림이 안 골라지면 큰 자리가 비어, 한 번 더 눌러야 뭔가 보였다.
    *  ★파일을 **딱 집어** 넘긴 경우(썸네일 클릭)는 그대로 둔다. */
   const setFocus = (f: { cell: string; file: string | null }) => {
-    const cell = tab?.kind === "set" ? allCells(tab).find((c) => c.id === f.cell) : undefined;
+    const cell = tab?.kind === "sceneGroup" ? allCells(tab).find((c) => c.id === f.cell) : undefined;
     const takes = cell ? [...takesOfCell(cell)].sort(newestFirst) : [];
     // ★★**그 씬에 없는 파일은 고른 것이 아니다** (조작 테스트에서 잡았다 2026-08-19).
     //   씬 id 는 탭·워크스페이스마다 다시 `c0` 부터 나가므로, 앞 화면에서 고른 파일이
@@ -375,8 +375,8 @@ export function SceneLane() {
        예전에는 `pending`·`laneSize`·`headw` 도 딸림값이라, **생성이 끝나 큐가 줄기만 해도**
        줄이 저 혼자 굴러갔다 (*"생성 완료시 슬롯을 강제 스크롤"*).
        나머지 값은 굴릴 이유가 아니라 **자리를 셈할 재료**일 뿐이므로 ref 로 읽는다. */
-  const scrollBits = useRef({ pending, headw, laneSize, vert, setId: tab?.id });
-  scrollBits.current = { pending, headw, laneSize, vert, setId: tab?.id };
+  const scrollBits = useRef({ pending, headw, laneSize, vert, groupId: tab?.id });
+  scrollBits.current = { pending, headw, laneSize, vert, groupId: tab?.id };
   useEffect(() => {
     const el = scrollRef.current;
     /* ★★**「생성 중」 칸을 골랐을 때도 굴린다** (사용자 지적 2026-08-25: *"생성 중인 걸 휠로
@@ -384,8 +384,8 @@ export function SceneLane() {
        대기 칸에는 **파일이 없다** — 예전에는 `focusFile` 이 비면 통째로 물러나서, 휠로
        대기 칸에 닿는 순간 줄이 멈춘 채였다. 고를 수 있는 것은 둘이므로 둘 다 받는다. */
     if (!el || !focusCell || (!focusFile && !focusPending)) return;
-    const { pending, headw, laneSize, vert, setId } = scrollBits.current;
-    const waiting = pending.filter((p) => p.setId === setId && p.cellId === focusCell).length;
+    const { pending, headw, laneSize, vert, groupId } = scrollBits.current;
+    const waiting = pending.filter((p) => p.groupId === groupId && p.cellId === focusCell).length;
     const cw = Math.min(LANE_MAX, Math.max(LANE_MIN, laneSize));
     const step = cw + GAP;
     /* ★셈은 폴백이다 (아래 ★★주) — 대기 칸은 줄의 **앞쪽**에 늦게 넣은 것부터 선다 */
@@ -396,7 +396,7 @@ export function SceneLane() {
       slot = waiting + at;
     } else {
       const at = pending
-        .filter((p) => p.setId === setId && p.cellId === focusCell)
+        .filter((p) => p.groupId === groupId && p.cellId === focusCell)
         .findIndex((p) => p.id === focusPending);
       if (at < 0) return;
       slot = waiting - 1 - at;   // 줄은 뒤집어 그린다 (`SceneRow` 의 `waits`)
@@ -450,20 +450,20 @@ export function SceneLane() {
   /* ★★탭을 옮기면 **그 탭 몫으로 담아 두고**, 돌아오면 그대로 되살린다
        (사용자 지시 2026-08-22). 예전에는 비웠는데, 돌아왔을 때 보던 장을 다시 찾아
        눌러야 했다. 담고 되살리는 규칙은 `store/sceneFocus` 하나에 있다. */
-  const setId = tab?.id;
+  const groupId = tab?.id;
   /** ★★**처음 뜰 때는 놓지 않는다** (사용자 지적 2026-08-19: 인페인트에 들어갔다 나오면
    *  고른 것이 풀려 있었다). 마스크 편집기는 캔버스 자리를 통째로 차지해서 이 줄이 **언마운트**
    *  되고, 돌아올 때 다시 마운트된다 — 그때마다 이 효과가 돌아 골라 둔 장을 지웠다.
    *  탭이 **실제로 바뀐 때만** 놓는다. */
-  const lastTab = useRef(setId);
+  const lastTab = useRef(groupId);
   useEffect(() => {
-    if (lastTab.current === setId) return;
+    if (lastTab.current === groupId) return;
     const prev = lastTab.current;
-    lastTab.current = setId;
+    lastTab.current = groupId;
     // ★고른 것은 `switchTab` 이 함께 푼다 (`store/sceneFocus`)
-    useSceneFocus.getState().switchTab(prev, setId);
+    useSceneFocus.getState().switchTab(prev, groupId);
     clearUndo();   // ★없어진 블록·그림을 되살리려 들면 안 된다
-  }, [setId]);
+  }, [groupId]);
 
   // Del = 숨김(휴지통) · Ctrl+Z = 되돌리기 · Esc = 선택 해제 (멀티 무대의 규칙 그대로)
   useEffect(() => {
@@ -509,7 +509,7 @@ export function SceneLane() {
     return () => window.removeEventListener("keydown", onKey);
   }, [picked]);
 
-  /** ★★**훅은 이른 반환보다 위에 둔다** — 아래 `tab?.kind !== "set"` 에서 빠지므로,
+  /** ★★**훅은 이른 반환보다 위에 둔다** — 아래 `tab?.kind !== "sceneGroup"` 에서 빠지므로,
    *  그 밑에 두면 탭을 옮길 때마다 훅 개수가 달라져 **화면이 통째로 죽는다**
    *  (*"Rendered fewer hooks than expected"*). 사용자 실측 2026-08-25: 워크스페이스·탭을
    *  바꾸면 UI 가 안 그려졌다. 같은 함정을 `StyleSection` 이 먼저 밟았다.
@@ -520,12 +520,12 @@ export function SceneLane() {
   /** 칸별 **그리는 중인 그림** — 훅이라 이른 반환보다 위에 둔다 */
   const steps = useQueue((q) => q.steps);
   const nowCell = useQueue((q) =>
-    q.progress.current_cell && q.progress.current_cell.set_id === tab?.id
+    q.progress.current_cell && q.progress.current_cell.scene_group_id === tab?.id
       ? q.progress.current_cell.cell_id
       : null,
   );
 
-  if (tab?.kind !== "set") return null;
+  if (tab?.kind !== "sceneGroup") return null;
 
   /** ★「캐릭터 전원」은 **켜진 캐릭터가 둘 이상일 때만** 낸다 (사용자 결정) —
    *  한 명이면 그 사람을 고르는 것과 같아서 뜻이 없다. */
@@ -556,7 +556,7 @@ export function SceneLane() {
 
   const h = Math.min(LANE_MAX, Math.max(LANE_MIN, laneSize));
   const w = h;
-  const queued = pending.filter((p) => p.setId === tab.id);
+  const queued = pending.filter((p) => p.groupId === tab.id);
   const running = progress.total > progress.completed;
 
   /** 그 씬의 결과 (숨긴 것 제외).
@@ -774,7 +774,7 @@ export function SceneLane() {
             <select
               data-scene-dest
               value={dest}
-              onChange={(e) => patchSet(tab.id, { sceneDest: e.target.value })}
+              onChange={(e) => patchSceneGroup(tab.id, { sceneDest: e.target.value })}
               /* ★★**목록(팝업)은 `opacity` 를 안 따른다** — 브라우저가 따로 그리면서
                  `<select>` 의 `color`·`background-color` 를 그대로 쓴다. 상자를 투명하게
                  만들면서 그 둘을 빼 버렸더니, 다크 모드에서 **밝은 글자가 밝은 바탕에**
@@ -934,7 +934,7 @@ export function SceneLane() {
               <CardGroup
                 vert={vert}
                 card={card}
-                setId={tab.id}
+                groupId={tab.id}
                 offset={offsets[ci]}
                 gripOf={lane.gripProps}
                 drop={lane.drop}
@@ -981,7 +981,7 @@ export function SceneLane() {
                     name: t("slots.copyOf", { name: from.name }),
                   })
                 }
-                onSeq={(n) => patchSet(tab.id, { cellSeq: n })}
+                onSeq={(n) => patchSceneGroup(tab.id, { cellSeq: n })}
                 nextSeq={tab.cellSeq ?? 1}
                 expandedId={expandedId}
                 typingId={typingId}
@@ -1225,7 +1225,7 @@ type GroupProps = {
   vert: boolean;
   card: SceneCard;
   /** 이 카드가 든 탭 — 머리에 건 그림을 어디에 적을지 (`askThumb`) */
-  setId: string;
+  groupId: string;
   /** 앞선 카드들의 씬 수 — 줄 앞 번호가 탭 전체에서 이어지게 (`offsets` 주석) */
   offset: number;
   /** 씬·카드 그립에 펴 넣을 것 (`useLaneReorder`) */
@@ -1314,7 +1314,7 @@ function CardGroup(p: GroupProps) {
     dir: "image",
     prio: 6,
     onDrop: (d) =>
-      d.img && askThumb({ type: "scene-card", setId: p.setId, cardId: p.card.id, img: d.img }),
+      d.img && askThumb({ type: "scene-card", groupId: p.groupId, cardId: p.card.id, img: d.img }),
   });
   /** 「씬 추가」 — **한 번만 만들고 방향만 가른다.**
    *
@@ -1564,7 +1564,7 @@ function CardGroup(p: GroupProps) {
                    로그 비우기가 전부 그리로 갔다. 여기서는 **묻기만** 한다.
                    조수도 같은 함수를 부르고, 묻는 방식만 승인 카드로 다르다. */
               onClick={() => {
-                const target = { kind: "sceneCard" as const, setId: p.setId, cardId: p.card.id };
+                const target = { kind: "sceneCard" as const, groupId: p.groupId, cardId: p.card.id };
                 void (async () => {
                   const plan = useWs.getState().planRemove(target);
                   if (plan.blocked) return;
@@ -1804,7 +1804,7 @@ function SceneRow(
               /* ★한 벌은 스토어의 `removeAt` 이다 (씬카드 삭제와 같은 자리) */
               onClick={(e) => {
                 e.stopPropagation();
-                const target = { kind: "scene" as const, setId: p.setId, cellId: c.id };
+                const target = { kind: "scene" as const, groupId: p.groupId, cellId: c.id };
                 void (async () => {
                   const plan = useWs.getState().planRemove(target);
                   if (plan.blocked) return;

@@ -171,7 +171,7 @@ class Store:
         return trash.restore_at(self.root, entries)
 
     # ── 생성물 ────────────────────────────────────────────────
-    def out_dir(self, ws: str, set_name: str, tab_name: str | None = None) -> Path:
+    def out_dir(self, ws: str, scene_group_name: str, tab_name: str | None = None) -> Path:
         """저장 자리 — **그림이 앉는 슬롯의 자리**를 그대로 따른다.
 
             <ws>/output/멀티/<탭>/<세트>/       <씬번호>_<씬이름>_<순번>.png
@@ -195,8 +195,8 @@ class Store:
         p = self.dir_of(ws) / OUT_DIR / MULTI_DIR
         if tab_name:
             p = p / safe_name(tab_name)
-        if set_name:
-            p = p / safe_name(set_name)
+        if scene_group_name:
+            p = p / safe_name(scene_group_name)
         p.mkdir(parents=True, exist_ok=True)
         return p
 
@@ -276,7 +276,7 @@ class Store:
     def store_output(
         self,
         ws: str,
-        set_name: str,
+        scene_group_name: str,
         cell: str | None,
         cell_no: int | None,
         tab_name: str | None,
@@ -290,11 +290,11 @@ class Store:
         씬 번호**를 쓰고, 이름은 시각이 아니라 **순번**이다 (`file_lead`).
 
         부르는 곳이 셋이다 — 평소 생성(`_generate_one`) · 미저장 그림의 「파일로 저장」
-        (`/api/save-preview`) · 「새 탭으로 복제」(`copy_to_set`). 두 벌이 되면 번호열이
+        (`/api/save-preview`) · 「새 탭으로 복제」(`copy_to_scene_group`). 두 벌이 되면 번호열이
         갈린다: `next_name` 은 **접두마다 따로** 세므로, 한쪽만 `file_lead` 를 다르게 지으면
         같은 폴더 안에서 번호가 겹치거나 건너뛴다."""
         # ★씬을 몰라도 **자리는 같다** — 비는 것은 파일 이름 앞뿐이다 (`out_dir` 의 ★★주)
-        d = self.out_dir(ws, set_name, tab_name)
+        d = self.out_dir(ws, scene_group_name, tab_name)
         lead = file_lead(cell_no, cell, exclude_no)
         path = self.next_name(d, lead, fmt, ws)
         path.write_bytes(data)
@@ -511,12 +511,12 @@ class Store:
         return p
 
     # ── 새 탭으로 복제 ────────────────────────────────────────
-    def copy_to_set(
+    def copy_to_scene_group(
         self,
         ws: str,
         file: str,
-        set_name: str,
-        set_id: str | None,
+        scene_group_name: str,
+        scene_group_id: str | None,
         cell: str | None,
         cell_id: str | None,
         cell_no: int | None,
@@ -533,7 +533,7 @@ class Store:
         ★옮기지 않고 **복사**한다. 원본이 그대로라 보던 화면·선택이 흐트러지지 않는다.
         ★이름·자리는 `store_output` 하나가 정한다 — 보통 생성과 같은 규칙이라야 받는 씬의
           번호열이 어긋나지 않는다.
-        ★레코드에 `set_id`·`cell_id` 를 함께 쓴다 — 받는 세트가 `idOnly` 라 그것이 없으면
+        ★레코드에 `scene_group_id`·`cell_id` 를 함께 쓴다 — 받는 세트가 `idOnly` 라 그것이 없으면
           복사해 놓고 화면 어디에도 안 뜬다 (`lib/takes.ts`).
 
         ★`src_path` 는 **워크스페이스 밖의 원본**이다 (보관함 그림). 갤러리의
@@ -548,16 +548,16 @@ class Store:
             {},
         )
         fmt = src.suffix.lstrip(".").lower() or "png"
-        rel = self.store_output(ws, set_name, cell, cell_no, tab_name, exclude_no, fmt, src.read_bytes())
+        rel = self.store_output(ws, scene_group_name, cell, cell_no, tab_name, exclude_no, fmt, src.read_bytes())
         # ★`resolved`(그때 나간 페이로드)와 `enhance_of` 는 안 싣는다. resolved 는 바이브·베이스
         #   그림의 base64 가 들어 있어 크고, enhance_of 는 **다른 탭의 파일**을 가리키는
         #   출처 기록이라 옮겨 오면 뜻이 어긋난다 (`/api/save-preview` 와 같은 판단).
         rec = {
             "ts": datetime.now().isoformat(timespec="seconds"),
             "file": rel,
-            "set": set_name,
+            "scene_group": scene_group_name,
             "cell": cell,
-            "set_id": set_id,
+            "scene_group_id": scene_group_id,
             "cell_id": cell_id,
             "enhance_of": None,
             "seed": int(seed if seed is not None else (old.get("seed") or 0)),

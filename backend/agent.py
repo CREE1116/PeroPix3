@@ -114,10 +114,10 @@ def _scenes(st: dict) -> list[dict]:
     return out
 
 
-def _set_prompt(spec: dict, st: dict) -> dict:
+def _scene_group_prompt(spec: dict, st: dict) -> dict:
     """그 세트에 걸리는 **프롬프트**.
 
-    ★★세트(kind=="set")의 프롬프트는 **탭에 산다** (`spec.tabs[].prompt` — `workspace.ts` 의
+    ★★세트(kind=="sceneGroup")의 프롬프트는 **탭에 산다** (`spec.tabs[].prompt` — `workspace.ts` 의
       `promptOf`). 한 탭 아래 세트들은 같은 인물의 다른 포즈 묶음이라 프롬프트를 함께 쓴다.
       여기는 세트에서만 찾고 있어서 **프롬프트가 통째로 안 보였다** (2026-08-24 발견).
     ★세트에 든 것을 읽는 폴백은 두지 않는다 — 그 모양(옛 워크스페이스·싱글 탭)이 남아 있지
@@ -377,7 +377,7 @@ class Tools:
         if name == "generate" and out.get("ok") and not out.get("at"):
             # ★생성은 **못 되돌린다** — 이미 Anlas 를 썼다. 그래도 자리는 남긴다
             n = out.get("queued", 0)
-            where = out.get("set") or ""
+            where = out.get("sceneGroup") or ""
             did = f"「{where}」 세트에 {n}장을 넣음" if where else f"큐에 {n}장을 넣음"
             out["did"] = did
             out["at"] = self._mark("generate", did, {"kind": "queue"},
@@ -642,7 +642,7 @@ class Tools:
                 None,  # 앱에 시킨다 (아래 ★★주)
             ),
             (
-                "create_set",
+                "create_scene_group",
                 "★**세트를 새로 만든다** (지금 탭 아래). `scenes` 를 주면 그 이름의 씬들과 함께 "
                 "열고, 비우면 씬 없는 빈 세트다. 앱이 켜져 있어야 한다.",
                 obj({"name": s("세트 이름 (비우면 기본 이름)"),
@@ -655,7 +655,7 @@ class Tools:
                 "★**씬 칸을 하나 더한다.** `set` 을 비우면 지금 보고 있는 세트에. "
                 "앱이 켜져 있어야 한다.",
                 obj({"name": s("씬 이름 (비우면 기본 이름)"),
-                     "set": s("어느 세트에 — 비우면 지금 보고 있는 세트")}),
+                     "sceneGroup": s("어느 씬 그룹에 — 비우면 지금 보고 있는 씬 그룹")}),
                 None,
             ),
             (
@@ -666,7 +666,7 @@ class Tools:
                 "사용자가 장수를 말했을 때만 쓴다.",
                 obj({"count": n("몇 바퀴. 기본 1"),
                      "workspace": s("어디에 넣을지 — 비우면 지금 보고 있는 곳"),
-                     "set": s("어느 세트에 넣을지 — 비우면 그 워크스페이스의 활성 세트")}),
+                     "sceneGroup": s("어느 씬 그룹에 넣을지 — 비우면 그 워크스페이스의 활성 씬 그룹")}),
                 None,  # 앱에 시킨다 (아래 _call_app)
             ),
             (
@@ -745,7 +745,7 @@ class Tools:
                                    "이름이 여럿에 걸리면 고르지 않고 되묻는다"),
                         "workspace": s("어느 워크스페이스 — 비우면 지금 열린 것 (다르면 거절한다)"),
                         "tab": s("어느 탭 — id 가 정확하다 (이름도 받는다). 비우면 지금 탭"),
-                        "set": s("어느 세트 — **id 로** 줘라 (이름은 탭마다 겹친다). 비우면 지금 세트"),
+                        "sceneGroup": s("어느 씬 그룹 — **id 로** 줘라 (이름은 탭마다 겹친다). 비우면 지금 씬 그룹"),
                         "scene": s("씬 칸 하나를 고칠 때 그 씬의 이름이나 id "
                                    "(주면 area·label 은 쓰지 않는다 — 칸에는 블록이 하나뿐이다)"),
                     },
@@ -832,10 +832,10 @@ class Tools:
             return fail("not_found", f"그런 워크스페이스가 없습니다: {name}",
                         what="workspace", given=name,
                         candidates=near_by(name, [x["name"] for x in self.store.list()]))
-        sets = []
-        for t in spec.get("sets", []):
+        scene_groups = []
+        for t in spec.get("sceneGroups", []):
             row = {"id": t.get("id"), "kind": t.get("kind"), "name": t.get("name")}
-            if t.get("kind") == "set":
+            if t.get("kind") == "sceneGroup":
                 # ★어느 탭에 달렸는지 — 조수가 「키키 탭의 세트」를 고르려면 있어야 한다
                 row["tab"] = t.get("tabId")
                 row["scenes"] = _scenes(t)
@@ -847,7 +847,7 @@ class Tools:
                      "locked": bool(k.get("locked")), "scenes": len(k.get("cells") or [])}
                     for k in (t.get("cards") or [])
                 ]
-            p = _set_prompt(spec, t)
+            p = _scene_group_prompt(spec, t)
             if p:
                 row["prompt"] = {
                     "style": (p.get("style") or {}).get("name"),
@@ -868,7 +868,7 @@ class Tools:
                         for c in (p.get("chars") or [])
                     ],
                 }
-            sets.append(row)
+            scene_groups.append(row)
         out: dict[str, Any] = {
             "name": name,
             # ★★이름은 **화면 낱말**이다 (`docs/terms-plan.md` 의 낱말표) — 탭·세트·씬.
@@ -876,8 +876,8 @@ class Tools:
             #   여기서 **옮겨 담아** 계약을 지킨다.
             "tabs": [{"id": c.get("id"), "name": c.get("name")} for c in (spec.get("tabs") or [])],
             "activeTab": spec.get("activeTab"),
-            "sets": sets,
-            "activeSet": spec.get("activeSet"),
+            "sceneGroups": scene_groups,
+            "activeSceneGroup": spec.get("activeSceneGroup"),
         }
         out["model"] = _tab_model(spec)
         # ★★**생성 옵션을 통째로 준다** (선결 조건 3-6). 예전에는 `model` 하나뿐이라
@@ -1284,7 +1284,7 @@ def terms_block(lang: str = "") -> str:
         "★A **character prompt** (`characters`) is a person inside the image being drawn;",
         "  a **character card** (`characterCard`) is saved material in the deck. Editing the card",
         "  does not change what is on screen. The same split holds for a **style card** and `base`.",
-        "★`tabs` contain `sets`, and a set contains `scenes`. Say which one you mean.",
+        "★`tabs` contain `sceneGroups`, and a scene group contains `scenes`. Say which one you mean.",
     ]
     return "\n".join(out)
 
@@ -1331,7 +1331,7 @@ Principles:
 - When you need to know what the user is doing, call **get_workspace** first.
 - ★★**You are always working at one address: workspace → tab → set.** Know it before you
   change anything. `get_workspace` gives you all three (each set carries its `id` and `tab`;
-  `activeTab` / `activeSet` say where the screen is). Pass them back as
+  `activeTab` / `activeSceneGroup` say where the screen is). Pass them back as
   `workspace` / `tab` / `set` - **ids, not names**: names like "새 탭" and "새 세트" repeat
   across tabs, and a name that matches two places is refused, not guessed.
   ★★**Do not recite the address to the user.** They are looking at it. Mention where you
@@ -1462,7 +1462,7 @@ Principles:
   did not agree to is a rule they cannot see.
 - ★**Always say what you changed.** If you touched a card, a prompt, a file or the guide,
   put one line about it in your reply. The user must be able to ask you to undo it.
-- ★**Making tabs, sets and scenes goes through the app** (create_tab / create_set /
+- ★**Making tabs, scene groups and scenes goes through the app** (create_tab / create_scene_group /
   create_scene). The workspace file belongs to the screen - the app holds it and writes it
   whole - so these need the app running, and the change shows up there immediately.
   create_tab also **moves to** the new tab, so calls after it land in it.

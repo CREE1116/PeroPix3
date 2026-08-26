@@ -21,10 +21,10 @@ import { takesOf, type Rec } from "./takes.ts";
 
 /** 지울 대상 — 네 갈래뿐이다 (덱 카드·갤러리 폴더는 다른 저장소라 여기 없다) */
 export type DelTarget =
-  | { kind: "set"; id: string }
+  | { kind: "sceneGroup"; id: string }
   | { kind: "tab"; id: string }
-  | { kind: "scene"; setId: string; cellId: string }
-  | { kind: "sceneCard"; setId: string; cardId: string };
+  | { kind: "scene"; groupId: string; cellId: string }
+  | { kind: "sceneCard"; groupId: string; cardId: string };
 
 /** 못 하는 이유 — 있으면 **실행하지 않는다** */
 export type DelBlock = "not_found" | "last_set" | "last_tab";
@@ -59,10 +59,10 @@ export type DelPlan = {
 type Cell = { id: string; name: string };
 type Card = { id: string; name: string; cells: Cell[] };
 type Set_ = { id: string; kind: string; name: string; cards?: Card[]; tabId?: string; idOnly?: boolean };
-type Spec_ = { tabs?: { id: string; name: string }[]; sets: Set_[] };
+type Spec_ = { tabs?: { id: string; name: string }[]; sceneGroups: Set_[] };
 
 const isSet = (t: Set_ | undefined): t is Set_ & { cards: Card[] } =>
-  !!t && t.kind === "set" && Array.isArray(t.cards);
+  !!t && t.kind === "sceneGroup" && Array.isArray(t.cards);
 
 /** 그 세트의 모든 씬 — 카드 순서대로 편다 (`store/workspace` 의 `allCells` 와 같은 규칙) */
 const cellsOf = (t: Set_ & { cards: Card[] }): Cell[] => t.cards.flatMap((k) => k.cells);
@@ -91,7 +91,7 @@ export function planDelete(
   if (target.kind === "tab") {
     const tab = (spec.tabs ?? []).find((c) => c.id === target.id);
     if (!tab) return none("tab");
-    const mine = spec.sets.filter((x) => x.kind === "set" && x.tabId === target.id);
+    const mine = spec.sceneGroups.filter((x) => x.kind === "sceneGroup" && x.tabId === target.id);
     const files = mine.flatMap((t) => filesOfSet(records, t, deleted));
     /* ★탭이 사라지면 **그 탭의 프롬프트도** 사라진다 (프롬프트는 탭에 산다) — 편집기가
        다른 탭 것으로 갈리므로 프롬프트 자리의 되돌리기도 함께 뺀다.
@@ -108,20 +108,20 @@ export function planDelete(
     };
   }
 
-  if (target.kind === "set") {
-    const t = spec.sets.find((x) => x.id === target.id);
-    if (!isSet(t)) return none("set");
+  if (target.kind === "sceneGroup") {
+    const t = spec.sceneGroups.find((x) => x.id === target.id);
+    if (!isSet(t)) return none("sceneGroup");
     /* ★★**그 탭의 마지막 세트는 못 닫는다** (`closeSet` 의 ★★주). 안 막으면 탭 줄이
        비고 `neighbour` 가 undefined 라 앱이 죽는다. 세는 단위는 **탭**이다. */
-    const siblings = spec.sets.filter((x) => x.kind === "set" && x.tabId === t.tabId);
+    const siblings = spec.sceneGroups.filter((x) => x.kind === "sceneGroup" && x.tabId === t.tabId);
     return {
-      kind: "set", name: t.name, files: filesOfSet(records, t, deleted),
+      kind: "sceneGroup", name: t.name, files: filesOfSet(records, t, deleted),
       inner: cellsOf(t).length, hard: true, zones: sceneZones(cellsOf(t)),
       blocked: siblings.length <= 1 ? "last_set" : undefined,
     };
   }
 
-  const t = spec.sets.find((x) => x.id === target.setId);
+  const t = spec.sceneGroups.find((x) => x.id === target.groupId);
   if (!isSet(t)) return none(target.kind);
 
   if (target.kind === "sceneCard") {

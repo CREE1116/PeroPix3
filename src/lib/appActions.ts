@@ -16,7 +16,7 @@
  */
 
 import { defineAction, err, nearBy, type ActionResult } from "./actions.ts";
-import { useWs, type DelTarget, type SceneSet } from "../store/workspace";
+import { useWs, type DelTarget, type SceneGroup } from "../store/workspace";
 import { findSetAt, findTab, whereOf } from "./findAt.ts";
 import { useCensor } from "../store/censor";
 import { useQueue } from "../store/queue";
@@ -34,11 +34,11 @@ import { t } from "../i18n";
  *
  *  예전에는 여기서 `find(x => x.id === key || x.name === key)` 로 **처음 걸리는 것**을 집었다.
  *  「새 세트」 같은 기본 이름은 탭마다 있으므로 **다른 탭의 세트를 지우고** 성공이라 답할 수
- *  있었다 (이 함수를 `delete_set`·`delete_scene`·`move_scene`·`apply` 가 함께 쓴다).
+ *  있었다 (이 함수를 `delete_scene_group`·`delete_scene`·`move_scene`·`apply` 가 함께 쓴다).
  *  ★못 찾거나 여럿이면 그대로 오류로 바꿔 낸다 — 고르는 것은 코드가 할 일이 아니다. */
 function findSet(key: string, tab = "") {
   const r = findSetAt(key, tab);
-  if ("hit" in r) return { hit: r.hit as SceneSet, miss: null };
+  if ("hit" in r) return { hit: r.hit as SceneGroup, miss: null };
   return { hit: undefined, miss: err(r.miss.code, r.miss.message, { given: key, candidates: r.miss.candidates }) };
 }
 
@@ -79,7 +79,7 @@ function previewRemove(target: DelTarget): string {
   /* ★★**어느 탭인지 함께 적는다** (사용자 승인 2026-08-25). 이름만 적으면 다른 탭의 같은
      이름을 지우려는 것도 **똑같은 카드**로 보인다 — 그러면 승인 절차가 방어가 되지 않는다.
      ★자리를 말로 옮기는 것은 `lib/findAt` 의 `whereOf` 하나다. */
-  const at = target.kind === "set" ? whereOf(target.id) : target.kind === "scene" ? whereOf(target.setId) : "";
+  const at = target.kind === "sceneGroup" ? whereOf(target.id) : target.kind === "scene" ? whereOf(target.groupId) : "";
   const bits = [at && at.includes("탭") ? `${at} 안의 「${p.name}」` : `「${p.name}」`];
   if (p.inner) bits.push(`안에 든 ${p.inner}개`);
   if (p.files.length) bits.push(`그림 ${p.files.length}장 (휴지통으로)`);
@@ -87,23 +87,23 @@ function previewRemove(target: DelTarget): string {
 }
 
 defineAction({
-  id: "delete_set",
+  id: "delete_scene_group",
   title: "세트를 지웁니다",
   desc: "★**세트를 닫는다** — 그 안의 씬과 **그림도 함께 휴지통으로** 간다. "
     + "그 탭의 마지막 세트는 못 닫는다 (탭이 빈다).",
   args: {
-    set: { type: "string", desc: "세트 **id** (이름은 탭마다 겹친다)", required: true },
+    sceneGroup: { type: "string", desc: "씬 그룹 **id** (이름은 탭마다 겹친다)", required: true },
     tab: { type: "string", desc: "어느 탭의 세트인지 — 이름으로 줄 때 함께 주면 정확하다" },
   },
   confirm: "hard",
   preview: (a) => {
-    const { hit } = findSet(String(a.set ?? ""));
-    return hit ? previewRemove({ kind: "set", id: hit.id }) : "그런 세트가 없습니다.";
+    const { hit } = findSet(String(a.sceneGroup ?? ""));
+    return hit ? previewRemove({ kind: "sceneGroup", id: hit.id }) : "그런 세트가 없습니다.";
   },
   run: async (a) => {
-    const { hit, miss } = findSet(String(a.set ?? ""), String(a.tab ?? ""));
+    const { hit, miss } = findSet(String(a.sceneGroup ?? ""), String(a.tab ?? ""));
     if (!hit) return miss!;
-    return doRemove({ kind: "set", id: hit.id });
+    return doRemove({ kind: "sceneGroup", id: hit.id });
   },
 });
 
@@ -111,10 +111,10 @@ defineAction({
   id: "delete_scene",
   title: "씬을 지웁니다",
   desc: "★**씬 칸을 지운다** — 그 씬의 **그림도 함께 휴지통으로** 간다. "
-    + "`set` 을 비우면 지금 보고 있는 세트에서 찾는다.",
+    + "`sceneGroup` 을 비우면 지금 보고 있는 씬 그룹에서 찾는다.",
   args: {
     scene: { type: "string", desc: "씬 이름 또는 id", required: true },
-    set: { type: "string", desc: "어느 세트에서 — 비우면 지금 보고 있는 세트 (**id** 가 정확하다)" },
+    sceneGroup: { type: "string", desc: "어느 씬 그룹에서 — 비우면 지금 보고 있는 세트 (**id** 가 정확하다)" },
     tab: { type: "string", desc: "어느 탭의 세트인지 — 세트를 이름으로 줄 때 함께 준다" },
   },
   confirm: "hard",
@@ -131,10 +131,10 @@ defineAction({
 /** 씬을 고른다 — 세트를 안 주면 지금 보고 있는 것에서 */
 function pickScene(a: Record<string, any>): { target: DelTarget } | ReturnType<typeof err> {
   const ws = useWs.getState();
-  const want = String(a.set ?? "").trim();
-  const found = want ? findSet(want, String(a.tab ?? "")) : { hit: ws.activeSet(), miss: null };
+  const want = String(a.sceneGroup ?? "").trim();
+  const found = want ? findSet(want, String(a.tab ?? "")) : { hit: ws.activeSceneGroup(), miss: null };
   const set = found.hit;
-  if (!set || set.kind !== "set")
+  if (!set || set.kind !== "sceneGroup")
     return found.miss ?? err("not_found", "열려 있는 세트가 없습니다.", { retry: "never" });
   const key = String(a.scene ?? "").trim();
   const cells = set.cards.flatMap((k) => k.cells);
@@ -143,7 +143,7 @@ function pickScene(a: Record<string, any>): { target: DelTarget } | ReturnType<t
     return err("not_found", `그런 씬이 없습니다: ${key}`, {
       what: "scene", given: key, candidates: nearBy(key, cells.map((c) => c.name)),
     });
-  return { target: { kind: "scene", setId: set.id, cellId: cell.id } };
+  return { target: { kind: "scene", groupId: set.id, cellId: cell.id } };
 }
 
 /* ── 큐 ─────────────────────────────────────────────────────── */
@@ -331,7 +331,7 @@ defineAction({
   args: {
     count: { type: "number", desc: "몇 바퀴. 기본 1" },
     workspace: { type: "string", desc: "어디에 넣을지 — 비우면 지금 보고 있는 곳" },
-    set: { type: "string", desc: "어느 세트에 — 비우면 활성 세트" },
+    sceneGroup: { type: "string", desc: "어느 씬 그룹에 — 비우면 활성 세트" },
   },
   // ★★돈이 나가면 되돌릴 수 없다 — 그때만 `hard`
   confirm: (a) => (costNow(Math.max(1, Number(a.count) || 1)).total > 0 ? "hard" : "ask"),
@@ -367,16 +367,16 @@ defineAction({
   args: {
     scene: { type: "string", desc: "옮길 씬 이름 또는 id", required: true },
     before: { type: "string", desc: "이 씬 **앞**에 놓는다 — 비우면 맨 뒤" },
-    set: { type: "string", desc: "어느 세트에서 — 비우면 지금 보고 있는 세트" },
+    sceneGroup: { type: "string", desc: "어느 씬 그룹에서 — 비우면 지금 보고 있는 세트" },
     tab: { type: "string", desc: "어느 탭의 세트인지 — 세트를 이름으로 줄 때 함께 준다" },
   },
   confirm: "none",
   run: async (a) => {
     const ws = useWs.getState();
-    const want = String(a.set ?? "").trim();
-    const found = want ? findSet(want, String(a.tab ?? "")) : { hit: ws.activeSet(), miss: null };
+    const want = String(a.sceneGroup ?? "").trim();
+    const found = want ? findSet(want, String(a.tab ?? "")) : { hit: ws.activeSceneGroup(), miss: null };
     const set = found.hit;
-    if (!set || set.kind !== "set")
+    if (!set || set.kind !== "sceneGroup")
       return found.miss ?? err("not_found", "열려 있는 세트가 없습니다.", { retry: "never" });
 
     /* ★씬은 **카드 안에** 있다. 옮길 자리는 「받는 카드 + 그 카드 안의 틈 번호」로 준다
@@ -525,7 +525,7 @@ defineAction({
 /** 무엇에 · 어떤 값을 걸 수 있나. ★여기 없는 이름은 **거절한다** (조용히 버리지 않는다) */
 const APPLY: Record<string, { fields: Record<string, "string" | "boolean">; label: string }> = {
   tab: { label: "탭", fields: { name: "string" } },
-  set: { label: "세트", fields: { name: "string" } },
+  sceneGroup: { label: "씬 그룹", fields: { name: "string" } },
   scene: { label: "씬", fields: { name: "string", locked: "boolean" } },
   sceneCard: { label: "씬 카드", fields: { name: "string", locked: "boolean", folded: "boolean" } },
 };
@@ -538,19 +538,19 @@ const APPLY: Record<string, { fields: Record<string, "string" | "boolean">; labe
  *  ★`id` 는 **반드시 id** 로 담는다: 이름으로 담으면 이름을 바꾼 뒤에 못 찾는다. */
 const undoApply = (what: string, id: string, was: Record<string, unknown>) => ({
   action: "apply",
-  args: { what, id, set: was },
+  args: { what, id, patch: was },
 });
 
 defineAction({
   id: "apply",
   desc: "★**이름·잠금 같은 단순한 값을 고친다.** «세트 이름을 표정으로»·«미소 씬 잠가줘» 가 "
-    + "이것이다. `what` 은 tab·set·scene·sceneCard 중 하나이고, `set` 에 고칠 값을 준다. "
-    + "고칠 수 있는 값 — tab·set: name / scene: name·locked / sceneCard: name·locked·folded. "
+    + "이것이다. `what` 은 tab·sceneGroup·scene·sceneCard 중 하나이고, `patch` 에 고칠 값을 준다. "
+    + "고칠 수 있는 값 — tab·sceneGroup: name / scene: name·locked / sceneCard: name·locked·folded. "
     + "★프롬프트·블록은 여기가 아니라 `edit_current_prompt` 로 고친다.",
   args: {
-    what: { type: "string", desc: '"tab" | "set" | "scene" | "sceneCard"', required: true },
+    what: { type: "string", desc: '"tab" | "sceneGroup" | "scene" | "sceneCard"', required: true },
     id: { type: "string", desc: "그것의 이름 또는 id", required: true },
-    set: { type: "object", desc: '고칠 값 — 예: {"name": "표정"} · {"locked": true}', required: true },
+    patch: { type: "object", desc: '고칠 값 — 예: {"name": "표정"} · {"locked": true}', required: true },
   },
   confirm: "none",
   run: async (a) => {
@@ -560,7 +560,7 @@ defineAction({
       return err("unknown_field", `그런 대상이 없습니다: ${what}`, {
         candidates: Object.keys(APPLY), retry: "safe",
       });
-    const patch = (a.set ?? {}) as Record<string, unknown>;
+    const patch = (a.patch ?? {}) as Record<string, unknown>;
     const bad = Object.keys(patch).filter((k) => !spec.fields[k]);
     if (bad.length)
       return err("unknown_field", `${spec.label}에 고칠 수 없는 값입니다: ${bad.join(", ")}`, {
@@ -592,16 +592,16 @@ defineAction({
       const { hit, miss } = findSet(key, String(a.tab ?? ""));
       if (!hit) return miss!;
       const wasSet = { name: hit.name };
-      ws.renameSet(hit.id, String(patch.name));
+      ws.renameSceneGroup(hit.id, String(patch.name));
       return { ok: true, did: `세트 「${hit.name}」 → ${done}`,
-        at: { kind: "prompt", workspace: ws.current ?? undefined, set: hit.id },
+        at: { kind: "prompt", workspace: ws.current ?? undefined, sceneGroup: hit.id },
         before: undoApply("set", hit.id, wasSet) };
     }
 
-    /* 씬·씬카드 — ★둘 다 **세트 안**에 산다 (`sets[].cards[].cells`). 지금 보고 있는
+    /* 씬·씬카드 — ★둘 다 **세트 안**에 산다 (`sceneGroups[].cards[].cells`). 지금 보고 있는
        세트에서 찾는다: 다른 세트의 것을 고치려면 먼저 그 세트를 연다 (`switch_tab`·생성). */
-    const cur = ws.activeSet();
-    if (cur?.kind !== "set") return err("no_workspace", "열려 있는 세트가 없습니다.", { retry: "never" });
+    const cur = ws.activeSceneGroup();
+    if (cur?.kind !== "sceneGroup") return err("no_workspace", "열려 있는 세트가 없습니다.", { retry: "never" });
 
     if (what === "sceneCard") {
       const card = cur.cards.find((k) => k.id === key || k.name === key);
@@ -614,7 +614,7 @@ defineAction({
       );
       ws.setCard(cur.id, card.id, patch as never);
       return { ok: true, did: `씬 카드 「${card.name}」 → ${done}`,
-        at: { kind: "prompt", workspace: ws.current ?? undefined, set: cur.id },
+        at: { kind: "prompt", workspace: ws.current ?? undefined, sceneGroup: cur.id },
         before: undoApply("sceneCard", card.id, wasCard) };
     }
 
@@ -631,7 +631,7 @@ defineAction({
     const wasCell = Object.fromEntries(
       Object.keys(patch).map((k) => [k, (cell as Record<string, unknown>)[k]]),
     );
-    ws.patchSet(cur.id, {
+    ws.patchSceneGroup(cur.id, {
       cards: cur.cards.map((k) => ({
         ...k,
         cells: k.cells.map((c) => (c.id === cell.id ? { ...c, ...patch } : c)),
@@ -641,7 +641,7 @@ defineAction({
     return {
       ok: true,
       did: `씬 「${cell.name}」 → ${done}` + (patch.name ? " (파일 이름도 함께 갱신)" : ""),
-      at: { kind: "prompt", workspace: ws.current ?? undefined, set: cur.id, scene: cell.id },
+      at: { kind: "prompt", workspace: ws.current ?? undefined, sceneGroup: cur.id, scene: cell.id },
       before: undoApply("scene", cell.id, wasCell),
     };
   },

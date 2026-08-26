@@ -2,7 +2,7 @@ import { api } from "../lib/backend";
 import { compileBlocks } from "../lib/blocks";
 import { resolveWildcards } from "../lib/wildcards";
 import { wildcardPools } from "./wildcards";
-import { allScenes, promptOf, type SceneSet, type Spec } from "./workspace";
+import { allScenes, promptOf, type SceneGroup, type Spec } from "./workspace";
 import { useQueue } from "./queue";
 import { useGen } from "./gen";
 
@@ -19,7 +19,7 @@ export async function queueToWorkspace(
   workspace: string,
   count: number,
   setName?: string,
-): Promise<{ ok: true; queued: number; set: string } | { error: string }> {
+): Promise<{ ok: true; queued: number; scene_group: string } | { error: string }> {
   let spec: Spec | null = null;
   try {
     const r = await api<{ spec: Spec | null }>(`/api/workspaces/${encodeURIComponent(workspace)}`);
@@ -29,17 +29,17 @@ export async function queueToWorkspace(
   }
   if (!spec) return { error: `'${workspace}' 워크스페이스가 없습니다.` };
 
-  const tabs: SceneSet[] = spec.sets ?? [];
-  /* ★찾는 곳이 `spec.sets` 이므로 이름도 **세트 이름**이다 (인자 이름이 `tabName` 이라
+  const tabs: SceneGroup[] = spec.sceneGroups ?? [];
+  /* ★찾는 곳이 `spec.sceneGroups` 이므로 이름도 **세트 이름**이다 (인자 이름이 `tabName` 이라
      탭 이름으로 오해하기 쉬웠다 — 적대 검토 2026-08-24). */
-  /* ★★세트를 찾는 열쇠는 **`activeSet`** 이다. 개명(2026-08-24) 전에는 `spec.tabs` 를
-     `activeTab` 으로 찾는 맞는 코드였는데, 목록만 `spec.sets` 로 바뀌고 열쇠는 남아서
+  /* ★★세트를 찾는 열쇠는 **`activeSceneGroup`** 이다. 개명(2026-08-24) 전에는 `spec.tabs` 를
+     `activeTab` 으로 찾는 맞는 코드였는데, 목록만 `spec.sceneGroups` 로 바뀌고 열쇠는 남아서
      **절대 안 맞고 언제나 `tabs[0]`(첫 세트)으로 떨어졌다** — 세트 id 는 `tab_…`,
      탭 id 는 `ch_…` 라 겹칠 수가 없다. 조수가 「저쪽 워크스페이스에 넣어 줘」를 하면
      오류 없이 **엉뚱한 세트**에 쌓였다 (적대 검토 2026-08-24). */
   const tab = setName
     ? tabs.find((t) => t.name === setName)
-    : (tabs.find((t) => t.id === spec!.activeSet) ?? tabs[0]);
+    : (tabs.find((t) => t.id === spec!.activeSceneGroup) ?? tabs[0]);
   if (!tab) return { error: setName ? `'${setName}' 세트가 없습니다.` : "세트가 없습니다." };
 
   const p = promptOf(spec, tab);
@@ -70,7 +70,7 @@ export async function queueToWorkspace(
   /* ★★갈래가 **하나**다 — 2026-08-24 에 옛 싱글 탭 분기를 걷었다 (사용자 확인:
        *"현재 개발단계이고 그런 워크스페이스는 없음"*). 그 분기는 씬 없이 큐에 넣어서
        파일 이름에 씬 번호가 안 붙었다. */
-  if (tab.kind !== "set") return { error: `'${tab.name}' 은 씬 세트가 아닙니다.` };
+  if (tab.kind !== "sceneGroup") return { error: `'${tab.name}' 은 씬 세트가 아닙니다.` };
   // ★씬마다 한 바퀴씩 돈다 (gen.generateAll 과 같은 규칙).
   //   ★카드 공통 접두는 걷혔다 (2026-08-21) — 두 경로가 **같은 문자열**을 만들어야 한다
   const live = allScenes(tab).filter((x) => !x.cell.locked && !x.card.locked);
@@ -88,8 +88,8 @@ export async function queueToWorkspace(
           negative_prompt: resolveWildcards(uc, wildcardPools()),
           workspace,
           characters: chars,
-          set: tab.name,
-          set_id: tab.id,
+          scene_group: tab.name,
+          scene_group_id: tab.id,
           cell: c.name,
           cell_id: c.id,
           cell_no: i + 1,
@@ -101,5 +101,5 @@ export async function queueToWorkspace(
       );
     }
   }
-  return { ok: true, queued: live.length * n, set: tab.name };
+  return { ok: true, queued: live.length * n, scene_group: tab.name };
 }

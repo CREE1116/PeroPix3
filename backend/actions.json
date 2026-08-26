@@ -1,12 +1,12 @@
 {
   "actions": [
     {
-      "id": "delete_set",
+      "id": "delete_scene_group",
       "desc": "★**세트를 닫는다** — 그 안의 씬과 **그림도 함께 휴지통으로** 간다. 그 탭의 마지막 세트는 못 닫는다 (탭이 빈다).",
       "args": {
-        "set": {
+        "sceneGroup": {
           "type": "string",
-          "desc": "세트 **id** (이름은 탭마다 겹친다)",
+          "desc": "씬 그룹 **id** (이름은 탭마다 겹친다)",
           "required": true
         },
         "tab": {
@@ -17,16 +17,16 @@
     },
     {
       "id": "delete_scene",
-      "desc": "★**씬 칸을 지운다** — 그 씬의 **그림도 함께 휴지통으로** 간다. `set` 을 비우면 지금 보고 있는 세트에서 찾는다.",
+      "desc": "★**씬 칸을 지운다** — 그 씬의 **그림도 함께 휴지통으로** 간다. `sceneGroup` 을 비우면 지금 보고 있는 씬 그룹에서 찾는다.",
       "args": {
         "scene": {
           "type": "string",
           "desc": "씬 이름 또는 id",
           "required": true
         },
-        "set": {
+        "sceneGroup": {
           "type": "string",
-          "desc": "어느 세트에서 — 비우면 지금 보고 있는 세트 (**id** 가 정확하다)"
+          "desc": "어느 씬 그룹에서 — 비우면 지금 보고 있는 세트 (**id** 가 정확하다)"
         },
         "tab": {
           "type": "string",
@@ -108,9 +108,9 @@
           "type": "string",
           "desc": "어디에 넣을지 — 비우면 지금 보고 있는 곳"
         },
-        "set": {
+        "sceneGroup": {
           "type": "string",
-          "desc": "어느 세트에 — 비우면 활성 세트"
+          "desc": "어느 씬 그룹에 — 비우면 활성 세트"
         }
       }
     },
@@ -127,9 +127,9 @@
           "type": "string",
           "desc": "이 씬 **앞**에 놓는다 — 비우면 맨 뒤"
         },
-        "set": {
+        "sceneGroup": {
           "type": "string",
-          "desc": "어느 세트에서 — 비우면 지금 보고 있는 세트"
+          "desc": "어느 씬 그룹에서 — 비우면 지금 보고 있는 세트"
         },
         "tab": {
           "type": "string",
@@ -177,7 +177,7 @@
     },
     {
       "id": "apply",
-      "desc": "★**이름·잠금 같은 단순한 값을 고친다.** «세트 이름을 표정으로»·«미소 씬 잠가줘» 가 이것이다. `what` 은 tab·set·scene·sceneCard 중 하나이고, `set` 에 고칠 값을 준다. 고칠 수 있는 값 — tab·set: name / scene: name·locked / sceneCard: name·locked·folded. ★프롬프트·블록은 여기가 아니라 `edit_current_prompt` 로 고친다.",
+      "desc": "★**이름·잠금 같은 단순한 값을 고친다.** «세트 이름을 표정으로»·«미소 씬 잠가줘» 가 이것이다. `what` 은 tab·sceneGroup·scene·sceneCard 중 하나이고, `patch` 에 고칠 값을 준다. 고칠 수 있는 값 — tab·sceneGroup: name / scene: name·locked / sceneCard: name·locked·folded. ★프롬프트·블록은 여기가 아니라 `edit_current_prompt` 로 고친다.",
       "args": {
         "what": {
           "type": "string",
@@ -189,7 +189,7 @@
           "desc": "그것의 이름 또는 id",
           "required": true
         },
-        "set": {
+        "patch": {
           "type": "object",
           "desc": "",
           "required": true

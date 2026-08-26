@@ -18,11 +18,11 @@ import { useWs } from "../store/workspace";
 export type FindMiss = { code: "not_found" | "ambiguous"; message: string; candidates: string[] };
 
 const tabsOf = () => useWs.getState().spec?.tabs ?? [];
-const setsOf = () => (useWs.getState().spec?.sets ?? []).filter((x) => x.kind === "set");
+const sceneGroupsOf = () => (useWs.getState().spec?.sceneGroups ?? []).filter((x) => x.kind === "sceneGroup");
 
 /** 「어느 탭의 어느 것」을 말로 — 승인 카드·보고에 붙인다 (자리가 어긋난 것이 눈에 보이게) */
-export function whereOf(setId: string): string {
-  const set = setsOf().find((x) => x.id === setId);
+export function whereOf(groupId: string): string {
+  const set = sceneGroupsOf().find((x) => x.id === groupId);
   if (!set) return "";
   const tab = tabsOf().find((c) => c.id === (set as { tabId?: string }).tabId);
   return tab ? `「${tab.name}」 탭의 「${set.name}」` : `「${set.name}」`;
@@ -51,15 +51,15 @@ export function findTab(key: string): { hit: { id: string; name: string } } | { 
 /** 세트 하나 — id 우선 → 지금 탭 안의 같은 이름 → 그래도 여럿이면 되묻는다.
  *  @param tabKey 탭을 함께 받으면 **그 탭 안에서만** 찾는다 (주소로 부를 때) */
 export function findSetAt(key: string, tabKey = ""): { hit: { id: string; name: string } } | { miss: FindMiss } {
-  const sets = setsOf();
-  const byId = sets.find((x) => x.id === key);
+  const sceneGroups = sceneGroupsOf();
+  const byId = sceneGroups.find((x) => x.id === key);
   if (byId) return { hit: byId };
 
-  let scope = sets;
+  let scope = sceneGroups;
   if (tabKey) {
     const t = findTab(tabKey);
     if ("miss" in t) return t;
-    scope = sets.filter((x) => (x as { tabId?: string }).tabId === t.hit.id);
+    scope = sceneGroups.filter((x) => (x as { tabId?: string }).tabId === t.hit.id);
   }
   const named = scope.filter((x) => x.name === key);
   if (named.length === 1) return { hit: named[0] };

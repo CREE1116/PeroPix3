@@ -41,7 +41,7 @@ export const en = {
 
   panel: {
     deck: "Card deck",
-    slots: "Slots",
+    slots: "Scene groups",
     prompt: "Prompt",
     options: "Generation",
     expand: "Expand {name}",
@@ -104,15 +104,15 @@ export const en = {
     newCard: "New card",
     newStyle: "New style",
     newChar: "New character",
-    newSet: "New scene set",
+    newSet: "New scene group",
     addScene: "Add scene",
     removeScene: "Remove scene",
     hand: {
       styles: "Style cards",
       characters: "Character cards",
-      posesets: "Scene set cards",
+      posesets: "Scene cards",
     },
-    short: { styles: "Style", characters: "Character", posesets: "Scene set" },
+    short: { styles: "Style", characters: "Character", posesets: "Scene" },
     escClose: "Esc to close",
     empty: "No cards saved yet.",
     emptyHint: "Drag a section banner onto this card in the hand to save it.",
@@ -414,8 +414,8 @@ export const en = {
     aiTip: "Let NAI place them (no coordinates sent)",
     custom: "Custom",
     customTip: "Send the positions you set",
-    open: "Open the positioning board",
-    close: "Close the board (positions kept)",
+    open: "Open character positioning",
+    close: "Close positioning (positions kept)",
     stacked: "Characters are stacked on the same spot",
   },
   canvas: {
@@ -444,8 +444,8 @@ export const en = {
     cloneName: "Copy",
     add: "Add tab",
     rename: "Double-click to rename",
-    remove: "Delete tab (its scene sets and images go too)",
-    removeConfirm: 'Delete the tab "{name}"? ({t} sets, {n} images)',
+    remove: "Delete tab (its scene groups and images go too)",
+    removeConfirm: 'Delete the tab "{name}"? ({t} scene groups, {n} images)',
     lastOne: "The last tab cannot be deleted.",
   },
 
@@ -815,7 +815,7 @@ export const en = {
     width: "Slot width",
     namePlaceholder: "Name",
     empty: "nothing yet",
-    newName: "Slot {n}",
+    newName: "New scene",
     copyOf: "{name} copy",
     onlySet: "Slots exist only on multi tabs.",
     noTakes: "Nothing yet",
@@ -836,12 +836,12 @@ export const en = {
 
   /** ★This lower row is the "set" row. The row above is now called "tab", so keep the
    *  word "tab" out of this group (2026-08-18). */
-  set: {
-    closeConfirm: "Close set \"{name}\" ({n} images)",
+  sceneGroup: {
+    closeConfirm: "Close scene group \"{name}\" ({n} images)",
     closeConfirmBody: "The image files stay in the trash. Items older than 24 hours are cleared on app start.",
-    closeSet: "Close set",
-    newSet: "New set",
-    newSetTab: "New scene set",
+    closeSet: "Close scene group",
+    newSet: "New scene group",
+    newSetTab: "New scene group",
     posePrefix: "Scene {n}",
   },
 

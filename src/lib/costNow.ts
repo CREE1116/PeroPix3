@@ -21,8 +21,8 @@ import { useUi } from "../store/ui";
  *  ★★세는 규칙이 `gen.ts generateAll` 과 **같아야** 한다 (`!cell.locked && !card.locked`).
  *    한때 씬 잠금만 세어 푸터가 실제보다 많이 세고 비용도 부풀었다. */
 export function slotsNow(): number {
-  const tab = useWs.getState().activeSet();
-  if (tab?.kind !== "set") return 1;
+  const tab = useWs.getState().activeSceneGroup();
+  if (tab?.kind !== "sceneGroup") return 1;
   return allScenes(tab).filter((x) => !x.cell.locked && !x.card.locked).length;
 }
 

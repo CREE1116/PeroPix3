@@ -41,7 +41,7 @@ export const ko: Dict = {
 
   panel: {
     deck: "카드덱",
-    slots: "씬 세트",
+    slots: "씬 그룹",
     prompt: "프롬프트",
     options: "생성 옵션",
     expand: "{name} 펼치기",
@@ -107,15 +107,15 @@ export const ko: Dict = {
     newCard: "새 카드",
     newStyle: "새 스타일",
     newChar: "새 캐릭터",
-    newSet: "새 씬 세트",
+    newSet: "새 씬 그룹",
     addScene: "씬 추가",
     removeScene: "씬 빼기",
     hand: {
       styles: "스타일 카드",
       characters: "캐릭터 카드",
-      posesets: "씬 세트 카드",
+      posesets: "씬 카드",
     },
-    short: { styles: "스타일", characters: "캐릭터", posesets: "씬 세트" },
+    short: { styles: "스타일", characters: "캐릭터", posesets: "씬" },
     escClose: "Esc 닫기",
     empty: "아직 저장한 카드가 없습니다.",
     emptyHint: "섹션 배너를 우하단 핸드의 이 카드로 끌면 저장됩니다.",
@@ -458,8 +458,8 @@ export const ko: Dict = {
     cloneName: "복제",
     add: "탭 추가",
     rename: "더블클릭해서 이름 바꾸기",
-    remove: "탭 삭제 (씬 세트와 그림도 함께 사라짐)",
-    removeConfirm: "「{name}」 탭을 지웁니다 (세트 {t}개 · 그림 {n}장)",
+    remove: "탭 삭제 (씬 그룹과 그림도 함께 사라짐)",
+    removeConfirm: "「{name}」 탭을 지웁니다 (씬 그룹 {t}개 · 그림 {n}장)",
     lastOne: "마지막 탭은 지울 수 없습니다.",
   },
 
@@ -725,7 +725,7 @@ export const ko: Dict = {
     atPrompt: "그 프롬프트 자리를 엽니다",
     atFile: "파일 관리에서 그 폴더를 엽니다",
     atGuide: "지침 화면을 엽니다",
-    atQueue: "그 세트로 갑니다",
+    atQueue: "그 씬 그룹으로 갑니다",
     title: "AI",
     engineHint: "지금 쓰는 엔진 (누르면 설정으로)",
     contextAt: "AI 가 보고 있는 곳: {at}",
@@ -837,7 +837,7 @@ export const ko: Dict = {
     width: "슬롯 폭",
     namePlaceholder: "이름",
     empty: "아직 없음",
-    newName: "씬 {n}",
+    newName: "새 씬",
     copyOf: "{name} 사본",
     onlySet: "멀티 탭에서만 슬롯을 씁니다.",
     noTakes: "아직 없음",
@@ -856,14 +856,15 @@ export const ko: Dict = {
     curatedOpen: "생성 화면 끄고 슬롯만 보기",
   },
 
-  /** ★아래 줄은 「세트」다. 위 줄이 「탭」이 되면서 둘 다 "탭"이라 부르면 구별이 안 된다
-   *  (2026-08-18). 이 그룹의 문구에 「탭」을 되살리지 말 것. */
-  set: {
-    closeConfirm: "「{name}」 세트를 닫습니다 (그림 {n}장)",
+  /** ★아래 줄은 **「씬 그룹」**이다 (개명 2026-08-27 — 영어 `set` 은 이 분야에서 **촬영장**을
+   *  뜻해서 「장면 묶음」으로 안 읽혔다). 위 줄이 「탭」이라, 이 묶음의 문구에 「탭」을
+   *  되살리지 말 것 — 둘 다 「탭」이면 구별이 안 된다 (2026-08-18). */
+  sceneGroup: {
+    closeConfirm: "「{name}」 씬 그룹을 닫습니다 (그림 {n}장)",
     closeConfirmBody: "그림 파일은 휴지통에 남습니다. 앱을 켤 때 24시간 지난 것부터 비웁니다.",
-    closeSet: "세트 닫기",
-    newSet: "새 세트",
-    newSetTab: "새 씬 세트",
+    closeSet: "씬 그룹 닫기",
+    newSet: "새 씬 그룹",
+    newSetTab: "새 씬 그룹",
     posePrefix: "씬 {n}",
   },
 

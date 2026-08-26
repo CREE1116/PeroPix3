@@ -5,11 +5,11 @@
 export type Rec = {
   ts: string;
   file: string;
-  /** 세트 **이름** — 옛 레코드가 id 없이 이것만 남겼다 (`set_id` 주석) */
-  set: string;
+  /** 세트 **이름** — 옛 레코드가 id 없이 이것만 남겼다 (`scene_group_id` 주석) */
+  scene_group: string;
   cell: string | null;
   /** ★화면이 결과를 묶는 **진짜 키**. 옛 레코드에는 없다 (append-only JSONL 이라 소급 불가). */
-  set_id?: string | null;
+  scene_group_id?: string | null;
   cell_id?: string | null;
   seed: number;
   /** 이 그림이 **어느 그림에서 나왔나** (강화·업스케일·인페인트의 원본).
@@ -64,7 +64,7 @@ export const newestFirst = (a: Rec, b: Rec) =>
  *  @param cell 슬롯. `null` 은 "셀 없는 것", `undefined` 는 "셀을 안 따진다". */
 /** 이 탭(·슬롯)의 결과를 고른다 — **화면이 결과를 묶는 유일한 창구**다.
  *
- *  ★레코드에 `set_id` 가 없으면 이름으로 맞춘다 (id 이전에 만든 레코드 호환). 그런데 그 폴백이
+ *  ★레코드에 `scene_group_id` 가 없으면 이름으로 맞춘다 (id 이전에 만든 레코드 호환). 그런데 그 폴백이
  *    **새 탭에도 걸려서**, 같은 이름(`새 세트`)으로 탭을 만들면 만든 적 없는 그림이 떴다
  *    (사용자 지적 2026-08-04). 새 탭은 `idOnly` 라 폴백을 건너뛴다 — 옛 탭에만 남긴다. */
 /** ★★**같은 파일을 가리키는 줄은 하나로 접는다** (사용자 지적 2026-08-24: *"여러개가
@@ -99,8 +99,8 @@ export function takesOf(
   cell?: { id: string; name: string } | null,
 ): Rec[] {
   return records.filter((r) => {
-    if (!r.set_id && tab.idOnly) return false;
-    if (r.set_id ? r.set_id !== tab.id : r.set !== tab.name) return false;
+    if (!r.scene_group_id && tab.idOnly) return false;
+    if (r.scene_group_id ? r.scene_group_id !== tab.id : r.scene_group !== tab.name) return false;
     if (cell === undefined) return true;
     if (cell === null) return r.cell == null;
     if (!r.cell_id && tab.idOnly) return false;

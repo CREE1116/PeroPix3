@@ -400,11 +400,11 @@ class GenBody(BaseModel):
     # ★화면이 결과를 묶는 **진짜 키**. 폴더는 사람이 읽을 수 있게 이름을 그대로 쓰지만,
     #   이름은 바뀌므로 이름으로 묶으면 이름을 고치는 순간 결과가 화면에서 사라진다.
     #   (옛 레코드에는 없다 — 클라이언트가 id 우선·이름 폴백으로 읽는다)
-    #   ★★이름은 **`set_id`** 다 — 그림이 쌓이는 자리는 **세트**이기 때문이다 (낱말표).
-    #     2026-08-24 개명 때 여기만 옛 이름(`tab_id`)으로 남아, 화면이 보내는 `set_id` 를
-    #     받을 자리가 없어 **생성이 통째로 죽었다** (`'GenBody' object has no attribute 'set_id'`).
+    #   ★★이름은 **`scene_group_id`** 다 — 그림이 쌓이는 자리는 **세트**이기 때문이다 (낱말표).
+    #     2026-08-24 개명 때 여기만 옛 이름(`tab_id`)으로 남아, 화면이 보내는 `scene_group_id` 를
+    #     받을 자리가 없어 **생성이 통째로 죽었다** (`'GenBody' object has no attribute 'scene_group_id'`).
     #     아래 `tab` 은 **탭 이름**이라 다른 것이다 — 둘을 다시 뒤섞지 말 것.
-    set_id: str | None = None
+    scene_group_id: str | None = None
     cell_id: str | None = None
     #: ★★**그 그림을 뽑을 때의 화면 구조** — 「새 탭으로 복제」가 이것으로 환경을 되살린다.
     #:  스타일 카드·베이스/네거티브 블록·캐릭터 카드·그 씬의 블록·카드 공통 접두·씬 목적지.
@@ -1032,7 +1032,7 @@ class CopyBody(BaseModel):
 
     file: str
     set: str
-    set_id: str | None = None
+    scene_group_id: str | None = None
     cell: str | None = None
     cell_id: str | None = None
     cell_no: int | None = None
@@ -1093,7 +1093,7 @@ async def copy_to_tab(ws: str, body: CopyBody):
       「새 탭으로 복제」도 그림이 슬롯에 앉아야 하므로 같은 자리를 쓴다."""
     try:
         src = keep.safe_folder(KEEP_DIR, body.file) if body.from_keep else None
-        return store.copy_to_set(ws, body.file, body.set, body.set_id, body.cell,
+        return store.copy_to_scene_group(ws, body.file, body.scene_group, body.scene_group_id, body.cell,
                                  body.cell_id, body.cell_no, body.tab,
                                  body.exclude_slot_number, src, body.seed)
     except ValueError as e:
@@ -1414,7 +1414,7 @@ async def _generate_one(body: GenBody) -> dict:
                 await Q.broadcast({
                     "type": "image_step",
                     "workspace": body.workspace,
-                    "set_id": body.set_id, "cell_id": body.cell_id,
+                    "scene_group_id": body.scene_group_id, "cell_id": body.cell_id,
                     "step": step,
                     # ★프레임은 그림 **바이트**다 (zip 이 아니다) — 화면이 바로 걸 수 있게 보낸다
                     "mime": "image/jpeg",
@@ -1502,8 +1502,8 @@ async def _generate_one(body: GenBody) -> dict:
                 # ★미저장도 **서버 시각**으로 준다 — 저장된 것과 같은 자로 줄에 서야 한다
                 "ts": datetime.now().isoformat(timespec="seconds"),
                 "fmt": fmt, "seed": seed, "bytes": len(data),
-                "set": body.set, "cell": body.cell,
-                "set_id": body.set_id, "cell_id": body.cell_id,
+                "scene_group": body.scene_group, "cell": body.cell,
+                "scene_group_id": body.scene_group_id, "cell_id": body.cell_id,
                 "cell_no": body.cell_no, "tab": body.tab,
                 "exclude_slot_number": body.exclude_slot_number,
                 "enhance_of": body.enhance_of,
@@ -1519,7 +1519,7 @@ async def _generate_one(body: GenBody) -> dict:
     # ★씬 번호는 탐색기에서 순서를 만들고, **씬 이름**은 그 파일이 무엇인지 알려 준다
     #   (v2 `번호_이름_0000001.png`). 「씬 번호 빼기」는 v2 와 같이 **번호만** 뺀다 —
     #   규칙과 근거는 `workspace.file_lead` 주석 (사용자 결정 2026-08-18, v2-port-audit D3).
-    rel = store.store_output(body.workspace, body.set, body.cell, body.cell_no, body.tab,
+    rel = store.store_output(body.workspace, body.scene_group, body.cell, body.cell_no, body.tab,
                              body.exclude_slot_number, fmt, data)
 
     # ★★시각은 **여기서 한 번** 찍고 화면에도 그대로 보낸다 (사용자 지적 2026-08-19).
@@ -1533,9 +1533,9 @@ async def _generate_one(body: GenBody) -> dict:
         {
             "ts": ts,
             "file": rel,
-            "set": body.set,
+            "scene_group": body.scene_group,
             "cell": body.cell,
-            "set_id": body.set_id,
+            "scene_group_id": body.scene_group_id,
             "cell_id": body.cell_id,
             "enhance_of": body.enhance_of,
             "seed": seed,
@@ -1545,8 +1545,8 @@ async def _generate_one(body: GenBody) -> dict:
         },
     )
     return {"ok": True, "file": rel, "seed": seed, "bytes": len(data), "ts": ts,
-            "set": body.set, "cell": body.cell,
-            "set_id": body.set_id, "cell_id": body.cell_id,
+            "scene_group": body.scene_group, "cell": body.cell,
+            "scene_group_id": body.scene_group_id, "cell_id": body.cell_id,
             "enhance_of": body.enhance_of,
             "workspace": body.workspace}
 
@@ -1599,9 +1599,9 @@ async def upscale_image(body: UpscaleBody):
     new_rec = {
         "ts": datetime.now().isoformat(timespec="seconds"),
         "file": rel,
-        "set": (rec or {}).get("set", ""),
+        "scene_group": (rec or {}).get("scene_group", ""),
         "cell": (rec or {}).get("cell"),
-        "set_id": (rec or {}).get("set_id"),
+        "scene_group_id": (rec or {}).get("scene_group_id"),
         "cell_id": (rec or {}).get("cell_id"),
         # ★뿌리를 그대로 물려받는다 — 업스케일한 것을 또 키워도 스택이 평평해야 한다
         "enhance_of": body.enhance_of or (rec or {}).get("enhance_of") or body.file,
@@ -1634,7 +1634,7 @@ class SavePreviewBody(BaseModel):
     b64: str
     fmt: str = "png"
     set: str = ""
-    set_id: str | None = None
+    scene_group_id: str | None = None
     cell: str | None = None
     cell_id: str | None = None
     cell_no: int | None = None
@@ -1671,14 +1671,14 @@ async def save_preview(body: SavePreviewBody):
     if fmt not in ("png", "webp"):
         fmt = "png"
 
-    rel = store.store_output(body.workspace, body.set, body.cell, body.cell_no, body.tab,
+    rel = store.store_output(body.workspace, body.scene_group, body.cell, body.cell_no, body.tab,
                              body.exclude_slot_number, fmt, data)
     rec = {
         "ts": datetime.now().isoformat(timespec="seconds"),
         "file": rel,
-        "set": body.set,
+        "scene_group": body.scene_group,
         "cell": body.cell,
-        "set_id": body.set_id,
+        "scene_group_id": body.scene_group_id,
         "cell_id": body.cell_id,
         "enhance_of": body.enhance_of,
         "seed": body.seed,
@@ -1747,7 +1747,7 @@ async def _process_job(job: dict) -> None:
             # ★★**지금 만드는 씬을 알린다** (사용자 실측 2026-08-25). 화면이 자기 대기 목록의
             #   맨 앞을 「생성 중」으로 찍고 있었는데, 배치가 겹치면 그 순서가 실제와 어긋나
             #   **엉뚱한 칸에 「생성 중」이 뜨고 그림은 「대기 중」 칸에 나타났다.**
-            Q.current_cell = {"set_id": one.set_id, "cell_id": one.cell_id}
+            Q.current_cell = {"scene_group_id": one.scene_group_id, "cell_id": one.cell_id}
             await Q.broadcast({"type": "job_progress", "job_id": job_id, "progress": Q.progress()})
             try:
                 r = await _generate_one(one)

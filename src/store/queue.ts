@@ -39,7 +39,7 @@ export type QueueProgress = {
    *  진행과 어긋나 **엉뚱한 칸에 「생성 중」이 뜨고 그림은 「대기 중」 칸에 나타났다**
    *  (사용자 실측). 무엇을 만드는지는 서버가 정본이다.
    *  ★옛 백엔드는 안 준다 — 없으면 화면이 옛 방식으로 물러선다. */
-  current_cell?: { set_id: string | null; cell_id: string | null } | null;
+  current_cell?: { scene_group_id: string | null; cell_id: string | null } | null;
 };
 
 /** 큐가 지금 어느 상태인가 — v2 `statusText` 이식 (`index.html:16119-16127, 16467-16493`).
@@ -53,8 +53,8 @@ export type QueuePhase = "idle" | "running" | "done" | "failed" | "partial";
 /** ★큐에 넣은 **아직 안 나온 장**. 페로픽스파이는 큐에 넣는 순간 결과 객체를 만들어
  *  `queued` 카드를 띄운다 (`batch.ts start`) — 눌렀는지 알 수 있고 어디에 생길지도 보인다.
  *  우리 레코드는 **완료된 파일**뿐이라 이 목록이 그 자리를 대신한다.
- *  그림이 도착하면 같은 (set_id, cell_id) 의 대기 하나를 지운다. */
-export type Pending = { id: string; setId: string | null; cellId: string | null };
+ *  그림이 도착하면 같은 (scene_group_id, cell_id) 의 대기 하나를 지운다. */
+export type Pending = { id: string; groupId: string | null; cellId: string | null };
 
 type S = {
   connected: boolean;
@@ -78,7 +78,7 @@ type S = {
   connect: () => Promise<void>;
   enqueue: (base: Record<string, unknown>, items?: Record<string, unknown>[], count?: number) => Promise<void>;
   /** 이 탭의 대기 목록 (슬롯 순서대로). 맨 앞이 **지금 만드는 중**이다 */
-  pendingOf: (setId: string) => Pending[];
+  pendingOf: (groupId: string) => Pending[];
   /** ★취소는 **하나**다 — 지금 나간 장만 남기고 나머지를 전부 뺀다 (사용자 결정 2026-08-18) */
   cancelAll: () => Promise<void>;
 };
@@ -205,7 +205,7 @@ export const useQueue = create<S>((set, get) => ({
 
   async enqueue(base, items = [], count = 1) {
     // ★보내기 **전에** 자리를 잡는다 — 누른 즉시 카드가 떠야 눌린 것을 안다
-    const setId = (base.set_id as string) ?? null;
+    const groupId = (base.scene_group_id as string) ?? null;
     const add: Pending[] = [];
     const units = items.length ? items : [{}];
     // ★대기 칸의 순서는 **서버가 만드는 순서와 같아야 한다** (`server.py` 의 큐 루프).
@@ -217,7 +217,7 @@ export const useQueue = create<S>((set, get) => ({
         //   (사용자 지적 2026-08-14: 눌러도 아무 반응이 없어 보였다)
         add.push({
           id: `p${seqId++}`,
-          setId,
+          groupId,
           cellId: ((it.cell_id as string) ?? (base.cell_id as string)) ?? null,
         });
       }
@@ -242,7 +242,7 @@ export const useQueue = create<S>((set, get) => ({
       throw e;
     }
   },
-  pendingOf: (setId) => get().pending.filter((p) => p.setId === setId),
+  pendingOf: (groupId) => get().pending.filter((p) => p.groupId === groupId),
 
   /** ★★**대기 칸을 여기서 비우지 않는다** (감사 D5). 예전 `clear()` 는 부르자마자
    *  `pending` 을 통째로 비웠는데, 서버는 이미 나간 한 장을 끝까지 받아 낸다 —
@@ -372,7 +372,7 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
           unknown
         >;
       }
-      const tab = ws.activeSet();
+      const tab = ws.activeSceneGroup();
       if (!tab) return { error: "열려 있는 탭이 없습니다." };
       // ★★**`count` 는 「몇 바퀴」다** (싱글 폐기 2026-08-11 이후로는 그것 하나뿐이다).
       //   예전에는 싱글 탭이면 `queueSingle(count)` 로 **count 장**이었는데, 탭이 전부
@@ -380,7 +380,7 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
       //   씬 하나짜리 탭(새 워크스페이스의 기본)에서는 옛 싱글과 결과가 같다.
       //   ★한 바퀴가 만드는 장 수는 여기가 아니라 화면의 `슬롯당`(`useUi.perSlot`)이 정한다 —
       //     `generateAll` 이 그 값으로 `rounds` 를 편다. 그래서 아래 `queued` 도 그것을 곱한다.
-      if (tab.kind !== "set")
+      if (tab.kind !== "sceneGroup")
         return { error: `'${tab.name}' 탭은 씬 탭이 아니라 생성에 쓸 수 없습니다.` };
       for (let i = 0; i < count; i++) await useGen.getState().generateAll();
       const live = allCells(tab).filter((c) => !c.locked).length;
@@ -447,7 +447,7 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
       if (wantTab || want) {
         const spec0 = useWs.getState().spec;
         const tabs = spec0?.tabs ?? [];
-        const all = spec0?.sets ?? [];
+        const all = spec0?.sceneGroups ?? [];
         /* ★탭도 **id 가 먼저**다 — 이름은 사용자가 계속 고치는 값이라 열쇠로 못 쓴다 */
         let tabId = "";
         if (wantTab) {
@@ -462,7 +462,7 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
         const byId = all.find((x) => x.id === want);
         const named = all.filter((x) => x.name === want && inTab(x as { tabId?: string }));
         /* ★탭만 주고 세트를 안 주면 **그 탭의 세트**로 본다 (하나뿐일 때만 — 여럿이면 되묻는다) */
-        const ofTab = all.filter((x) => x.kind === "set" && inTab(x as { tabId?: string }));
+        const ofTab = all.filter((x) => x.kind === "sceneGroup" && inTab(x as { tabId?: string }));
         const hit =
           byId ?? (named.length === 1 ? named[0] : !want && ofTab.length === 1 ? ofTab[0] : null);
         if (!hit && (named.length > 1 || (!want && ofTab.length > 1))) {
@@ -489,7 +489,7 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
       }
       const ws = useWs.getState();
       const spec = ws.spec;
-      const set = spec?.sets.find((x) => x.id === spec?.activeSet);
+      const set = spec?.sceneGroups.find((x) => x.id === spec?.activeSceneGroup);
       if (!set) return { error: "열려 있는 세트가 없습니다." };
 
       /* ★★**어느 탭인지 함께 말한다** (사용자 지적 2026-08-25: *"메인 프롬프트를 변경했다고
@@ -504,7 +504,7 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
       const area = String(args.area ?? "base");
       const label = String(args.label ?? "블록");
       const tags = parseSegs(String(args.tags ?? ""));
-      /* ★**씬 칸**은 프롬프트 편집기가 아니라 세트 안에 산다 (`sets[].cards[].cells`).
+      /* ★**씬 칸**은 프롬프트 편집기가 아니라 세트 안에 산다 (`sceneGroups[].cards[].cells`).
          칸 하나에 블록도 하나뿐이라 (`slotBlocksOf`), 이름표 없이 태그만 갈아 끼운다. */
       const wantScene = String(args.scene ?? "").trim();
       if (wantScene) {
@@ -521,16 +521,16 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
           }),
         }));
         if (!found) return { error: `그런 씬이 없습니다: ${wantScene}` };
-        useWs.getState().patchSet(set.id, { cards: next } as never);
+        useWs.getState().patchSceneGroup(set.id, { cards: next } as never);
         dropHumanUndo(`scene-${(found as { id: string }).id}`);
         const did = `${where}의 씬 「${(found as { name: string }).name}」을 고침`;
         return {
           ok: true, scene: (found as { name: string }).name, did,
           at: { kind: "prompt" as const, workspace: ws.current ?? undefined,
-                tab: spec?.activeTab, set: set.id, area: "scene",
+                tab: spec?.activeTab, sceneGroup: set.id, area: "scene",
                 scene: (found as { id: string }).id, label: (found as { name: string }).name },
-          before: { set: set.id, scene: (found as { id: string }).id, blocks: (found as { blocks?: Block[] }).blocks ?? [] },
-          after: { set: set.id, scene: (found as { id: string }).id },
+          before: { sceneGroup: set.id, scene: (found as { id: string }).id, blocks: (found as { blocks?: Block[] }).blocks ?? [] },
+          after: { sceneGroup: set.id, scene: (found as { id: string }).id },
         };
       }
       const mode = String(args.mode ?? "add");
@@ -604,8 +604,8 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
         return {
           ok: true, area, label, at,
           did: `${where}의 ${what}에 「${label}」을 ${verb}`,
-          before: { set: set.id, area, blocks: before },
-          after: { set: set.id, area, blocks: usePrompt.getState()[area] },
+          before: { sceneGroup: set.id, area, blocks: before },
+          after: { sceneGroup: set.id, area, blocks: usePrompt.getState()[area] },
         };
       }
 
@@ -633,8 +633,8 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
         did: created
           ? `${where}에 캐릭터 「${ch.name}」을 만들고 「${label}」을 ${verb}`
           : `${where}의 ${what}에 「${label}」을 ${verb}`,
-        before: { set: set.id, area: ch.id, part: field, blocks: before, created },
-        after: { set: set.id, area: ch.id, part: field, blocks: now?.[field] ?? [] },
+        before: { sceneGroup: set.id, area: ch.id, part: field, blocks: before, created },
+        after: { sceneGroup: set.id, area: ch.id, part: field, blocks: now?.[field] ?? [] },
       };
     }
 
@@ -646,7 +646,7 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
        `edit_current_prompt` 와 같은 길을 쓴다: 조수가 시키고, **앱이 자기 창구로** 만든다.
        그러면 화면도 그 자리에서 따라온다.
        ★새 창구를 만들지 않는다 — 사람이 `+` 를 눌렀을 때와 **같은 함수**를 부른다
-         (`addTab`·`addSet`·`addSlot`). 두 벌이 되면 이름 겹침 처리·번호 발급이 갈린다. */
+         (`addTab`·`addSceneGroup`·`addSlot`). 두 벌이 되면 이름 겹침 처리·번호 발급이 갈린다. */
     if (action === "create_tab") {
       const name = String(args.name ?? "").trim();
       useWs.getState().addTab(name || undefined);
@@ -661,10 +661,10 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
       };
     }
 
-    if (action === "create_set") {
+    if (action === "create_scene_group") {
       const ws2 = useWs.getState();
       /* ★★**받을 탭을 먼저 연다** (시뮬레이션 구멍 A, 2026-08-24). 세트는 **탭에 속하는데**
-         (`SceneSet.tabId`) 여기는 지금 활성 탭에만 만들고 있었다 — 그래서
+         (`SceneGroup.tabId`) 여기는 지금 활성 탭에만 만들고 있었다 — 그래서
          *"키키의 감정별 10종"* 같은 요청이 **남의 탭 밑에** 세트를 만들 수 있었다.
          오류도 안 나고, 사용자는 엉뚱한 탭에서 그것을 발견한다. */
       const wantTab = String(args.tab ?? "").trim();
@@ -673,18 +673,18 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
         if (!hit) return { error: `그런 탭이 없습니다: ${wantTab}` };
         if (ws2.spec?.activeTab !== hit.id) ws2.switchTab(hit.id);
       }
-      const before = new Set((useWs.getState().spec?.sets ?? []).map((x) => x.id));
+      const before = new Set((useWs.getState().spec?.sceneGroups ?? []).map((x) => x.id));
       // ★씬을 안 주면 **빈 세트**다 (사람이 `+` 로 만들 때와 같다). 이름을 주면 그 씬 하나로 연다
       const scenes = (args.scenes as string[] | undefined)?.map((x) => String(x)) ?? [];
-      ws2.addSet(String(args.name ?? "").trim() || t("set.newSet"), scenes);
+      ws2.addSceneGroup(String(args.name ?? "").trim() || t("sceneGroup.newSet"), scenes);
       const spec = useWs.getState().spec;
-      const made = (spec?.sets ?? []).find((x) => !before.has(x.id));
+      const made = (spec?.sceneGroups ?? []).find((x) => !before.has(x.id));
       if (!made) return { error: "세트를 만들지 못했습니다." };
       return {
-        ok: true, set: made.name, set_id: made.id,
+        ok: true, set: made.name, scene_group_id: made.id,
         did: `세트 「${made.name}」 을 만듦`,
         at: { kind: "prompt" as const, workspace: useWs.getState().current ?? undefined,
-              tab: spec?.activeTab, set: made.id },
+              tab: spec?.activeTab, sceneGroup: made.id },
       };
     }
 
@@ -693,23 +693,23 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
       const spec = ws2.spec;
       const want = String(args.set ?? "").trim();
       const set = want
-        ? spec?.sets.find((x) => x.id === want || x.name === want)
-        : spec?.sets.find((x) => x.id === spec?.activeSet);
-      if (!set || set.kind !== "set") return { error: "세트를 찾지 못했습니다." };
+        ? spec?.sceneGroups.find((x) => x.id === want || x.name === want)
+        : spec?.sceneGroups.find((x) => x.id === spec?.activeSceneGroup);
+      if (!set || set.kind !== "sceneGroup") return { error: "세트를 찾지 못했습니다." };
       /* ★씬은 **카드 안**에 산다. 카드가 하나도 없으면 씬을 놓을 자리가 없으므로 먼저 만든다
          (씬 줄의 「씬 세트 만들기」와 같은 길이다). */
       const name = String(args.name ?? "").trim();
       const had = new Set(allCells(set).map((c) => c.id));
       if (!set.cards.length) ws2.addCard(set.id, name ? { cells: [{ id: "", name, blocks: [] }] } : {});
       else ws2.addSlot(set.id, name ? { name } : {});
-      const now = useWs.getState().spec?.sets.find((x) => x.id === set.id);
-      const made = now?.kind === "set" ? allCells(now).find((c) => !had.has(c.id)) : undefined;
+      const now = useWs.getState().spec?.sceneGroups.find((x) => x.id === set.id);
+      const made = now?.kind === "sceneGroup" ? allCells(now).find((c) => !had.has(c.id)) : undefined;
       if (!made) return { error: "씬을 만들지 못했습니다." };
       return {
-        ok: true, scene: made.name, scene_id: made.id, set: set.name, set_id: set.id,
+        ok: true, scene: made.name, scene_id: made.id, set: set.name, scene_group_id: set.id,
         did: `「${set.name}」 세트에 씬 「${made.name}」 을 만듦`,
         at: { kind: "prompt" as const, workspace: useWs.getState().current ?? undefined,
-              tab: useWs.getState().spec?.activeTab, set: set.id, scene: made.id, label: made.name },
+              tab: useWs.getState().spec?.activeTab, sceneGroup: set.id, scene: made.id, label: made.name },
       };
     }
 
@@ -718,15 +718,15 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
          `undo_change` 가 이력의 `before` 를 그대로 실어 부른다. */
     if (action === "restore_prompt") {
       const { usePrompt } = await import("./prompt");
-      const setId = String(args.set ?? "");
-      const hit = useWs.getState().spec?.sets.find((x) => x.id === setId);
+      const groupId = String(args.set ?? "");
+      const hit = useWs.getState().spec?.sceneGroups.find((x) => x.id === groupId);
       if (!hit) return { error: "그 세트가 이미 없습니다." };
       useWs.getState().setActiveTab(hit.id);
       const area = String(args.area ?? "base");
       const blocks = (args.blocks ?? []) as Block[];
       if (args.scene) {
         const cards = (hit as { cards?: { cells: { id: string }[] }[] }).cards ?? [];
-        useWs.getState().patchSet(hit.id, {
+        useWs.getState().patchSceneGroup(hit.id, {
           cards: cards.map((k) => ({
             ...k,
             cells: k.cells.map((c) => (c.id === args.scene ? { ...c, blocks } : c)),
@@ -1007,7 +1007,7 @@ function consumePending(m: Record<string, any>, set: Setter, get: () => S) {
 
   const pend = get().pending;
   const at = pend.findIndex(
-    (p) => p.setId === (m.set_id ?? null) && p.cellId === (m.cell_id ?? null),
+    (p) => p.groupId === (m.scene_group_id ?? null) && p.cellId === (m.cell_id ?? null),
   );
   if (at < 0) return;
   set({ pending: pend.filter((_, i) => i !== at) });
@@ -1027,9 +1027,9 @@ function render(m: Record<string, any>, set: Setter, get: () => S) {
     //   UTC 와 지역시각이 섞여 줄 차례가 어긋난다 (`lib/takes.localTs` 주석)
     ts: (m.ts as string) || localTs(),
     file: m.file,
-    set: m.set,
+    scene_group: m.scene_group,
     cell: m.cell ?? null,
-    set_id: m.set_id ?? null,
+    scene_group_id: m.scene_group_id ?? null,
     cell_id: m.cell_id ?? null,
     enhance_of: m.enhance_of ?? null,
     seed: m.seed,

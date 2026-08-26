@@ -15,9 +15,9 @@ import { useSceneFocus } from "../store/sceneFocus";
  */
 export function visibleTakes(cellId: string): Rec[] {
   const ws = useWs.getState();
-  // ★세트를 찾는 것이므로 열쇠는 `activeSet` 이다 (개명 casualty — `CanvasTabs.SaveHint` 와 같은 자리)
-  const tab = ws.spec?.sets.find((x) => x.id === ws.spec?.activeSet);
-  if (tab?.kind !== "set" || !cellId) return [];
+  // ★세트를 찾는 것이므로 열쇠는 `activeSceneGroup` 이다 (개명 casualty — `CanvasTabs.SaveHint` 와 같은 자리)
+  const tab = ws.spec?.sceneGroups.find((x) => x.id === ws.spec?.activeSceneGroup);
+  if (tab?.kind !== "sceneGroup" || !cellId) return [];
   const cell = allCells(tab).find((c) => c.id === cellId);
   if (!cell) return [];
   const all = withPreviews(ws.records, ws.current, usePreviews.getState().items);

@@ -25,7 +25,7 @@ type OldSetTab = {
 
 /** 감쌀 것이 있으면 새 탭을, 없으면 `null` (호출부가 `changed` 를 안 세워도 되게) */
 export function wrapSetTabInCard(tab: OldSetTab): Record<string, unknown> | null {
-  if (tab.kind !== "set") return null;
+  if (tab.kind !== "sceneGroup") return null;
   if (Array.isArray(tab.cards)) return null; // 이미 옮겼다
   // ★`prefix` 는 여기서 **떨어져 나간다** (기능이 걷혔다). 옛 파일을 열어도 카드에 안 붙는다
   const { cells, prefix: _dropped, ...rest } = tab;

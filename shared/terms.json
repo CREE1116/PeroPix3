@@ -57,9 +57,9 @@
       }
     },
     {
-      "key": "set",
-      "tool": "sets",
-      "code": "spec.sets",
+      "key": "sceneGroup",
+      "tool": "sceneGroups",
+      "code": "spec.sceneGroups",
       "what": {
         "ko": "씬 묶음 (캔버스 바로 위)",
         "en": "a group of scenes (row just above the canvas)",
@@ -67,17 +67,23 @@
       },
       "alias": {
         "ko": [
+          "씬 그룹",
+          "그룹",
           "세트",
           "씬 세트",
           "포즈세트",
           "포즈 세트"
         ],
         "en": [
+          "scene group",
+          "group",
           "set",
           "scene set",
           "pose set"
         ],
         "ja": [
+          "シーングループ",
+          "グループ",
           "セット",
           "シーンセット"
         ]
@@ -86,11 +92,11 @@
     {
       "key": "scene",
       "tool": "scenes",
-      "code": "sets[].cards[].cells",
+      "code": "sceneGroups[].cards[].cells",
       "what": {
-        "ko": "세트 안의 칸. 그림이 여기 쌓인다",
-        "en": "a cell inside a set; images pile up here",
-        "ja": "セット内のマス。画像はここに溜まる"
+        "ko": "씬 그룹 안의 칸. 그림이 여기 쌓인다",
+        "en": "a cell inside a scene group; images pile up here",
+        "ja": "シーングループ内のマス。画像はここに溜まる"
       },
       "alias": {
         "ko": [
@@ -205,25 +211,28 @@
       }
     },
     {
-      "key": "sceneSetCard",
-      "tool": "sceneSetCard",
+      "key": "sceneCard",
+      "tool": "sceneCard",
       "code": "cards.posesets",
       "what": {
-        "ko": "덱의 씬 세트 카드",
-        "en": "a scene-set card in the deck",
-        "ja": "デッキのシーンセットカード"
+        "ko": "덱의 씬 카드 (씬 그룹을 통째로 넣어 둔 재료)",
+        "en": "a scene card in the deck (a whole scene group kept for reuse)",
+        "ja": "デッキのシーンカード(シーングループごと入れておく素材)"
       },
       "alias": {
         "ko": [
+          "씬 카드",
           "씬 세트 카드",
           "포즈세트 카드",
           "포즈세트"
         ],
         "en": [
+          "scene card",
           "scene set card",
           "pose set card"
         ],
         "ja": [
+          "シーンカード",
           "シーンセットカード"
         ]
       }

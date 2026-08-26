@@ -19,7 +19,7 @@ export type AgentAt =
       kind: "prompt";
       workspace?: string;
       tab?: string;
-      set?: string;
+      sceneGroup?: string;
       area?: string;
       /** 씬 칸을 고친 것이면 그 씬 id — 씬은 왼쪽 패널이 아니라 **캔버스**에 산다 */
       scene?: string;
@@ -28,7 +28,7 @@ export type AgentAt =
     }
   | { kind: "file"; workspace?: string; path?: string; log?: string }
   | { kind: "guide"; log?: string }
-  | { kind: "queue"; workspace?: string; set?: string; log?: string };
+  | { kind: "queue"; workspace?: string; sceneGroup?: string; log?: string };
 
 /** 그 자리를 여는 문구 (툴팁) — **무엇이 열리는지** 미리 말해 준다 */
 export function atLabel(at: AgentAt, t: (k: string) => string): string {
@@ -72,9 +72,9 @@ export async function openAt(at: AgentAt): Promise<void> {
   if (at.kind === "prompt" && at.tab && spec?.tabs?.some((c) => c.id === at.tab)) {
     useWs.getState().switchTab(at.tab);
   }
-  const setId = at.kind === "prompt" ? at.set : at.set;
-  if (setId && useWs.getState().spec?.sets.some((x) => x.id === setId)) {
-    useWs.getState().setActiveTab(setId);
+  const groupId = at.kind === "prompt" ? at.sceneGroup : at.sceneGroup;
+  if (groupId && useWs.getState().spec?.sceneGroups.some((x) => x.id === groupId)) {
+    useWs.getState().setActiveTab(groupId);
   }
   if (at.kind === "prompt") {
     /* ★씬 칸은 **골라서** 데려간다 — 캔버스에 사는 것이라 왼쪽 패널의 `reveal` 이 못 닿는다.
