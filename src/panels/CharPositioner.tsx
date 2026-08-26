@@ -374,7 +374,14 @@ function GridSurface(p: Surface & { setPicked: (i: number) => void }) {
                 justifyContent: "center",
                 borderRadius: "var(--r-1)",
                 border: `1px solid ${sel ? "var(--accent-line)" : "var(--line)"}`,
-                background: sel ? "var(--accent-bg)" : "color-mix(in srgb, var(--panel) 35%, transparent)",
+                /* ★★고른 칸도 **속이 비쳐야 한다** (사용자 지적 2026-08-26: *"번호 선택했을
+                   때의 배경 반투명하게 해줘. 이미지를 가림"*). `--accent-bg` 는 **불투명한
+                   색**이라(밝게 `#e3eef8` · 어둡게 `#2a2640`) 그 칸만 그림이 통째로 가렸다.
+                   ★안 고른 칸과 **같은 방식**으로 적는다 — 색만 강조색이고 투명도는 같은 층이다.
+                     고른 표시는 이 옅은 물듦과 테두리 색이 함께 낸다. */
+                background: sel
+                  ? "color-mix(in srgb, var(--accent) 28%, transparent)"
+                  : "color-mix(in srgb, var(--panel) 35%, transparent)",
                 cursor: "pointer",
                 padding: 0,
               }}
