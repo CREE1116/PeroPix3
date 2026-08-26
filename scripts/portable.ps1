@@ -36,11 +36,16 @@ Write-Host "[포터블] PeroPix $version"
 if (-not $SkipBuild) {
   Write-Host "[포터블] 릴리스 빌드 (몇 분 걸립니다)"
   Push-Location $root
-  npm run tauri build
+  # ★`--no-bundle` — msi·nsis 를 안 굽는다. 포터블만 내보내기로 정했으므로(사용자 결정
+  #   2026-08-26) 굽는 시간이 통째로 낭비다.
+  npm run tauri build -- --no-bundle
   if ($LASTEXITCODE -ne 0) { Pop-Location; throw "빌드 실패" }
   Pop-Location
 }
 
+# ★★빌드가 내는 이름은 **Cargo 이름**(`peropix.exe`)이다 — 설치본을 구울 때만
+#   `productName` 으로 바뀐다. 받는 사람이 보는 이름은 `PeroPix.exe` 여야 하므로 여기서
+#   바꿔 담는다 (릴리즈 워크플로가 쓰던 규칙 그대로다).
 $exe = Join-Path $root "src-tauri/target/release/peropix.exe"
 if (-not (Test-Path $exe)) { throw "실행 파일이 없습니다: $exe  (먼저 build.bat)" }
 
@@ -79,11 +84,13 @@ if (-not $keepPython) {
 }
 
 # ── 앱 ─────────────────────────────────────────────────────────────
-Copy-Item $exe -Destination $app
+Copy-Item $exe -Destination (Join-Path $app "PeroPix.exe")
 # ★백엔드는 **소스 그대로** 간다 (파이썬이라 컴파일이 없다). `__pycache__` 는 뺀다 —
 #   다른 파이썬 판에서 만든 것이라 쓸모가 없고, 패치 비교만 어지럽힌다.
 Copy-Item (Join-Path $root "backend") -Destination $app -Recurse
 Get-ChildItem $app -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
+# ★테스트는 빼고 담는다 (배포물이 아니다 — 릴리즈 워크플로가 쓰던 규칙 그대로다)
+Get-ChildItem (Join-Path $app "backend") -Filter "test_*.py" | Remove-Item -Force
 
 # ★★검열은 **기본 모델만** 담는다 (사용자 지시 2026-08-26). 무거운 XL(251MB)을 빼면
 #   `censor.models()` 가 폴더를 훑어 가벼운 것부터 내므로, 남은 하나가 그대로 기본이 된다

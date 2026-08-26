@@ -70,7 +70,15 @@ pub fn apply(root: &Path) -> std::io::Result<()> {
 /// 새 exe 를 띄운다. ★부모가 죽어도 살아 있어야 하므로 **잡에 매달지 않는다**
 /// (사이드카와 정반대다 — 그쪽은 함께 죽어야 하고 이쪽은 살아남아야 한다).
 pub fn relaunch(root: &Path) -> std::io::Result<()> {
-    let exe = root.join("peropix.exe");
+    // ★★**이름을 박지 않는다** — 꾸러미에 담기는 이름은 `PeroPix.exe` 이고 빌드가 내는
+    //   이름은 `peropix.exe` 다 (`scripts/portable.ps1` 이 바꿔 담는다). 지금 돌고 있는
+    //   그 이름을 그대로 쓰면 어느 쪽이든 맞는다. (윈도우는 대소문자를 안 가리지만,
+    //   이름이 또 바뀔 자리라 여기서 못 박지 않는다.)
+    let name = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_os_string()))
+        .unwrap_or_else(|| "PeroPix.exe".into());
+    let exe = root.join(name);
     let mut cmd = std::process::Command::new(exe);
     cmd.current_dir(root);
     #[cfg(windows)]

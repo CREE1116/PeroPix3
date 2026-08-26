@@ -61,64 +61,62 @@ jobs:
           "VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "version = $ver"
 
+      # ★소스 대조 판정 — 배포 직전에 한 번 (`pause` 가 CI 를 붙들지 않게 stdin 을 닫는다)
+      - name: 판정
+        shell: cmd
+        run: test.bat < nul
+
       - name: 앱 빌드 (프런트 + Tauri)
         run: npm run tauri build -- --no-bundle
 
       # ── 배포 꾸러미 ────────────────────────────────────────────
-      - name: 임베드 파이썬 받기
+      # ★★**조립은 `scripts/portable.ps1` 하나가 한다** (2026-08-26). 예전에는 이 파일에
+      #   복사 목록이 따로 적혀 있었는데, 손으로 만드는 포터블(`portable.bat`)과 두 벌이 되어
+      #   한쪽만 고쳐질 자리였다. 임베드 파이썬·의존성·검열 모델·`version.json` 이 전부 그쪽에 있다.
+      # ★빌드는 위에서 이미 했다 (`--no-bundle`) — `-SkipBuild` 로 그것을 그대로 쓴다.
+      - name: 포터블 꾸러미
         shell: pwsh
-        run: |
-          $url = "https://www.python.org/ftp/python/${{ env.PY_VERSION }}/python-${{ env.PY_VERSION }}-embed-amd64.zip"
-          Invoke-WebRequest -Uri $url -OutFile python-embed.zip
-          New-Item -ItemType Directory -Force -Path "pack/PeroPix/python" | Out-Null
-          Expand-Archive -Path python-embed.zip -DestinationPath "pack/PeroPix/python"
-          # ★`import site` 를 켜야 pip 로 넣은 site-packages 를 본다 (임베드본 기본값은 꺼짐)
-          $pth = "pack/PeroPix/python/${{ env.PY_PTH }}"
-          (Get-Content $pth) -replace '#import site', 'import site' | Set-Content $pth
-          Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "get-pip.py"
-          & "pack/PeroPix/python/python.exe" get-pip.py --no-warn-script-location
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/portable.ps1 -SkipBuild
 
-      - name: 백엔드 의존성 설치
+      # ── 패치 (평소 업데이트가 받는 것) ─────────────────────────
+      # ★★v3 는 화면이 **실행 파일 안에** 박혀서, 글자 하나를 고쳐도 exe 를 갈아야 한다.
+      #   그래도 파이썬(약 140MB)과 검열 모델(39MB)이 빠져 **35MB 대 130MB** 다.
+      # ★★푼 모습이 **앱 폴더와 같아야 한다** (겉 폴더를 만들지 않는다) — 껍데기가
+      #   `.update/new/` 의 것을 그대로 제자리에 옮기기 때문이다 (`src-tauri/src/update.rs`).
+      - name: 패치 꾸러미
         shell: pwsh
         run: |
-          & "pack/PeroPix/python/python.exe" -m pip install --no-warn-script-location -r backend/requirements.txt
+          $p = "_dist/patch"
+          New-Item -ItemType Directory -Force -Path $p | Out-Null
+          Copy-Item "_dist/PeroPix/PeroPix.exe" $p
+          Copy-Item "_dist/PeroPix/backend" $p -Recurse
+          Copy-Item "_dist/PeroPix/version.json" $p
+          Compress-Archive -Path "$p/*" -DestinationPath "_dist/patch-${{ env.VERSION }}.zip"
 
-      - name: 꾸러미 만들기
-        shell: pwsh
+      # ★★**의존성·검열 모델이 바뀐 판은 패치로 못 넘긴다** — 패치에 안 담기기 때문이다.
+      #   그런 판은 전체로 넘긴다. 앱이 이 파일을 보고 **스스로 고르고, 사용자에게는 안 묻는다**
+      #   (사용자 지시 2026-08-26: 「이번엔 전체를 받아야 합니다」 같은 문구를 안 낸다).
+      # ★앱은 pip 를 돌리지 않는다 — 중간에 실패하면 파이썬이 반쯤 갈린 채 남는다.
+      - name: patch-info.json
+        shell: bash
         run: |
-          $dst = "pack/PeroPix"
-          # ★`--no-bundle` 로 나오는 것은 **Cargo 이름**(`peropix.exe`)이다 — 설치 프로그램을
-          #   구울 때만 `productName` 으로 바뀐다. 받는 사람이 보는 이름은 PeroPix 여야 하므로
-          #   여기서 바꿔 담는다. 못 찾으면 **소리 내고 멈춘다** (조용히 빈 zip 이 올라가면
-          #   받은 사람이 먼저 알게 된다).
-          $exe = Get-ChildItem "src-tauri/target/release/*.exe" |
-            Where-Object { $_.Name -match '^(peropix|PeroPix)\.exe$' } | Select-Object -First 1
-          if (-not $exe) { throw "빌드된 실행 파일을 못 찾았습니다 (src-tauri/target/release)" }
-          Copy-Item $exe.FullName -Destination "$dst/PeroPix.exe"
-          # ★백엔드는 **실행 파일 옆**에 그대로 둔다 — 앱이 `backend/server.py` 를 찾아 올라간다
-          New-Item -ItemType Directory -Force -Path "$dst/backend" | Out-Null
-          Copy-Item "backend/*.py" -Destination "$dst/backend"
-          Copy-Item "backend/requirements.txt" -Destination "$dst/backend"
-          # ★테스트는 빼고 담는다 (배포물이 아니다 — `.gitignore` 와 같은 기준)
-          Remove-Item "$dst/backend/test_*.py" -ErrorAction SilentlyContinue
-          # 검열 모델 — 저장소에 든 것만 담는다 (큰 모델은 깃에 없다, `.gitignore` 참조)
-          if (Test-Path "models/censor") {
-            New-Item -ItemType Directory -Force -Path "$dst/models/censor" | Out-Null
-            Copy-Item "models/censor/*.onnx" -Destination "$dst/models/censor" -ErrorAction SilentlyContinue
-          }
-          Copy-Item "README.md" -Destination $dst -ErrorAction SilentlyContinue
-          Copy-Item "LICENSE" -Destination $dst -ErrorAction SilentlyContinue
-          @{ version = "${{ env.VERSION }}"; build_date = (Get-Date -Format "yyyy-MM-dd") } |
-            ConvertTo-Json | Set-Content "$dst/version.json" -Encoding UTF8
-          Compress-Archive -Path "$dst/*" -DestinationPath "PeroPix-3.0-Windows.zip"
-          "$((Get-Item 'PeroPix-3.0-Windows.zip').Length / 1MB) MB"
+          PREV=$(git tag --sort=-version:refname | grep -v "^${GITHUB_REF_NAME}$" | head -n 1)
+          REQ=false
+          if [ -n "$PREV" ] && [ -n "$(git diff --name-only "$PREV" HEAD -- backend/requirements.txt models/censor || true)" ]; then
+            REQ=true
+          fi
+          printf '{"version":"%s","patch_from":"%s","requires_full":%s}' "$VERSION" "${PREV#v}" "$REQ" > _dist/patch-info.json
+          cat _dist/patch-info.json
 
       - name: 손으로 돌린 것은 아티팩트로만
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: PeroPix-Windows
-          path: PeroPix-3.0-Windows.zip
+          path: |
+            _dist/PeroPix-*-win64.zip
+            _dist/patch-*.zip
+            _dist/patch-info.json
 
       # ★태그를 민 것만 릴리즈가 된다 — 손으로 돌린 빌드가 릴리즈를 만들면
       #   확인용으로 한 번 돌릴 때마다 받은 사람에게 알림이 간다
@@ -126,7 +124,10 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: PeroPix-3.0-Windows.zip
+          files: |
+            _dist/PeroPix-${{ env.VERSION }}-win64.zip
+            _dist/patch-${{ env.VERSION }}.zip
+            _dist/patch-info.json
           draft: true
           generate_release_notes: true
         env:
