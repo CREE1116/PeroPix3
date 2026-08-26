@@ -56,8 +56,19 @@ from workspace import Store, safe_name
 # MCP 설정에 적어 줄 **지금 이 서버의 포트** (--port 로 바뀐다)
 # ★리로드 모드에서는 워커가 `main()` 을 안 거치고 모듈만 다시 읽는다 — 포트를 환경에서 받는다
 CURRENT_PORT = int(os.environ.get("PEROPIX_BACKEND_PORT") or 8770)
-APP_VERSION = "3.0.0-dev"
 APP_DIR = Path(__file__).resolve().parent.parent
+# ★★**버전은 파일이 정본이다** (`version.json`, 사용자 결정 2026-08-26). 포터블을 묶을 때
+#   `scripts/portable.ps1` 이 `tauri.conf.json` 의 버전을 그대로 적어 넣는다 — 업데이트가
+#   「지금 무엇을 쓰고 있나」를 이걸로 안다. 소스의 상수는 **개발 중에만** 쓰는 기본값이다.
+#   ★손으로 고치지 말 것: 묶을 때마다 덮어써진다.
+def _app_version() -> str:
+    try:
+        return str(json.loads((APP_DIR / "version.json").read_text("utf-8"))["version"])
+    except Exception:
+        return "3.0.0-dev"
+
+
+APP_VERSION = _app_version()
 DATA_DIR = APP_DIR / "data"
 WS_ROOT = APP_DIR / "workspaces"
 # ★옛 이름(`outputs/`)에서 한 번 옮긴다 — 안에 든 것은 생성물이 아니라 **워크스페이스**다
@@ -448,6 +459,11 @@ async def health():
     # ★버전·요청 창구도 여기서 준다 — 화면에 박아 두면 두 곳이 어긋난다 (감사 C5).
     return {"ok": True, "version": APP_VERSION, "hasToken": bool(nai_token()),
             "support": CONFIG.get("support_url") or agent_mod.SUPPORT_URL,
+            # ★★**내가 서 있는 자리**를 알려 준다 (사용자 지시 2026-08-26, 포터블 준비).
+            #   포터블은 여러 벌을 다른 폴더에 두고 함께 쓰므로, 화면이 «지금 붙은 백엔드가
+            #   내 것인가»를 물을 수 있어야 한다 — 아니면 창은 이쪽인데 데이터는 저쪽이
+            #   되고, 그게 조용히 일어난다 (실측 2026-08-08 의 포트 다툼).
+            "root": str(APP_DIR), "port": CURRENT_PORT,
             "hasLlm": bool(llm_settings().get("key"))}
 
 

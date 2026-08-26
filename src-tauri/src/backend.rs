@@ -11,17 +11,51 @@ use std::sync::Mutex;
 
 pub const DEFAULT_PORT: u16 = 8770;
 
-/// 백엔드 포트.
+/// 백엔드 포트 — **한 번 정하고 그대로 쓴다** (`OnceLock`).
 ///
 /// ★**환경변수로 갈아 끼운다** (사용자 지시 2026-08-08). 예전엔 상수라, QA 인스턴스와
 /// 사용자 앱이 같은 8770 을 다퉜다 — 나중에 켠 쪽은 사이드카를 못 띄워 창은 뜨는데
 /// API 가 없는 상태(502)가 됐고, 원인이 화면에 안 나왔다.
 /// `qa\host.cmd` 가 `PEROPIX_BACKEND_PORT=8771` 을 넣어 준다.
+///
+/// ★★**비어 있는 포트를 스스로 찾는다** (사용자 지시 2026-08-26, 포터블 배포 준비).
+///   포터블은 **여러 벌을 다른 폴더에 풀어 두고 함께 쓰는** 형식이라, 번호를 하나로 박아
+///   두면 나중에 켠 쪽이 남의 백엔드에 붙는다 — 창은 이쪽인데 데이터는 저쪽이 된다.
+///   ★그래도 **8770 이 비어 있으면 그것을 쓴다** — 로그·문서·MCP 설정에 익숙한 번호가
+///     유지되는 편이 낫고, 혼자 켤 때가 대부분이다.
+///   ★잡았다 놓는 사이에 남이 채 갈 수는 있다. 그때는 사이드카가 못 떠서 **눈에 보이게**
+///     실패한다 (조용히 남의 것에 붙는 지금보다 낫다).
+/// ★★**CSP 도 함께 열어 두어야 한다** (`tauri.conf.json` 의 `app.security.csp`).
+///   거기 포트를 번호로 박아 두면(예전에는 `127.0.0.1:8770`), 다른 포트로 뜬 인스턴스는
+///   웹뷰가 **제 백엔드를 막아** 창만 뜨고 아무것도 못 한다. 그래서 `127.0.0.1:*` 이다.
+///   ★그 설정 파일에는 주석을 못 단다 (스키마가 모르는 열쇠를 거부한다) — 그래서 여기 적는다.
 pub fn backend_port() -> u16 {
-    std::env::var("PEROPIX_BACKEND_PORT")
-        .ok()
-        .and_then(|s| s.trim().parse().ok())
-        .unwrap_or(DEFAULT_PORT)
+    use std::sync::OnceLock;
+    static PORT: OnceLock<u16> = OnceLock::new();
+    *PORT.get_or_init(|| {
+        if let Some(p) = std::env::var("PEROPIX_BACKEND_PORT")
+            .ok()
+            .and_then(|s| s.trim().parse::<u16>().ok())
+        {
+            return p;
+        }
+        let free = |port: u16| {
+            std::net::TcpListener::bind(("127.0.0.1", port))
+                .and_then(|l| l.local_addr())
+                .map(|a| a.port())
+                .ok()
+        };
+        free(DEFAULT_PORT).or_else(|| free(0)).unwrap_or(DEFAULT_PORT)
+    })
+}
+
+/// 이 앱이 서 있는 자리 — `backend/server.py` 를 품은 폴더다.
+///
+/// ★★**데이터도 여기 쌓인다** (`server.py` 의 `APP_DIR`): `data/`·`workspaces/`·`gallery/`.
+///   그래서 이 값이 곧 **인스턴스의 신원**이다 — 웹뷰 저장소를 가르는 것도, 같은 폴더를
+///   두 번 열지 못하게 막는 것도, 화면이 「내 백엔드가 맞나」를 묻는 것도 이 값으로 한다.
+pub fn root() -> PathBuf {
+    find_repo_root().unwrap_or_else(app_dir)
 }
 
 /// 자식을 **Job Object 에 매단다** — 부모가 어떻게 죽든 함께 내려간다.
@@ -130,8 +164,33 @@ fn find_python(root: &PathBuf) -> PathBuf {
     PathBuf::from("python")
 }
 
+/// **같은 폴더를 두 번 열지 못하게** 잡아 두는 표식 (사용자 지시 2026-08-26).
+///
+/// ★★포터블은 **여러 벌을 다른 폴더에 두고 함께 쓰는** 형식이라, 「앱을 두 번 켜지 마라」는
+///   전역 잠금은 오히려 방해다 (안정판 옆에 시험판을 두는 것을 막는다). 막아야 하는 것은
+///   **같은 창고를 두 창이 만지는 것**뿐이다 — `workspaces/`·`data/` 가 곧 그 창고다.
+/// ★파일을 **공유 없이** 연다. 잡혀 있으면 열리지 않으므로 그것이 곧 「누가 쓰는 중」이다.
+///   ★핸들을 살려 둔다 — 닫으면 잠금이 풀린다. 프로세스가 죽으면 커널이 알아서 놓아 준다
+///     (크래시·강제 종료에도 자물쇠가 남지 않는다).
+#[cfg(windows)]
+pub fn lock_app_dir() -> Option<File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .share_mode(0) // 아무에게도 안 빌려준다
+        .open(root().join(".instance.lock"))
+        .ok()
+}
+
+#[cfg(not(windows))]
+pub fn lock_app_dir() -> Option<File> {
+    File::create(root().join(".instance.lock")).ok()
+}
+
 pub fn spawn() -> std::io::Result<Child> {
-    let root = find_repo_root().unwrap_or_else(app_dir);
+    let root = root();
     let python = find_python(&root);
     let script = root.join("backend").join("server.py");
     let log_dir = root.join("logs");

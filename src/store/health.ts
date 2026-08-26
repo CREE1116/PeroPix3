@@ -15,6 +15,11 @@ export type Health = {
   hasToken: boolean;
   /** 버그·건의 창구(디스코드). 백엔드가 정본이다 (`agent.SUPPORT_URL`) */
   support: string;
+  /** ★★백엔드가 서 있는 **폴더**. 「지금 붙은 것이 내 백엔드인가」를 가리는 열쇠다
+   *  (`lib/sameApp`) — 포터블은 여러 벌을 다른 폴더에 두고 함께 쓴다. */
+  root?: string;
+  /** 그 백엔드가 듣고 있는 포트 (진단용) */
+  port?: number;
 };
 
 type S = {

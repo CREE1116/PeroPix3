@@ -18,6 +18,7 @@ import { LeftPanel } from "./panels/LeftPanel";
 import { GenerateFooter } from "./panels/GenerateFooter";
 import { Settings } from "./app/Settings";
 import { useHealth, type Health } from "./store/health";
+import { sameApp } from "./lib/sameApp";
 import { Toasts } from "./app/Toasts";
 import { TipLayer } from "./components/Tip";
 import { AskDialog } from "./app/AskDialog";
@@ -139,6 +140,13 @@ export function App() {
         try {
           const h = await api<Health>("/api/health");
           if (!alive) return;
+          /* ★★**내 백엔드가 맞는지 한 번 대조한다** (사용자 지시 2026-08-26, 포터블 준비).
+             남의 것에 붙으면 창은 이쪽인데 데이터는 저쪽이 되고, 그것이 조용히 일어난다.
+             ★여기서 멈춘다 — 워크스페이스를 읽기 **전**이라야 남의 창고를 안 건드린다. */
+          if (!(await sameApp(h))) {
+            useHealth.getState().setDead(true);
+            return;
+          }
           useHealth.getState().set(h);
           if (h.hasToken) {
             try {
