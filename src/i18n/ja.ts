@@ -457,6 +457,8 @@ export const ja: Dict = {
     downloading: "ダウンロード中 {done} / {total}",
     ready: "受け取りました。再起動すると適用されます。",
     restart: "今すぐ再起動",
+    cancel: "中止",
+    applying: "インストール中です。まもなく再起動します。",
     building: "v{v} を準備中です。少し経ってからもう一度確認してください。",
     notes: "リリースノート",
     failed: "更新を確認できませんでした",

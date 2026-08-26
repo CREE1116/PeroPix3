@@ -473,6 +473,8 @@ export const ko: Dict = {
     downloading: "받는 중 {done} / {total}",
     ready: "받았습니다. 다시 켜면 적용됩니다.",
     restart: "지금 다시 켜기",
+    cancel: "그만두기",
+    applying: "설치 중입니다. 곧 다시 켜집니다.",
     building: "새 버전 v{v} 을 준비하는 중입니다. 잠시 뒤에 다시 확인해 주세요.",
     notes: "릴리즈 노트",
     failed: "업데이트를 확인하지 못했습니다",

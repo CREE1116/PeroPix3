@@ -459,6 +459,8 @@ export const en = {
     downloading: "Downloading {done} / {total}",
     ready: "Downloaded. It applies when you restart.",
     restart: "Restart now",
+    cancel: "Cancel",
+    applying: "Installing. The app will restart shortly.",
     building: "v{v} is still being built. Check again in a moment.",
     notes: "Release notes",
     failed: "Could not check for updates",

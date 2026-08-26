@@ -12,6 +12,12 @@ import { t } from "../i18n";
  *    ★실패는 삼킨다 — 인터넷이 없다고 앱이 시끄러워지면 안 된다.
  *  ★받아 둔 뒤에는 **다시 켜야** 반영된다. 돌고 있는 실행 파일은 덮어쓸 수 없어서,
  *    껍데기가 백엔드를 내리고 파일을 갈아 끼운 뒤 새로 띄운다 (`src-tauri/src/update.rs`).
+ *
+ *  ★★**어디까지 왔나를 `phase` 하나가 말한다** (사용자 지적 2026-08-26: *"업데이트를 누르면
+ *    화면에 아무 변화가 없는데 옵션 모달에 가보면 조용히 다운받고 있음"*). 예전에는
+ *    `busy`·`staged` 두 깃발로 갈랐는데, **설치 중**이라는 단계를 담을 자리가 없었고
+ *    설정 모달 밖에서는 아무 데도 안 보였다. 단계가 하나면 타이틀바 띠와 설정 칸이
+ *    **같은 값을 보고** 그린다 (`app/UpdateStrip`·`app/Settings` 의 `UpdateBox`).
  */
 export type UpdateInfo = {
   has_update: boolean;
@@ -24,33 +30,40 @@ export type UpdateInfo = {
   url?: string;
 };
 
+/** 지금 어느 단계인가 — 화면은 이것만 보고 그린다.
+ *  `idle` 아무 일 없음 · `downloading` 받는 중 · `staged` 받아 뒀다 · `applying` 갈아 끼우는 중 */
+export type Phase = "idle" | "downloading" | "staged" | "applying";
+
 type S = {
   info: UpdateInfo | null;
   /** 확인 중 (설정에서 누른 경우에만 보인다) */
   checking: boolean;
-  /** 받는 중 */
-  busy: boolean;
+  phase: Phase;
   done: number;
   total: number;
-  /** 받아서 쌓아 뒀다 — 다시 켜면 적용된다 */
-  staged: boolean;
   setProgress: (done: number, total: number) => void;
+  /** 소켓이 물어 온 끝 소식 — 받았으면 `staged`, 취소·실패면 `idle` */
+  finish: (ok: boolean, cancelled?: boolean) => void;
   setStaged: (v: boolean) => void;
   /** @param quiet 부팅 때처럼 **조용히** 확인한다 (실패해도 아무 말 안 한다) */
   check: (quiet?: boolean) => Promise<void>;
   start: () => Promise<void>;
+  cancel: () => Promise<void>;
   restart: () => Promise<void>;
 };
 
 export const useUpdate = create<S>((set, get) => ({
   info: null,
   checking: false,
-  busy: false,
+  phase: "idle",
   done: 0,
   total: 0,
-  staged: false,
   setProgress: (done, total) => set({ done, total }),
-  setStaged: (v) => set({ staged: v, busy: false }),
+  finish: (ok, cancelled) => {
+    set({ phase: ok ? "staged" : "idle", done: 0, total: 0 });
+    if (!ok && !cancelled) toast(t("update.failed"), "warn");
+  },
+  setStaged: (v) => set({ phase: v ? "staged" : "idle" }),
 
   async check(quiet = false) {
     if (!quiet) set({ checking: true });
@@ -86,27 +99,45 @@ export const useUpdate = create<S>((set, get) => ({
   },
 
   async start() {
-    if (get().busy) return;
-    set({ busy: true, done: 0, total: get().info?.size ?? 0 });
+    if (get().phase !== "idle") return;
+    set({ phase: "downloading", done: 0, total: get().info?.size ?? 0 });
     try {
       const r = await api<{ ok: boolean; error?: string }>("/api/update/stage", { method: "POST" });
-      if (!r.ok) {
+      if (!r.ok && get().phase === "downloading") {
         toast(r.error || t("update.failed"), "warn");
-        set({ busy: false });
+        set({ phase: "idle" });
       }
       // 끝났다는 소식은 소켓이 물어 온다 (`update_staged`) — 여기서 끄지 않는다
     } catch (e) {
       toast(String(e), "warn");
-      set({ busy: false });
+      set({ phase: "idle" });
     }
   },
 
+  /** 받다 말고 그만둔다 (사용자 지적 2026-08-26: *"무조건 끝까지 받아야함"*).
+   *  ★치우기는 백엔드가 한다 — 받던 쪽이 제 자국을 안다 (`backend/update.py` 의 `clear`). */
+  async cancel() {
+    if (get().phase !== "downloading") return;
+    try {
+      await api("/api/update/cancel", { method: "POST" });
+    } catch {
+      /* 못 끊었어도 화면은 되돌린다 — 소켓의 끝 소식이 곧 온다 */
+    }
+    set({ phase: "idle", done: 0, total: 0 });
+  },
+
+  /** 갈아 끼우고 다시 켠다. ★여기서 돌아오지 않는다 — 껍데기가 앱을 끄기 때문이다.
+   *  그래서 **누른 순간 「설치 중」으로 바꿔 둔다** (사용자 지적 2026-08-26:
+   *  *"다운 받은 후 설치중 프로그레스가 없음"*). 실패했을 때만 되돌린다. */
   async restart() {
+    if (get().phase === "applying") return;
+    set({ phase: "applying" });
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("apply_update");
     } catch (e) {
       toast(String(e), "warn");
+      set({ phase: "staged" });
     }
   },
 }));

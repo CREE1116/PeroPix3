@@ -800,7 +800,10 @@ function handle(m: Record<string, any>, set: Setter, get: () => S) {
       );
       break;
     case "update_staged":
-      void import("./update").then(({ useUpdate }) => useUpdate.getState().setStaged(!!m.ok));
+      // ★취소는 실패가 아니다 — 붉은 줄을 띄우지 않는다 (`useUpdate.finish`)
+      void import("./update").then(({ useUpdate }) =>
+        useUpdate.getState().finish(!!m.ok, !!m.cancelled),
+      );
       break;
     case "image":
       render(m, set, get);

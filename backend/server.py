@@ -536,15 +536,49 @@ async def update_check():
     return await update_mod.check(APP_VERSION)
 
 
+#: 지금 받고 있는 일. ★**하나뿐이다** — 취소가 무엇을 끊을지 알아야 하고, 둘이 겹치면
+#  나중 것이 앞의 것이 받아 둔 `.update/` 를 지우고 시작한다 (`update.stage` 첫 줄).
+_UPDATE_TASK: asyncio.Task | None = None
+
+
 @app.post("/api/update/stage")
 async def update_stage():
-    """새 판을 받아 `.update/new/` 에 쌓아 둔다. ★앱 파일은 아직 안 건드린다."""
+    """새 판을 받아 `.update/new/` 에 쌓아 둔다. ★앱 파일은 아직 안 건드린다.
+
+    ★★**따로 떼어 돌린다** (사용자 지적 2026-08-26: *"취소 버튼이 없음. 무조건 끝까지
+      받아야함"*). 예전에는 요청 안에서 그대로 기다렸는데, 그러면 **끊을 손잡이가 없다.**
+      일감으로 만들어 두면 `/api/update/cancel` 이 그것을 끊는다.
+    ★답은 예전과 같다 — 끝까지 기다렸다가 결과를 돌려준다. 화면은 소켓으로 진행을 본다."""
+    global _UPDATE_TASK
+    if _UPDATE_TASK and not _UPDATE_TASK.done():
+        return {"ok": False, "error": "이미 받는 중입니다"}
+
     async def prog(done: int, total: int) -> None:
         await Q.broadcast({"type": "update_progress", "done": done, "total": total})
 
-    got = await update_mod.stage(APP_DIR, APP_VERSION, prog)
+    _UPDATE_TASK = asyncio.create_task(update_mod.stage(APP_DIR, APP_VERSION, prog))
+    try:
+        got = await _UPDATE_TASK
+    except asyncio.CancelledError:
+        # ★받다 만 것을 치운다 — 다음에 받을 때 `.update/` 가 어중간하면 안 된다
+        update_mod.clear(APP_DIR)
+        got = {"ok": False, "cancelled": True, "error": "취소했습니다"}
+    finally:
+        _UPDATE_TASK = None
     await Q.broadcast({"type": "update_staged", **got})
     return got
+
+
+@app.post("/api/update/cancel")
+async def update_cancel():
+    """받는 중인 것을 끊는다 (사용자 지적 2026-08-26).
+
+    ★끊긴 뒤의 치우기는 **받던 쪽**이 한다 (`update_stage` 의 `except`) — 치우는 자리가
+      둘이면 서로 남의 파일을 지운다."""
+    if _UPDATE_TASK and not _UPDATE_TASK.done():
+        _UPDATE_TASK.cancel()
+        return {"ok": True}
+    return {"ok": False, "error": "받는 중인 것이 없습니다"}
 
 
 @app.post("/api/token")

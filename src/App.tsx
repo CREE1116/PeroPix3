@@ -17,6 +17,7 @@ import { WorkspaceTabs } from "./app/WorkspaceTabs";
 import { LeftPanel } from "./panels/LeftPanel";
 import { GenerateFooter } from "./panels/GenerateFooter";
 import { Settings } from "./app/Settings";
+import { UpdateStrip } from "./app/UpdateStrip";
 import { useHealth, type Health } from "./store/health";
 import { sameApp } from "./lib/sameApp";
 import { Toasts } from "./app/Toasts";
@@ -175,6 +176,19 @@ export function App() {
              ★맨 뒤에 둔다 — 네트워크를 타는 일이라 화면이 뜨는 것을 늦추면 안 된다.
              ★실패는 삼킨다 (`check(true)`) — 인터넷이 없다고 시끄러우면 안 된다. */
           void import("./store/update").then(({ useUpdate }) => useUpdate.getState().check(true));
+          /* ★★**받아 두고 안 켠 것이 있으면 그것부터 말한다** (2026-08-26에 빠져 있던 자리).
+             껍데기에 묻는 창구(`update_staged`)는 있었는데 **아무도 안 불렀다** — 받아 둔 뒤
+             앱을 껐다 켜면 그 사실이 사라져, 사용자는 같은 것을 다시 받아야 했다.
+             ★확인보다 먼저 걸리게 두면 새 판 알림과 겹치지 않는다 (이미 받아 둔 상태다). */
+          void (async () => {
+            try {
+              const { invoke } = await import("@tauri-apps/api/core");
+              if (await invoke<boolean>("update_staged"))
+                (await import("./store/update")).useUpdate.getState().setStaged(true);
+            } catch {
+              /* 브라우저(vite dev)에는 껍데기가 없다 — 조용히 넘긴다 */
+            }
+          })();
           return;
         } catch {
           await new Promise((r) => setTimeout(r, 400));
@@ -215,6 +229,10 @@ export function App() {
       <Shell
         titleRight={
           <>
+            {/* ★★업데이트 띠는 **상태등 왼쪽**에 선다 (사용자 지적 2026-08-26) — 받는 동안
+                설정을 열어 두지 않아도 어디까지 왔는지 보이고, 거기서 그만둘 수도 있다.
+                아무 일도 없으면 아무것도 안 그린다. */}
+            <UpdateStrip />
             <Status />
             {/* ★★해/달 단추는 **되살렸다** (사용자 지시 2026-08-20). 한 번 걷었다가
                 되돌린 자리다 — 밝게/어둡게를 오가는 것은 자주 하는 일이라 타이틀바에

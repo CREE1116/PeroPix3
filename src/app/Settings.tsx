@@ -522,10 +522,15 @@ const btn: React.CSSProperties = {
  *  ★부팅 때 이미 조용히 확인해 두므로(`App`), 여기 들어오면 대개 답이 나와 있다. */
 function UpdateBox() {
   const t = useI18n((s) => s.t);
-  const { info, checking, busy, done, total, staged } = useUpdate();
+  const { info, checking, phase, done, total } = useUpdate();
   const u = useUpdate.getState();
 
-  if (staged)
+  /* ★★**갈아 끼우는 동안**도 말해 준다 (사용자 지적 2026-08-26: *"다운 받은 후 설치중
+     프로그레스가 없음"*). 몇 %인지는 못 낸다 — 이름 바꾸기 몇 번이라 순식간에 끝나고,
+     눈에 보이는 시간은 앱이 꺼졌다 다시 뜨는 동안이다. */
+  if (phase === "applying") return <span data-update-applying style={dim}>{t("update.applying")}</span>;
+
+  if (phase === "staged")
     return (
       <Row>
         <span style={dim}>{t("update.ready")}</span>
@@ -535,7 +540,7 @@ function UpdateBox() {
       </Row>
     );
 
-  if (busy)
+  if (phase === "downloading")
     return (
       <Row>
         <span style={dim}>
@@ -553,6 +558,10 @@ function UpdateBox() {
             }}
           />
         </div>
+        {/* ★★**그만둘 수 있어야 한다** (사용자 지적 2026-08-26: *"무조건 끝까지 받아야함"*) */}
+        <button data-update-cancel onClick={() => void u.cancel()} style={btn}>
+          {t("update.cancel")}
+        </button>
       </Row>
     );
 

@@ -174,3 +174,19 @@ async def stage(
 
     zpath.unlink(missing_ok=True)
     return {"ok": True, "kind": got["kind"], "version": got["latest"], "dir": str(new)}
+
+
+def clear(app_dir: Path) -> None:
+    """받다 만 것을 치운다 — 취소했을 때 부른다 (사용자 지적 2026-08-26).
+
+    ★★**`.update/` 를 통째로 지우지 않는다.** 거기에는 지난번 업데이트가 남긴 `old/` 가
+      있을 수 있고, 그것은 **다음에 켤 때 껍데기가 치울 몫**이다 (`src-tauri/src/update.rs`
+      의 `sweep`). 지금 우리가 지우면 아직 돌고 있는 실행 파일을 건드리게 된다.
+    ★지우는 것은 **이번에 받던 것**뿐이다: 받다 만 zip 과 풀다 만 `new/`.
+    """
+    stage_dir = app_dir / STAGE
+    if not stage_dir.exists():
+        return
+    shutil.rmtree(stage_dir / "new", ignore_errors=True)
+    for f in stage_dir.glob("*.zip"):
+        f.unlink(missing_ok=True)
