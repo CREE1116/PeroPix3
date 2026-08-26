@@ -69,6 +69,17 @@ export function OptionsPanel() {
                 />
               </Group>
 
+              {/* ★★Variety+ 는 **모델 바로 아래**다 (사용자 지시 2026-08-26: *"모델에 따라
+                  변하는 거니까 그쪽에 있어야함"*). V5 에는 이 기능 자체가 없어서
+                  (`cfgDelay` 거짓 — 서버가 `skip_cfg_above_sigma` 를 지운다) 모델을 바꾸면
+                  칸이 생겼다 없어진다. 그 변화가 **무엇 때문인지 눈에 보이는 자리**가 여기다.
+                  ★안이 비면 이름표만 선 빈 칸이 되므로 묶음째 안 낸다. */}
+              {cap.cfg_delay && (
+                <Group label={t("options.misc")}>
+                  <Check label={t("options.varietyPlus")} checked={p.variety_plus} onChange={(v) => set("variety_plus", v)} />
+                </Group>
+              )}
+
               {/* ★시드는 여기 없다 — **생성 버튼 옆 하나**로 옮겼다 (사용자 지시 2026-08-04).
                   매번 만지는 유일한 옵션이라 생성 버튼 곁이 맞고, 두 곳에 두면 어느 쪽이
                   진짜인지 흐려진다 (하나의 정보에는 하나의 창구). → `GenerateFooter` */}
@@ -103,13 +114,6 @@ export function OptionsPanel() {
               {cap.noise_schedule && (
                 <Group label={t("options.scheduler")}>
                   <Select value={p.scheduler} options={SCHEDULERS} onChange={(v) => set("scheduler", v)} />
-                </Group>
-              )}
-              {/* ★V5 에는 Variety+ 자체가 없다 (`cfgDelay` 거짓) — 서버가 값을 지운다.
-                  ★그러면 **묶음도 통째로 안 낸다** — 안이 비면 이름표만 선 빈 칸이 된다 */}
-              {cap.cfg_delay && (
-                <Group label={t("options.misc")}>
-                  <Check label={t("options.varietyPlus")} checked={p.variety_plus} onChange={(v) => set("variety_plus", v)} />
                 </Group>
               )}
         </div>
