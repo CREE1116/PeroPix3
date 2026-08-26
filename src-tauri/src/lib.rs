@@ -7,9 +7,15 @@ use tauri::{Manager, RunEvent};
 
 /// 프론트가 백엔드 주소를 알아내는 유일한 창구.
 /// 포트를 프론트에 하드코딩하지 않는다 — 포트는 이제 인스턴스마다 다르다(`backend_port`).
+///
+/// ★★**이번 실행의 열쇠가 주소 앞머리로 붙는다** (`/k/<열쇠>`, 2026-08-26). 화면이 쓰는
+///   주소는 전부 이 값에 경로를 이어 붙여 만들어지므로, 여기 한 번 붙이면 그림 태그와
+///   웹소켓까지 함께 덮인다 — 왜 필요한지는 `backend::backend_key` 의 ★★주에 있다.
 #[tauri::command]
 fn backend_url() -> String {
-    format!("http://127.0.0.1:{}", backend::backend_port())
+    let key = backend::backend_key();
+    let base = format!("http://127.0.0.1:{}", backend::backend_port());
+    if key.is_empty() { base } else { format!("{base}/k/{key}") }
 }
 
 /// 이 앱이 서 있는 자리. ★화면이 **「지금 붙은 백엔드가 내 것인가」**를 묻는 데 쓴다 —

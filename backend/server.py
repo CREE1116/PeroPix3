@@ -223,8 +223,55 @@ for _root in (DATA_DIR / "cards", DATA_DIR / "chats", DATA_DIR / "vibe-cache"):
 
 app = FastAPI(title="PeroPix Backend", version=APP_VERSION)
 
+#: 이번 실행의 열쇠 — 껍데기가 만들어 넣어 준다 (`src-tauri/src/backend.rs` 의 `backend_key`).
+#  ★비어 있으면 문을 안 잠근다: 백엔드를 손으로 띄우는 개발·시험 때가 그렇다.
+APP_KEY = os.environ.get("PEROPIX_KEY", "").strip()
+#: 잠겼을 때 모든 주소 앞에 붙는 머리. 화면은 `backend_url` 에서 이 값을 통째로 받는다.
+KEY_PREFIX = f"/k/{APP_KEY}" if APP_KEY else ""
+
+
+class KeyGate:
+    """열쇠가 맞는 주소만 안으로 들여보낸다 (2026-08-26, 첫 공개 배포 점검).
+
+    ★★**왜 필요한가.** 이 서버는 `127.0.0.1` 에만 붙지만 **브라우저는 로컬 주소로도
+      요청을 보낸다.** 포트가 8770 으로 거의 고정이라, 앱을 켜 둔 채 아무 사이트나 열려
+      있으면 그 사이트가 우리 API 를 그대로 부를 수 있었다 (실측 2026-08-26:
+      `Origin: https://evil.example` 로 프리플라이트를 던지니 `allow-origin: *` 이 왔다).
+      그 API 에는 **임의의 실행 파일을 띄우는 길**(`/api/cli/run` 의 `exe`), 생성(돈),
+      워크스페이스 버리기, 폴더 경로 흘리기가 다 들어 있다.
+    ★★**왜 헤더가 아니라 주소인가.** `<img src=…>` 와 웹소켓은 헤더를 못 싣는다. 주소
+      앞머리로 하면 화면이 만드는 모든 주소가 한 번에 덮인다 (전부 `backend_url` 에 경로를
+      이어 붙여 만든다).
+    ★★**HTTP 미들웨어가 아니라 ASGI 층**이다 — `@app.middleware("http")` 는 웹소켓을
+      안 지나간다. 소켓이야말로 진행 상황·생성 결과가 흐르는 통로라 빠지면 안 된다.
+    ★맞히려는 쪽이 얻는 것은 403 뿐이다. 몇 번째 글자가 맞았는지 같은 실마리를 안 준다.
+    """
+
+    def __init__(self, app_, prefix: str):
+        self.app = app_
+        self.prefix = prefix
+
+    async def __call__(self, scope, receive, send):
+        if not self.prefix or scope["type"] not in ("http", "websocket"):
+            return await self.app(scope, receive, send)
+
+        path = scope.get("path", "")
+        if path == self.prefix or path.startswith(self.prefix + "/"):
+            rest = path[len(self.prefix):] or "/"
+            scope = {**scope, "path": rest, "raw_path": rest.encode()}
+            return await self.app(scope, receive, send)
+
+        if scope["type"] == "websocket":
+            # ★받기 전에 닫는다 — 핸드셰이크를 마치면 그때부터 방송이 흘러간다
+            return await send({"type": "websocket.close", "code": 1008})
+        await send({"type": "http.response.start", "status": 403,
+                    "headers": [(b"content-type", b"text/plain; charset=utf-8")]})
+        await send({"type": "http.response.body", "body": "PeroPix: 열쇠가 없습니다".encode()})
+
+
 # Tauri 는 tauri://localhost 오리진, 개발 중에는 Vite 가 localhost:1420.
-# 로컬 전용 서버이므로 전부 허용한다.
+# ★오리진은 열어 두되 **문은 위의 열쇠가 잠근다** — 오리진 목록만으로는 프리플라이트를
+#   안 타는 요청이 새고, 열쇠는 웹페이지가 알 길이 없어 원리적으로 막힌다.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -232,6 +279,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(KeyGate, prefix=KEY_PREFIX)
 
 
 # ── 설정 ──────────────────────────────────────────────────────────
@@ -662,7 +710,9 @@ async def cli_run(body: CliRun, port: int = 0):
     if not exe:
         raise HTTPException(400, "CLI 를 못 찾았습니다. 설치하고 다시 스캔해 주세요.")
     agent = body.agent or cliagent.agent_of(exe)
-    backend = f"http://127.0.0.1:{port or CURRENT_PORT}"
+    # ★열쇠 앞머리를 함께 넘긴다 — 조수의 MCP 창구도 같은 문으로 들어온다
+    #   (`backend/mcp_stdio.py` 의 `PEROPIX_BACKEND`). 안 붙이면 조수가 403 만 받는다.
+    backend = f"http://127.0.0.1:{port or CURRENT_PORT}{KEY_PREFIX}"
     system = body.system or agent_mod.system_prompt(CONFIG.get("support_url", ""), GUIDE.block())
     s = await _session_for(agent, exe, backend, body.chat, body.resume)
     s.model, s.effort = body.model, body.effort

@@ -29,6 +29,43 @@ pub const DEFAULT_PORT: u16 = 8770;
 ///   거기 포트를 번호로 박아 두면(예전에는 `127.0.0.1:8770`), 다른 포트로 뜬 인스턴스는
 ///   웹뷰가 **제 백엔드를 막아** 창만 뜨고 아무것도 못 한다. 그래서 `127.0.0.1:*` 이다.
 ///   ★그 설정 파일에는 주석을 못 단다 (스키마가 모르는 열쇠를 거부한다) — 그래서 여기 적는다.
+/// 이번 실행의 **열쇠** — 주소 앞머리(`/k/<열쇠>`)로 실려 나간다.
+///
+/// ★★**왜 있나** (2026-08-26, 첫 공개 배포 점검에서 잡았다): 백엔드는 `127.0.0.1` 에만
+///   붙지만 **브라우저는 로컬 주소로도 요청을 보낸다.** 포트가 8770 으로 거의 고정이라,
+///   앱을 켜 둔 채 아무 사이트나 열려 있으면 그 사이트가 우리 API 를 그대로 부를 수 있었다
+///   (실측: `Origin: https://evil.example` 로 프리플라이트를 던지니 `allow-origin: *` 이
+///   돌아왔다). 그 API 에는 **임의의 실행 파일을 띄우는 길**(`/api/cli/run` 의 `exe`),
+///   생성(돈), 워크스페이스 버리기, 폴더 경로 흘리기가 다 들어 있다.
+/// ★★막는 방식은 **주소 앞머리**다. 화면이 쓰는 주소는 전부 이 값(`backend_url`)에
+///   경로를 이어 붙여 만들어지므로(`lib/backend.ts`·`lib/imgUrl.ts`·소켓), 앞머리 하나로
+///   **`<img>` 도 웹소켓도 함께 덮인다.** 헤더로 하면 그 둘이 헤더를 못 실어 새어 나간다.
+/// ★웹페이지는 이 값을 알 길이 없다 — 껍데기가 만들고 화면에만 알려 준다.
+///
+/// ★**개발 중에는 안 건다** (`PEROPIX_DEV_RELOAD` — `dev.bat`·`qa\host.cmd` 만 넣는다).
+///   그래야 브라우저로 `localhost:1420` 을 열어 사이드카에 붙이는 확인 방법이 그대로 산다
+///   (`CLAUDE.md` 의 「확인 방법」). 배포되는 앱은 그 값을 넣지 않으므로 언제나 잠긴다.
+pub fn backend_key() -> &'static str {
+    use std::sync::OnceLock;
+    static KEY: OnceLock<String> = OnceLock::new();
+    KEY.get_or_init(|| {
+        if std::env::var("PEROPIX_DEV_RELOAD").is_ok() {
+            return String::new();
+        }
+        // ★새 크레이트를 안 들인다 — `RandomState` 의 씨앗은 OS 난수다(표준 문서).
+        //   맞히는 쪽이 얻는 것은 403 뿐이라 되풀이 시도로 좁혀 갈 실마리도 없다.
+        use std::collections::hash_map::RandomState;
+        use std::hash::{BuildHasher, Hasher};
+        let mut s = String::with_capacity(32);
+        while s.len() < 32 {
+            let mut h = RandomState::new().build_hasher();
+            h.write_usize(s.len());
+            s.push_str(&format!("{:016x}", h.finish()));
+        }
+        s
+    })
+}
+
 pub fn backend_port() -> u16 {
     use std::sync::OnceLock;
     static PORT: OnceLock<u16> = OnceLock::new();
@@ -207,6 +244,8 @@ pub fn spawn() -> std::io::Result<Child> {
     cmd.arg(&script)
         .arg("--port")
         .arg(backend_port().to_string())
+        // ★열쇠는 **환경변수로만** 넘긴다 — 명령줄에 실으면 작업 관리자에서 그대로 보인다
+        .env("PEROPIX_KEY", backend_key())
         .current_dir(&root)
         .stdout(out.map(Stdio::from).unwrap_or_else(Stdio::null))
         .stderr(err.map(Stdio::from).unwrap_or_else(Stdio::null));
