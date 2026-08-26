@@ -109,7 +109,9 @@ Get-ChildItem (Join-Path $root "models/censor") -Filter "*.onnx" |
   ForEach-Object { Copy-Item $_.FullName -Destination $censor; Write-Host "[포터블] 검열 모델: $($_.Name) ($([math]::Round($_.Length/1MB))MB)" }
 
 # ★어휘·읽을거리는 있으면 담는다 (없어도 앱은 뜬다)
-foreach ($n in @("LICENSE", "THIRD-PARTY.md", "README.md")) {
+# ★읽을거리는 **세 언어를 다 담는다** (사용자 결정 2026-08-26) — 본문은 영문이고
+#   한국어·일본어는 따로 있다. 받은 사람이 폴더 안에서 바로 고를 수 있어야 한다.
+foreach ($n in @("LICENSE", "THIRD-PARTY.md", "README.md", "README.ko.md", "README.ja.md")) {
   $p = Join-Path $root $n
   if (Test-Path $p) { Copy-Item $p -Destination $app }
 }

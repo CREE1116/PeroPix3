@@ -1,104 +1,113 @@
 # PeroPix 3.0
 
-NovelAI 이미지 생성 작업대. **씬 줄**에 장면을 늘어놓고 한 번에 굴리며, 프롬프트는
-**블록**으로 쌓고 **카드**로 재사용한다.
+**English** · [한국어](README.ko.md) · [日本語](README.ja.md)
 
-Tauri 2 + React 19 (프런트) + Python FastAPI (백엔드, 사이드카).
+A desktop workbench for NovelAI image generation. Lay scenes out along a **scene lane** and
+run them in one go; build prompts from **blocks** and reuse them as **cards**.
 
-## 무엇이 필요한가
+Tauri 2 + React 19 (frontend) + Python FastAPI (backend, run as a sidecar).
 
-- **NovelAI 구독**과 **Persistent API Token**. 그림은 NovelAI 가 만들고, 이 앱은 그 앞에
-  서는 작업대다. 토큰은 NovelAI 계정 설정에서 발급하며 `pst-` 로 시작한다.
-  앱을 처음 켜면 **설정 ▸ 일반**에서 넣는다.
-- 생성에는 **Anlas** 가 든다. Opus 구독의 무료 조건(해상도·스텝 상한)에 드는 그림은
-  값이 0 이고, 화면의 생성 단추가 그때그때 얼마인지 보여 준다.
-- 윈도우 10/11. WebView2 런타임이 필요한데 보통 이미 깔려 있다.
+## What you need
 
-## 받아서 쓰기
+- **A NovelAI subscription and a Persistent API Token.** NovelAI generates the images;
+  this app is the workbench in front of it. Create the token in your NovelAI account
+  settings — it starts with `pst-`. Enter it under **Settings ▸ General** on first launch.
+- **Generating costs Anlas.** Images that fall within your plan's free limits (resolution
+  and step count) cost nothing, and the generate button always shows the current price.
+- **Windows 10/11.** The WebView2 runtime is required and is usually already installed.
 
-릴리즈의 `PeroPix-<버전>-win64.zip` 을 풀고 `PeroPix.exe` 를 실행한다.
+## Getting it
 
-- **설치 프로그램이 아니라 포터블이다.** 앱이 `data/`·`workspaces/`·`logs/` 를
-  **실행 파일 옆에** 쓰므로, 쓰기가 되는 자리(문서 폴더·D 드라이브 등)에 풀어야 한다.
-  Program Files 에 두면 첫 실행부터 막힌다.
-- 파이썬은 꾸러미 안에 들어 있다 (`python/`). 따로 설치하지 않아도 된다.
-- **여러 벌을 따로 풀어 함께 써도 된다.** 폴더마다 포트·저장 자리·설정이 갈린다.
-  같은 폴더를 두 번 켜는 것만 막는다.
-- 옮기거나 지울 때는 **폴더째** 다루면 된다. 레지스트리에 아무것도 안 남긴다.
+Unzip `PeroPix-<version>-win64.zip` from the releases page and run `PeroPix.exe`.
 
-## 어디에 무엇이 쌓이나
+- **This is a portable app, not an installer.** It writes `data/`, `workspaces/` and
+  `logs/` **next to the executable**, so unzip it somewhere writable (your Documents
+  folder, another drive). Inside Program Files it fails on first launch.
+- Python ships inside the package (`python/`). Nothing to install separately.
+- **You can unzip several copies and run them side by side.** Each folder gets its own
+  port, storage and settings. Only launching the *same* folder twice is blocked.
+- To move or remove it, just move or delete the folder. Nothing is written to the registry.
 
-전부 `PeroPix.exe` 옆이다.
+## Where things are stored
 
-| 자리 | 무엇 |
+Everything lives next to `PeroPix.exe`.
+
+| Path | Contents |
 |---|---|
-| `workspaces/<이름>/` | 작업공간 — 탭·씬·프롬프트와 `output/` 의 생성물 |
-| `data/` | 설정·카드·보관함. **API 토큰은 `data/secrets.json` 하나에만** 있다 |
-| `models/censor/` | 검열용 모델 |
-| `logs/` | 백엔드 기록 (문제를 신고할 때 함께 보내면 좋다) |
+| `workspaces/<name>/` | A workspace — tabs, scenes, prompts, and generated images under `output/` |
+| `data/` | Settings, cards, gallery. **Your API token lives only in `data/secrets.json`** |
+| `models/censor/` | Censoring models |
+| `logs/` | Backend logs (worth attaching when you report a problem) |
 
-★백업은 이 폴더들만 챙기면 된다. 업데이트는 이것들을 건드리지 않는다.
+Back up those folders and you have everything. Updates never touch them.
 
-## 업데이트
+## Updates
 
-**설정 ▸ 업데이트**에서 단추 하나로 받는다. 앱이 켜질 때 조용히 한 번 확인하고, 새 판이
-있으면 알림이 뜬다. 받아 둔 뒤 다시 켜면 적용된다 — 받는 것이 패치인지 전체인지는 앱이
-정한다.
+One button under **Settings ▸ Update**. The app also checks quietly at startup and shows a
+notification when a new version exists. Once downloaded, restarting applies it — the app
+decides on its own whether to fetch a patch or the full package.
 
-## 개발
+## Development
 
 ```bash
 npm install
-npm run tauri dev      # 프런트(1420) + 백엔드(8770) + 창
+npm run tauri dev      # frontend (1420) + backend (8770) + window
 ```
 
-백엔드만 따로 띄우려면 `python backend/server.py --port 8770`.
-의존성은 `backend/requirements.txt`.
+To run only the backend: `python backend/server.py --port 8770`.
+Dependencies are in `backend/requirements.txt`.
 
-## 릴리즈
+## Releasing
 
-태그를 밀면 워크플로가 **초안 릴리즈**를 만든다 (`.github/workflows/release.yml`).
+Pushing a tag makes the workflow build a **draft release**
+(`.github/workflows/release.yml`).
 
 ```bash
 git tag v3.0.1 && git push origin v3.0.1
 ```
 
-버전은 **태그가 정본**이라 빌드가 `tauri.conf.json`·`package.json` 을 그 값으로 맞춘다.
-확인만 하고 싶으면 Actions 에서 손으로 돌린다 — 그때는 릴리즈를 안 만들고
-아티팩트로만 올라간다.
+**The tag is the source of truth for the version** — the build rewrites
+`tauri.conf.json` and `package.json` to match it. To only check that a build passes, run
+the workflow manually from Actions; that path uploads artifacts and creates no release.
 
-올라가는 자산은 셋이다. **앱의 자동 업데이트가 이 셋을 본다** (`backend/update.py`).
+Three assets are uploaded, and **the app's auto-update reads all three**
+(`backend/update.py`).
 
-| 자산 | 무엇 |
+| Asset | What it is |
 |---|---|
-| `PeroPix-<버전>-win64.zip` | 전체 (약 130MB — 파이썬·검열 모델까지) |
-| `patch-<버전>.zip` | 패치 (약 35MB — 실행 파일 + `backend/`) ← 평소 업데이트가 받는 것 |
-| `patch-info.json` | 패치로 될지 전체로 갈지의 근거 |
+| `PeroPix-<version>-win64.zip` | Full package (~130MB, including Python and the censor model) |
+| `patch-<version>.zip` | Patch (~35MB — the executable plus `backend/`); what updates normally fetch |
+| `patch-info.json` | The basis for choosing patch vs. full |
 
-- ★**초안으로 올라온다.** 발행해야 사용자에게 나간다. 그리고 **「시험판(pre-release)」으로
-  표시하면 앱이 못 본다** — GitHub 의 `releases/latest` 가 초안과 시험판을 건너뛰기 때문이다.
-  뒤집어 말하면 시험판은 안전하게 만들 수 있다 (사용자에게 안 나간다).
-- ★`backend/requirements.txt` 나 `models/censor` 가 바뀐 판은 워크플로가 `requires_full` 로
-  표시하고, 앱이 알아서 전체를 받는다. **사용자에게는 안 묻는다** — 받는 양만 보인다.
-- ★★**아직 한 번도 안 해 본 구간이 하나 있다**: 릴리즈에서 **내려받아 갈아 끼우는** 길이다.
-  발행된 릴리즈가 있어야 끝까지 돌려 볼 수 있어서다. 그 앞뒤(꾸러미 조립 · 돌고 있는 실행
-  파일 교체 · 재시작)는 2026-08-26 에 실측으로 확인했다.
+- **Releases arrive as drafts.** You have to publish one for it to reach users. And
+  **marking it as a pre-release hides it from the app** — GitHub's `releases/latest` skips
+  drafts and pre-releases. Put the other way round: pre-releases are safe to create.
+- If `backend/requirements.txt` or `models/censor` changed, the workflow marks the release
+  `requires_full` and the app fetches the full package instead. **The user is never asked** —
+  they only see the download size.
+- **One stretch has never been exercised end to end**: downloading a release and swapping
+  the running app for it. That needs a published release to try. Everything around it
+  (assembling the package, replacing a running executable, restarting) was measured on
+  2026-08-26.
 
-## 검열 모델
+## Censoring models
 
-`models/censor/*.onnx` 를 넣어 두면 앱이 목록에서 고른다. 기본은 **가벼운 쪽**이다.
-저장소에는 40MB 짜리만 들어 있다 — 239MB 짜리는 GitHub 파일 제한(100MB)을 넘어
-따로 두고 쓴다.
+Drop `*.onnx` files into `models/censor/` and the app lists them; the **lightest** one is
+the default. Only the 40MB model is committed here — the 239MB one exceeds GitHub's 100MB
+file limit and is kept separately.
 
-## 라이선스
+## License
 
-**AGPL-3.0-or-later** (전문: `LICENSE`).
+**AGPL-3.0-or-later** (full text in `LICENSE`).
 
-받아서 쓰고, 뜯어보고, 고쳐 쓰는 것은 자유다. 조건이 붙는 것은 **남에게 넘길 때**다 —
-고친 판을 배포하거나 **남이 쓰도록 서버에 올리면**, 그 소스를 같은 조건으로 내놓아야 한다
-(뒤엣것이 GPL 에는 없고 AGPL 에만 있는 조항이다. 이 앱은 백엔드가 HTTP 서버라 그 자리가 실제로 있다).
+Use it, read it, change it — freely. The conditions apply when you **pass it on**: if you
+distribute a modified version, or **run one where others can use it over a network**, you
+must release that source under the same terms. (The network clause is what AGPL adds over
+GPL, and it genuinely applies here because the backend is an HTTP server.)
 
-혼자 쓰거나 혼자 고쳐 쓰는 데에는 **아무 의무도 없다.**
+Using or modifying it **for yourself carries no obligations at all**.
 
-함께 담기는 남의 것과 그 조건은 **`THIRD-PARTY.md`** 에 정리해 두었다 — 검열 모델(왜 AGPL
-인지가 여기서 나온다) · 태그 사전 · 임베드 파이썬 · 패키지들. 전부 AGPL 과 충돌하지 않는다.
+Third-party components bundled with the app, and their terms, are listed in
+**`THIRD-PARTY.md`** — the censor model (which is where the AGPL requirement comes from),
+the tag dictionary, embedded Python, and the Python packages. None of them conflict with
+AGPL.
