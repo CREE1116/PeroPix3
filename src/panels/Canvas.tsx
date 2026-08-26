@@ -136,7 +136,15 @@ function SceneStage() {
         zIndex: 2,
         background: "transparent",
         transition: "background 0.12s",
-        ...(side ? { width: 5, cursor: "col-resize" } : { height: 5, cursor: "row-resize" }),
+        /* ★★**세로 모드는 자리를 안 먹는다** (사용자 지적 2026-08-26: *"세로 모드일 때의
+             이미지와 씬 사이 간격이 또 너무 넓어짐"*). 좌우로 나뉜 자리는 예전에 **선 하나**로
+             갈려 있었으므로, 그 자리에 5px 을 흘려 넣으면 그만큼 벌어진 것으로 읽힌다.
+             음수 여백으로 양쪽에 걸쳐 두면 **잡히는 넓이는 5px 그대로**이고 자리는 1px 이다.
+           ★아래 모드는 그대로 5px 을 먹는다 — 큰 그림과 씬 줄이 위아래로 맞닿으면 한 덩이로
+             읽힌다는 지적이 먼저 있었다 (같은 날). 두 방향의 알맞은 간격이 서로 다르다. */
+        ...(side
+          ? { width: 5, margin: "0 -2px", cursor: "col-resize" }
+          : { height: 5, cursor: "row-resize" }),
       }}
     />
   );
