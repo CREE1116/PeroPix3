@@ -189,7 +189,7 @@ export function CharPositioner() {
       {freeform ? (
         <FreeSurface chars={live} picked={picked} setPicked={setPicked} place={place} />
       ) : (
-        <GridSurface chars={live} picked={picked} place={place} />
+        <GridSurface chars={live} picked={picked} setPicked={setPicked} place={place} />
       )}
     </Board>
   );
@@ -323,9 +323,20 @@ function FreeSurface(p: Surface & { setPicked: (i: number) => void }) {
   );
 }
 
-/** 격자 배치 — 칸을 누르면 고른 인물이 그리로 (공홈 `sF`).
- *  ★한 칸에 둘 이상이 서면 경고 색이고, 칸에는 **맨 앞 번호만** 보인다 (공홈과 같다). */
-function GridSurface(p: Surface) {
+/** 격자 배치 — 빈 자리를 누르면 고른 인물이 그리로, **번호를 누르면 그 인물을 고른다** (공홈 `sF`).
+ *
+ *  ★★**번호로 고르는 길은 우리가 더한 것이다** (사용자 지적 2026-08-26: *"1번 말고는 다른
+ *    위치를 조정할 수가 없음. 다른 번호를 고르면 그 위치로 1번이 이동함"*).
+ *    공홈 격자는 `onClick: () => p(e.selectedIndex, {x,y})` 뿐이고, 고른 사람을 바꾸는 길이
+ *    **자유 배치의 마커 집기 하나**다 (`e.setSelectedIndex(r)`). 그래서 격자만 쓰는 V4.5 에서는
+ *    1번 말고는 영영 못 옮긴다 — 번들을 뜯어 확인한 사실이고, 공홈을 그대로 흉내 내면
+ *    못 쓰는 화면이 된다. 자유 배치의 규칙(**마커를 누르면 집고, 빈 곳을 누르면 놓는다**)을
+ *    격자에도 그대로 준다 — 새 규칙이 아니라 같은 규칙이다.
+ *  ★한 칸에 둘 이상이 서면 경고 색이다. 번호를 누를 때마다 **그 칸의 다음 사람**으로 넘어가
+ *    겹쳐 서 있어도 전부 고를 수 있다.
+ *  ★칸에 보이는 번호는 평소 맨 앞 사람이지만, **고른 사람이 그 칸에 있으면 그 사람**이다 —
+ *    안 그러면 방금 고른 것이 화면에 안 보인다. */
+function GridSurface(p: Surface & { setPicked: (i: number) => void }) {
   /** 칸마다 그 자리에 선 인물 번호들 */
   const cell = useMemo(() => {
     const at = p.chars.map((c, i) => ({ i, ...snapCenter(c.center) }));
@@ -349,6 +360,9 @@ function GridSurface(p: Surface) {
         CENTER_GRID.map((x, c) => {
           const on = cell[r][c];
           const sel = here?.x === x && here?.y === y;
+          /** 이 칸에서 지금 고른 사람의 차례 — 없으면 -1 */
+          const mine = on.findIndex((a) => a.i === p.picked);
+          const show = mine >= 0 ? on[mine] : on[0];
           return (
             <button
               key={`${r}-${c}`}
@@ -366,12 +380,28 @@ function GridSurface(p: Surface) {
               }}
             >
               {on.length > 0 && (
-                <Marker
-                  n={on[0].i + 1}
-                  name={p.chars[on[0].i].name}
-                  selected={sel}
-                  warning={on.length > 1}
-                />
+                /* ★★번호를 누르면 **집는다** — 놓기는 칸의 빈 곳이 받는다 (자유 배치와 같은 규칙).
+                   ★`stopPropagation` 이 없으면 칸의 놓기가 함께 돌아, 고르는 순간 그 사람이
+                     제자리에 다시 놓인다 (값은 같지만 되돌리기 기록이 쌓인다).
+                   ★span 이다 — 단추 안에 단추를 넣을 수 없다. */
+                <span
+                  role="button"
+                  tabIndex={-1}
+                  data-char-pick={show.i + 1}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // 같은 칸에 여럿이면 누를 때마다 다음 사람으로 (겹쳐 있어도 전부 고를 수 있다)
+                    p.setPicked(on[(mine + 1) % on.length].i);
+                  }}
+                  style={{ display: "grid", cursor: "pointer" }}
+                >
+                  <Marker
+                    n={show.i + 1}
+                    name={p.chars[show.i].name}
+                    selected={sel}
+                    warning={on.length > 1}
+                  />
+                </span>
               )}
             </button>
           );
