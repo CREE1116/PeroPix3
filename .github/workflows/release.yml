@@ -28,7 +28,13 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
+      # ★★**태그를 전부 받아야 한다** (`fetch-depth: 0`). 기본값(1)은 밀린 그 태그 하나만
+      #   받아 오는데, 아래 `patch-info.json` 이 **직전 태그**를 찾아 의존성·검열 모델이
+      #   바뀌었는지 본다. 안 받으면 직전 태그가 늘 비어 `requires_full` 이 **영영 false** 다
+      #   — 전체를 받아야 할 판에 앱이 패치를 받고, 조용히 반쯤 갈린다.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
