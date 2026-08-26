@@ -259,8 +259,8 @@ export const ja: Dict = {
     anlasRefresh: "残高を再取得",
     /** 1枚あたりの上限を超えると公式サイトと同じく生成を止める */
     overLimit: "1枚の費用が上限 {a} Anlas を超えています。解像度か steps を下げてください。",
-    noScenes: "シーンがありません。シーンカードを追加してください。",
-    allLocked: "すべてのシーンがロックされているため生成できません",
+    noScenes: "シーンがありません。押すと追加します。",
+    allLocked: "すべてのシーンがロックされています。押すと新しいシーンを追加します。",
     /** 直前のバッチで実際にかかった値 (`store/anlasMeter`) */
     costWrong: "表示された料金と実際が異なりました。{e} と表示されましたが {a} が使われました。",
   },
@@ -358,10 +358,9 @@ export const ja: Dict = {
     autoSave: "自動保存",
     autoSaveHint: "オフにするとファイルに保存せず、シーン欄に「未保存」として出ます。",
     excludeSlotNo: "ファイル名からシーン番号を外す",
-    catNai: "NAI 設定",
-    catGeneration: "生成",
+    catGeneration: "生成オプション",
     catSave: "保存オプション",
-    catImage: "画像入力",
+    catImage: "ベース画像",
     seedFixed: "固定",
     seedRound: "ランダム",
     seedScene: "完全ランダム",
@@ -461,6 +460,7 @@ export const ja: Dict = {
     building: "v{v} を準備中です。少し経ってからもう一度確認してください。",
     notes: "リリースノート",
     failed: "更新を確認できませんでした",
+    failedWhy: "更新を確認できませんでした（{why}）",
   },
   settings: {
     tokenChecking: "確認中…",

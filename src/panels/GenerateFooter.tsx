@@ -84,6 +84,18 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
   const noScenes = !!sceneSet && allScenes(sceneSet).length === 0;
   const allLocked = !!sceneSet && !noScenes && slots === 0;
   const cantGen = noScenes || allLocked;
+  /** 막힌 줄을 눌렀을 때 — **씬을 하나 만든다** (사용자 지시 2026-08-26).
+   *
+   *  ★★전부 잠긴 때도 **자물쇠를 대신 풀지 않는다.** 잠근 것은 사용자의 뜻이라 우리가
+   *    되돌릴 일이 아니고, 새 씬 하나면 생성이 다시 된다.
+   *  ★카드가 아예 없으면 카드부터 만든다 — `addSlot` 은 붙일 카드가 있어야 움직인다
+   *    (`store/workspace` 의 `addSlot` 첫 줄). */
+  const addScene = () => {
+    if (!sceneSet) return;
+    const ws = useWs.getState();
+    if (sceneSet.cards.length) ws.addSlot(sceneSet.id);
+    else ws.addCard(sceneSet.id);
+  };
   /** ★★인페인트도 **이 버튼이 만든다** (사용자 지시 2026-08-19).
    *
    *  예전에는 여기를 잠그고 마스크 편집 화면 안에 실행 버튼을 따로 뒀다. 지금 인페인트는
@@ -328,10 +340,13 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
 
       {/* ★★생성할 씬이 없으면 **누르기 전에** 말해 준다 (사용자 지시 2026-08-22).
           툴팁만으로는 마우스를 올려야 보이므로, 토큰 안내와 **같은 모양의 줄**로 낸다.
-          ★누를 데가 없어 단추가 아니다 — 씬 카드는 가운데 줄에서 더한다. */}
+          ★★**누르면 그 자리에서 풀린다** (사용자 지시 2026-08-26) — 토큰 안내가 설정으로
+            데려가는 것과 같은 몸짓이다. 막힌 까닭만 알리고 가만히 있으면, 어디서 무엇을
+            해야 하는지 사용자가 스스로 찾아야 한다. */}
       {cantGen && (
-        <div
+        <button
           data-gen-noscenes
+          onClick={addScene}
           style={{
             textAlign: "left",
             fontSize: "var(--text-2xs)",
@@ -343,7 +358,7 @@ export function GenerateFooter({ compact = false }: { compact?: boolean }) {
           }}
         >
           {t(noScenes ? "gen.noScenes" : "gen.allLocked")}
-        </div>
+        </button>
       )}
 
       {/* ★토큰이 없으면 **누르기 전에** 말해 준다 — 눌러야 알 수 있으면 그건 안내가 아니다.

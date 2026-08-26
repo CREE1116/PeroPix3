@@ -33,11 +33,17 @@ type S = {
   setPan: (p: Pan | ((p: Pan) => Pan)) => void;
 };
 
-export const usePreviewBox = create<S>((set) => ({
+export const usePreviewBox = create<S>((set, get) => ({
   nat: { w: 0, h: 0 },
   box: { w: 0, h: 0 },
   pan: { x: 0, y: 0 },
-  setNat: (nat) => set({ nat }),
+  /** ★★**같은 크기면 아무 일도 안 한다.** 그리는 중인 그림은 `onLoad` 가 **스텝마다** 오는데
+   *  (2026-08-26 부터 그 그림도 이 자를 쓴다), 그때마다 새 객체를 넣으면 프레임마다 화면 전체가
+   *  다시 그려진다. 크기는 첫 프레임에 정해지고 그 뒤로 안 바뀐다. */
+  setNat: (nat) => {
+    const c = get().nat;
+    if (c.w !== nat.w || c.h !== nat.h) set({ nat });
+  },
   setBox: (box) => set({ box }),
   setPan: (p) => set((s) => ({ pan: typeof p === "function" ? p(s.pan) : p })),
 }));

@@ -54,7 +54,10 @@ export function OptionsPanel() {
       {/* ★★처음에는 **다 접혀 있다** (사용자 지시 2026-08-20) — 첫 화면에 펴 두는 것은
           베이스·캐릭터 프롬프트 둘뿐이다. 옵션은 한 번 정하면 잘 안 건드리는데, 다 펴 두면
           프롬프트가 화면 밖으로 밀린다. 접힘은 사람이 편 대로 기억된다(`Category` 의 `foldState`). */}
-      <Category id="opt-nai" label={t("options.catNai")} defaultFolded flashKey="params">
+      {/* ★★「NAI 설정」과 「생성」을 **하나로 합쳤다** (사용자 지시 2026-08-26). 앞의 것은
+          모델 고르기 하나뿐이라 카테고리를 따로 세울 만큼의 내용이 없었다. 이름은 「생성 옵션」.
+          ★순서도 사용자가 정한 대로다: 생성 옵션 · 베이스 이미지 · 해상도 · 저장 옵션. */}
+      <Category id="opt-gen" label={t("options.catGeneration")} defaultFolded flashKey="params">
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}>
               <Group label={t("options.model")}>
                 {/* ★옛 워크스페이스가 없어진 모델(V4.0)을 들고 있으면 목록에 없어 빈칸으로 보인다 —
@@ -81,37 +84,6 @@ export function OptionsPanel() {
                  결과를 바꾸지 않는 **보는 방식**이라, 큐 알림·소리와 같은 자리인
                  앱 설정의 「생성」 묶음으로 갔다 (`app/Settings`). 여기로 되돌리지 말 것 —
                  같은 값을 두 곳에서 만지게 된다. */}
-              {/* ★V5 에는 Variety+ 자체가 없다 (`cfgDelay` 거짓) — 서버가 값을 지운다.
-                  ★그러면 **묶음도 통째로 안 낸다** — 안이 비면 이름표만 선 빈 칸이 된다 */}
-              {cap.cfg_delay && (
-                <Group label={t("options.misc")}>
-                  <Check label={t("options.varietyPlus")} checked={p.variety_plus} onChange={(v) => set("variety_plus", v)} />
-                </Group>
-              )}
-        </div>
-      </Category>
-
-      {/* ★★해상도는 **따로 선 카테고리**다 (사용자 지시 2026-08-19). 생성 옵션 안에 있으면
-          설정을 얹을 때 강조 테두리가 **겹쳐 그려진다** (묶음 하나와 카테고리 하나가 서로
-          안쪽·바깥쪽으로). 강조 자리가 겹치지 않으려면 층이 하나여야 한다. */}
-      <Category id="opt-size" label={t("options.resolution")} defaultFolded flashKey="size">
-        {/* ★★모양이 곧 목록이다 (페로픽스파이 `.res-item` 이식). 전부 늘어놓으면 열넷이라
-            훑을 수가 없어서 **가로·세로·정방 탭**으로 가르고, 줄마다 그 비율의 사각형을
-            함께 그린다 — 숫자보다 모양이 먼저 읽힌다. */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
-          <SizePicker w={p.width} h={p.height} onPick={(w, h) => { set("width", w); set("height", h); }} />
-          {/* ★직접 입력 — NAI 는 64 배수만 받는다. 입력을 떠날 때 올려 맞추고 그 값을 보여 준다
-              (서버도 같은 정렬을 하지만, 무엇이 갈지 지금 보여야 한다) */}
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
-            <NumBox data-size="w" value={p.width} onCommit={(v) => setUndo("width", alignTo64(v), t("options.resolution"))} />
-            <span style={{ color: "var(--ink-faint)", fontSize: "var(--text-2xs)" }}>×</span>
-            <NumBox data-size="h" value={p.height} onCommit={(v) => setUndo("height", alignTo64(v), t("options.resolution"))} />
-          </div>
-        </div>
-      </Category>
-
-      <Category id="opt-gen" label={t("options.catGeneration")} defaultFolded flashKey="params">
-        <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}>
               <Group label={t("options.steps")} help={t("options.stepsHint")}>
                 <Num value={p.steps} min={1} max={NAI_MAX.steps} onChange={(v) => setUndo("steps", v, t("options.steps"))} />
               </Group>
@@ -133,6 +105,37 @@ export function OptionsPanel() {
                   <Select value={p.scheduler} options={SCHEDULERS} onChange={(v) => set("scheduler", v)} />
                 </Group>
               )}
+              {/* ★V5 에는 Variety+ 자체가 없다 (`cfgDelay` 거짓) — 서버가 값을 지운다.
+                  ★그러면 **묶음도 통째로 안 낸다** — 안이 비면 이름표만 선 빈 칸이 된다 */}
+              {cap.cfg_delay && (
+                <Group label={t("options.misc")}>
+                  <Check label={t("options.varietyPlus")} checked={p.variety_plus} onChange={(v) => set("variety_plus", v)} />
+                </Group>
+              )}
+        </div>
+      </Category>
+
+      {/* v2 의 `Vibe / Character Ref` + `Base Image` 절 */}
+      <Category id="opt-img" label={t("options.catImage")} defaultFolded flashKey="base" flashQuiet>
+        <ImageInputPanel />
+      </Category>
+
+      {/* ★★해상도는 **따로 선 카테고리**다 (사용자 지시 2026-08-19). 생성 옵션 안에 있으면
+          설정을 얹을 때 강조 테두리가 **겹쳐 그려진다** (묶음 하나와 카테고리 하나가 서로
+          안쪽·바깥쪽으로). 강조 자리가 겹치지 않으려면 층이 하나여야 한다. */}
+      <Category id="opt-size" label={t("options.resolution")} defaultFolded flashKey="size">
+        {/* ★★모양이 곧 목록이다 (페로픽스파이 `.res-item` 이식). 전부 늘어놓으면 열넷이라
+            훑을 수가 없어서 **가로·세로·정방 탭**으로 가르고, 줄마다 그 비율의 사각형을
+            함께 그린다 — 숫자보다 모양이 먼저 읽힌다. */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
+          <SizePicker w={p.width} h={p.height} onPick={(w, h) => { set("width", w); set("height", h); }} />
+          {/* ★직접 입력 — NAI 는 64 배수만 받는다. 입력을 떠날 때 올려 맞추고 그 값을 보여 준다
+              (서버도 같은 정렬을 하지만, 무엇이 갈지 지금 보여야 한다) */}
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
+            <NumBox data-size="w" value={p.width} onCommit={(v) => setUndo("width", alignTo64(v), t("options.resolution"))} />
+            <span style={{ color: "var(--ink-faint)", fontSize: "var(--text-2xs)" }}>×</span>
+            <NumBox data-size="h" value={p.height} onCommit={(v) => setUndo("height", alignTo64(v), t("options.resolution"))} />
+          </div>
         </div>
       </Category>
 
@@ -173,10 +176,6 @@ export function OptionsPanel() {
         </div>
       </Category>
 
-      {/* v2 의 `Vibe / Character Ref` + `Base Image` 절 */}
-      <Category id="opt-img" label={t("options.catImage")} defaultFolded flashKey="base" flashQuiet>
-        <ImageInputPanel />
-      </Category>
     </div>
   );
 }

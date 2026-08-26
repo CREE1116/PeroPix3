@@ -266,8 +266,8 @@ export const ko: Dict = {
     /** 한 장 비용 상한을 넘으면 공홈처럼 생성을 막는다 */
     overLimit: "한 장 비용이 상한 {a} Anlas 를 넘습니다. 해상도나 steps 를 줄여 주세요.",
     /** 씬이 있는데 전부 잠겨 있으면 조용히 아무 일도 안 하던 자리 (v2 index.html:15905) */
-    noScenes: "씬이 없습니다. 씬 카드를 추가해 주세요.",
-    allLocked: "모든 씬이 잠겨 있어 생성할 수 없습니다",
+    noScenes: "씬이 없습니다. 눌러서 씬을 추가하세요.",
+    allLocked: "모든 씬이 잠겨 있습니다. 눌러서 새 씬을 추가하세요.",
     /** ★방금 끝난 배치가 **실제로 나간 값**. 예상과 같으면 숫자만, 다르면 둘 다 (`store/anlasMeter`) */
     /** ★요금 계산이 틀렸을 때만 뜬다. 맞을 때는 아무것도 안 띄운다 (`store/anlasMeter`) */
     costWrong: "요금 표시가 실제와 달랐습니다. {e} 로 보였는데 {a} 가 나갔습니다.",
@@ -370,10 +370,9 @@ export const ko: Dict = {
     autoSave: "자동 저장",
     autoSaveHint: "끄면 파일로 저장하지 않고 씬 칸에 「미저장」으로만 뜹니다.",
     excludeSlotNo: "파일 이름에서 씬 번호 빼기",
-    catNai: "NAI 설정",
-    catGeneration: "생성",
+    catGeneration: "생성 옵션",
     catSave: "저장 옵션",
-    catImage: "이미지 입력",
+    catImage: "베이스 이미지",
     seedFixed: "고정",
     seedRound: "랜덤",
     seedScene: "완전 랜덤",
@@ -477,6 +476,7 @@ export const ko: Dict = {
     building: "새 버전 v{v} 을 준비하는 중입니다. 잠시 뒤에 다시 확인해 주세요.",
     notes: "릴리즈 노트",
     failed: "업데이트를 확인하지 못했습니다",
+    failedWhy: "업데이트를 확인하지 못했습니다 ({why})",
   },
   settings: {
     tokenChecking: "확인 중…",

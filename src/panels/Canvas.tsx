@@ -658,6 +658,38 @@ function ScenePreview() {
 
   const drag = useRef<{ x: number; y: number; p: Pan } | null>(null);
 
+  /** ★★**그린 그림과 그리는 중인 그림이 같은 자를 쓴다** (사용자 지시 2026-08-26:
+   *  *"스트리밍 이미지를 현재 설정된 이미지 보는 비율로 표시"*). 예전에는 스트리밍 쪽만
+   *  `contain` 으로 박혀 있어서, 200% 로 보고 있어도 그리는 동안에는 작게 나오다가 다 되면
+   *  갑자기 커졌다 — 같은 자리에 놓이는 같은 그림인데 크기가 두 번 바뀌었다.
+   *  ★두 벌로 적지 말 것: 한쪽만 고쳐지면 그 어긋남이 그대로 돌아온다. */
+  const geom: React.CSSProperties = fit
+    ? { width: "100%", height: "100%", objectFit: "contain" }
+    : {
+        position: "absolute",
+        left: 0,
+        top: 0,
+        width: draw.w,
+        height: draw.h,
+        transform: `translate(${pan.x}px, ${pan.y}px)`,
+        maxWidth: "none",
+      };
+  /** 넘치는 그림 끌어 보기 — ★그리는 중인 그림도 **같이 끌린다** (위 ★★주와 같은 이유) */
+  const panMove = (e: React.PointerEvent<HTMLImageElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    setPan(clampPan({ x: d.p.x + (e.clientX - d.x), y: d.p.y + (e.clientY - d.y) }, box, draw));
+  };
+  const panUp = (e: React.PointerEvent<HTMLImageElement>) => {
+    if (!drag.current) return;
+    drag.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+  const panDown = (e: React.PointerEvent<HTMLImageElement>) => {
+    drag.current = { x: e.clientX, y: e.clientY, p: pan };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
   /** ★★휠은 **직접 매단다** (React 의 `onWheel` 이 아니라).
    *
    *  React 는 휠 listener 를 **passive 로** 걸어서 `preventDefault()` 가 안 먹는다. 그러면
@@ -729,25 +761,14 @@ function ScenePreview() {
                싱글 캔버스를 걷을 때 이 출발점이 씬 칸의 것과 함께 사라져 있었다
                (사용자 지적 2026-08-18). 고스트는 `DragLayer` 가 작게 그리므로 화면을 안 가린다.
              ★미저장은 못 끈다 — 파일이 없어 커버로 쓸 수 없다 (받는 쪽이 경로를 쓴다). */
-          onPointerMove={(e) => {
-            const d = drag.current;
-            if (!d) return;
-            setPan(clampPan({ x: d.p.x + (e.clientX - d.x), y: d.p.y + (e.clientY - d.y) }, box, draw));
-          }}
-          onPointerUp={(e) => {
-            if (!drag.current) return;
-            drag.current = null;
-            e.currentTarget.releasePointerCapture(e.pointerId);
-          }}
+          onPointerMove={panMove}
+          onPointerUp={panUp}
           onPointerDown={
             /* ★★넘치는 그림을 잡으면 **이동**이다. 그러지 않으면 카드 커버로 끄는 출발점이
                  이동을 통째로 먹어, 확대해 놓고도 다른 데를 볼 수 없다.
                  커버로 끌기는 「꽉차게」에서 그대로 살아 있다. */
             movable
-              ? (e) => {
-                  drag.current = { x: e.clientX, y: e.clientY, p: pan };
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                }
+              ? panDown
               : cur?.preview
               ? undefined
               : (e) =>
@@ -764,21 +785,38 @@ function ScenePreview() {
           style={{
             /* ★꽉차게는 지금까지 그대로다 (`contain`). 배율을 정한 뒤에는 **그린 크기**를
                직접 주고 왼쪽 위에서 밀어 놓는다 — 그래야 넘치는 만큼을 끌어 볼 수 있다. */
-            ...(fit
-              ? { width: "100%", height: "100%", objectFit: "contain" as const }
-              : {
-                  position: "absolute" as const,
-                  left: 0,
-                  top: 0,
-                  width: draw.w,
-                  height: draw.h,
-                  transform: `translate(${pan.x}px, ${pan.y}px)`,
-                  maxWidth: "none" as const,
-                }),
+            ...geom,
             borderRadius: "var(--r-1)",
             // ★끌어 볼 수 있으면 그 커서다. 아니면 **카드 커버로 끄는** 출발점 그대로
             cursor: movable ? (drag.current ? "grabbing" : "move") : cur?.preview ? undefined : "grab",
             ...(cur?.preview || movable ? null : dragSourceStyle),
+          }}
+        />
+      ) : stepImg ? (
+        /* ★★**그리는 중이면 그 그림을 띄운다** (사용자 지시 2026-08-26). 대기 칸을 골라 둔
+             사람은 «그 자리에 무엇이 나오나»를 보고 있는 것이라, 큰 자리가 비어 있으면
+             기다림이 그대로 빈 화면이다. 씬 줄의 칸에 까는 것과 **같은 그림**이다
+             (`store/queue` 의 `steps`).
+           ★★**보는 배율도 그린 그림과 같다** (사용자 지시 2026-08-26) — `geom` 하나를
+             둘이 나눠 쓴다. 그래서 무대 바로 밑에 놓는다: 배율을 올리면 `position: absolute`
+             가 되는데, 가운데 정렬 상자 안에 있으면 기준이 그 상자가 되어 어긋난다. */
+        <img
+          data-scene-step
+          src={stepImg}
+          alt=""
+          draggable={false}
+          /* ★크기를 여기서도 잰다 — 배율·가운데 잡기가 **그림의 실제 크기**를 안다는 전제로
+             돌아간다. 같은 값이면 스토어가 무시하므로 프레임마다 다시 그리지 않는다
+             (`store/previewBox` 의 `setNat`). */
+          onLoad={(e) => setNat({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
+          onPointerMove={panMove}
+          onPointerUp={panUp}
+          onPointerDown={movable ? panDown : undefined}
+          style={{
+            ...geom,
+            borderRadius: "var(--r-1)",
+            opacity: 0.92,
+            cursor: movable ? (drag.current ? "grabbing" : "move") : undefined,
           }}
         />
       ) : (
@@ -791,22 +829,9 @@ function ScenePreview() {
             fontSize: "var(--text-md)",
           }}
         >
-          {/* ★★**그리는 중이면 그 그림을 띄운다** (사용자 지시 2026-08-26). 대기 칸을 골라 둔
-              사람은 «그 자리에 무엇이 나오나»를 보고 있는 것이라, 큰 자리가 비어 있으면
-              기다림이 그대로 빈 화면이다. 씬 줄의 칸에 까는 것과 **같은 그림**이다
-              (`store/queue` 의 `steps`).
-              ★★만들어지는 중인 칸을 골랐는데 **아직 첫 프레임도 안 왔으면** 빈 화면이다
-                (사용자 지시 2026-08-22) — 「골라 주세요」를 띄우면 안 고른 것처럼 보인다. */}
-          {stepImg ? (
-            <img
-              data-scene-step
-              src={stepImg}
-              alt=""
-              style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", opacity: 0.92 }}
-            />
-          ) : pendingSel ? null : (
-            tr("scenes.pickOne")
-          )}
+          {/* ★★만들어지는 중인 칸을 골랐는데 **아직 첫 프레임도 안 왔으면** 빈 화면이다
+              (사용자 지시 2026-08-22) — 「골라 주세요」를 띄우면 안 고른 것처럼 보인다. */}
+          {pendingSel ? null : tr("scenes.pickOne")}
         </div>
       )}
 

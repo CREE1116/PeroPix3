@@ -54,10 +54,17 @@ export const useUpdate = create<S>((set, get) => ({
 
   async check(quiet = false) {
     if (!quiet) set({ checking: true });
+    /** ★★**왜 못 봤는지 함께 낸다** (사용자 지적 2026-08-26: *"업데이트가 없는 건지
+     *  오류난 건지 모르겠음"*). 붉은 줄에 「확인하지 못했습니다」만 뜨면 최신이라는 뜻인지
+     *  고장인지 갈리지 않는다. 까닭은 백엔드가 준다 (`GitHub 404` 처럼). */
+    const fail = (why?: string) => {
+      if (quiet) return;
+      toast(why ? t("update.failedWhy", { why }) : t("update.failed"), "warn");
+    };
     try {
       const r = await api<UpdateInfo & { ok: boolean; error?: string }>("/api/update/check");
       if (!r.ok) {
-        if (!quiet) toast(t("update.failed"), "warn");
+        fail(r.error);
         return;
       }
       set({ info: r });
@@ -71,8 +78,8 @@ export const useUpdate = create<S>((set, get) => ({
           run: () => void get().start(),
         });
       if (!quiet && !r.has_update) toast(t("update.latest"));
-    } catch {
-      if (!quiet) toast(t("update.failed"), "warn");
+    } catch (e) {
+      fail(String(e));
     } finally {
       if (!quiet) set({ checking: false });
     }

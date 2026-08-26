@@ -261,8 +261,8 @@ export const en = {
     /** Over the per image cap, so generation is blocked just like the official site */
     overLimit: "One image costs more than the {a} Anlas cap. Lower the size or steps.",
     /** Every scene is locked, so there is nothing to generate (v2 index.html:15905) */
-    noScenes: "No scenes. Add a scene card first.",
-    allLocked: "Every scene is locked, so there is nothing to generate",
+    noScenes: "No scenes. Click to add one.",
+    allLocked: "Every scene is locked. Click to add a new one.",
     /** What the batch that just finished really cost (see `store/anlasMeter`) */
     costWrong: "The shown cost did not match. It showed {e} but {a} was charged.",
   },
@@ -360,10 +360,9 @@ export const en = {
     autoSave: "Auto save",
     autoSaveHint: "Off: nothing is written to disk; results show in the scene lane as \"Unsaved\".",
     excludeSlotNo: "Drop the scene number from filenames",
-    catNai: "NAI settings",
-    catGeneration: "Generation",
+    catGeneration: "Generation options",
     catSave: "Save options",
-    catImage: "Image input",
+    catImage: "Base image",
     seedFixed: "Fixed",
     seedRound: "Random",
     seedScene: "Per scene",
@@ -463,6 +462,7 @@ export const en = {
     building: "v{v} is still being built. Check again in a moment.",
     notes: "Release notes",
     failed: "Could not check for updates",
+    failedWhy: "Could not check for updates ({why})",
   },
   settings: {
     tokenChecking: "Checking…",

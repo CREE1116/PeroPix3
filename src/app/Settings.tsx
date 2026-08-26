@@ -252,16 +252,7 @@ export function Settings({
 
                 <Group label={t("settings.editing")} help={t("settings.tagSuggestHint")}>
                   <label
-                    style={{
-                      // ★누를 자리는 **글자 끝까지만** (빈 곳을 눌러도 켜지지 않게)
-                      display: "inline-flex",
-                      alignSelf: "flex-start",
-                      alignItems: "center",
-                      gap: "var(--sp-2)",
-                      fontSize: "var(--text-2xs)",
-                      color: "var(--ink-soft)",
-                      cursor: "pointer",
-                    }}
+                    style={checkRow}
                   >
                     <input
                       type="checkbox"
@@ -273,16 +264,7 @@ export function Settings({
                   </label>
                   {/* ★가중치 강조 — 칩과 글 상자가 **같은 스위치**를 본다 */}
                   <label
-                    style={{
-                      // ★누를 자리는 **글자 끝까지만** (빈 곳을 눌러도 켜지지 않게)
-                      display: "inline-flex",
-                      alignSelf: "flex-start",
-                      alignItems: "center",
-                      gap: "var(--sp-2)",
-                      fontSize: "var(--text-2xs)",
-                      color: "var(--ink-soft)",
-                      cursor: "pointer",
-                    }}
+                    style={checkRow}
                   >
                     <input
                       type="checkbox"
@@ -300,7 +282,7 @@ export function Settings({
                       한때 생성 옵션 패널에 있었는데, 거기 있는 값들과 달리 **결과를 바꾸지
                       않는다** — 알림·소리와 같은 성격이라 이 묶음이 제자리다. */}
                   <label
-                    style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", cursor: "pointer" }}
+                    style={checkRow}
                     /* ★툴팁은 **우리가 그린다** (`components/Tip`) — 브라우저 기본 `title` 은
                        뜨는 데 1초쯤 걸리고 모양도 우리 것이 아니라, 이 하나만 따로 논다 */
                     data-tip={t("settings.streamPreviewHint")}
@@ -314,15 +296,7 @@ export function Settings({
                     {t("settings.streamPreview")}
                   </label>
                   <label
-                    style={{
-                      // ★누를 자리는 **글자 끝까지만** (빈 곳을 눌러도 켜지지 않게)
-                      display: "inline-flex",
-                      alignSelf: "flex-start",
-                      alignItems: "center",
-                      gap: "var(--sp-2)",
-                      fontSize: "var(--text-2xs)",
-                      color: "var(--ink-soft)",
-                    }}
+                    style={checkRow}
                   >
                     <input
                       type="checkbox"
@@ -335,7 +309,7 @@ export function Settings({
                   {/* ★소리로도 알린다 (v2 `notifySoundOnComplete` 이식 2026-08-16).
                       ★생성 옵션이 아니라 **앱 설정**이라 여기 있다 (사용자 지시). */}
                   <label
-                    style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", cursor: "pointer" }}
+                    style={checkRow}
                   >
                     <input
                       type="checkbox"
@@ -516,6 +490,20 @@ const Chip = ({
     {children}
   </button>
 );
+
+/** 체크박스 한 줄 — ★**모든 체크 항목이 이것 하나를 쓴다** (사용자 지적 2026-08-26:
+ *  *"설정에 있는 체크박스 항목들의 폰트 사이즈가 다름"*). 줄마다 따로 적어 두었더니
+ *  어떤 것은 글자 크기·색이 빠져 부모 크기를 물려받고 있었다. 여기서만 고친다.
+ *  ★누를 자리는 **글자 끝까지만** (`inline-flex` + `alignSelf`) — 빈 곳을 눌러도 켜지지 않게. */
+const checkRow: React.CSSProperties = {
+  display: "inline-flex",
+  alignSelf: "flex-start",
+  alignItems: "center",
+  gap: "var(--sp-2)",
+  fontSize: "var(--text-2xs)",
+  color: "var(--ink-soft)",
+  cursor: "pointer",
+};
 
 const btn: React.CSSProperties = {
   border: "1px solid var(--line)",
