@@ -176,6 +176,8 @@ function SceneStage() {
  *    「시안에 없다고 지우면 안 되는 것이 있었다」 — 화면을 갈아 끼울 때마다 밟는 자리다). */
 function SceneActions() {
   const tr = useI18n((s) => s.t);
+  /** 씬을 오른쪽에 두는 모드인가 — 아래 여백이 그때만 필요하다 (반환 자리의 ★★주) */
+  const vert = useUi((u) => u.laneSide === "right");
   const { base } = useGen();
   const { current: ws, records, addRecord } = useWs();
   const file = useSceneFocus((s) => s.file);
@@ -292,7 +294,11 @@ function SceneActions() {
   };
 
   return (
-    <div style={{ flexShrink: 0, padding: "var(--sp-3) var(--sp-4) 0" }}>
+    /* ★★**세로 모드에서는 아래도 띄운다** (사용자 지시 2026-08-26: *"이미지 하단의 편집
+       버튼들이 하단 모드랑 딱 붙어 있음"*). 아래 모드에서는 이 줄 밑에 **씬 줄**이 이어져
+       그것이 간격 노릇을 하는데, 세로 모드에서는 씬이 오른쪽으로 가 버려 이 줄이 곧
+       하단바와 맞닿는다. 아래를 0 으로 둔 것은 그 전제 위의 값이었다. */
+    <div style={{ flexShrink: 0, padding: vert ? "var(--sp-3) var(--sp-4)" : "var(--sp-3) var(--sp-4) 0" }}>
       <ImageActions
         url={un ? `data:image/${un.preview.fmt};base64,${un.preview.b64}` : imgUrl(base, ws, file)}
         name={un ? tr("scenes.unsaved") : file.split("/").pop() ?? file}
