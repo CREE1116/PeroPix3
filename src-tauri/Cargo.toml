@@ -2,6 +2,7 @@
 name = "peropix"
 version = "3.0.0"
 description = "PeroPix — NAI 전용 이미지 생성 툴"
+license = "AGPL-3.0-or-later"
 edition = "2021"
 rust-version = "1.77"
 
