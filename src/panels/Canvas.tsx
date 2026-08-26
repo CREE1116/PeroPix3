@@ -88,11 +88,14 @@ export function Canvas() {
 function SceneStage() {
   const { laneHeight, setLaneHeight, laneWidth, setLaneWidth, laneSide } = useUi();
   const grip = useRef<HTMLDivElement>(null);
+  const dragging = useRef(false);
   const side = laneSide === "right";
 
   /** 손잡이를 끄는 동안 크기를 따라 바꾼다 — 놓을 때 한 번만 저장한다(`commitLayout`) */
   const drag = (e: React.PointerEvent) => {
     grip.current?.setPointerCapture(e.pointerId);
+    dragging.current = true;
+    if (grip.current) grip.current.style.background = "var(--accent)";
     const p0 = side ? e.clientX : e.clientY;
     const s0 = side ? laneWidth : laneHeight;
     // 씬은 오른쪽·아래에 있으므로 **거슬러 끌면 커진다**
@@ -101,6 +104,8 @@ function SceneStage() {
     const up = () => {
       grip.current?.removeEventListener("pointermove", move);
       grip.current?.removeEventListener("pointerup", up);
+      dragging.current = false;
+      if (grip.current) grip.current.style.background = "transparent";
       useUi.getState().commitLayout();
     };
     grip.current?.addEventListener("pointermove", move);
@@ -109,38 +114,31 @@ function SceneStage() {
 
   /** 씬 줄과 큰 그림 사이의 **크기 손잡이**.
    *
-   *  ★★**보이는 알갱이를 걷었다** (사용자 지시 2026-08-26: *"핸들러는 안 보이게 하고 그냥
-   *    경계선을 핸들러 삼아 조정하게. 해당 핸들러 때문에 여백이 너무 크게 생김"*).
-   *    11px 짜리 띠에 위쪽 여백까지 붙어 있어, 손잡이 하나가 두 줄 사이를 크게 벌렸다.
-   *  ★대신 **경계선 자체**가 손잡이다: 두께 1px 의 선을 그리되, 잡는 자리는 그 선을 중심으로
-   *    양쪽 4px 씩(총 9px)이다 — 보이는 것은 선이고 잡히는 것은 그보다 넓다.
-   *    ★`margin` 을 음수로 줘서 **자리를 안 먹는다** — 그래야 여백이 안 는다.
-   *  ★커서 모양이 「여기를 끌 수 있다」를 말한다 (선을 두껍게 만들지 않는다). */
+   *  ★★**보이는 것을 전부 걷었다** (사용자 지시 2026-08-26: *"씬 경계선도 없애 줘. 그냥 다른
+   *    패널들처럼 패널의 끝부분을 핸들러로 쓰면 됨. 강조 효과가 들어가니까 확실함"*).
+   *    알갱이 → 경계선 → 아무것도 없음 순으로 걷어 왔다. 자리를 차지하는 표식이 없어도
+   *    **손을 대면 물드는 것**이 「여기를 끌 수 있다」를 대신 말한다.
+   *  ★모습·두께·물드는 색을 `ResizeHandle`(생성 패널)과 맞춘다 — 화면 안에서 크기를 바꾸는
+   *    자리는 전부 같아 보여야 한다. 이쪽만 다른 규칙을 두지 않는다. */
   const handle = (
     <div
       ref={grip}
       data-lane-grip={side ? "col" : "row"}
       onPointerDown={drag}
+      onPointerEnter={(e) => {
+        if (!dragging.current) e.currentTarget.style.background = "var(--accent-line)";
+      }}
+      onPointerLeave={(e) => {
+        if (!dragging.current) e.currentTarget.style.background = "transparent";
+      }}
       style={{
         flexShrink: 0,
-        position: "relative",
         zIndex: 2,
-        ...(side
-          ? { width: 9, margin: "0 -4px", cursor: "col-resize" }
-          : { height: 9, margin: "-4px 0", cursor: "row-resize" }),
+        background: "transparent",
+        transition: "background 0.12s",
+        ...(side ? { width: 5, cursor: "col-resize" } : { height: 5, cursor: "row-resize" }),
       }}
-    >
-      {/* ★보이는 것은 **선 하나**다 — 손잡이 한가운데에 둔다 */}
-      <span
-        style={{
-          position: "absolute",
-          background: "var(--line)",
-          ...(side
-            ? { top: 0, bottom: 0, left: 4, width: 1 }
-            : { left: 0, right: 0, top: 4, height: 1 }),
-        }}
-      />
-    </div>
+    />
   );
 
   const lane = (

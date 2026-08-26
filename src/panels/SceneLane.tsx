@@ -362,10 +362,25 @@ export function SceneLane() {
        **나온 장으로 옮겨** 주기 때문이다 (사용자 지적 2026-08-23: 완료되면 선택이 풀렸다).
        여기 남은 것은 그림 없이 사라진 경우(취소·실패)를 위한 마지막 방어선이다. */
   const focusPending = focus.pending;
+  /* ★★대기 칸을 고른 **그 순간의 장 목록**을 적어 둔다 — 나중에 「그 사이에 새로 나온 장」을
+       가려내는 기준이다. 목록 자체가 아니라 **열쇠(파일)만** 담는다. */
+  const before = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (focusPending) before.current = new Set(visibleTakes(useSceneFocus.getState().cell).map((r) => r.file));
+  }, [focusPending]);
   useEffect(() => {
     if (!focusPending) return;
     if (pending.some((q) => q.id === focusPending)) return;
-    useSceneFocus.getState().focus(useSceneFocus.getState().cell, null);
+    const f = useSceneFocus.getState();
+    /* ★★**나온 장이 있으면 그리로 옮겨 간다** (사용자 지적 2026-08-26: *"생성 완료 후에
+         선택이 자동 해제됨"*). 평소에는 `queue.consumePending` 이 그림이 오는 그 순간
+         옮겨 주는데, 대기가 **그림보다 먼저** 걷히는 길이 따로 있다 (`settleBatch` 가
+         `job_done` 에서 통째로 비운다 · 취소가 걷어낸다). 그 순서로 오면 옮길 상대를 잃고
+         여기까지 내려와 **놓아 버렸다.**
+       ★기준은 「고를 때 없던 장」이다 — 그래야 취소·실패로 아무것도 안 나왔을 때는
+         예전처럼 놓는다 (옛 장을 붙잡으면 나오지도 않은 것을 고른 셈이 된다). */
+    const born = visibleTakes(f.cell).find((r) => !before.current.has(r.file));
+    f.focus(f.cell, born ? born.file : null);
   }, [focusPending, pending]);
 
   /* ★★**고른 것이 바뀔 때만** 굴린다 (사용자 지시 2026-08-22).
@@ -1924,7 +1939,13 @@ function SceneRow(
                 height: p.h,
                 borderRadius: "var(--r-1)",
                 border: `2px ${on ? "solid" : "dashed"} ${on || run ? "var(--accent)" : "var(--line)"}`,
-                background: on ? "var(--accent-bg)" : "var(--bg)",
+                /* ★★**바탕은 `backgroundColor` 로 칠한다** (사용자 지적 2026-08-26:
+                     *"스트리밍 중에 해당 이미지를 선택하면 썸네일이 사라진다"*).
+                   `background` 는 줄임 표기라 **`backgroundImage` 를 함께 지운다.**
+                   리액트는 바뀐 칸만 다시 먹이므로, 고르기가 켜지는 순간 이 한 줄만 다시
+                   먹히면서 깔아 둔 중간 그림이 통째로 날아갔다. 줄임 표기와 낱개 표기를
+                   같은 자리에 섞지 말 것. */
+                backgroundColor: on ? "var(--accent-bg)" : "var(--bg)",
                 display: "grid",
                 placeItems: "center",
                 fontSize: 11,
@@ -1934,14 +1955,15 @@ function SceneRow(
                    중간 프레임이다 (`store/queue` 의 `steps`) — 기다리는 동안 무엇이 나오고
                    있는지가 보이고, 잘못 가고 있으면 일찍 끊을 수 있다.
                    ★글자는 그 위에 남는다 (「생성 중」) — 아직 끝난 것이 아니기 때문이다. */
+                /* ★**잘라 채우지 않는다** (사용자 지적 2026-08-26: *"비율이 깨진다"*).
+                   칸의 가로세로비는 씬 줄이 정하고 그림의 비는 해상도가 정해서 둘이 다르다 —
+                   `cover` 면 그 차이만큼 잘려 나가 다른 그림처럼 보인다. */
+                backgroundImage: p.stepOf(c.id) ? `url(${p.stepOf(c.id)})` : "none",
+                backgroundSize: "contain",
+                backgroundRepeat: "no-repeat",
+                backgroundPosition: "center",
                 ...(p.stepOf(c.id)
-                  ? {
-                      backgroundImage: `url(${p.stepOf(c.id)})`,
-                      backgroundSize: "cover",
-                      backgroundPosition: "center",
-                      color: "#fff",
-                      textShadow: "0 1px 3px rgba(0,0,0,0.8)",
-                    }
+                  ? { color: "#fff", textShadow: "0 1px 3px rgba(0,0,0,0.8)" }
                   : null),
               }}
             >

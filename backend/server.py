@@ -1250,17 +1250,59 @@ async def _generate_one(body: GenBody) -> dict:
         # ★★**중간 그림을 흘린다** — 그리는 동안 보여 주면 기다림이 짧게 느껴지고, 잘못 가고
         #   있으면 일찍 끊을 수 있다. 앞 몇 스텝은 `nai` 가 건너뛴다 (잡음이라 오해를 부른다).
         # ★칸을 지목해 보낸다 — 어느 대기 칸 위에 그릴지는 그 열쇠로 정해진다
-        async def _step(img: bytes, step: int) -> None:
-            await Q.broadcast({
-                "type": "image_step",
-                "workspace": body.workspace,
-                "set_id": body.set_id, "cell_id": body.cell_id,
-                "step": step,
-                # ★프레임은 그림 **바이트**다 (zip 이 아니다) — 화면이 바로 걸 수 있게 실어 보낸다
-                "b64": base64.b64encode(img).decode("ascii"),
-            })
+        #
+        # ★★**받는 자리와 보내는 자리를 끊었다** (사용자 지적 2026-08-26: *"공홈은 비교적
+        #   균등한 속도로 변하는데 이 앱은 강약이 있다 — 중간에 멈춰 있다가 갑자기 확 오른다"*).
+        #   예전에는 프레임을 받은 그 자리에서 브로드캐스트를 **기다렸다.** 한 장을 부풀려
+        #   내보내는 데 드는 시간만큼 NAI 스트림을 안 읽으니, 읽기가 밀렸다가 몰려 들어와
+        #   화면이 끊겼다 이었다 했다. 이제 받는 쪽은 **최신 한 장만 놓고** 곧장 돌아가고,
+        #   내보내는 것은 딸린 일꾼(`_pump`)이 제 속도로 한다.
+        # ★밀리면 **가운데를 버린다** — 늦은 프레임을 굳이 다 보내면 완성본 뒤에까지 밀린다.
+        #   버려도 되는 그림이라 그래도 된다 (영상이 프레임을 떨구는 것과 같다).
+        latest: list[tuple[bytes, int] | None] = [None]
+        woke = asyncio.Event()
+        closed = False
 
-        png, seed = await nai.generate_streaming(payload, nai_token(), _step)
+        async def _pump() -> None:
+            while True:
+                await woke.wait()
+                woke.clear()
+                item, latest[0] = latest[0], None
+                if item is None:
+                    if closed:
+                        return
+                    continue
+                img, step = item
+                try:
+                    # ★줄이는 것도 여기서 한다 — 받는 쪽은 아무것도 안 기다려야 한다
+                    small = await asyncio.to_thread(imgutil.preview_jpeg, img)
+                except Exception as e:
+                    print(f"[스트림] 중간 그림을 줄이지 못했습니다 (건너뜀): {e}")
+                    continue
+                await Q.broadcast({
+                    "type": "image_step",
+                    "workspace": body.workspace,
+                    "set_id": body.set_id, "cell_id": body.cell_id,
+                    "step": step,
+                    # ★프레임은 그림 **바이트**다 (zip 이 아니다) — 화면이 바로 걸 수 있게 보낸다
+                    "mime": "image/jpeg",
+                    "b64": base64.b64encode(small).decode("ascii"),
+                })
+
+        async def _step(img: bytes, step: int) -> None:
+            latest[0] = (img, step)
+            woke.set()
+
+        pump = asyncio.create_task(_pump())
+        try:
+            png, seed = await nai.generate_streaming(payload, nai_token(), _step)
+        finally:
+            closed = True
+            woke.set()
+            try:
+                await asyncio.wait_for(pump, timeout=5)
+            except Exception:
+                pump.cancel()
     else:
         png, seed = await nai.generate_with_payload(payload, nai_token())
 

@@ -46,7 +46,15 @@ export function ResizeHandle({
     };
   }, [dragging, min, max, onCommit, setWidth, side]);
 
+  /** ★★**자리를 먹지 않는다** (사용자 지시 2026-08-26: *"가로 모드일 때 씬 헤더가 좌측 끝까지
+   *    안 닿는다. 생성 패널의 리사이즈 핸들러 두께만큼 여백이 있는 느낌인데, 생성 패널과
+   *    떨어져 있지 않게 붙여 줘"*).
+   *    5px 짜리 띠가 흐름 안에 있어서, 가운데 칸이 통째로 그만큼 밀려 있었다. 이제 폭 0 인
+   *    자리만 남기고 **띠는 경계선 위에 겹쳐 띄운다** — 잡히는 넓이는 그대로 6px 이다.
+   *  ★`zIndex` 로 양옆 패널 위에 올린다. 오른쪽 손잡이는 DOM 상 패널보다 앞에 있어서
+   *    올리지 않으면 패널 배경에 덮인다. */
   return (
+    <div style={{ flex: "0 0 0px", position: "relative", zIndex: 3, alignSelf: "stretch" }}>
     <div
       onMouseDown={(e) => {
         if (e.button !== 0) return;
@@ -54,7 +62,11 @@ export function ResizeHandle({
         setDragging(true);
       }}
       style={{
-        flex: "0 0 5px",
+        position: "absolute",
+        top: 0,
+        bottom: 0,
+        left: -3,
+        width: 6,
         cursor: "ew-resize",
         background: dragging ? "var(--accent)" : "transparent",
         transition: dragging ? undefined : "background 0.12s",
@@ -66,5 +78,6 @@ export function ResizeHandle({
         if (!dragging) e.currentTarget.style.background = "transparent";
       }}
     />
+    </div>
   );
 }

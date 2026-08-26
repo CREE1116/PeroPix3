@@ -301,3 +301,24 @@ def size_of_base64(b64: str) -> tuple[int, int]:
     """base64 이미지의 크기. 진단 로그용."""
     with Image.open(io.BytesIO(base64.b64decode(b64))) as img:
         return img.size
+
+
+def preview_jpeg(raw: bytes, long_side: int = 768, quality: int = 80) -> bytes:
+    """**보여 주기용으로 줄인다** — 그리는 중인 중간 그림을 앱으로 흘릴 때 쓴다
+    (`server.py` 의 `image_step`, 사용자 지시 2026-08-26).
+
+    ★★줄이는 이유는 **고르게 흐르게** 하기 위해서다. NAI 가 주는 중간 그림은 완성본과 같은
+      크기의 PNG 라, 한 장이 1~2MB 다. 그것을 base64 로 부풀려 JSON 에 실어 보내면 한 프레임을
+      보내고 그리는 데만 수백 ms 가 들어, 프레임이 밀렸다가 몰려 나온다 (사용자 지적:
+      *"중간 스텝을 삭제하고 보여 주는 것처럼 잠깐 멈춰 있다가 갑자기 확 오른다"*).
+      768px JPEG 이면 같은 그림이 수십 KB 로 줄어 그 병목이 사라진다.
+    ★품질을 아끼는 자리다 — **보고 버리는 그림**이라 원본에 손대지 않는다 (완성본은 그대로 PNG).
+    """
+    with Image.open(io.BytesIO(raw)) as im:
+        im.load()
+        out = im.convert("RGB")
+        if max(out.size) > long_side:
+            out.thumbnail((long_side, long_side), Image.BILINEAR)   # 미리보기다 — 빠른 쪽으로
+    buf = io.BytesIO()
+    out.save(buf, format="JPEG", quality=quality)
+    return buf.getvalue()

@@ -786,7 +786,10 @@ function handle(m: Record<string, any>, set: Setter, get: () => S) {
       if (!cell || !m.b64) break;
       // ★다른 워크스페이스의 것은 이 화면과 무관하다 (큐는 앱 전체가 공유한다)
       if (m.workspace && m.workspace !== useWs.getState().current) break;
-      set({ steps: { ...get().steps, [cell]: `data:image/png;base64,${m.b64}` } });
+      /* ★형식은 **서버가 알려 준다** — 중간 그림은 줄여 보내느라 JPEG 이다
+         (`imgutil.preview_jpeg`). 옛 서버가 안 실어 주면 예전대로 PNG 로 읽는다. */
+      const mime = String(m.mime ?? "image/png");
+      set({ steps: { ...get().steps, [cell]: `data:${mime};base64,${m.b64}` } });
       break;
     }
     case "image":
