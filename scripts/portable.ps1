@@ -1,4 +1,4 @@
-# PeroPix 3.0 — 포터블 한 벌을 조립한다 (사용자 결정 2026-08-26).
+﻿# PeroPix 3.0 — 포터블 한 벌을 조립한다 (사용자 결정 2026-08-26).
 #
 # ★★**설치본을 안 만든다.** 이 앱은 데이터가 **앱 폴더 옆**에 쌓이는 구조라
 #   (`backend/server.py` 의 `APP_DIR`), 설치 자리가 곧 창고 자리가 된다.
@@ -12,6 +12,13 @@
 #       _dist/PeroPix-<버전>-win64.zip
 #
 # 쓰기: portable.bat  (또는 powershell -File scripts/portable.ps1 [-SkipBuild])
+#
+# ★★**이 파일은 BOM 이 붙은 UTF-8 이어야 한다. 떼지 말 것.**
+#   윈도우 파워셸 5.1(`powershell.exe`)은 BOM 이 없으면 스크립트를 **그 기계의 ANSI
+#   코드페이지**로 읽는다. 한국어 윈도우(949)에서는 어쩌다 넘어가지만, 깃헙 러너
+#   (1252)에서는 위 주석의 한글이 따옴표를 깨뜨려 **파싱 단계에서 죽는다**
+#   (실측 2026-08-26: `Missing closing ')' in expression`). BOM 을 붙이면 5.1 도
+#   파워셸 7 도 UTF-8 로 읽는다.
 
 param(
   # 이미 빌드해 둔 exe 를 쓴다 (Rust 빌드가 3분쯤 걸린다)
