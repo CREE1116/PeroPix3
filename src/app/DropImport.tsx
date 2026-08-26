@@ -157,8 +157,17 @@ function Sheet({
     try {
       useImageInput.getState().setBase(m.data, name);
       await fitSizeToBase(m.data);
-      useUi.getState().reveal("left", "base", false);
+      /* ★★**생성 화면으로 옮기고 나서 데려간다** (사용자 지적 2026-08-26: *"이미지 드롭해서
+           베이스 이미지로 등록할 때 해당 위치로 자동 스크롤 안 되고 있음"*).
+         ★밖에서 끌어다 놓은 사람은 **그림이 어디로 들어갔는지 모른다.** 앱 안의 그림을
+           i2i 로 보내는 길(`ImageActions` 의 `reveal("left", "base", true)`)과 **가는 곳이
+           같으므로** 거동도 같아야 한다. 예전에는 여기만 거짓이라 강조만 뜨고 말았다.
+         ★순서가 중요하다 — 갤러리에서 떨궜으면 그 자리가 아직 그려져 있지도 않다.
+           먼저 생성 화면으로 옮긴 뒤에 데려간다.
+         ★자동 스크롤의 기본은 여전히 끔이다 (사용자 지시 2026-08-22). 참을 주는 자리는
+           **베이스 그림뿐**이고 지금 그것이 둘이다. 다른 자리로 늘리지 말 것. */
       leave();
+      useUi.getState().reveal("left", "base", true);
     } finally {
       setBusy(false);
     }
