@@ -61,11 +61,11 @@ jobs:
           "VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "version = $ver"
 
-      # ★소스 대조 판정 — 배포 직전에 한 번 (`pause` 가 CI 를 붙들지 않게 stdin 을 닫는다)
-      - name: 판정
-        shell: cmd
-        run: test.bat < nul
-
+      # ★★**판정은 여기서 안 돌린다** (사용자 결정 2026-08-26). 하네스(`test.bat` 과
+      #   `backend/test_*.py`·`*.test.ts`)는 **깃에 안 올라간다** — 배포물이 아닌 것은
+      #   저장소에 안 둔다는 2026-08-13 결정이고 `.gitignore` 33~39행이 그것이다.
+      #   러너는 저장소를 새로 받으므로 그 자리에 파일이 없다.
+      #   ★그러니 **태그를 밀기 전에 손으로 `test.bat` 을 돌린다.** 이 단계가 대신해 주지 않는다.
       - name: 앱 빌드 (프런트 + Tauri)
         run: npm run tauri build -- --no-bundle
 
