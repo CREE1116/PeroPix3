@@ -362,25 +362,13 @@ export function SceneLane() {
        **나온 장으로 옮겨** 주기 때문이다 (사용자 지적 2026-08-23: 완료되면 선택이 풀렸다).
        여기 남은 것은 그림 없이 사라진 경우(취소·실패)를 위한 마지막 방어선이다. */
   const focusPending = focus.pending;
-  /* ★★대기 칸을 고른 **그 순간의 장 목록**을 적어 둔다 — 나중에 「그 사이에 새로 나온 장」을
-       가려내는 기준이다. 목록 자체가 아니라 **열쇠(파일)만** 담는다. */
-  const before = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (focusPending) before.current = new Set(visibleTakes(useSceneFocus.getState().cell).map((r) => r.file));
-  }, [focusPending]);
   useEffect(() => {
     if (!focusPending) return;
     if (pending.some((q) => q.id === focusPending)) return;
-    const f = useSceneFocus.getState();
-    /* ★★**나온 장이 있으면 그리로 옮겨 간다** (사용자 지적 2026-08-26: *"생성 완료 후에
-         선택이 자동 해제됨"*). 평소에는 `queue.consumePending` 이 그림이 오는 그 순간
-         옮겨 주는데, 대기가 **그림보다 먼저** 걷히는 길이 따로 있다 (`settleBatch` 가
-         `job_done` 에서 통째로 비운다 · 취소가 걷어낸다). 그 순서로 오면 옮길 상대를 잃고
-         여기까지 내려와 **놓아 버렸다.**
-       ★기준은 「고를 때 없던 장」이다 — 그래야 취소·실패로 아무것도 안 나왔을 때는
-         예전처럼 놓는다 (옛 장을 붙잡으면 나오지도 않은 것을 고른 셈이 된다). */
-    const born = visibleTakes(f.cell).find((r) => !before.current.has(r.file));
-    f.focus(f.cell, born ? born.file : null);
+    /* ★그림 없이 사라진 경우(취소·실패)의 **마지막 방어선**이다 — 빈 화면에 갇히지 않게 놓는다.
+       ★그림이 나온 경우는 여기까지 오지 않는다: `store/queue` 의 `render` 가 그림이 도착하는
+         그 자리에서 **보고 있는 씬인지**만 보고 옮겨 준다 (대기 장부와 무관하다). */
+    useSceneFocus.getState().focus(useSceneFocus.getState().cell, null);
   }, [focusPending, pending]);
 
   /* ★★**고른 것이 바뀔 때만** 굴린다 (사용자 지시 2026-08-22).

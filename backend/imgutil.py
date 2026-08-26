@@ -303,22 +303,25 @@ def size_of_base64(b64: str) -> tuple[int, int]:
         return img.size
 
 
-def preview_jpeg(raw: bytes, long_side: int = 768, quality: int = 80) -> bytes:
-    """**보여 주기용으로 줄인다** — 그리는 중인 중간 그림을 앱으로 흘릴 때 쓴다
+def preview_jpeg(raw: bytes, quality: int = 85) -> bytes:
+    """**형식만 바꿔 가볍게 한다** — 그리는 중인 중간 그림을 앱으로 흘릴 때 쓴다
     (`server.py` 의 `image_step`, 사용자 지시 2026-08-26).
 
-    ★★줄이는 이유는 **고르게 흐르게** 하기 위해서다. NAI 가 주는 중간 그림은 완성본과 같은
-      크기의 PNG 라, 한 장이 1~2MB 다. 그것을 base64 로 부풀려 JSON 에 실어 보내면 한 프레임을
-      보내고 그리는 데만 수백 ms 가 들어, 프레임이 밀렸다가 몰려 나온다 (사용자 지적:
-      *"중간 스텝을 삭제하고 보여 주는 것처럼 잠깐 멈춰 있다가 갑자기 확 오른다"*).
-      768px JPEG 이면 같은 그림이 수십 KB 로 줄어 그 병목이 사라진다.
+    ★★**해상도는 그대로 둔다** (사용자 지시 2026-08-26: *"해상도는 줄이지 마. 형식만 jpg 나
+      webp 같은 걸로 바꿔서 용량만 낮춰"*). 한때 768px 로 줄였는데, 큰 자리에 띄우면 그만큼
+      흐리게 보인다 — 무엇이 그려지고 있는지 보려는 것이 목적이라 흐리면 목적을 못 채운다.
+    ★줄이는 이유는 **고르게 흐르게** 하기 위해서다. NAI 가 주는 중간 그림은 완성본과 같은
+      PNG 라 base64 로 부풀리면 한 장이 수백 KB~수 MB 다. 한 프레임을 실어 보내는 데만
+      수백 ms 가 들어 프레임이 밀렸다가 몰려 나왔다 (사용자 지적: *"중간 스텝을 삭제하고
+      보여 주는 것처럼 잠깐 멈춰 있다가 갑자기 확 오른다"*).
+    ★★**JPEG 이다** — 같은 크기에서 WebP 가 3배 더 작지만 굽는 데 9~45배가 걸린다
+      (실측 1024², b64 기준: JPEG q85 40KB·2ms / WebP q80 12KB·18~97ms). 여기서 아껴야 하는
+      것은 **한 프레임에 드는 시간**이라 작은 쪽이 아니라 빠른 쪽을 고른다.
     ★품질을 아끼는 자리다 — **보고 버리는 그림**이라 원본에 손대지 않는다 (완성본은 그대로 PNG).
     """
     with Image.open(io.BytesIO(raw)) as im:
         im.load()
         out = im.convert("RGB")
-        if max(out.size) > long_side:
-            out.thumbnail((long_side, long_side), Image.BILINEAR)   # 미리보기다 — 빠른 쪽으로
     buf = io.BytesIO()
     out.save(buf, format="JPEG", quality=quality)
     return buf.getvalue()
