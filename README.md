@@ -85,10 +85,6 @@ Three assets are uploaded, and **the app's auto-update reads all three**
 - If `backend/requirements.txt` or `models/censor` changed, the workflow marks the release
   `requires_full` and the app fetches the full package instead. **The user is never asked** —
   they only see the download size.
-- **One stretch has never been exercised end to end**: downloading a release and swapping
-  the running app for it. That needs a published release to try. Everything around it
-  (assembling the package, replacing a running executable, restarting) was measured on
-  2026-08-26.
 
 ## Censoring models
 
