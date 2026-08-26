@@ -253,7 +253,10 @@ export function ImageActions({
                 data-act-settings
                 onClick={() => void useSettings()}
                 disabled={busy}
-                data-tip={t("act.settingsHint")}
+                /* ★★**글자가 보이는 단추에는 툴팁을 안 단다** (사용자 지시 2026-08-26:
+                     *"불필요한 힌트들은 걷어내"*). 「설정 불러오기」라는 이름이 이미 있는데
+                     무엇이 딸려 오는지까지 늘어놓으면, 커서를 댈 때마다 아는 이야기가 뜬다.
+                   ★툴팁이 **이름을 대신하는 자리**(아이콘만 있는 단추)는 그대로 둔다. */
                 style={btn}
               >
                 {t("act.settings")}
@@ -273,7 +276,7 @@ export function ImageActions({
             data-act-clone
             onClick={() => void runClone()}
             disabled={busy}
-            data-tip={t("act.cloneHint")}
+            /* ★이름(「새 탭으로 복제」)이 보이므로 툴팁을 안 단다 — 위 ★★주와 같은 이유다 */
             style={btn}
           >
             {t("act.clone")}
@@ -305,15 +308,18 @@ export function ImageActions({
             onClick={() => void runUpscale()}
             // ★1024x1024 를 넘으면 **공홈도 막는다.** 눌러야 실패하는 버튼을 두지 않는다
             disabled={busy || cost < 0}
-            /* ★안내는 한 열쇠에 통째로 담는다 — 코드에서 이으면 잇는 기호가 번역을 안 탄다 */
-            data-tip={cost < 0 ? t("upscale.tooLarge") : t("upscale.hint", { a: cost })}
+            /* ★★**이름만 띄운다** (사용자 지시 2026-08-26: *"업스케일 힌트가 필요함? 그냥
+                 「업스케일」이라고 하면 될 것 같은데"*). 값은 **단추에 이미 적혀 있고**
+                 (아래 `{cost} Anlas`), 「다시 그리지 않는다」는 이름으로 짐작되는 성질이다.
+               ★못 하는 경우만 사유를 띄운다 — 그것은 눌러 보기 전에는 알 수 없다. */
+            data-tip={cost < 0 ? t("upscale.tooLarge") : t("upscale.button")}
             style={{ ...btn, display: "inline-flex", alignItems: "center", opacity: cost < 0 ? 0.45 : 1 }}
           >
             {/* ★이름은 아이콘이 말하고(툴팁도 있다), **값은 글자로 남긴다** —
                 누르면 얼마가 나가는지가 안전장치다 (v2 의 분해 표기와 같은 뜻) */}
             <span style={{ display: "grid", placeItems: "center" }}>{Icon.scaling}</span>
             <span style={{ marginLeft: 5, color: "var(--ink-faint)" }}>
-              {cost < 0 ? "—" : `${cost} Anlas`}
+              {cost < 0 ? "-" : `${cost} Anlas`}
             </span>
           </button>
         )}
@@ -341,11 +347,9 @@ export function ImageActions({
           <button
             data-act-keep
             onClick={() => void onKeep()}
-            /* ★★**문구를 코드에서 잇지 않는다** (사용자 지적 2026-08-26: *"코드에서 조합하는
-                 툴팁이 존재해? 그럼 언어 대응이 안 되는 거 아니야?"*). 조각은 번역돼도
-                 **잇는 기호와 어순은 코드에 박혀** 언어가 바뀌어도 안 바뀐다. 안내는 한 열쇠에
-                 통째로 담고, 여기서는 그것만 띄운다. */
-            data-tip={t("gallery.keepHint")}
+            /* ★아이콘만 있는 단추라 툴팁이 **이름**을 맡는다 — 설명은 걷었다 (2026-08-26).
+               ★문구를 코드에서 잇지 않는다 — 잇는 기호와 어순이 번역을 안 탄다 */
+            data-tip={t("gallery.keep")}
             style={iconBtn}
           >
             {Icon.images}

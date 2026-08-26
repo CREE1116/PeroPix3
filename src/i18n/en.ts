@@ -238,7 +238,6 @@ export const en = {
    *  ★The scale factor is decided by the server since 2026-08-21. */
   upscale: {
     button: "Upscale",
-    hint: "Increases the resolution ({a} Anlas). Nothing is redrawn, so the image stays the same.",
     tooLarge: "Images larger than 3MP cannot be upscaled.",
     done: "Upscaled. Saved as a new image",
   },
@@ -416,7 +415,7 @@ export const en = {
     aiTip: "Let NAI place them (no coordinates sent)",
     custom: "Custom",
     customTip: "Send the positions you set",
-    open: "Open the positioning board (drag each character into place)",
+    open: "Open the positioning board",
     close: "Close the board (positions kept)",
     stacked: "Characters are stacked on the same spot",
   },
@@ -667,9 +666,7 @@ export const en = {
 
   act: {
     settings: "Load settings",
-    settingsHint: "Prompt, size, sampler and everything else from this image",
     clone: "Duplicate into a new tab",
-    cloneHint: "New tab with just this image and its settings (original stays)",
     cloned: "Duplicated into a new tab",
     showPrompt: "View prompt",
     /** ★글자로 남는 **유일한** 단추다 — 이름 자체가 짧은 낱말이라 아이콘이 오히려 흐리다.
@@ -848,7 +845,6 @@ export const en = {
     moved: "Moved {n}",
     more: "{n} more below",
     keep: "Keep",
-    keepHint: "Copy this image into the gallery (settings included, original stays)",
     kept: "Kept in the gallery",
     unkept: "Removed from the gallery",
     renamed: "Renamed",
