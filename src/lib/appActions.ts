@@ -3,7 +3,7 @@
  *  ★★한 액션의 이름·설명·**인자 형식**·위험도·실행이 **한 덩이**로 붙어 있다. 예전에는
  *    스키마가 백엔드(`agent.py` 의 `_table`)에, 구현이 앱(`queue.ts` 의 `runAction`)에
  *    나뉘어 있어 조용히 어긋났다 — `generate` 스키마의 `set` 을 앱이 안 읽어서 **오류 없이
- *    엉뚱한 세트에 생성되고 Anlas 가 나갔다** (적대 검토 2026-08-24).
+ *    엉뚱한 씬 그룹에 생성되고 Anlas 가 나갔다** (적대 검토 2026-08-24).
  *
  *  ★목록은 빌드할 때 뽑아 백엔드에 넣는다 (`scripts/gen-actions.mjs`) — 앱이 접속할 때
  *    올려 보내면 소켓 타이밍에 걸려 **도구가 0개**로 보인다 (`backend/agent.py` 머리).
@@ -30,10 +30,10 @@ import { t } from "../i18n";
    ★한 벌은 스토어에 있다 (`removeAt`) — 여기서는 **찾아 주고 말로 옮길** 뿐이다.
    사람이 버튼을 눌렀을 때와 **같은 함수**를 부른다 (선결 조건 3-1). */
 
-/** 세트를 찾는다 — ★★규칙은 `lib/findAt` **하나**다 (2026-08-25).
+/** 씬 그룹을 찾는다 — ★★규칙은 `lib/findAt` **하나**다 (2026-08-25).
  *
  *  예전에는 여기서 `find(x => x.id === key || x.name === key)` 로 **처음 걸리는 것**을 집었다.
- *  「새 세트」 같은 기본 이름은 탭마다 있으므로 **다른 탭의 세트를 지우고** 성공이라 답할 수
+ *  「새 씬 그룹」 같은 기본 이름은 탭마다 있으므로 **다른 탭의 씬 그룹을 지우고** 성공이라 답할 수
  *  있었다 (이 함수를 `delete_scene_group`·`delete_scene`·`move_scene`·`apply` 가 함께 쓴다).
  *  ★못 찾거나 여럿이면 그대로 오류로 바꿔 낸다 — 고르는 것은 코드가 할 일이 아니다. */
 function findSet(key: string, tab = "") {
@@ -43,7 +43,7 @@ function findSet(key: string, tab = "") {
 }
 
 const BLOCK_WHY: Record<string, string> = {
-  last_set: "그 탭의 마지막 세트라 닫을 수 없습니다 (탭에 세트가 없어집니다).",
+  last_set: "그 탭의 마지막 씬 그룹이라 닫을 수 없습니다 (탭에 씬 그룹이 없어집니다).",
   last_tab: "마지막 탭이라 지울 수 없습니다.",
   not_found: "그런 것이 없습니다.",
 };
@@ -88,17 +88,17 @@ function previewRemove(target: DelTarget): string {
 
 defineAction({
   id: "delete_scene_group",
-  title: "세트를 지웁니다",
-  desc: "★**세트를 닫는다** — 그 안의 씬과 **그림도 함께 휴지통으로** 간다. "
-    + "그 탭의 마지막 세트는 못 닫는다 (탭이 빈다).",
+  title: "씬 그룹을 지웁니다",
+  desc: "★**씬 그룹을 닫는다** — 그 안의 씬과 **그림도 함께 휴지통으로** 간다. "
+    + "그 탭의 마지막 씬 그룹은 못 닫는다 (탭이 빈다).",
   args: {
     sceneGroup: { type: "string", desc: "씬 그룹 **id** (이름은 탭마다 겹친다)", required: true },
-    tab: { type: "string", desc: "어느 탭의 세트인지 — 이름으로 줄 때 함께 주면 정확하다" },
+    tab: { type: "string", desc: "어느 탭의 씬 그룹인지 — 이름으로 줄 때 함께 주면 정확하다" },
   },
   confirm: "hard",
   preview: (a) => {
     const { hit } = findSet(String(a.sceneGroup ?? ""));
-    return hit ? previewRemove({ kind: "sceneGroup", id: hit.id }) : "그런 세트가 없습니다.";
+    return hit ? previewRemove({ kind: "sceneGroup", id: hit.id }) : "그런 씬 그룹이 없습니다.";
   },
   run: async (a) => {
     const { hit, miss } = findSet(String(a.sceneGroup ?? ""), String(a.tab ?? ""));
@@ -114,8 +114,8 @@ defineAction({
     + "`sceneGroup` 을 비우면 지금 보고 있는 씬 그룹에서 찾는다.",
   args: {
     scene: { type: "string", desc: "씬 이름 또는 id", required: true },
-    sceneGroup: { type: "string", desc: "어느 씬 그룹에서 — 비우면 지금 보고 있는 세트 (**id** 가 정확하다)" },
-    tab: { type: "string", desc: "어느 탭의 세트인지 — 세트를 이름으로 줄 때 함께 준다" },
+    sceneGroup: { type: "string", desc: "어느 씬 그룹에서 — 비우면 지금 보고 있는 씬 그룹 (**id** 가 정확하다)" },
+    tab: { type: "string", desc: "어느 탭의 씬 그룹인지 — 씬 그룹을 이름으로 줄 때 함께 준다" },
   },
   confirm: "hard",
   preview: (a) => {
@@ -128,14 +128,14 @@ defineAction({
   },
 });
 
-/** 씬을 고른다 — 세트를 안 주면 지금 보고 있는 것에서 */
+/** 씬을 고른다 — 씬 그룹을 안 주면 지금 보고 있는 것에서 */
 function pickScene(a: Record<string, any>): { target: DelTarget } | ReturnType<typeof err> {
   const ws = useWs.getState();
   const want = String(a.sceneGroup ?? "").trim();
   const found = want ? findSet(want, String(a.tab ?? "")) : { hit: ws.activeSceneGroup(), miss: null };
   const set = found.hit;
   if (!set || set.kind !== "sceneGroup")
-    return found.miss ?? err("not_found", "열려 있는 세트가 없습니다.", { retry: "never" });
+    return found.miss ?? err("not_found", "열려 있는 씬 그룹이 없습니다.", { retry: "never" });
   const key = String(a.scene ?? "").trim();
   const cells = set.cards.flatMap((k) => k.cells);
   const cell = cells.find((c) => c.id === key || c.name === key);
@@ -324,14 +324,14 @@ defineAction({
 defineAction({
   id: "generate",
   title: "그림을 생성합니다",
-  desc: "★**생성을 큐에 넣는다.** 그 세트의 잠기지 않은 씬 전부를 `count` 바퀴 돈다 "
-    + "(씬이 하나면 count 장). 비우면 지금 보고 있는 세트. "
+  desc: "★**생성을 큐에 넣는다.** 그 씬 그룹의 잠기지 않은 씬 전부를 `count` 바퀴 돈다 "
+    + "(씬이 하나면 count 장). 비우면 지금 보고 있는 씬 그룹. "
     + "★**기다릴 필요가 없다** — 큐는 넣는 순간의 프롬프트를 담으므로, 이어서 프롬프트를 "
     + "고치고 또 넣어도 앞 배치는 그대로다. Anlas 가 들 수 있다.",
   args: {
     count: { type: "number", desc: "몇 바퀴. 기본 1" },
     workspace: { type: "string", desc: "어디에 넣을지 — 비우면 지금 보고 있는 곳" },
-    sceneGroup: { type: "string", desc: "어느 씬 그룹에 — 비우면 활성 세트" },
+    sceneGroup: { type: "string", desc: "어느 씬 그룹에 — 비우면 활성 씬 그룹" },
   },
   // ★★돈이 나가면 되돌릴 수 없다 — 그때만 `hard`
   confirm: (a) => (costNow(Math.max(1, Number(a.count) || 1)).total > 0 ? "hard" : "ask"),
@@ -367,8 +367,8 @@ defineAction({
   args: {
     scene: { type: "string", desc: "옮길 씬 이름 또는 id", required: true },
     before: { type: "string", desc: "이 씬 **앞**에 놓는다 — 비우면 맨 뒤" },
-    sceneGroup: { type: "string", desc: "어느 씬 그룹에서 — 비우면 지금 보고 있는 세트" },
-    tab: { type: "string", desc: "어느 탭의 세트인지 — 세트를 이름으로 줄 때 함께 준다" },
+    sceneGroup: { type: "string", desc: "어느 씬 그룹에서 — 비우면 지금 보고 있는 씬 그룹" },
+    tab: { type: "string", desc: "어느 탭의 씬 그룹인지 — 씬 그룹을 이름으로 줄 때 함께 준다" },
   },
   confirm: "none",
   run: async (a) => {
@@ -377,7 +377,7 @@ defineAction({
     const found = want ? findSet(want, String(a.tab ?? "")) : { hit: ws.activeSceneGroup(), miss: null };
     const set = found.hit;
     if (!set || set.kind !== "sceneGroup")
-      return found.miss ?? err("not_found", "열려 있는 세트가 없습니다.", { retry: "never" });
+      return found.miss ?? err("not_found", "열려 있는 씬 그룹이 없습니다.", { retry: "never" });
 
     /* ★씬은 **카드 안에** 있다. 옮길 자리는 「받는 카드 + 그 카드 안의 틈 번호」로 준다
        (`moveScene` 의 규약) — 그래서 `before` 가 어느 카드의 몇 번째인지 먼저 찾는다. */
@@ -415,12 +415,12 @@ defineAction({
 
 /* ── 시나리오에서 드러난 빈자리 ────────────────────────────────
    ★2026-08-24 시뮬레이션에서 실제 요청 넷을 도구 호출로 밟아 보고 찾은 것들이다.
-     *"키키의 감정별 이미지 10종"* 이 **남의 탭 밑에** 세트를 만들던 자리(A),
+     *"키키의 감정별 이미지 10종"* 이 **남의 탭 밑에** 씬 그룹을 만들던 자리(A),
      저장해 둔 그림체를 못 꽂던 자리(C), 새 워크스페이스를 못 만들던 자리(F). */
 
 defineAction({
   id: "switch_tab",
-  desc: "★**그 탭으로 옮겨 간다** (윗줄). 이어서 만드는 세트·씬과 생성이 **그 탭에** 걸린다. "
+  desc: "★**그 탭으로 옮겨 간다** (윗줄). 이어서 만드는 씬 그룹·씬과 생성이 **그 탭에** 걸린다. "
     + "«키키 탭에서 작업하자» 처럼 대상이 정해진 요청에서 먼저 부른다.",
   args: { tab: { type: "string", desc: "탭 이름 또는 id", required: true } },
   confirm: "none",
@@ -444,7 +444,7 @@ defineAction({
 defineAction({
   id: "apply_card",
   desc: "★**저장해 둔 카드를 지금 자리에 꽂는다** — 그림체(styles) · 캐릭터(characters) · "
-    + "포즈세트(posesets). «저장해 둔 수채화풍으로»·«키키 카드 올려줘» 가 이것이다. "
+    + "씬 카드(posesets). «저장해 둔 수채화풍으로»·«키키 카드 올려줘» 가 이것이다. "
     + "카드 목록은 `list_cards` 로 본다.",
   args: {
     kind: { type: "string", desc: '"styles" | "characters" | "posesets"', required: true },
@@ -477,7 +477,7 @@ defineAction({
       });
     /* ★★**꽂는 길은 사람이 끌어다 놓을 때와 같은 것**이어야 한다 (선결 조건 3-1 과 같은 원칙).
        카드마다 앉는 자리가 다르다 — 그림체는 베이스 프롬프트, 캐릭터는 인물 칸,
-       포즈세트는 세트 위의 씬 카드다. 그 규칙은 덱 쪽이 갖고 있으므로 그것을 부른다. */
+       씬 카드는 씬 그룹 위의 씬 카드다. 그 규칙은 덱 쪽이 갖고 있으므로 그것을 부른다. */
     const { applyCard } = await import("./applyCard");
     const r = applyCard(kind as never, hit as never);
     if (r.error) return err("blocked", r.error, { retry: "never" });
@@ -543,7 +543,7 @@ const undoApply = (what: string, id: string, was: Record<string, unknown>) => ({
 
 defineAction({
   id: "apply",
-  desc: "★**이름·잠금 같은 단순한 값을 고친다.** «세트 이름을 표정으로»·«미소 씬 잠가줘» 가 "
+  desc: "★**이름·잠금 같은 단순한 값을 고친다.** «씬 그룹 이름을 표정으로»·«미소 씬 잠가줘» 가 "
     + "이것이다. `what` 은 tab·sceneGroup·scene·sceneCard 중 하나이고, `patch` 에 고칠 값을 준다. "
     + "고칠 수 있는 값 — tab·sceneGroup: name / scene: name·locked / sceneCard: name·locked·folded. "
     + "★프롬프트·블록은 여기가 아니라 `edit_current_prompt` 로 고친다.",
@@ -593,15 +593,15 @@ defineAction({
       if (!hit) return miss!;
       const wasSet = { name: hit.name };
       ws.renameSceneGroup(hit.id, String(patch.name));
-      return { ok: true, did: `세트 「${hit.name}」 → ${done}`,
+      return { ok: true, did: `씬 그룹 「${hit.name}」 → ${done}`,
         at: { kind: "prompt", workspace: ws.current ?? undefined, sceneGroup: hit.id },
         before: undoApply("set", hit.id, wasSet) };
     }
 
-    /* 씬·씬카드 — ★둘 다 **세트 안**에 산다 (`sceneGroups[].cards[].cells`). 지금 보고 있는
-       세트에서 찾는다: 다른 세트의 것을 고치려면 먼저 그 세트를 연다 (`switch_tab`·생성). */
+    /* 씬·씬카드 — ★둘 다 **씬 그룹 안**에 산다 (`sceneGroups[].cards[].cells`). 지금 보고 있는
+       씬 그룹에서 찾는다: 다른 씬 그룹의 것을 고치려면 먼저 그 씬 그룹을 연다 (`switch_tab`·생성). */
     const cur = ws.activeSceneGroup();
-    if (cur?.kind !== "sceneGroup") return err("no_workspace", "열려 있는 세트가 없습니다.", { retry: "never" });
+    if (cur?.kind !== "sceneGroup") return err("no_workspace", "열려 있는 씬 그룹이 없습니다.", { retry: "never" });
 
     if (what === "sceneCard") {
       const card = cur.cards.find((k) => k.id === key || k.name === key);

@@ -94,9 +94,9 @@ def _view(blocks: list[dict] | None) -> list[dict]:
 
 
 def _scenes(st: dict) -> list[dict]:
-    """세트 안의 **씬들**.
+    """씬 그룹 안의 **씬들**.
 
-    ★★씬은 **카드 안에** 있다 (`cards[].cells` — 2026-08-11 의 카드 층). 예전에는 세트가
+    ★★씬은 **카드 안에** 있다 (`cards[].cells` — 2026-08-11 의 카드 층). 예전에는 씬 그룹이
       `cells` 를 직접 들었고, 여기는 그 옛 자리만 읽고 있었다. 그래서 **지금 만든 워크스페이스는
       조수에게 씬이 하나도 없는 것으로 보였다** (2026-08-24 발견).
       ★옛 자리를 읽는 폴백은 두지 않는다 — 그 모양의 워크스페이스가 남아 있지 않다
@@ -115,12 +115,12 @@ def _scenes(st: dict) -> list[dict]:
 
 
 def _scene_group_prompt(spec: dict, st: dict) -> dict:
-    """그 세트에 걸리는 **프롬프트**.
+    """그 씬 그룹에 걸리는 **프롬프트**.
 
-    ★★세트(kind=="sceneGroup")의 프롬프트는 **탭에 산다** (`spec.tabs[].prompt` — `workspace.ts` 의
-      `promptOf`). 한 탭 아래 세트들은 같은 인물의 다른 포즈 묶음이라 프롬프트를 함께 쓴다.
-      여기는 세트에서만 찾고 있어서 **프롬프트가 통째로 안 보였다** (2026-08-24 발견).
-    ★세트에 든 것을 읽는 폴백은 두지 않는다 — 그 모양(옛 워크스페이스·싱글 탭)이 남아 있지
+    ★★씬 그룹(kind=="sceneGroup")의 프롬프트는 **탭에 산다** (`spec.tabs[].prompt` — `workspace.ts` 의
+      `promptOf`). 한 탭 아래 씬 그룹들은 같은 인물의 다른 포즈 묶음이라 프롬프트를 함께 쓴다.
+      여기는 씬 그룹에서만 찾고 있어서 **프롬프트가 통째로 안 보였다** (2026-08-24 발견).
+    ★씬 그룹에 든 것을 읽는 폴백은 두지 않는다 — 그 모양(옛 워크스페이스·싱글 탭)이 남아 있지
       않다 (사용자 확인 2026-08-24)."""
     cid = st.get("tabId") or spec.get("activeTab")
     for c in spec.get("tabs") or []:
@@ -135,7 +135,7 @@ def _tab_model(spec: dict) -> str:
     ★조수가 이것을 알아야 하는 까닭: 자연어를 써도 되는지·투명 배경이 되는지·퀄리티 프리셋이
       무엇인지가 전부 모델에 매인다 (`docs/terms-plan.md` §4 의 빈칸 셋째).
     ★생성 옵션은 **탭마다 따로** 담긴다 (`src/store/gen.ts` 의 `stashGen` — 워크스페이스는
-      각각이 개별 작업 공간이다). 그래서 세트가 아니라 **활성 탭**에서 꺼낸다.
+      각각이 개별 작업 공간이다). 그래서 씬 그룹이 아니라 **활성 탭**에서 꺼낸다.
     ★능력표(무엇이 되고 안 되나)는 여기 두지 않는다 — 정본은 `src/lib/naiModels.ts` 하나다.
       여기서 옮겨 적으면 표가 둘이 되어 반드시 갈린다. 지침에는 **모델 이름**만 실린다."""
     for c in spec.get("tabs") or []:
@@ -313,13 +313,13 @@ class App:
 
 #: 도구 줄에 보일 카드 종류 이름
 #: 카드 종류 → **화면에 쓰는 이름**. ★★낱말표에서 뽑는다 (`shared/terms.json`) —
-#:  손으로 적어 두었더니 화면은 「스타일·씬 세트」인데 조수만 「그림체·포즈세트」라고 말했다
+#:  손으로 적어 두었더니 화면은 「스타일·씬 그룹」인데 조수만 「그림체·씬 카드」라고 말했다
 #:  (사용자 지적 2026-08-25). 같은 정보에 창구가 둘이면 반드시 갈린다.
 _KIND_TERM = {"styles": "styleCard", "characters": "characterCard", "posesets": "sceneSetCard"}
 
 
 def _kind_ko(kind: str) -> str:
-    """그 카드 종류를 화면이 부르는 이름 (「스타일」·「캐릭터」·「씬 세트」)."""
+    """그 카드 종류를 화면이 부르는 이름 (「스타일」·「캐릭터」·「씬 그룹」)."""
     key = _KIND_TERM.get(kind)
     for t in _terms():
         if t.get("key") == key:
@@ -378,7 +378,7 @@ class Tools:
             # ★생성은 **못 되돌린다** — 이미 Anlas 를 썼다. 그래도 자리는 남긴다
             n = out.get("queued", 0)
             where = out.get("sceneGroup") or ""
-            did = f"「{where}」 세트에 {n}장을 넣음" if where else f"큐에 {n}장을 넣음"
+            did = f"「{where}」 씬 그룹에 {n}장을 넣음" if where else f"큐에 {n}장을 넣음"
             out["did"] = did
             out["at"] = self._mark("generate", did, {"kind": "queue"},
                                    undoable=False, why="이미 Anlas 를 쓴 생성입니다")
@@ -432,7 +432,7 @@ class Tools:
         """★**앱 액션은 빌드 때 뽑은 파일에서 온다** (`actions.json`, 2026-08-24).
 
         표(`_table`)에 손으로 적던 앱 도구가 **스키마는 여기, 구현은 앱**으로 나뉘어 있어
-        조용히 어긋났다 (`generate` 의 `set`). 이제 한쪽(`src/lib/appActions.ts`)에서 뽑는다.
+        조용히 어긋났다 (`generate` 의 `sceneGroup`). 이제 한쪽(`src/lib/appActions.ts`)에서 뽑는다.
         ★같은 이름이 표에도 있으면 **표가 진다** — 옮기는 중에 두 벌이 되지 않게."""
         out = [
             {"name": n, "description": d, "inputSchema": s}
@@ -554,7 +554,7 @@ class Tools:
             ),
             (
                 "list_cards",
-                "저장된 카드 — 그림체(styles) · 캐릭터(characters) · 포즈세트(posesets).",
+                "저장된 카드 — 그림체(styles) · 캐릭터(characters) · 씬 카드(posesets).",
                 obj({"kind": s('"styles" | "characters" | "posesets" — 비우면 전부')}),
                 self._list_cards,
             ),
@@ -567,14 +567,14 @@ class Tools:
             (
                 "create_card",
                 "카드를 **새로 만든다** — 언제나 새로 추가하고 기존 것을 덮지 않는다. "
-                "캐릭터 디자인·그림체·포즈세트를 남길 때 쓴다.",
+                "캐릭터 디자인·그림체·씬 카드를 남길 때 쓴다.",
                 obj(
                     {
                         "kind": s('"styles" | "characters" | "posesets"'),
                         "name": s("카드 이름"),
                         "blocks": arr("그림체·캐릭터의 프롬프트 블록", blk),
                         "uc": arr("Undesired Content 블록", blk),
-                        "cells": arr("포즈세트의 칸들", obj({"name": s("포즈 이름"), "blocks": arr("블록", blk)}, ["name"])),
+                        "cells": arr("씬 카드의 칸들", obj({"name": s("포즈 이름"), "blocks": arr("블록", blk)}, ["name"])),
                     },
                     ["kind", "name"],
                 ),
@@ -615,7 +615,7 @@ class Tools:
             ),
             (
                 "list_files",
-                "그 워크스페이스 안의 폴더·파일. ★뿌리는 **워크스페이스 폴더**다 — 그림은 `output/멀티/<탭>/<세트>/` 아래에 있다 (옛것은 `output/싱글/…`·`싱글/…`·`work/…`).",
+                "그 워크스페이스 안의 폴더·파일. ★뿌리는 **워크스페이스 폴더**다 — 그림은 `output/멀티/<탭>/<씬 그룹>/` 아래에 있다 (옛것은 `output/싱글/…`·`싱글/…`·`work/…`).",
                 obj({"folder": s("상대경로 — 뿌리는 빈 문자열"), "page": n("쪽 (기본 1)"),
                      "workspace": s("어느 워크스페이스인지 — 비우면 앱이 열어 둔 것")}),
                 self._list_files,
@@ -643,16 +643,16 @@ class Tools:
             ),
             (
                 "create_scene_group",
-                "★**세트를 새로 만든다** (지금 탭 아래). `scenes` 를 주면 그 이름의 씬들과 함께 "
-                "열고, 비우면 씬 없는 빈 세트다. 앱이 켜져 있어야 한다.",
-                obj({"name": s("세트 이름 (비우면 기본 이름)"),
+                "★**씬 그룹을 새로 만든다** (지금 탭 아래). `scenes` 를 주면 그 이름의 씬들과 함께 "
+                "열고, 비우면 씬 없는 빈 씬 그룹이다. 앱이 켜져 있어야 한다.",
+                obj({"name": s("씬 그룹 이름 (비우면 기본 이름)"),
                      "scenes": arr("씬 이름들 — 비우면 씬 없이", {"type": "string"}),
                      "tab": s("어느 탭 아래에 — 비우면 지금 보고 있는 탭")}),
                 None,
             ),
             (
                 "create_scene",
-                "★**씬 칸을 하나 더한다.** `set` 을 비우면 지금 보고 있는 세트에. "
+                "★**씬 칸을 하나 더한다.** `sceneGroup` 을 비우면 지금 보고 있는 씬 그룹에. "
                 "앱이 켜져 있어야 한다.",
                 obj({"name": s("씬 이름 (비우면 기본 이름)"),
                      "sceneGroup": s("어느 씬 그룹에 — 비우면 지금 보고 있는 씬 그룹")}),
@@ -660,8 +660,8 @@ class Tools:
             ),
             (
                 "generate",
-                "★**생성을 큐에 넣는다.** 그 세트의 잠기지 않은 씬 전부를 count 바퀴 돈다 "
-                "(씬이 하나면 count 장이다). 비우면 지금 보고 있는 세트, workspace·set 을 주면 "
+                "★**생성을 큐에 넣는다.** 그 씬 그룹의 잠기지 않은 씬 전부를 count 바퀴 돈다 "
+                "(씬이 하나면 count 장이다). 비우면 지금 보고 있는 씬 그룹, workspace·sceneGroup 을 주면 "
                 "**거기로** 넣는다 (화면은 안 옮긴다). 앱이 켜져 있어야 한다. Anlas 가 든다 — "
                 "사용자가 장수를 말했을 때만 쓴다.",
                 obj({"count": n("몇 바퀴. 기본 1"),
@@ -721,14 +721,14 @@ class Tools:
                 "\"지금 그림체를 더 플랫하게\"·\"키키 의상 바꿔 줘\" 같은 요청은 이것으로 한다. "
                 "mode=\"add\" 는 블록을 새로 붙이고, \"replace\" 는 같은 이름의 블록을 갈아 끼운다 "
                 "(없으면 새로 붙는다). "
-                "★★**고칠 자리는 주소로 준다**: `workspace` → `tab` → `set`. 셋 다 "
-                "`get_workspace` 가 이미 준 값이다 (세트마다 `id`·`tab`, 그 위에 `tabs`·`activeTab`). "
+                "★★**고칠 자리는 주소로 준다**: `workspace` → `tab` → `sceneGroup`. 셋 다 "
+                "`get_workspace` 가 이미 준 값이다 (씬 그룹마다 `id`·`tab`, 그 위에 `tabs`·`activeTab`). "
                 "비우면 지금 보고 있는 자리다. "
-                "★★**세트는 id 로 줘라.** 「새 세트」 같은 이름은 탭마다 있어서, 이름만 주면 "
+                "★★**씬 그룹은 id 로 줘라.** 「새 씬 그룹」 같은 이름은 탭마다 있어서, 이름만 주면 "
                 "엉뚱한 탭을 고치고 성공이라 답하던 자리다. 하나로 안 좁혀지면 **되묻는다**. "
                 "★`workspace` 가 지금 열린 것과 다르면 **고치지 않고 알린다** — 편집기는 열린 "
                 "워크스페이스 하나뿐이라 몰래 고칠 길이 없다. "
-                "★답에는 **어느 탭의 어느 세트**를 고쳤는지가 적혀 있다 — 사용자가 보고 있는 "
+                "★답에는 **어느 탭의 어느 씬 그룹**를 고쳤는지가 적혀 있다 — 사용자가 보고 있는 "
                 "탭과 다르면 성공이라고 말하지 말고 그 사실을 알려라. "
                 "★`area` 에 없는 캐릭터 이름을 주면 **그 자리를 새로 만든다.** "
                 "앱이 켜져 있어야 한다.",
@@ -836,7 +836,7 @@ class Tools:
         for t in spec.get("sceneGroups", []):
             row = {"id": t.get("id"), "kind": t.get("kind"), "name": t.get("name")}
             if t.get("kind") == "sceneGroup":
-                # ★어느 탭에 달렸는지 — 조수가 「키키 탭의 세트」를 고르려면 있어야 한다
+                # ★어느 탭에 달렸는지 — 조수가 「키키 탭의 씬 그룹」를 고르려면 있어야 한다
                 row["tab"] = t.get("tabId")
                 row["scenes"] = _scenes(t)
                 # ★★**카드 층을 함께 준다** (선결 조건 3-6). 씬을 옮기려면 **받을 카드의 id** 가
@@ -871,7 +871,7 @@ class Tools:
             scene_groups.append(row)
         out: dict[str, Any] = {
             "name": name,
-            # ★★이름은 **화면 낱말**이다 (`docs/terms-plan.md` 의 낱말표) — 탭·세트·씬.
+            # ★★이름은 **화면 낱말**이다 (`docs/terms-plan.md` 의 낱말표) — 탭·씬 그룹·씬.
             #   저장 열쇠와 우연히 같아진 것이지 묶인 것이 아니다. 저장 쪽 이름을 또 바꾸면
             #   여기서 **옮겨 담아** 계약을 지킨다.
             "tabs": [{"id": c.get("id"), "name": c.get("name")} for c in (spec.get("tabs") or [])],
@@ -1324,15 +1324,15 @@ SYSTEM = """You are the assistant inside PeroPix 3.0, an image generation app.
 The user makes art with NovelAI (NAI); a prompt is **Danbooru tags** joined by commas.
 
 ★What you touch is **data**, not the screen. Your working material is the user's cards
-  (characters, styles, pose sets) and their output folders. You can **read** what the user
+  (characters, styles, scene cards) and their output folders. You can **read** what the user
   is working on right now with get_workspace.
 
 Principles:
 - When you need to know what the user is doing, call **get_workspace** first.
-- ★★**You are always working at one address: workspace → tab → set.** Know it before you
-  change anything. `get_workspace` gives you all three (each set carries its `id` and `tab`;
+- ★★**You are always working at one address: workspace → tab → sceneGroup.** Know it before you
+  change anything. `get_workspace` gives you all three (each scene group carries its `id` and `tab`;
   `activeTab` / `activeSceneGroup` say where the screen is). Pass them back as
-  `workspace` / `tab` / `set` - **ids, not names**: names like "새 탭" and "새 세트" repeat
+  `workspace` / `tab` / `sceneGroup` - **ids, not names**: names like "새 탭" and "새 씬 그룹" repeat
   across tabs, and a name that matches two places is refused, not guessed.
   ★★**Do not recite the address to the user.** They are looking at it. Mention where you
   worked only when it is *not* where they are looking, or when they ask.
@@ -1411,11 +1411,11 @@ Principles:
   **When it is genuinely ambiguous which place they meant, ask** (`ask_user`) - one short
   question costs less than rewriting their prompt the wrong way.
 - ★★**Check the result of your own edit before you report it.** `edit_current_prompt`
-  answers with **which tab and set** it touched; if that is not the tab the user is looking
+  answers with **which tab and scene group** it touched; if that is not the tab the user is looking
   at, say so instead of reporting success. When the user says the change is not there,
   **call get_workspace again and compare** - do not restate what you believe you did.
 - **"Change X" defaults to (1)** - people usually mean what is on screen right now.
-- **When a name comes up, find where it lives first.** Look at the current set's `characters`
+- **When a name comes up, find where it lives first.** Look at the current scene group's `characters`
   with get_workspace; if it is not there, look in the deck with list_cards. **If it is in
   both, ask which one.**
 - update_card overwrites an existing card - use it only when they clearly asked for that.
@@ -1466,7 +1466,7 @@ Principles:
   create_scene). The workspace file belongs to the screen - the app holds it and writes it
   whole - so these need the app running, and the change shows up there immediately.
   create_tab also **moves to** the new tab, so calls after it land in it.
-- edit_current_prompt works on the set that is open. Pass `set` to work on another one - the
+- edit_current_prompt works on the scene group that is open. Pass `sceneGroup` to work on another one - the
   app opens it, so the user watches the change land. Naming a character who is not there
   **creates that slot**, so "add a maid standing behind them" is one call, not a request for
   the user to set something up first.

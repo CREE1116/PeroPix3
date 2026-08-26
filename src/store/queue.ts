@@ -386,7 +386,7 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
       const live = allCells(tab).filter((c) => !c.locked).length;
       /* ★돌려주는 열쇠는 `set` 이다 — 그림이 쌓이는 자리는 **세트**다.
          (도구 인자의 `tab` 은 **탭 이름**이라 다른 것이다 — `shared/terms.json`) */
-      return { ok: true, set: tab.name, queued: live * count * useUi.getState().perSlot };
+      return { ok: true, sceneGroup: tab.name, queued: live * count * useUi.getState().perSlot };
     }
     // ★물음은 **답이 올 때까지** 안 끝난다 — 도구가 기다리고 있다
     if (action === "ask_user") {
@@ -588,7 +588,7 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
         kind: "prompt" as const,
         workspace: ws.current ?? undefined,
         tab: spec?.activeTab,
-        set: set.id,
+        sceneGroup: set.id,
         area,
         label,
       };
@@ -679,10 +679,10 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
       ws2.addSceneGroup(String(args.name ?? "").trim() || t("sceneGroup.newSet"), scenes);
       const spec = useWs.getState().spec;
       const made = (spec?.sceneGroups ?? []).find((x) => !before.has(x.id));
-      if (!made) return { error: "세트를 만들지 못했습니다." };
+      if (!made) return { error: "씬 그룹을 만들지 못했습니다." };
       return {
-        ok: true, set: made.name, scene_group_id: made.id,
-        did: `세트 「${made.name}」 을 만듦`,
+        ok: true, sceneGroup: made.name, scene_group_id: made.id,
+        did: `씬 그룹 「${made.name}」 을 만듦`,
         at: { kind: "prompt" as const, workspace: useWs.getState().current ?? undefined,
               tab: spec?.activeTab, sceneGroup: made.id },
       };
@@ -706,8 +706,8 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
       const made = now?.kind === "sceneGroup" ? allCells(now).find((c) => !had.has(c.id)) : undefined;
       if (!made) return { error: "씬을 만들지 못했습니다." };
       return {
-        ok: true, scene: made.name, scene_id: made.id, set: set.name, scene_group_id: set.id,
-        did: `「${set.name}」 세트에 씬 「${made.name}」 을 만듦`,
+        ok: true, scene: made.name, scene_id: made.id, sceneGroup: set.name, scene_group_id: set.id,
+        did: `「${set.name}」 씬 그룹에 씬 「${made.name}」 을 만듦`,
         at: { kind: "prompt" as const, workspace: useWs.getState().current ?? undefined,
               tab: useWs.getState().spec?.activeTab, sceneGroup: set.id, scene: made.id, label: made.name },
       };

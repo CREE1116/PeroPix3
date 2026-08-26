@@ -377,7 +377,7 @@ class GenBody(BaseModel):
     # ★세트 이름 — 저장 경로 한 칸이 된다 (`docs/terms-plan.md` 의 낱말표)
     #   ★기본값은 **빈 문자열**이다. 예전에는 `"싱글"` 이라, 이름을 안 실어 보내면 그 이름의
     #     폴더가 생겼다 — 싱글 갈래는 없어졌다 (`workspace.out_dir` 의 ★★주).
-    set: str = ""
+    scene_group: str = ""
     cell: str | None = None
     # ★슬롯 번호(1부터). 파일 이름 앞에 붙어 **탐색기에서 슬롯 순서**를 만든다
     cell_no: int | None = None
@@ -1031,7 +1031,7 @@ class CopyBody(BaseModel):
       빠져서, 그 세트 안에서 어느 씬 것인지 파일만 보고는 알 수 없다."""
 
     file: str
-    set: str
+    scene_group: str
     scene_group_id: str | None = None
     cell: str | None = None
     cell_id: str | None = None
@@ -1633,7 +1633,7 @@ class SavePreviewBody(BaseModel):
     #: 이미 **최종 포맷으로 인코딩된** 바이트다 (`_generate_one` 이 변환까지 마치고 넘겼다)
     b64: str
     fmt: str = "png"
-    set: str = ""
+    scene_group: str = ""
     scene_group_id: str | None = None
     cell: str | None = None
     cell_id: str | None = None
