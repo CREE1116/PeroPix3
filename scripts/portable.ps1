@@ -21,6 +21,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# ★로그로 넘길 때 한글이 깨지지 않게 (윈도우 콘솔 기본 코드페이지가 949 다)
+try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch {}
 $root = Split-Path $PSScriptRoot -Parent
 $dist = Join-Path $root "_dist"
 $app = Join-Path $dist "PeroPix"
@@ -100,8 +102,12 @@ foreach ($n in @("LICENSE", "README.md")) {
 
 # ★★**버전을 파일로 남긴다** — 업데이트가 「지금 무엇을 쓰고 있나」를 이걸로 안다
 #   (`backend/server.py` 의 `APP_VERSION`). 소스의 상수는 개발용 기본값일 뿐이다.
-@{ version = $version; built = (Get-Date -Format "yyyy-MM-dd") } | ConvertTo-Json |
-  Set-Content (Join-Path $app "version.json") -Encoding UTF8
+# ★BOM 없이 쓴다 — 파워셸의 `Set-Content -Encoding UTF8` 은 BOM 을 붙이고, 그러면
+#   파이썬의 `json.loads` 가 첫 글자에서 걸린다 (실측 2026-08-26: 버전이 조용히 개발값으로
+#   떨어졌다). 백엔드도 `utf-8-sig` 로 읽어 견디지만, 애초에 안 붙이는 편이 낫다.
+[IO.File]::WriteAllText(
+  (Join-Path $app "version.json"),
+  (@{ version = $version; built = (Get-Date -Format "yyyy-MM-dd") } | ConvertTo-Json))
 
 # ── 묶기 ───────────────────────────────────────────────────────────
 $zip = Join-Path $dist "PeroPix-$version-win64.zip"

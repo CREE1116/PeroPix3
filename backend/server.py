@@ -19,6 +19,15 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+# ★★**제 옆의 모듈을 스스로 찾게 한다** (포터블 실측 2026-08-26).
+#   임베드 파이썬(`python/python.exe`)은 `._pth` 가 sys.path 를 통째로 정하고, 그때는
+#   **스크립트가 있는 폴더가 안 들어간다** — 평범한 파이썬과 다른 점이라 `import censor`
+#   에서 곧장 죽었다 (포터블 첫 실행에서 잡았다). 한 줄로 어느 파이썬으로 켜든 같게 만든다.
+import sys
+
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 from fastapi import File, UploadFile, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -45,6 +54,7 @@ import agentlog
 import migrate_terms
 import migrate_thumbs
 import nai
+import update as update_mod
 import vibe as vibe_mod
 from cards import KINDS, Cards
 from blocklib import BlockLib
@@ -63,7 +73,9 @@ APP_DIR = Path(__file__).resolve().parent.parent
 #   ★손으로 고치지 말 것: 묶을 때마다 덮어써진다.
 def _app_version() -> str:
     try:
-        return str(json.loads((APP_DIR / "version.json").read_text("utf-8"))["version"])
+        # ★`utf-8-sig` — 윈도우 파워셸이 쓰면 BOM 이 붙는다. 그대로 `utf-8` 로 읽으면
+        #   json 이 첫 글자에서 걸려 **조용히 개발용 기본값으로 떨어졌다** (실측 2026-08-26).
+        return str(json.loads((APP_DIR / "version.json").read_text("utf-8-sig"))["version"])
     except Exception:
         return "3.0.0-dev"
 
@@ -465,6 +477,26 @@ async def health():
             #   되고, 그게 조용히 일어난다 (실측 2026-08-08 의 포트 다툼).
             "root": str(APP_DIR), "port": CURRENT_PORT,
             "hasLlm": bool(llm_settings().get("key"))}
+
+
+# ── 자동 업데이트 ──────────────────────────────────────────────────
+# ★★**받아 두는 것까지가 여기 일이다** (`backend/update.py` 머리 주석). 돌고 있는 exe 는
+#   덮어쓸 수 없어서, 실제 교체와 재시작은 껍데기(Rust)가 백엔드를 내리고 나서 한다.
+@app.get("/api/update/check")
+async def update_check():
+    """새 판이 있나. ★조용히 실패한다 — 부팅 때 한 번 도는 것이라 시끄러우면 안 된다."""
+    return await update_mod.check(APP_VERSION)
+
+
+@app.post("/api/update/stage")
+async def update_stage():
+    """새 판을 받아 `.update/new/` 에 쌓아 둔다. ★앱 파일은 아직 안 건드린다."""
+    async def prog(done: int, total: int) -> None:
+        await Q.broadcast({"type": "update_progress", "done": done, "total": total})
+
+    got = await update_mod.stage(APP_DIR, APP_VERSION, prog)
+    await Q.broadcast({"type": "update_staged", **got})
+    return got
 
 
 @app.post("/api/token")

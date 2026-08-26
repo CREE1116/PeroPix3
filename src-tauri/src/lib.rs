@@ -1,4 +1,5 @@
 mod backend;
+mod update;
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -16,6 +17,30 @@ fn backend_url() -> String {
 #[tauri::command]
 fn app_root() -> String {
     backend::root().to_string_lossy().to_string()
+}
+
+/// 쌓아 둔 새 판이 있나 — 화면이 「지금 다시 켜기」를 낼지 정하는 근거.
+#[tauri::command]
+fn update_staged() -> bool {
+    update::staged(&backend::root())
+}
+
+/// **갈아 끼우고 다시 켠다** (사용자 지시 2026-08-26).
+///
+/// ★★차례가 곧 안전이다: **사이드카를 먼저 내린다** → 파일을 옮긴다 → 새 exe 를 띄운다 →
+///   우리는 나간다. 파이썬이 살아 있으면 `python/` 안의 파일이 잡혀 있어 못 옮긴다.
+/// ★옮기다 실패하면 **그 자리에서 멈추고 그대로 둔다** — 옛것은 `.update/old/` 에 온전히
+///   있고, 다음에 켤 때 같은 자리를 다시 시도한다 (`update.rs` 머리 주석).
+#[tauri::command]
+fn apply_update(app: tauri::AppHandle) -> Result<(), String> {
+    let root = backend::root();
+    if let Some(state) = app.try_state::<backend::Backend>() {
+        state.kill();
+    }
+    update::apply(&root).map_err(|e| format!("갈아 끼우지 못했습니다: {e}"))?;
+    update::relaunch(&root).map_err(|e| format!("다시 켜지 못했습니다: {e}"))?;
+    app.exit(0);
+    Ok(())
 }
 
 /// 웹뷰(WebView2)의 저장소를 **앱 폴더 안**으로 끌어온다 (사용자 지적 2026-08-26).
@@ -90,10 +115,12 @@ pub fn run() {
     let _lock = lock;
     // ★웹뷰가 만들어지기 전에 저장소 자리를 정한다 (아래 ★주)
     use_local_webview_profile();
+    // ★지난 업데이트가 남긴 옛 파일을 치운다 — 그때는 우리가 그 exe 위에서 돌고 있었다
+    update::sweep(&backend::root());
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![backend_url, app_root])
+        .invoke_handler(tauri::generate_handler![backend_url, app_root, update_staged, apply_update])
         .setup(|app| {
             match backend::spawn() {
                 Ok(child) => {
