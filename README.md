@@ -53,5 +53,5 @@ git tag v3.0.1 && git push origin v3.0.1
 
 혼자 쓰거나 혼자 고쳐 쓰는 데에는 **아무 의무도 없다.**
 
-함께 담기는 것들은 각자의 조건을 따른다 — 임베드 파이썬(PSF) · onnxruntime(MIT) ·
-FastAPI·uvicorn·Pillow 등(MIT·BSD·Apache-2.0). 전부 허용형이라 AGPL 과 충돌하지 않는다.
+함께 담기는 남의 것과 그 조건은 **`THIRD-PARTY.md`** 에 정리해 두었다 — 검열 모델(왜 AGPL
+인지가 여기서 나온다) · 태그 사전 · 임베드 파이썬 · 패키지들. 전부 AGPL 과 충돌하지 않는다.

@@ -102,7 +102,7 @@ Get-ChildItem (Join-Path $root "models/censor") -Filter "*.onnx" |
   ForEach-Object { Copy-Item $_.FullName -Destination $censor; Write-Host "[포터블] 검열 모델: $($_.Name) ($([math]::Round($_.Length/1MB))MB)" }
 
 # ★어휘·읽을거리는 있으면 담는다 (없어도 앱은 뜬다)
-foreach ($n in @("LICENSE", "README.md")) {
+foreach ($n in @("LICENSE", "THIRD-PARTY.md", "README.md")) {
   $p = Join-Path $root $n
   if (Test-Path $p) { Copy-Item $p -Destination $app }
 }
