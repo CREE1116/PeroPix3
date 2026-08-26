@@ -147,6 +147,17 @@ pub fn run() {
         .setup(move |app| {
             // ★`apply_update` 가 새 판을 띄우기 전에 자물쇠를 놓을 수 있게 맡겨 둔다
             app.manage(InstanceLock(lock));
+            /* ★★**웹뷰 바탕을 어둡게 깔아 둔다** (사용자 지적 2026-08-27: *"처음에 흰 화면이
+                 한참 뜨다가"*). `index.html` 이 첫 페인트부터 스플래시를 그리지만, 그보다
+                 **앞선 순간** — 창은 떴고 웹뷰가 아직 문서를 안 받은 때 — 에는 웹뷰의 기본
+                 바탕인 **흰색**이 그대로 보인다. 그 한 겹을 여기서 덮는다.
+               ★색은 `styles/tokens.css` 의 어두운 `--bg`(#16161a)다. 밝은 테마를 쓰는 사람에게는
+                 잠깐 어두웠다 밝아지는데, **흰 번쩍임보다 눈에 덜 거슬린다** (어두운 쪽이
+                 기본이고 대부분 그걸 쓴다).
+               ★설정 파일로는 못 준다 — `tauri.conf.json` 의 창 스키마에 그 열쇠가 없다. */
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.set_background_color(Some(tauri::window::Color(0x16, 0x16, 0x1a, 0xff)));
+            }
             match backend::spawn() {
                 Ok(child) => {
                     app.manage(backend::Backend(Mutex::new(Some(child))));

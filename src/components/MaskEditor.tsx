@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { Icon } from "./Icon";
-import { alignTo64 } from "../store/gen";
 import { useImageInput } from "../store/imageInput";
 import {
   MIN_RECT,
@@ -28,8 +27,9 @@ import {
  *    `docs/v2-port-plan.md` 의 재구현 금지 표에 올라 있는 항목이다.
  *  ★마스크는 순흑백이다: 검정(0) 유지 · 흰색(255) 고쳐 그림. 회색이 섞이면 안 되므로
  *    칸을 통째로 칠하고, 이은 자리는 브레젠험 선으로 채운다.
- *  ★그림이 64 배수가 아니면 먼저 맞춘다 — 마스크가 **맞춰진 그림 위에** 그려져야
- *    경계에 이음매가 안 생긴다 (v2 주석 그대로).
+ *  ★★**여기서 크기를 손대지 않는다** (2026-08-27). 예전에는 64 배수로 맞췄는데 축마다
+ *    따로 반올림하는 방식이라 **비율이 눌렸다.** 정렬은 보낼 때(`lib/baseSize`)와 서버
+ *    (`imgutil.quantize_mask_8px`)가 하고, 여기는 **그림 크기 그대로** 쓴다.
  */
 const GRID = 8;
 
@@ -67,7 +67,8 @@ export function MaskEditor() {
   /** ★되돌리기 더미. **칠한 칸이 곧 마스크**라(칸은 8px 순흑백) 판을 통째로 떠 두지 않고
    *  칸마다 1바이트로 얼려 둔다 — 2048² 짜리도 한 걸음이 64KB 다 (256×256 칸). */
   const [undos, setUndos] = useState<Uint8Array[]>([]);
-  /** 원본 픽셀 크기 — 판은 64 배수로 맞춰져 있어 좌표를 되돌릴 때 쓴다 */
+  /** 원본 픽셀 크기. ★지금은 판과 같다 (위 ★★주) — 배율(`kx`·`ky`)이 1 이 된다.
+   *  값을 남겨 두는 것은 판 크기를 다시 손대게 될 때 좌표 환산이 이미 서 있게 하려는 것이다. */
   const natural = useRef({ w: 0, h: 0 });
   const drag = useRef<{ kind: "move" | "size"; corner?: string; sx: number; sy: number; r0: Rect } | null>(null);
   const drawing = useRef(false);
@@ -91,8 +92,16 @@ export function MaskEditor() {
     const img = new Image();
     img.onload = () => {
       natural.current = { w: img.width, h: img.height };
-      const w = alignTo64(img.width);
-      const h = alignTo64(img.height);
+      /* ★★**그림 크기 그대로 쓴다** (사용자 지적 2026-08-27: *"마스크 편집할 때 갑자기
+           이미지가 늘어남"*). 예전에는 `alignTo64` 를 **축마다 따로** 걸었는데, 그러면 가로와
+           세로가 서로 다른 만큼 반올림돼 **비율이 눌린다** (최대 63px씩). 64 배수가 아닌
+           그림 — 업스케일 결과 같은 것 — 에서 눈에 띄게 늘어나 보였다.
+         ★정렬은 여기서 할 일이 아니다. 보낼 때 쓰는 크기는 **비율을 먼저 지키는** 규칙이
+           따로 있고(`lib/baseSize` 의 `sizeForBase`), 마스크는 서버가 요청 해상도로 다시
+           맞춘다 (`backend/imgutil.quantize_mask_8px` — 8px 격자까지 거기서 잡는다).
+           여기서 또 정렬하면 **셋째 규칙**이 되어 셋이 서로 어긋난다. */
+      const w = img.width;
+      const h = img.height;
       setSize({ w, h });
       const ic = imgRef.current!;
       const mc = maskRef.current!;
