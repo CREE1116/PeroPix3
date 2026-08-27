@@ -48,10 +48,19 @@ jobs:
           DRAFT: ${{ steps.rel.outputs.draft }}
         run: |
           set -euo pipefail
+          # ★★**「없음」과 「비어 있음」을 갈라 준다** (실측 2026-08-27: 시크릿은 등록되어
+          #   있는데 값이 빈 채로 도착해, 「없습니다」만 보고 한참 헤맸다). 길이는 찍어도
+          #   안전하다 — 값이 아니라 숫자이고, 깃허브가 값 자체는 로그에서 가린다.
           if [ -z "${HOOK:-}" ]; then
-            echo "::error::DISCORD_WEBHOOK 시크릿이 없습니다 (저장소 설정에 넣어 주세요)"
+            echo "::error::DISCORD_WEBHOOK 이 비어 있습니다 (길이 ${#HOOK}). 이름은 등록돼 있어도"
+            echo "::error::값이 빈 채로 저장됐을 수 있습니다 — gh secret set DISCORD_WEBHOOK 으로 다시 넣어 주세요"
             exit 1
           fi
+          # ★모양만 본다 (값은 절대 안 찍는다) — 엉뚱한 것을 넣었으면 여기서 걸린다
+          case "$HOOK" in
+            https://discord.com/api/webhooks/*|https://discordapp.com/api/webhooks/*|https://canary.discord.com/api/webhooks/*) ;;
+            *) echo "::error::DISCORD_WEBHOOK 이 디스코드 웹후크 주소 모양이 아닙니다 (길이 ${#HOOK})"; exit 1 ;;
+          esac
           # ★초안은 받는 사람이 열 수 없다 — 알리기 전에 세운다
           if [ "$DRAFT" = "true" ]; then
             echo "::error::$TAG 는 아직 초안입니다. 공개한 뒤에 돌려 주세요"
