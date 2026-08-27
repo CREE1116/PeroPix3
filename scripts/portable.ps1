@@ -144,6 +144,15 @@ foreach ($n in @("LICENSE", "THIRD-PARTY.md", "README.md", "README.ko.md", "READ
   (Join-Path $inner "version.json"),
   (@{ version = $version; built = (Get-Date -Format "yyyy-MM-dd") } | ConvertTo-Json))
 
+# ★★**사람이 여는 폴더는 빈 채로라도 미리 만들어 둔다** (사용자 지시 2026-08-27:
+#   *"처음엔 app 폴더만 있으니까 사용자가 구조를 이해하기 어려울 것 같음"*).
+#   앱이 쓸 때 저절로 생기기는 하지만, **푼 직후에 보이는 것**이 곧 설명이다 —
+#   무엇이 자기 것이고 어디를 열면 되는지 그림 한 장 없이 알 수 있어야 한다.
+# ★`Compress-Archive` 는 빈 폴더를 그대로 담는다 (실측 2026-08-27).
+foreach ($n in @("data", "gallery", "logs", "workspaces")) {
+  New-Item -ItemType Directory -Force -Path (Join-Path $app $n) | Out-Null
+}
+
 # ── 묶기 ───────────────────────────────────────────────────────────
 $zip = Join-Path $dist "PeroPix-$version-win64.zip"
 if (Test-Path $zip) { Remove-Item $zip }
@@ -153,4 +162,7 @@ $appMb = [math]::Round(((Get-ChildItem $app -Recurse -File | Measure-Object Leng
 Write-Host ""
 Write-Host "[포터블] 완료 — 푼 크기 ${appMb}MB / zip ${mb}MB"
 Write-Host "  $app"
+# ★배치를 한 줄로 남긴다 — CI 로그만 봐도 모양이 맞는지 보인다
+Write-Host ("[포터블] 바깥: " + ((Get-ChildItem $app -Force | Select-Object -ExpandProperty Name) -join " "))
+Write-Host ("[포터블] app/: " + ((Get-ChildItem $inner -Force | Select-Object -ExpandProperty Name) -join " "))
 Write-Host "  $zip"
