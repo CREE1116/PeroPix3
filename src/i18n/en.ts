@@ -480,6 +480,8 @@ export const en = {
     tagSuggest: "Tag autocomplete",
     tagSuggestHint: "Suggests Danbooru tags as you type. With it off, Enter and Esc go back to the block editor.",
     about: "About",
+    log: "Open log",
+    logHint: "If something breaks, send us this file (logs/peropix.log)",
     support: "Bug report / suggestion",
     notifySound: "Also play a sound",
     notifyVolume: "Volume",

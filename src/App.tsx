@@ -2,6 +2,7 @@ import { useI18n, t as tGlobal } from "./i18n";
 import { useEffect, useState } from "react";
 import { api } from "./lib/backend";
 import { mark, flushBootTime } from "./lib/bootTime";
+import { watchErrors } from "./lib/report";
 import { Shell } from "./app/Shell";
 import { TitleBar } from "./app/TitleBar";
 import { WindowFrame } from "./app/WindowFrame";
@@ -137,6 +138,8 @@ export function App() {
     let alive = true;
     (async () => {
       mark("리액트");           // 번들이 다 돌고 첫 효과가 여기 왔다
+      // ★★**가장 먼저 매단다** — 이 아래에서 터지는 것부터 로그에 남아야 한다
+      watchErrors();
       await initGen();
       mark("껍데기주소");
       // 사이드카가 뜨는 데 잠깐 걸리므로 재시도한다.
@@ -594,7 +597,7 @@ function Booting({ ready, dead }: { ready: boolean; dead: boolean }) {
         {dead && (
           <>
             <br />
-            <span style={{ color: "var(--ink-faint)", fontFamily: "var(--font-mono)" }}>logs/backend.err.log</span>
+            <span style={{ color: "var(--ink-faint)", fontFamily: "var(--font-mono)" }}>logs/peropix.log</span>
           </>
         )}
       </div>

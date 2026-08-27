@@ -5,7 +5,8 @@
 //! 프로세스 수명 관리를 셸이 확실히 하도록 정리했다.
 
 use std::fs::File;
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 
@@ -226,19 +227,83 @@ pub fn lock_app_dir() -> Option<File> {
     File::create(root().join(".instance.lock")).ok()
 }
 
+
+/// 실행 하나의 경계 표시. ★자를 때 **이 줄을 기준으로** 잘라내므로 문구를 바꾸지 않는다.
+const MARK: &str = "=== PeroPix 실행 시작 ===";
+/// 이 크기를 넘으면 오래된 실행부터 걷어낸다
+const LOG_MAX: u64 = 5 * 1024 * 1024;
+/// 걷어낸 뒤 남길 대략의 크기
+const LOG_KEEP: u64 = 2 * 1024 * 1024;
+
+/// 로그 이름 — ★★**파일은 하나뿐이다** (사용자 지시 2026-08-27: *"로그 파일은 하나만
+/// 생기게"*). 파이썬의 두 물줄기(stdout·stderr)도 여기로 함께 흘린다.
+pub const LOG_NAME: &str = "peropix.log";
+
+/// 로그를 **이어 쓰기**로 연다. 켤 때마다 새로 만들면 직전 실행의 자취가 지워져,
+/// 정작 알고 싶은 「죽기 직전」이 늘 사라진다 (부팅 시간표에서 그 일을 겪었다).
+///
+/// ★★**자를 때는 줄이 아니라 「실행」 단위로 자른다** (사용자 지적 2026-08-27:
+///   *"최근 n줄로 하면 로그가 짤리려나"*). 줄 수로 자르면 사라지는 것이 언제나 **앞쪽**인데,
+///   오류가 쏟아진 실행에서는 그 실행의 시작(무엇을 하다 그랬는지)이 먼저 밀려난다.
+///   `MARK` 를 경계로 오래된 실행을 통째로 걷어내면 한 실행이 반토막 나지 않는다.
+/// 어디서부터 남길지 — **실행 경계(`MARK`)에서만** 자른다.
+///
+/// 뒤에서부터 경계를 훑어, 남는 양이 `keep` 을 넘는 첫 경계를 고른다. 그래서 잘려 나가는
+/// 것은 언제나 **완결된 옛 실행**이고, 남는 실행은 처음부터 끝까지 온전하다.
+/// ★경계가 하나도 없으면(옛 파일) 0 — 아무것도 안 자른다. 다음 실행부터 경계가 생긴다.
+fn trim_at(text: &str, keep: u64) -> usize {
+    let mut cut = 0usize;
+    for (i, _) in text.match_indices(MARK).collect::<Vec<_>>().into_iter().rev() {
+        cut = i;
+        if (text.len() - i) as u64 >= keep {
+            break;
+        }
+    }
+    cut
+}
+
+fn open_log(root: &Path) -> Option<File> {
+    let dir = root.join("logs");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join(LOG_NAME);
+
+    // ★옛 이름들은 치운다 — 「하나만」이 지켜지게 (없으면 조용히 넘어간다)
+    for old in ["backend.log", "backend.err.log", "boot.log"] {
+        let _ = std::fs::remove_file(dir.join(old));
+    }
+
+    if std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0) > LOG_MAX {
+        if let Ok(text) = std::fs::read_to_string(&path) {
+            let cut = trim_at(&text, LOG_KEEP);
+            let _ = std::fs::write(&path, &text[cut..]);
+        }
+    }
+
+    std::fs::OpenOptions::new().create(true).append(true).open(&path).ok()
+}
+
 pub fn spawn() -> std::io::Result<Child> {
     let root = root();
     let python = find_python(&root);
     let script = root.join("backend").join("server.py");
-    let log_dir = root.join("logs");
-    let _ = std::fs::create_dir_all(&log_dir);
+    let log = open_log(&root);
 
-    let out = File::create(log_dir.join("backend.log")).ok();
-    let err = File::create(log_dir.join("backend.err.log")).ok();
+    let mut head = String::new();
+    head.push_str(&format!("{MARK}
+"));
+    head.push_str(&format!("[backend] root   = {}
+", root.display()));
+    head.push_str(&format!("[backend] python = {}
+", python.display()));
+    head.push_str(&format!("[backend] script = {}
+", script.display()));
+    if let Some(mut f) = log.as_ref().and_then(|f| f.try_clone().ok()) {
+        let _ = f.write_all(head.as_bytes());
+    }
+    print!("{head}");
 
-    println!("[backend] root   = {}", root.display());
-    println!("[backend] python = {}", python.display());
-    println!("[backend] script = {}", script.display());
+    let out = log.as_ref().and_then(|f| f.try_clone().ok());
+    let err = log.as_ref().and_then(|f| f.try_clone().ok());
 
     let mut cmd = Command::new(&python);
     cmd.arg(&script)
@@ -261,4 +326,52 @@ pub fn spawn() -> std::io::Result<Child> {
     let child = cmd.spawn()?;
     adopt_into_job(&child); // ★부모가 어떻게 죽든 함께 내려가게
     Ok(child)
+}
+
+#[cfg(test)]
+mod log_tests {
+    use super::{trim_at, MARK};
+
+    /// 실행 세 회분을 만든다 — 각 회는 경계 한 줄 + 본문 몇 줄
+    fn runs(n: usize, body: usize) -> String {
+        (1..=n)
+            .map(|i| format!("{MARK}
+{}
+", format!("실행{i} 줄
+").repeat(body)))
+            .collect()
+    }
+
+    #[test]
+    fn 경계에서만_자른다() {
+        let text = runs(3, 10);
+        let cut = trim_at(&text, 1);
+        assert!(text[cut..].starts_with(MARK), "자른 자리가 실행의 첫머리라야 한다");
+    }
+
+    #[test]
+    fn 남길_양보다_많이_남긴다() {
+        let text = runs(5, 20);
+        let keep = 200u64;
+        let cut = trim_at(&text, keep);
+        assert!((text.len() - cut) as u64 >= keep, "남긴 양이 상한보다 적으면 안 된다");
+        assert!(cut > 0, "다섯 회분이면 앞쪽은 걷어내야 한다");
+    }
+
+    #[test]
+    fn 마지막_한_회는_통째로_남는다() {
+        let text = runs(3, 5);
+        // 아주 작은 상한이면 마지막 회 하나만 남는다 — 그래도 그 회는 온전하다
+        let cut = trim_at(&text, 1);
+        let kept = &text[cut..];
+        assert_eq!(kept.matches(MARK).count(), 1);
+        assert!(kept.contains("실행3 줄"));
+    }
+
+    #[test]
+    fn 경계가_없으면_안_자른다() {
+        assert_eq!(trim_at("경계 없는 옛 로그
+여러 줄
+", 1), 0);
+    }
 }

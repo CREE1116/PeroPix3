@@ -379,6 +379,21 @@ export function Settings({
                     >
                       {version || t("settings.loading")}
                     </span>
+                    {/* ★★**로그를 여는 단추** (사용자 지시 2026-08-27, 제보용). 자리를
+                        글로 적어 주면 탐색기에서 손으로 찾아 들어가야 해서 제보가 거기서
+                        끊긴다 — 눌러서 파일이 잡힌 채로 열리게 한다. */}
+                    <button
+                      data-open-log
+                      onClick={() =>
+                        void api("/api/log/reveal", { method: "POST" }).catch((e) =>
+                          toast(String(e), "warn"),
+                        )
+                      }
+                      data-tip={t("settings.logHint")}
+                      style={{ ...btn, display: "inline-flex", alignItems: "center", gap: "var(--sp-2)" }}
+                    >
+                      {t("settings.log")}
+                    </button>
                     {support && (
                       <button
                         data-support-link

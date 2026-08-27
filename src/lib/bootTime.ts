@@ -6,11 +6,11 @@
  *    웹뷰가 문서를 받아 번들을 돌리기까지의 구간인데, 그 구간은 화면이 스스로 못 잰다
  *    (`performance.timeOrigin` 은 **문서가 생긴 뒤**부터 흐른다). 그래서 껍데기에게 묻는다
  *    (`uptime_ms`) — 그 값이 곧 「내가 처음 돌기까지 흐른 시간」이다.
- *  ★★**남는 자리는 `logs/backend.log`** 다. 배포판에는 개발자 도구가 없어 `console` 은
- *    아무 데도 안 남는다 (`/api/boot-log`).
+ *  ★★**남는 자리는 `logs/peropix.log`** 다. 배포판에는 개발자 도구가 없어 `console` 은
+ *    아무 데도 안 남는다 — 화면이 남기는 것은 전부 `lib/report` 를 지나 그 파일로 간다.
  *  ★한 번만 보낸다. 실패는 삼킨다 — 재려다 앱이 시끄러워지면 안 된다.
  */
-import { api } from "./backend";
+import { logLine } from "./report";
 
 const marks: [string, number][] = [];
 let sent = false;
@@ -41,11 +41,7 @@ export async function flushBootTime() {
       nav ? `문서 ${Math.round(nav.responseStart)}→${Math.round(nav.domContentLoadedEventEnd)}ms` : "",
       ...marks.map(([s, t]) => `${s} ${t}ms`),
     ].filter(Boolean);
-    await api("/api/boot-log", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ line: parts.join(" · ") }),
-    });
+    logLine("info", "부팅", parts.join(" · "));
   } catch {
     /* 못 남겨도 그만 */
   }

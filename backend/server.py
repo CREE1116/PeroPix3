@@ -82,6 +82,19 @@ def _app_version() -> str:
 
 
 APP_VERSION = _app_version()
+
+
+def say(level: str, where: str, msg: str) -> None:
+    """로그 한 줄. ★★**적는 자리는 stdout 하나뿐이다** — 껍데기가 그것을 `logs/peropix.log`
+    로 흘린다 (`src-tauri/src/backend.rs` 의 `open_log`). 여기서 파일을 열지 않는다.
+
+    ★시각을 앞에 붙인다: 제보를 받았을 때 「언제 그랬나」가 없으면 앞뒤를 못 맞춘다.
+      uvicorn 의 기본 형식에는 시각이 없어서, 우리 줄에는 우리가 붙인다.
+    """
+    print(f"{time.strftime('%H:%M:%S')} {level.upper():5} [{where}] {msg}", flush=True)
+
+
+say("info", "start", f"PeroPix {APP_VERSION} · {time.strftime('%Y-%m-%d %H:%M:%S')}")
 DATA_DIR = APP_DIR / "data"
 WS_ROOT = APP_DIR / "workspaces"
 # ★옛 이름(`outputs/`)에서 한 번 옮긴다 — 안에 든 것은 생성물이 아니라 **워크스페이스**다
@@ -223,6 +236,28 @@ for _root in (DATA_DIR / "cards", DATA_DIR / "chats", DATA_DIR / "vibe-cache"):
         print(f"[휴지통 비움] {_root.name}/{_batch}")
 
 app = FastAPI(title="PeroPix Backend", version=APP_VERSION)
+
+
+@app.middleware("http")
+async def _log_errors(request, call_next):
+    """터진 것을 **전부 적는다** (사용자 지시 2026-08-27: *"오류 같은 게 생기면 상세 로그를
+    남기게 해 놔. 그럼 유저 제보받기 편함"*).
+
+    ★★**무엇을 하다 터졌는지**가 함께 있어야 쓸모가 있다 — 자취만 있으면 어느 창구에서
+      난 것인지 되짚어야 한다. 그래서 길과 자취를 한 자리에 적는다.
+    ★★**열쇠는 지운다.** 주소 앞머리가 `/k/<이번 실행의 열쇠>` 라, 길을 그대로 적으면
+      로그에 열쇠가 남는다. 제보로 오가는 파일이라 더욱 안 된다.
+    ★삼키지 않는다 — 적기만 하고 그대로 올려보낸다. 화면이 받던 오류는 그대로 받는다.
+    ★400·404 같은 것은 여기 안 걸린다 (예외가 아니라 답이다). 그것까지 적으면 시끄럽다."""
+    try:
+        return await call_next(request)
+    except Exception as e:
+        path = request.url.path
+        if KEY_PREFIX and path.startswith(KEY_PREFIX):
+            path = path[len(KEY_PREFIX):]
+        say("error", "api", f"{request.method} {path} → {type(e).__name__}: {e}")
+        print(traceback.format_exc(), flush=True)
+        raise
 
 #: 이번 실행의 열쇠 — 껍데기가 만들어 넣어 준다 (`src-tauri/src/backend.rs` 의 `backend_key`).
 #  ★비어 있으면 문을 안 잠근다: 백엔드를 손으로 띄우는 개발·시험 때가 그렇다.
@@ -515,33 +550,22 @@ IMMUTABLE_IMG = {"Cache-Control": "public, max-age=31536000, immutable"}
 
 
 # ── 기본 ──────────────────────────────────────────────────────────
-class BootLog(BaseModel):
+class LogLine(BaseModel):
     line: str
+    #: `error` · `warn` · `info` — 앞에 붙는 딱지일 뿐, 거르지는 않는다
+    level: str = "info"
 
 
-@app.post("/api/boot-log")
-async def boot_log(b: BootLog):
-    """부팅이 **어디서** 오래 걸렸는지 화면이 적어 보내는 자리 (2026-08-27).
+@app.post("/api/log")
+async def log_line(b: LogLine):
+    """화면에서 일어난 일을 로그에 적는 자리 (2026-08-27).
 
     ★왜 백엔드로 보내나 — 배포판에는 개발자 도구가 없어 `console` 이 아무 데도 안 남는다.
-      여기로 보내면 `logs/backend.log` 에 남아, 나중에 그 파일만 보면 된다.
-    ★재는 것은 **껍데기가 켜진 순간부터**다 (`uptime_ms`). 화면 혼자서는 자기가 언제
-      처음 돌았는지 알 수 없어서, 가장 큰 구간(창·웹뷰·번들)이 통째로 안 보인다.
-    ★★**따로 쌓는다** (2026-08-27). `logs/backend.log` 는 껍데기가 켤 때마다 새로 만들어
-      **직전 실행의 줄이 지워진다** — 정작 알고 싶은 것은 「패치 직후 첫 실행」인데, 그 줄은
-      다음에 켜는 순간 사라져 한 번도 못 봤다. 여기 쌓으면 남는다.
+      쓰는 사람이 오류를 겪어도 우리에게 보낼 것이 없었다.
+    ★★**파일을 직접 안 쓴다.** 찍기만 하면 껍데기가 그것을 `logs/peropix.log` 로 흘린다
+      (`src-tauri/src/backend.rs` 의 `open_log`). 로그 자리를 아는 곳이 둘이면 어긋난다.
     ★실패해도 앱은 그대로 간다 — 화면 쪽에서 삼킨다."""
-    line = b.line[:600]
-    print(f"[boot] {line}", flush=True)
-    try:
-        f = APP_DIR / "logs" / "boot.log"
-        f.parent.mkdir(parents=True, exist_ok=True)
-        # ★최근 것만 둔다 — 켤 때마다 한 줄씩 느는 파일이라 상한을 둔다
-        old_lines = f.read_text(encoding="utf-8").splitlines() if f.exists() else []
-        stamp = time.strftime("%Y-%m-%d %H:%M:%S")
-        f.write_text("\n".join((old_lines + [f"{stamp}  {line}"])[-50:]) + "\n", encoding="utf-8")
-    except Exception:
-        pass
+    say(b.level, "ui", b.line[:2000])
     return {"ok": True}
 
 
@@ -2666,6 +2690,23 @@ async def files_restore(body: RestoreBody):
         raise HTTPException(400, str(e))
 
 
+@app.post("/api/log/reveal")
+async def log_reveal():
+    """로그 파일을 탐색기에서 **고른 채로** 연다 (사용자 지시 2026-08-27, 제보용).
+
+    ★자리를 화면에 적어 주지 않고 여기서 연다 — 경로를 읽어 손으로 찾아 들어가게 하면
+      제보가 거기서 끊긴다.
+    ★스레드에서 돈다 (`files_reveal` 의 ★★주와 같은 까닭)."""
+    try:
+        d = APP_DIR / "logs"
+        d.mkdir(parents=True, exist_ok=True)  # ★손으로 띄운 백엔드에는 아직 없을 수 있다
+        await asyncio.to_thread(files.reveal, d, "peropix.log")
+        return {"ok": True}
+    except Exception as e:
+        say("error", "api", f"로그 열기 실패: {type(e).__name__}: {e}")
+        raise HTTPException(500, str(e))
+
+
 @app.post("/api/files/reveal")
 async def files_reveal(body: FilesName):
     """탐색기에서 연다 — ★파일이면 고른 채로.
@@ -2727,7 +2768,10 @@ def main():
         uvicorn.run("server:app", host="127.0.0.1", port=args.port, log_level="info",
                     reload=True, reload_dirs=[here], app_dir=here)
     else:
-        uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info")
+        # ★★접근 로그는 끈다 — 주소 앞머리에 **이번 실행의 열쇠**가 들어 있어 매 요청마다
+        #   로그에 남고(제보로 오가는 파일이다), 썸네일 요청까지 전부 찍혀 정작 봐야 할
+        #   오류가 묻힌다. 의미 있는 일은 우리가 `say()` 로 적는다.
+        uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info", access_log=False)
 
 
 if __name__ == "__main__":

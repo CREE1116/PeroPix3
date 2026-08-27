@@ -478,6 +478,8 @@ export const ja: Dict = {
     tagSuggest: "タグ自動補完",
     tagSuggestHint: "入力中に Danbooru タグを提案します。切ると Enter・Esc はブロック編集側に戻ります。",
     about: "アプリ情報",
+    log: "ログを開く",
+    logHint: "不具合のときはこのファイルをお送りください (logs/peropix.log)",
     support: "バグ報告 / 要望",
     notifySound: "音でも通知",
     notifyVolume: "音量",

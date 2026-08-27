@@ -496,6 +496,8 @@ export const ko: Dict = {
     tagSuggest: "태그 자동완성",
     tagSuggestHint: "치는 동안 단부루 태그를 제안합니다. 끄면 Enter·Esc 가 블록 편집기 것으로 돌아갑니다.",
     about: "앱 정보",
+    log: "로그 열기",
+    logHint: "오류가 나면 이 파일을 보내 주세요 (logs/peropix.log)",
     support: "버그 신고 / 건의",
     notifySound: "소리로도 알림",
     notifyVolume: "크기",
