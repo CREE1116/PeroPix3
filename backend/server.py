@@ -67,7 +67,23 @@ from workspace import Store, safe_name
 # MCP 설정에 적어 줄 **지금 이 서버의 포트** (--port 로 바뀐다)
 # ★리로드 모드에서는 워커가 `main()` 을 안 거치고 모듈만 다시 읽는다 — 포트를 환경에서 받는다
 CURRENT_PORT = int(os.environ.get("PEROPIX_BACKEND_PORT") or 8770)
-APP_DIR = Path(__file__).resolve().parent.parent
+def _app_dir() -> Path:
+    """앱의 **뿌리** — 사용자 것(`workspaces`·`gallery`·`logs`·`data`)이 사는 자리.
+
+    ★★배포판은 앱 것을 `app/` 안에 모아 둔다 (사용자 지시 2026-08-27: *"유저가 접근하는
+      폴더는 한정적인데 너무 다 나와 있는 느낌"*). 그래서 이 파일은 `app/backend/server.py`
+      에 있고, 뿌리는 **한 단계 더 위**다. 저장소에서 돌릴 때는 `backend/server.py` 라
+      두 단계면 된다 — 폴더 이름으로 가른다.
+    ★껍데기도 같은 규칙을 쓴다 (`src-tauri/src/backend.rs` 의 `inner`). 두 곳이 어긋나면
+      앱과 백엔드가 서로 다른 창고를 본다."""
+    here = Path(__file__).resolve().parent.parent
+    return here.parent if here.name == "app" else here
+
+
+APP_DIR = _app_dir()
+#: **앱 것이 사는 자리** — 배포판은 `app/`, 저장소에서는 뿌리와 같다.
+#  ★`version.json`·`models/` 처럼 **갈아 끼워지는 것**이 여기 있다 (`censor.MODEL_DIR` 도 같다).
+INNER_DIR = Path(__file__).resolve().parent.parent
 # ★★**버전은 파일이 정본이다** (`version.json`, 사용자 결정 2026-08-26). 포터블을 묶을 때
 #   `scripts/portable.ps1` 이 `tauri.conf.json` 의 버전을 그대로 적어 넣는다 — 업데이트가
 #   「지금 무엇을 쓰고 있나」를 이걸로 안다. 소스의 상수는 **개발 중에만** 쓰는 기본값이다.
@@ -76,7 +92,7 @@ def _app_version() -> str:
     try:
         # ★`utf-8-sig` — 윈도우 파워셸이 쓰면 BOM 이 붙는다. 그대로 `utf-8` 로 읽으면
         #   json 이 첫 글자에서 걸려 **조용히 개발용 기본값으로 떨어졌다** (실측 2026-08-26).
-        return str(json.loads((APP_DIR / "version.json").read_text("utf-8-sig"))["version"])
+        return str(json.loads((INNER_DIR / "version.json").read_text("utf-8-sig"))["version"])
     except Exception:
         return "3.0.0-dev"
 

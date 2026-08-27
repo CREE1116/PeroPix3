@@ -181,11 +181,30 @@ fn app_dir() -> PathBuf {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
 }
 
+/// **앱이 도는 데 필요한 것들이 사는 자리** (사용자 지시 2026-08-27: *"유저가 접근하는
+/// 폴더는 한정적인데 너무 다 나와 있는 느낌"*).
+///
+/// ★★배포판은 `app/` 안에 넣는다 — `backend`·`python`·`models`·`webview`·`version.json`.
+///   바깥에는 **사람이 여는 것만** 남는다 (`gallery`·`logs`·`workspaces`·`data`).
+/// ★저장소에서 개발할 때는 `app/` 이 없다. 그때는 뿌리가 곧 그 자리다 — 두 배치를
+///   **한 함수가** 가른다. 자리를 아는 곳이 여럿이면 한쪽만 고쳐진다.
+pub fn inner(root: &Path) -> PathBuf {
+    let nested = root.join("app");
+    if nested.join("backend").join("server.py").exists() {
+        nested
+    } else {
+        root.to_path_buf()
+    }
+}
+
 /// 개발 중에는 실행 파일이 `src-tauri/target/debug` 에 있으므로 저장소 루트를 거슬러 찾는다.
+/// ★배포판(`app/backend/server.py`)과 저장소(`backend/server.py`) 둘 다 알아본다.
 fn find_repo_root() -> Option<PathBuf> {
     let mut dir = app_dir();
     for _ in 0..6 {
-        if dir.join("backend").join("server.py").exists() {
+        if dir.join("backend").join("server.py").exists()
+            || dir.join("app").join("backend").join("server.py").exists()
+        {
             return Some(dir);
         }
         dir = dir.parent()?.to_path_buf();
@@ -193,9 +212,9 @@ fn find_repo_root() -> Option<PathBuf> {
     None
 }
 
-/// 번들된 파이썬 → 저장소 파이썬 → PATH 의 python 순으로 찾는다.
+/// 번들된 파이썬 → PATH 의 python 순으로 찾는다.
 fn find_python(root: &PathBuf) -> PathBuf {
-    let bundled = root.join("python").join("python.exe");
+    let bundled = inner(root).join("python").join("python.exe");
     if bundled.exists() {
         return bundled;
     }
@@ -315,7 +334,7 @@ fn open_log(root: &Path) -> Option<File> {
 pub fn spawn() -> std::io::Result<Child> {
     let root = root();
     let python = find_python(&root);
-    let script = root.join("backend").join("server.py");
+    let script = inner(&root).join("backend").join("server.py");
     let log = open_log(&root);
 
     let mut head = String::new();

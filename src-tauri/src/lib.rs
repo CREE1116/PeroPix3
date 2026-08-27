@@ -88,7 +88,16 @@ struct InstanceLock(std::sync::Mutex<Option<std::fs::File>>);
 /// ★자리를 옮기면 **앱을 지웠을 때 밖에 아무것도 안 남는다** — 포터블의 본뜻에 맞다.
 /// ★WebView2 로더가 읽는 환경변수로 지정한다. **웹뷰가 만들어지기 전에** 놓아야 한다.
 fn use_local_webview_profile() {
-    let dir = backend::root().join("webview");
+    /* ★웹뷰 저장소도 **앱 것**이라 `app/` 안이다 (2026-08-27 배치 정리).
+       ★★옛 자리(`webview/`)에 있던 것은 **옮겨 온다** — 거기에 localStorage 가 들어 있어
+         그냥 새 자리를 쓰면 생성 옵션·검열 설정·언어가 처음으로 되돌아간다. */
+    let root = backend::root();
+    let dir = backend::inner(&root).join("webview");
+    let legacy = root.join("webview");
+    if legacy.is_dir() && !dir.exists() {
+        let _ = std::fs::create_dir_all(dir.parent().unwrap_or(&root));
+        let _ = std::fs::rename(&legacy, &dir);
+    }
     if std::fs::create_dir_all(&dir).is_err() {
         return; // 못 만들면 기본 자리로 둔다 — 저장소 때문에 앱이 안 뜨면 안 된다
     }

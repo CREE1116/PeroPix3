@@ -49,21 +49,40 @@ pub fn apply(root: &Path) -> std::io::Result<()> {
     let new = stage_dir(root).join("new");
     let old = stage_dir(root).join("old");
     std::fs::create_dir_all(&old)?;
+    move_tree(&new, root, &old)?;
+    let _ = std::fs::remove_dir_all(&new);
+    Ok(())
+}
 
-    for e in std::fs::read_dir(&new)? {
+/// 새 파일을 제자리에 **겹쳐 놓는다** — 폴더는 통째로 바꾸지 않고 **안으로 들어간다.**
+///
+/// ★★**폴더를 통째로 옮기면 패치가 앱을 부순다** (2026-08-27 배치 정리). 새 배치에서는
+///   앱 것이 `app/` 안에 모여 있는데(`backend`·`python`·`models`·`webview`), 패치에는
+///   `app/backend` 와 `app/version.json` 만 들어 있다. 맨 위 항목을 통째로 옮기던 예전
+///   방식이면 `app/` 이 **패치에 든 두 개짜리로 바뀌면서 `app/python` 이 사라진다** —
+///   앱이 아예 안 뜬다. 그래서 **파일 단위로** 내려간다.
+/// ★옛것은 여전히 `old/` 로 비켜 놓는다 (지우지 않는다). 돌고 있는 exe 도 이름은 바뀐다.
+/// ★한 개라도 실패하면 거기서 멈춘다 — 되돌리기를 흉내 내지 않는다 (위 ★주).
+fn move_tree(from: &Path, to: &Path, park: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for e in std::fs::read_dir(from)? {
         let e = e?;
         let name = e.file_name();
-        let target = root.join(&name);
+        let target = to.join(&name);
+        if e.file_type()?.is_dir() {
+            move_tree(&e.path(), &target, &park.join(&name))?;
+            continue;
+        }
         if target.exists() {
-            let park = old.join(&name);
-            let _ = std::fs::remove_dir_all(&park);
-            let _ = std::fs::remove_file(&park);
+            std::fs::create_dir_all(park)?;
+            let spot = park.join(&name);
+            let _ = std::fs::remove_dir_all(&spot);
+            let _ = std::fs::remove_file(&spot);
             // ★★**이름 바꾸기**다 (복사가 아니다) — 돌고 있는 exe 도 이건 된다
-            std::fs::rename(&target, &park)?;
+            std::fs::rename(&target, &spot)?;
         }
         std::fs::rename(e.path(), &target)?;
     }
-    let _ = std::fs::remove_dir(&new);
     Ok(())
 }
 
@@ -91,3 +110,92 @@ pub fn relaunch(root: &Path) -> std::io::Result<()> {
     cmd.spawn().map(|_| ())
 }
 
+
+#[cfg(test)]
+mod apply_tests {
+    use super::{apply, stage_dir};
+    use std::path::{Path, PathBuf};
+
+    fn put(p: &Path, body: &str) {
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, body).unwrap();
+    }
+
+    /// 앱 하나를 만든다 — 새 배치(`app/` 안에 앱 것, 바깥에 사용자 것)
+    fn app(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("peropix-apply-{name}"));
+        let _ = std::fs::remove_dir_all(&root);
+        put(&root.join("PeroPix.exe"), "옛 exe");
+        put(&root.join("app/version.json"), "{\"version\":\"1\"}");
+        put(&root.join("app/backend/server.py"), "옛 서버");
+        put(&root.join("app/python/python.exe"), "파이썬");
+        put(&root.join("app/models/censor.onnx"), "모델");
+        put(&root.join("workspaces/내작업/spec.json"), "사용자 것");
+        root
+    }
+
+    /// ★★**패치는 `app/` 을 통째로 갈아치우면 안 된다.** 예전 방식이면 여기서
+    ///   `app/python` 이 사라지고 앱이 아예 안 뜬다 — 이 판정이 그것을 잡는다.
+    #[test]
+    fn 패치는_형제를_안_건드린다() {
+        let root = app("patch");
+        let new = stage_dir(&root).join("new");
+        put(&new.join("PeroPix.exe"), "새 exe");
+        put(&new.join("app/version.json"), "{\"version\":\"2\"}");
+        put(&new.join("app/backend/server.py"), "새 서버");
+
+        apply(&root).unwrap();
+
+        assert!(root.join("app/python/python.exe").exists(), "파이썬이 사라지면 안 된다");
+        assert!(root.join("app/models/censor.onnx").exists(), "모델도 그대로여야 한다");
+        assert_eq!(std::fs::read_to_string(root.join("PeroPix.exe")).unwrap(), "새 exe");
+        assert_eq!(std::fs::read_to_string(root.join("app/backend/server.py")).unwrap(), "새 서버");
+        assert_eq!(std::fs::read_to_string(root.join("app/version.json")).unwrap(), "{\"version\":\"2\"}");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// 전체 판도 같은 길로 간다 — 파이썬까지 새것으로 덮인다
+    #[test]
+    fn 전체는_다_덮는다() {
+        let root = app("full");
+        let new = stage_dir(&root).join("new");
+        put(&new.join("PeroPix.exe"), "새 exe");
+        put(&new.join("app/version.json"), "{\"version\":\"2\"}");
+        put(&new.join("app/backend/server.py"), "새 서버");
+        put(&new.join("app/python/python.exe"), "새 파이썬");
+        put(&new.join("app/models/censor.onnx"), "새 모델");
+
+        apply(&root).unwrap();
+
+        assert_eq!(std::fs::read_to_string(root.join("app/python/python.exe")).unwrap(), "새 파이썬");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// ★★**사용자 것은 어느 경우에도 안 건드린다** — 새 판에 없는 것은 그대로 남는다
+    #[test]
+    fn 사용자_폴더는_그대로다() {
+        let root = app("user");
+        let new = stage_dir(&root).join("new");
+        put(&new.join("PeroPix.exe"), "새 exe");
+        apply(&root).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(root.join("workspaces/내작업/spec.json")).unwrap(),
+            "사용자 것"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// 옛것은 지우지 않고 비켜 놓는다 (다음에 켤 때 `sweep` 이 치운다)
+    #[test]
+    fn 옛것은_비켜_놓는다() {
+        let root = app("park");
+        let new = stage_dir(&root).join("new");
+        put(&new.join("app/backend/server.py"), "새 서버");
+        apply(&root).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(stage_dir(&root).join("old/app/backend/server.py")).unwrap(),
+            "옛 서버"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+}
