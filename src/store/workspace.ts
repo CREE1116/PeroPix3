@@ -205,6 +205,13 @@ export const cardOfCell = (
 
 export type Spec = {
   version: number;
+  /** 낱말 이전이 어디까지 왔나 — **`version` 과 다른 것이다.**
+   *  ★★찍는 곳이 백엔드뿐이면 앱이 만든 파일에 표가 없어, 다음 부팅의 이전이 **v1 로 보고
+   *    자리를 맞바꾼다** (실사고 2026-08-27: 씬 그룹이 버려져 씬 카드가 통째로 사라졌다).
+   *    그래서 `newSpec` 이 처음부터 찍는다. 값은 `backend/migrate_terms.py` 의
+   *    `SPEC_VERSION` 과 같아야 한다.
+   *  ★옛 파일에는 없다 — 그쪽은 이전이 **모양으로** 알아본다 (같은 파일의 ★★주). */
+  specVersion?: number;
   id: string;
   name: string;
   /** ★레거시 — 예전엔 워크스페이스가 프롬프트를 하나만 들었다. 지금은 **탭이 든다**.
@@ -392,6 +399,12 @@ const freshPrompt = (): TabPrompt => ({ base: [], baseUc: [], styleOn: false });
 
 const newSpec = (name: string): Spec => ({
   version: 1,
+  /* ★★**낱말 이전의 표를 처음부터 찍는다** (실사고 2026-08-27). 찍는 곳이 백엔드의
+     `migrate_terms.py` 뿐이라, 앱이 만든 워크스페이스에는 표가 없었다. 그러면 다음에 켤 때
+     그 이전이 **v1 로 보고 자리를 맞바꿔** 탭이 씬 그룹 자리로 밀려들어가고 진짜 씬 그룹이
+     버려진다 — 화면에서 씬 카드가 통째로 사라졌다.
+     ★값은 `backend/migrate_terms.py` 의 `SPEC_VERSION` 과 같아야 한다. 판정이 둘을 맞대 본다. */
+  specVersion: 3,
   id: "ws_" + Date.now().toString(36),
   name,
   prompt: { base: [], baseUc: [] },

@@ -37,8 +37,14 @@ def migrate_spec(old: dict) -> dict | None:
     at = int(old.get("specVersion") or 0)
     if at >= SPEC_VERSION:
         return None
-    # ★이미 v2 면 낱말만 옮기면 된다 — v2 의 자리 맞바꾸기를 또 돌리면 안 된다
-    if at >= 2:
+    # ★★**표가 없어도 모양으로 안다** (실사고 2026-08-27). 앱이 만든 워크스페이스에는
+    #   `specVersion` 이 안 찍혀 있었다 — 찍는 곳이 이 파일뿐이었다. 그래서 **이미 v2 모양인
+    #   파일**을 v1 으로 보고 자리를 맞바꿔, **탭이 씬 그룹 자리로 밀려들어가고 진짜 씬 그룹이
+    #   버려졌다** (화면에서 씬 카드가 통째로 사라져 생성이 막혔다).
+    #   `sets`·`sceneGroups` 가 있으면 v2 이후다 — v1 의 맞바꾸기를 돌리면 안 된다.
+    #   ★표를 찍는 쪽도 함께 고쳤다 (`store/workspace.ts` 의 `newSpec`). 그래도 **이 검사를
+    #     빼지 말 것** — 이미 표 없이 만들어진 파일이 밖에 있다.
+    if at >= 2 or "sets" in old or "sceneGroups" in old:
         return _v3(old)
 
     sets = list(old.get("tabs") or [])       # 옛 `tabs` 가 세트다
@@ -106,6 +112,55 @@ def migrate_record(line: dict) -> dict | None:
     return out
 
 
+def damaged(sp: dict) -> bool:
+    """**이 사고를 맞은 파일인가** (2026-08-27).
+
+    표(`specVersion`)가 없던 v2 파일에 v1 의 자리 맞바꾸기가 돌면 이렇게 된다:
+
+        sceneGroups: [ 탭 객체 ]    ← `kind` 가 없다 (탭에는 원래 없다)
+        tabs: []                    ← 옛 `chars` 가 없어서 빈 목록이 됐다
+
+    ★★**조건을 좁게 잡는다** (사용자 지적 2026-08-27: *"멀쩡한 워크스페이스도 되살리려고
+      하는 경우는 없을지"*). 되살리기는 **`.bak-v1` 로 되감는 일**이고, 그 사본은 첫 이전
+      때의 것이라 며칠 전 상태일 수 있다. 헛짚으면 그 사이의 작업이 통째로 날아간다.
+      그래서 자국 **셋을 다 갖춘 것**만 망가진 것으로 본다:
+        · 씬 그룹이 하나라도 있고, **전부 `kind` 가 없다** (탭 객체가 밀려들어온 모습)
+        · **`tabs` 가 비었다** (옛 `chars` 가 없어 빈 목록이 됐다)
+      정상 파일의 씬 그룹은 만들어질 때부터 `kind` 를 갖는다
+      (`newSpec`·`addSceneGroup`·`migrate` 의 메우기 — 셋 다 찍는다)."""
+    gs = sp.get("sceneGroups")
+    if not isinstance(gs, list) or not gs:
+        return False
+    if any(not isinstance(g, dict) or g.get("kind") for g in gs):
+        return False
+    return not (sp.get("tabs") or [])
+
+
+def repair(sp: dict, bak: dict) -> dict | None:
+    """망가진 spec 을 **베껴 둔 첫 모습에서** 되살린다. 못 살리면 `None`.
+
+    ★★자국을 남긴 것이 우리라서 되살릴 수 있다 — 이전은 손대기 전에 `.bak-v1` 을 뜬다.
+    ★★**지문을 맞춰 본다** (사용자 지적 2026-08-27). 그 사고는 `sets↔tabs` 를 맞바꾼 것이라,
+      **지금 씬 그룹 자리에 있는 것 = 사본의 탭들**이어야 한다. 그 짝이 안 맞으면 다른
+      까닭으로 이 모양이 된 것이니 **손대지 않는다** — 되감기는 사본 시점으로 돌아가는
+      일이라, 헛짚으면 그 뒤의 작업을 잃는다.
+    ★되살린 결과가 **성한 모양일 때만** 쓴다: 씬 그룹이 하나 이상이고 전부 `kind` 를 갖는다.
+    ★그림 파일은 **어느 쪽에서도 안 지운다** — 이 이전은 `workspace.json` 과 `records.jsonl`
+      만 다시 쓴다 (지우는 코드가 없다). 되살려도 `output/` 은 그대로 남는다."""
+    now_ids = [g.get("id") for g in (sp.get("sceneGroups") or [])]
+    bak_tab_ids = [t.get("id") for t in (bak.get("tabs") or []) if isinstance(t, dict)]
+    if not now_ids or set(now_ids) != set(bak_tab_ids):
+        return None
+
+    fixed = migrate_spec(bak)
+    if fixed is None:
+        fixed = _v3(bak)
+    gs = fixed.get("sceneGroups") or []
+    if not gs or any(not g.get("kind") for g in gs):
+        return None
+    return fixed
+
+
 def _backup(p: Path) -> None:
     """옛 파일을 한 번만 베낀다. 이미 있으면 덮지 않는다 (첫 모습이 정본이다)."""
     bak = p.with_suffix(p.suffix + ".bak-v1")
@@ -134,6 +189,22 @@ def migrate_dir(d: Path, log: list[str]) -> bool:
         return False
 
     new = migrate_spec(old)
+
+    # ★★**이미 망가진 파일은 되살린다** (2026-08-27). 위 검사를 붙이기 전에 켠 사람은
+    #   이미 자리가 맞바뀐 파일을 들고 있다 — 새 판을 받아도 표(`specVersion`)가 찍혀 있어
+    #   이전이 그냥 지나가고, 씬 카드가 사라진 채로 남는다.
+    # ★자국을 남긴 것이 우리라서 되살릴 수 있다: 손대기 전에 `.bak-v1` 을 떠 두었다.
+    if new is None and damaged(old):
+        bak_path = spec_path.with_suffix(spec_path.suffix + ".bak-v1")
+        if bak_path.exists():
+            try:
+                new = repair(old, json.loads(bak_path.read_text(encoding="utf-8")))
+            except Exception as e:
+                log.append(f"[낱말 이전] {d.name}: 되살리지 못했습니다 ({e!r}) — 그대로 둡니다")
+                new = None
+            if new is not None:
+                log.append(f"[낱말 이전] {d.name}: 망가진 spec 을 첫 모습에서 되살렸습니다")
+
     if new is None:
         return False
 
