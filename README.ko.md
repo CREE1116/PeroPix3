@@ -92,11 +92,4 @@ npm run tauri dev     # 프런트(1420) + 백엔드(8770) + 창
 
 ## 라이선스
 
-**AGPL-3.0-or-later** — 전문은 [LICENSE](LICENSE).
-
-쓰고, 읽고, 고치는 것은 자유입니다. 조건은 **남에게 넘길 때** 붙습니다: 고친 판을
-배포하거나 **남이 네트워크로 쓸 수 있게 돌리면** 그 소스를 같은 조건으로 공개해야 합니다.
-**혼자 쓰고 고치는 데에는 아무 의무가 없습니다.**
-
-함께 담긴 third-party 구성 요소와 그 조건은
-[THIRD-PARTY.md](THIRD-PARTY.md) 에 적어 두었습니다.
+[AGPL-3.0-or-later](LICENSE). 함께 담긴 third-party 구성 요소는 [THIRD-PARTY.md](THIRD-PARTY.md) 에 있습니다.

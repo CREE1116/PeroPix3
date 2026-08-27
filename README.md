@@ -93,11 +93,4 @@ described in **[docs/release.md](docs/release.md)**.
 
 ## License
 
-**AGPL-3.0-or-later** — see [LICENSE](LICENSE).
-
-Use it, read it, change it, freely. The conditions apply when you **pass it on**: ship a
-modified version, or run one where others reach it over a network, and that source has to
-go out under the same terms. Using or modifying it **for yourself carries no obligations**.
-
-Bundled third-party components and their terms are listed in
-[THIRD-PARTY.md](THIRD-PARTY.md).
+[AGPL-3.0-or-later](LICENSE). Bundled third-party components are listed in [THIRD-PARTY.md](THIRD-PARTY.md).

@@ -93,11 +93,4 @@ npm run tauri dev     # フロント(1420) + バックエンド(8770) + ウィ�
 
 ## ライセンス
 
-**AGPL-3.0-or-later** — 全文は [LICENSE](LICENSE)。
-
-使う・読む・変えるのは自由です。条件がつくのは**他人に渡すとき**です。改変版を配布したり、
-**他人がネットワーク越しに使える形で動かす**なら、そのソースを同じ条件で公開する必要が
-あります。**自分のために使う・変える分には義務はありません。**
-
-同梱の third-party 構成要素とその条件は
-[THIRD-PARTY.md](THIRD-PARTY.md) に記載しています。
+[AGPL-3.0-or-later](LICENSE)。同梱の third-party 構成要素は [THIRD-PARTY.md](THIRD-PARTY.md) に記載しています。
