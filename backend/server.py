@@ -514,6 +514,23 @@ IMMUTABLE_IMG = {"Cache-Control": "public, max-age=31536000, immutable"}
 
 
 # ── 기본 ──────────────────────────────────────────────────────────
+class BootLog(BaseModel):
+    line: str
+
+
+@app.post("/api/boot-log")
+async def boot_log(b: BootLog):
+    """부팅이 **어디서** 오래 걸렸는지 화면이 적어 보내는 자리 (2026-08-27).
+
+    ★왜 백엔드로 보내나 — 배포판에는 개발자 도구가 없어 `console` 이 아무 데도 안 남는다.
+      여기로 보내면 `logs/backend.log` 에 남아, 나중에 그 파일만 보면 된다.
+    ★재는 것은 **껍데기가 켜진 순간부터**다 (`uptime_ms`). 화면 혼자서는 자기가 언제
+      처음 돌았는지 알 수 없어서, 가장 큰 구간(창·웹뷰·번들)이 통째로 안 보인다.
+    ★실패해도 앱은 그대로 간다 — 화면 쪽에서 삼킨다."""
+    print(f"[boot] {b.line[:600]}", flush=True)
+    return {"ok": True}
+
+
 @app.get("/api/health")
 async def health():
     # ★버전·요청 창구도 여기서 준다 — 화면에 박아 두면 두 곳이 어긋난다 (감사 C5).
@@ -563,6 +580,13 @@ async def update_stage():
         # ★받다 만 것을 치운다 — 다음에 받을 때 `.update/` 가 어중간하면 안 된다
         update_mod.clear(APP_DIR)
         got = {"ok": False, "cancelled": True, "error": "취소했습니다"}
+    except Exception as e:
+        # ★★**끝났다는 소식은 무슨 일이 있어도 나간다** (2026-08-27). 예전에는 취소만 받아서,
+        #   푸는 중에 무엇이 깨지면 예외가 그대로 올라가고 **아래 방송을 건너뛰었다** —
+        #   화면은 「받는 중」에서 영영 멈춘다. 실패도 소식이다.
+        traceback.print_exc()
+        update_mod.clear(APP_DIR)
+        got = {"ok": False, "error": f"{type(e).__name__}: {e}"}
     finally:
         _UPDATE_TASK = None
     await Q.broadcast({"type": "update_staged", **got})

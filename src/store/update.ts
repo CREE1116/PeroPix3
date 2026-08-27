@@ -60,6 +60,10 @@ export const useUpdate = create<S>((set, get) => ({
   total: 0,
   setProgress: (done, total) => set({ done, total }),
   finish: (ok, cancelled) => {
+    /* ★★**두 번 와도 한 번만 매듭짓는다.** 끝났다는 소식이 둘이다 — 소켓(`update_staged`)과
+       요청의 답(`start` 의 ★★주). 어느 쪽이 먼저 와도 되고, 뒤에 온 것은 여기서 조용히
+       돌아간다. 안 그러면 토스트가 두 번 뜬다. */
+    if (get().phase !== "downloading") return;
     set({ phase: ok ? "staged" : "idle", done: 0, total: 0 });
     if (!ok && !cancelled) toast(t("update.failed"), "warn");
     /* ★★**다 받으면 한 번 더 알린다** (사용자 지시 2026-08-26: *"모달을 꺼도 설치 다되면
@@ -117,11 +121,18 @@ export const useUpdate = create<S>((set, get) => ({
     set({ phase: "downloading", done: 0, total: get().info?.size ?? 0 });
     try {
       const r = await api<{ ok: boolean; error?: string }>("/api/update/stage", { method: "POST" });
-      if (!r.ok && get().phase === "downloading") {
-        toast(r.error || t("update.failed"), "warn");
-        set({ phase: "idle" });
+      /* 끝났다는 소식은 소켓이 물어 온다 (`update_staged`). 다만 **답이 곧 그 소식이기도 하다** —
+         이 요청은 다 받을 때까지 기다렸다가 돌아오기 때문이다.
+         ★★소켓이 못 오면(끊겼거나 놓쳤거나) 화면이 「받는 중」에서 영영 멈춘다
+           (사용자 지적 2026-08-27: *"다 받은 후에 텍스트가 안 바뀜"*). 답으로도 매듭짓는다 —
+           소켓이 이미 처리했으면 단계가 `downloading` 이 아니라 여기서 아무 일도 안 한다. */
+      if (get().phase === "downloading") {
+        if (r.ok) get().finish(true);
+        else {
+          toast(r.error || t("update.failed"), "warn");
+          set({ phase: "idle" });
+        }
       }
-      // 끝났다는 소식은 소켓이 물어 온다 (`update_staged`) — 여기서 끄지 않는다
     } catch (e) {
       toast(String(e), "warn");
       set({ phase: "idle" });

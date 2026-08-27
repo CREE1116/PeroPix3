@@ -3,7 +3,20 @@ mod update;
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::sync::OnceLock;
+use std::time::Instant;
 use tauri::{Manager, RunEvent};
+
+/// 이 프로세스가 시작한 순간. ★부팅이 어디서 오래 걸리는지 재는 자 (`uptime_ms`).
+static START: OnceLock<Instant> = OnceLock::new();
+
+/// 껍데기가 켜진 뒤 흐른 시간(ms). ★화면이 **자기가 언제 처음 돌았는지**를 알기 위한 값이다 —
+/// 창을 만들고 웹뷰가 문서를 받아 번들을 돌리기까지가 여기 다 들어 있다. 그 구간은 화면
+/// 스스로는 잴 수 없다 (`performance.timeOrigin` 은 문서가 생긴 뒤부터다).
+#[tauri::command]
+fn uptime_ms() -> u128 {
+    START.get().map(|t| t.elapsed().as_millis()).unwrap_or(0)
+}
 
 /// 프론트가 백엔드 주소를 알아내는 유일한 창구.
 /// 포트를 프론트에 하드코딩하지 않는다 — 포트는 이제 인스턴스마다 다르다(`backend_port`).
@@ -127,6 +140,7 @@ pub fn run() {
     /* ★★**같은 폴더를 두 번 열지 않는다** (사용자 지시 2026-08-26). 같은 `workspaces/` 를
          두 창이 만지면 나중에 저장하는 쪽이 상대의 편집을 덮는다. 다른 폴더의 두 벌은
          그대로 허용한다 — 포터블은 그러라고 있는 형식이다 (`backend::lock_app_dir` 의 ★주). */
+    let _ = START.set(Instant::now());
     let Some(lock) = backend::lock_app_dir() else {
         eprintln!("[app] 이 폴더의 PeroPix 가 이미 실행 중입니다 — 창을 안 띄웁니다");
         return;
@@ -143,7 +157,7 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![backend_url, app_root, update_staged, apply_update])
+        .invoke_handler(tauri::generate_handler![backend_url, app_root, update_staged, apply_update, uptime_ms])
         .setup(move |app| {
             // ★`apply_update` 가 새 판을 띄우기 전에 자물쇠를 놓을 수 있게 맡겨 둔다
             app.manage(InstanceLock(lock));

@@ -1301,10 +1301,16 @@ export const useWs = create<S>((set, get) => ({
     // ★닫으면 **같은 캐릭터에 머문다.** `tabs[0]` 로 가면 남의 캐릭터로 튕긴다
     //   (사용자 지적 2026-08-04, 그때는 싱글↔멀티였다). 같은 캐릭터의 탭 중 **가장 가까운 것**을 연다.
     const wasAt = spec.sceneGroups.findIndex((t) => t.id === id);
-    const siblings = spec.sceneGroups.filter((t) => t.kind === "sceneGroup" && t.tabId === ownerTab);
+    /* ★★**후보에서 지우는 것을 뺀다** (사용자 지적 2026-08-27: *"새 씬 그룹을 만들고
+         삭제하니 갑자기 씬이랑 생성된 이미지쪽 UI가 전부 사라짐"*).
+       예전에는 `spec.sceneGroups` 에서 골라 **지우는 그것까지 후보**였다. 거리가 0 이라
+       늘 자기가 뽑히고, 활성 그룹이 **방금 없앤 id** 를 가리켰다 — 남은 목록(`rest`)에
+       없는 값이라 씬 줄도 결과도 그릴 것을 못 찾아 통째로 비었다.
+       ★자리(`wasAt`)는 **옛 목록 기준**이 맞다 — 「가장 가까운 것」은 지우기 전의 차례로 잰다. */
+    const siblings = rest.filter((t) => t.kind === "sceneGroup" && t.tabId === ownerTab);
     const neighbour =
       siblings.length === 0
-        ? spec.sceneGroups[0]
+        ? rest[0]
         : siblings.reduce((best, t) => {
             const at = spec.sceneGroups.findIndex((x) => x.id === t.id);
             const bestAt = spec.sceneGroups.findIndex((x) => x.id === best.id);

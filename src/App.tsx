@@ -1,6 +1,7 @@
 import { useI18n, t as tGlobal } from "./i18n";
 import { useEffect, useState } from "react";
 import { api } from "./lib/backend";
+import { mark, flushBootTime } from "./lib/bootTime";
 import { Shell } from "./app/Shell";
 import { TitleBar } from "./app/TitleBar";
 import { WindowFrame } from "./app/WindowFrame";
@@ -135,7 +136,9 @@ export function App() {
   useEffect(() => {
     let alive = true;
     (async () => {
+      mark("리액트");           // 번들이 다 돌고 첫 효과가 여기 왔다
       await initGen();
+      mark("껍데기주소");
       // 사이드카가 뜨는 데 잠깐 걸리므로 재시도한다.
       for (let i = 0; i < 25; i++) {
         try {
@@ -148,12 +151,13 @@ export function App() {
             useHealth.getState().setDead(true);
             return;
           }
+          mark("백엔드");
           useHealth.getState().set(h);
-          if (h.hasToken) {
-            try {
-              await useSub.getState().load();
-            } catch {}
-          }
+          /* ★★**기다리지 않는다** (실측 2026-08-27: 이 한 줄이 **0.94초**였다).
+             구독 정보는 NAI 공홈에 물어보는 것이라 인터넷 왕복이 통째로 부팅 사슬에 얹혔다.
+             화면이 뜨는 데 필요한 값이 아니다 — 도착하면 그때 배지가 채워진다.
+             ★실패는 삼킨다: 토큰이 틀렸다고 앱이 안 뜨면 고칠 자리로 갈 수가 없다. */
+          if (h.hasToken) void useSub.getState().load().catch(() => {});
           // 프롬프트 편집이 워크스페이스 저장을 예약하도록 연결 (순환 참조 회피)
           // ★**워크스페이스 스토어의 타이머를 쓴다.** 여기서 setTimeout 을 따로 만들면
           //   디바운스가 두 개가 되고, 탭을 바꿀 때 흘려보내는 쪽이 그 하나를 못 본다 —
@@ -163,10 +167,13 @@ export function App() {
             return () => {};
           });
           await initWs();
+          mark("워크스페이스");
           // ★큐는 앱 전체가 공유한다 — 워크스페이스를 고르기 전에 붙어 둔다
           void connectQueue();
           // 카드는 워크스페이스와 무관한 공용 저장소라 여기서 한 번만 읽는다
           await loadCards();
+          mark("카드");
+          void flushBootTime();
           // ★와일드카드 풀도 여기서 한 번 읽는다 (카드와 같은 공용 문서).
           //   ★**생성보다 먼저 준비돼야 한다.** 비어 있으면 `#이름` 이 그대로 프롬프트에
           //   나간다. 좌 패널에 매달면 패널을 접었을 때 안 읽힌다 (CLAUDE.md 「잊기 쉬운 것」).
