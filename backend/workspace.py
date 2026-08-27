@@ -113,9 +113,9 @@ class Store:
     #  ★캐시일 뿐이라 앱을 껐다 켜면 사라진다 — 그때는 화면도 새 경로를 들고 있다.
     _MOVED_CAP = 20_000
 
-    def _remember_moves(self, ws: str, moves: dict[str, str]) -> None:
-        for old, new in moves.items():
-            self._moved[(ws, old)] = new
+    def _track(self, ws: str, was: Path, now: Path) -> None:
+        """그 그림이 **지금 어디 있는지** 적어 둔다 (위 ★★주). 옮기는 도중에도 부른다."""
+        self._moved[(ws, self.rel(ws, was))] = self.rel(ws, now)
         if len(self._moved) > self._MOVED_CAP:      # 오래된 절반을 버린다
             for k in list(self._moved)[: len(self._moved) // 2]:
                 self._moved.pop(k, None)
@@ -393,11 +393,18 @@ class Store:
             return {"pairs": []}
 
         # ① 임시 이름으로 비켜 둔다 (맞바꿈에서 겹치는 것을 막는다)
-        stash: list[tuple[Path, str, str]] = []
+        # ★★**옮기는 동안에도 옛 이름으로 찾을 수 있어야 한다** (사용자 지적 2026-08-27:
+        #   *"깜빡이기 전까지는 크게 보려고 누르면 깨진 표시만 뜬다"*). 이 구간에서 파일은
+        #   임시 이름으로 가 있어 **옛 이름도 새 이름도 없다** — 그 몇 초 동안 그림 요청이
+        #   전부 404 였다. 그래서 옮길 때마다 **지금 어디 있는지**를 적어 둔다 (`_track`).
+        stash: list[tuple[Path, str, str, Path]] = []
         for src, lead, ext in plan:
             tmp = src.with_name(f".renum-{uuid.uuid4().hex[:8]}.{ext}")
+            # ★★**옮기기 전에 적는다.** 뒤에 적으면 그 사이(마이크로초)에 온 요청이 아무 데도
+            #   못 닿는다. 먼저 적어 두면 찾는 쪽이 사슬을 훑어 **옛 자리든 새 자리든** 잡는다.
+            self._track(ws, src, tmp)
             src.rename(tmp)
-            stash.append((tmp, lead, ext))
+            stash.append((tmp, lead, ext, src))
 
         # ② 제 이름을 준다
         # ★★**이름 목록은 폴더마다 한 번만 모은다** (실측 2026-08-27). 파일마다 다시 모으면
@@ -406,13 +413,15 @@ class Store:
         #   제대로 나온다 — 훑는 것과 결과가 같다.
         pairs = []
         seen: dict[Path, list[str]] = {}
-        for tmp, lead, ext in stash:
+        for tmp, lead, ext, src in stash:
             # ★`setdefault` 를 쓰면 안 된다 — **둘째 인자를 매번 평가**해서 캐시가 통째로
             #   헛돌았다 (실측 2026-08-27: 600장에서 `_names_in` 이 600번 불렸다).
             names = seen.get(tmp.parent)
             if names is None:
                 names = seen[tmp.parent] = self._names_in(tmp.parent, ws)
             dst = self.next_name(tmp.parent, lead, ext, ws, names)
+            self._track(ws, src, dst)      # 갈 자리를 **먼저** 적는다 (위 ★★주)
+            self._track(ws, tmp, dst)      # 임시 이름으로 물어도 답한다
             tmp.rename(dst)
             names.append(dst.name)
             pairs.append({"file": self.rel(ws, dst), "to": self.rel(ws, dst)})
@@ -421,7 +430,6 @@ class Store:
             p["file"] = self.rel(ws, src)
 
         moves = {p["file"]: p["to"] for p in pairs}
-        self._remember_moves(ws, moves)
         self._move_thumbs(ws, moves)
         self._rewrite_paths(ws, moves)
         return {"pairs": pairs}
@@ -615,12 +623,24 @@ class Store:
 
     def file_path(self, ws: str, rel: str) -> Path | None:
         """워크스페이스 밖으로 나가는 경로를 막는다.
-        ★방금 개명한 것은 **옛 이름으로 와도** 답한다 (`_moved` 의 ★★주)."""
+
+        ★★**자취를 따라가며 실제로 있는 자리를 준다** (`_moved` 의 ★★주). 개명은 임시 이름을
+          거치므로 「옛 이름 → 임시 → 새 이름」의 사슬이 생기고, 그 중 **지금 존재하는 칸**이
+          어디인지는 순간마다 다르다. 그래서 한 칸씩 짚어 보고 처음 있는 것을 돌려준다 —
+          옮기는 도중에 물어도 답이 나온다."""
         base = self.dir_of(ws).resolve()
-        p = (base / self._current(ws, rel)).resolve()
-        if not str(p).startswith(str(base)) or not p.exists():
-            return None
-        return p
+        seen: set[str] = set()
+        cur = rel
+        while cur not in seen:
+            seen.add(cur)
+            p = (base / cur).resolve()
+            if str(p).startswith(str(base)) and p.exists():
+                return p
+            nxt = self._moved.get((ws, cur))
+            if not nxt:
+                break
+            cur = nxt
+        return None
 
     # ── 새 탭으로 복제 ────────────────────────────────────────
     def copy_to_scene_group(
