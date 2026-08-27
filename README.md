@@ -1,109 +1,103 @@
-# PeroPix 3.0
+<div align="center">
+
+<img src="src-tauri/icons/128x128@2x.png" width="88" alt="PeroPix">
+
+# PeroPix
+
+**A desktop workbench for NovelAI image generation.**<br>
+Lay scenes out on a lane, hit generate once, and get the whole set.
+
+[![Release](https://img.shields.io/github/v/release/mrm987/PeroPix3?label=download&color=5865F2)](https://github.com/mrm987/PeroPix3/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/mrm987/PeroPix3/total?color=5865F2)](https://github.com/mrm987/PeroPix3/releases)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-informational)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 
 **English** · [한국어](README.ko.md) · [日本語](README.ja.md)
 
-A desktop workbench for NovelAI image generation. Lay scenes out along a **scene lane** and
-run them in one go; build prompts from **blocks** and reuse them as **cards**.
+</div>
 
-Tauri 2 + React 19 (frontend) + Python FastAPI (backend, run as a sidecar).
+---
 
-## What you need
+Generating one image at a time is fine until you want twenty of the same character in
+different scenes. PeroPix is built for that: write the parts that stay the same once,
+line up the parts that change, and run them together.
 
-- **A NovelAI subscription and a Persistent API Token.** NovelAI generates the images;
-  this app is the workbench in front of it. Create the token in your NovelAI account
-  settings — it starts with `pst-`. Enter it under **Settings ▸ General** on first launch.
-- **Generating costs Anlas.** Images that fall within your plan's free limits (resolution
-  and step count) cost nothing, and the generate button always shows the current price.
-- **Windows 10/11.** The WebView2 runtime is required and is usually already installed.
+- **Scene lane** — each scene is a card on a lane. Fill in what differs, generate the lane
+  in one go. Every result stays attached to the scene that produced it.
+- **Prompt blocks** — build a prompt out of labelled blocks instead of one long line.
+  Toggle, reorder, and weight them without hunting through commas.
+- **Card deck** — save a style or a character as a card and drop it into any scene.
+  Fix the card once and every scene that uses it follows.
+- **Wildcards** — pools of alternatives that pick themselves at generation time.
+- **Inpaint and Enhance** — paint a mask and redraw just that area, or re-run a finished
+  image with a different strength. Vibe transfer and upscaling are in the same place.
+- **Censoring** — an on-device model finds the regions and covers them. Nothing leaves
+  your machine; you choose the method and the strength.
+- **AI assistant** — hand it a workspace and describe what you want in words; it edits
+  the prompts and queues the work. It asks before anything it cannot undo.
 
-## Getting it
+## Requirements
 
-Unzip `PeroPix-<version>-win64.zip` from the releases page and run `PeroPix.exe`.
+- **A NovelAI subscription and a Persistent API Token.** NovelAI makes the images;
+  PeroPix is the workbench in front of it. Create the token in your NovelAI account
+  settings — it starts with `pst-`.
+- **Generating costs Anlas.** Sizes and step counts within your plan's free limits cost
+  nothing, and the generate button always shows the current price before you press it.
+- **Windows 10 or 11.** The WebView2 runtime is required and is usually already there.
 
-- **This is a portable app, not an installer.** It writes `data/`, `workspaces/` and
-  `logs/` **next to the executable**, so unzip it somewhere writable (your Documents
-  folder, another drive). Inside Program Files it fails on first launch.
-- Python ships inside the package (`python/`). Nothing to install separately.
-- **You can unzip several copies and run them side by side.** Each folder gets its own
-  port, storage and settings. Only launching the *same* folder twice is blocked.
-- To move or remove it, just move or delete the folder. Nothing is written to the registry.
+## Install
 
-## Where things are stored
+1. Download `PeroPix-<version>-win64.zip` from the [latest release](https://github.com/mrm987/PeroPix3/releases/latest).
+2. Unzip it **somewhere you can write to** — your Documents folder, another drive.
+   Not inside `Program Files`.
+3. Run `PeroPix.exe`, open **Settings ▸ General**, and paste your token.
 
-Everything lives next to `PeroPix.exe`.
+That's it. Python ships inside the package; there is nothing else to install, and nothing
+is written to the registry. To move or remove PeroPix, move or delete the folder.
 
-| Path | Contents |
+> You can unzip several copies and run them side by side — each folder keeps its own
+> port, storage and settings. Only opening the *same* folder twice is blocked.
+
+## Your files
+
+Everything lives next to `PeroPix.exe`. Back these up and you have everything;
+updates never touch them.
+
+| Folder | What's in it |
 |---|---|
-| `workspaces/<name>/` | A workspace — tabs, scenes, prompts, and generated images under `output/` |
-| `data/` | Settings, cards, gallery. **Your API token lives only in `data/secrets.json`** |
-| `models/censor/` | Censoring models |
-| `logs/` | Backend logs (worth attaching when you report a problem) |
+| `workspaces/` | Your work — tabs, scenes, prompts, and the images under `output/` |
+| `gallery/` | Images you chose to keep |
+| `data/` | Settings and cards. **Your API token lives only in `data/secrets.json`** |
+| `logs/` | One log file. Attach `logs/peropix.log` when you report a problem |
 
-Back up those folders and you have everything. Updates never touch them.
+`app/` is the program itself and is replaced on every update.
 
-## Updates
+## Updating
 
-One button under **Settings ▸ Update**. The app also checks quietly at startup and shows a
-notification when a new version exists. Once downloaded, restarting applies it — the app
-decides on its own whether to fetch a patch or the full package.
+PeroPix checks quietly at startup and tells you when a new version is out — or press the
+button under **Settings ▸ Update**. It downloads, then restarting applies it. Whether it
+fetches a small patch or the full package is decided for you; you only see the size.
 
 ## Development
 
 ```bash
 npm install
-npm run tauri dev      # frontend (1420) + backend (8770) + window
+npm run tauri dev     # frontend (1420) + backend (8770) + window
 ```
 
-To run only the backend: `python backend/server.py --port 8770`.
+Backend only: `python backend/server.py --port 8770`.
 Dependencies are in `backend/requirements.txt`.
 
-## Releasing
-
-Pushing a tag makes the workflow build a **draft release**
-(`.github/workflows/release.yml`).
-
-```bash
-git tag v3.0.1 && git push origin v3.0.1
-```
-
-**The tag is the source of truth for the version** — the build rewrites
-`tauri.conf.json` and `package.json` to match it. To only check that a build passes, run
-the workflow manually from Actions; that path uploads artifacts and creates no release.
-
-Three assets are uploaded, and **the app's auto-update reads all three**
-(`backend/update.py`).
-
-| Asset | What it is |
-|---|---|
-| `PeroPix-<version>-win64.zip` | Full package (~130MB, including Python and the censor model) |
-| `patch-<version>.zip` | Patch (~35MB — the executable plus `backend/`); what updates normally fetch |
-| `patch-info.json` | The basis for choosing patch vs. full |
-
-- **Releases arrive as drafts.** You have to publish one for it to reach users. And
-  **marking it as a pre-release hides it from the app** — GitHub's `releases/latest` skips
-  drafts and pre-releases. Put the other way round: pre-releases are safe to create.
-- If `backend/requirements.txt` or `models/censor` changed, the workflow marks the release
-  `requires_full` and the app fetches the full package instead. **The user is never asked** —
-  they only see the download size.
-
-## Censoring models
-
-Drop `*.onnx` files into `models/censor/` and the app lists them; the **lightest** one is
-the default. Only the 40MB model is committed here — the 239MB one exceeds GitHub's 100MB
-file limit and is kept separately.
+Building packages, cutting releases, and how auto-update chooses patch vs. full are
+described in **[docs/release.md](docs/release.md)**.
 
 ## License
 
-**AGPL-3.0-or-later** (full text in `LICENSE`).
+**AGPL-3.0-or-later** — see [LICENSE](LICENSE).
 
-Use it, read it, change it — freely. The conditions apply when you **pass it on**: if you
-distribute a modified version, or **run one where others can use it over a network**, you
-must release that source under the same terms. (The network clause is what AGPL adds over
-GPL, and it genuinely applies here because the backend is an HTTP server.)
+Use it, read it, change it, freely. The conditions apply when you **pass it on**: ship a
+modified version, or run one where others reach it over a network, and that source has to
+go out under the same terms. Using or modifying it **for yourself carries no obligations**.
 
-Using or modifying it **for yourself carries no obligations at all**.
-
-Third-party components bundled with the app, and their terms, are listed in
-**`THIRD-PARTY.md`** — the censor model (which is where the AGPL requirement comes from),
-the tag dictionary, embedded Python, and the Python packages. None of them conflict with
-AGPL.
+Bundled third-party components and their terms are listed in
+[THIRD-PARTY.md](THIRD-PARTY.md).
