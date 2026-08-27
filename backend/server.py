@@ -14,6 +14,7 @@ import io
 import json
 import math
 import os
+import time
 import traceback
 import uuid
 from datetime import datetime
@@ -526,8 +527,21 @@ async def boot_log(b: BootLog):
       여기로 보내면 `logs/backend.log` 에 남아, 나중에 그 파일만 보면 된다.
     ★재는 것은 **껍데기가 켜진 순간부터**다 (`uptime_ms`). 화면 혼자서는 자기가 언제
       처음 돌았는지 알 수 없어서, 가장 큰 구간(창·웹뷰·번들)이 통째로 안 보인다.
+    ★★**따로 쌓는다** (2026-08-27). `logs/backend.log` 는 껍데기가 켤 때마다 새로 만들어
+      **직전 실행의 줄이 지워진다** — 정작 알고 싶은 것은 「패치 직후 첫 실행」인데, 그 줄은
+      다음에 켜는 순간 사라져 한 번도 못 봤다. 여기 쌓으면 남는다.
     ★실패해도 앱은 그대로 간다 — 화면 쪽에서 삼킨다."""
-    print(f"[boot] {b.line[:600]}", flush=True)
+    line = b.line[:600]
+    print(f"[boot] {line}", flush=True)
+    try:
+        f = APP_DIR / "logs" / "boot.log"
+        f.parent.mkdir(parents=True, exist_ok=True)
+        # ★최근 것만 둔다 — 켤 때마다 한 줄씩 느는 파일이라 상한을 둔다
+        old_lines = f.read_text(encoding="utf-8").splitlines() if f.exists() else []
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        f.write_text("\n".join((old_lines + [f"{stamp}  {line}"])[-50:]) + "\n", encoding="utf-8")
+    except Exception:
+        pass
     return {"ok": True}
 
 
@@ -573,7 +587,11 @@ async def update_stage():
     async def prog(done: int, total: int) -> None:
         await Q.broadcast({"type": "update_progress", "done": done, "total": total})
 
-    _UPDATE_TASK = asyncio.create_task(update_mod.stage(APP_DIR, APP_VERSION, prog))
+    async def unpack() -> None:
+        """다 받았고 이제 푼다 — ★화면의 「받는 중」이 「설치 중」으로 넘어가는 지점이다."""
+        await Q.broadcast({"type": "update_unpack"})
+
+    _UPDATE_TASK = asyncio.create_task(update_mod.stage(APP_DIR, APP_VERSION, prog, unpack))
     try:
         got = await _UPDATE_TASK
     except asyncio.CancelledError:

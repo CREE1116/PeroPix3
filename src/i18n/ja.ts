@@ -455,6 +455,7 @@ export const ja: Dict = {
     found: "新しいバージョン v{v}（{size}）",
     now: "今すぐ更新",
     downloading: "ダウンロード中 {done} / {total}",
+    unpacking: "インストール中…",
     ready: "受け取りました。再起動すると適用されます。",
     restart: "今すぐ再起動",
     cancel: "中止",

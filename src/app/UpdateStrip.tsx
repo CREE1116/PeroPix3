@@ -72,6 +72,21 @@ export function UpdateStrip() {
         </>
       )}
 
+      {/* ★★**다 받고 푸는 동안** (사용자 지적 2026-08-27). 몇 %인지는 못 낸다 — 백엔드가
+          zip 을 통째로 푸는 일이라 중간 숫자가 없다. 대신 **멈춘 게 아니라는 것**을 보인다.
+          ★그만두기는 안 붙인다: 이미 다 받았고, 푸는 것을 중간에 끊으면 `.update/` 가
+            어중간하게 남는다. */}
+      {phase === "unpacking" && (
+        <button
+          data-update-strip-open
+          onClick={() => openSettings("general")}
+          data-tip={t("update.title")}
+          style={{ color: "var(--ink-dim)" }}
+        >
+          {t("update.unpacking")}
+        </button>
+      )}
+
       {phase === "staged" && (
         <button
           data-update-strip-restart

@@ -530,6 +530,10 @@ function UpdateBox() {
      눈에 보이는 시간은 앱이 꺼졌다 다시 뜨는 동안이다. */
   if (phase === "applying") return <span data-update-applying style={dim}>{t("update.applying")}</span>;
 
+  /* ★★다 받고 **푸는 동안** (사용자 지적 2026-08-27: *"132.3/132.3 에서 멈춰 있다가 완료됨"*).
+     몇 %인지는 못 낸다 — zip 을 통째로 푸는 일이라 중간 숫자가 없다. */
+  if (phase === "unpacking") return <span data-update-unpacking style={dim}>{t("update.unpacking")}</span>;
+
   if (phase === "staged")
     return (
       <Row>

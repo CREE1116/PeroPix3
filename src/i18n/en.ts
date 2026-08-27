@@ -457,6 +457,7 @@ export const en = {
     found: "New version v{v} ({size})",
     now: "Update now",
     downloading: "Downloading {done} / {total}",
+    unpacking: "Installing…",
     ready: "Downloaded. It applies when you restart.",
     restart: "Restart now",
     cancel: "Cancel",

@@ -31,8 +31,14 @@ export type UpdateInfo = {
 };
 
 /** 지금 어느 단계인가 — 화면은 이것만 보고 그린다.
- *  `idle` 아무 일 없음 · `downloading` 받는 중 · `staged` 받아 뒀다 · `applying` 갈아 끼우는 중 */
-export type Phase = "idle" | "downloading" | "staged" | "applying";
+ *  `idle` 아무 일 없음 · `downloading` 받는 중 · `unpacking` 푸는 중 · `staged` 받아 뒀다 ·
+ *  `applying` 갈아 끼우는 중
+ *
+ *  ★★`unpacking` 은 **다 받은 뒤의 몇십 초**다 (사용자 지적 2026-08-27: *"132.3/132.3 에서
+ *    멈춰 있다가 완료됨"*). 전체 판은 132MB 를 풀어 350MB 를 쓰는데, 그 구간에 이름이
+ *    없어서 화면이 「받는 중 100%」에 그대로 서 있었다. 백엔드가 풀기 직전에 알린다
+ *    (`update_unpack`). */
+export type Phase = "idle" | "downloading" | "unpacking" | "staged" | "applying";
 
 type S = {
   info: UpdateInfo | null;
@@ -42,6 +48,8 @@ type S = {
   done: number;
   total: number;
   setProgress: (done: number, total: number) => void;
+  /** 다 받았고 이제 푸는 중이다 (소켓 `update_unpack`) */
+  unpack: () => void;
   /** 소켓이 물어 온 끝 소식 — 받았으면 `staged`, 취소·실패면 `idle` */
   finish: (ok: boolean, cancelled?: boolean) => void;
   setStaged: (v: boolean) => void;
@@ -59,11 +67,16 @@ export const useUpdate = create<S>((set, get) => ({
   done: 0,
   total: 0,
   setProgress: (done, total) => set({ done, total }),
+  unpack: () => {
+    // ★받는 중일 때만 넘어간다 — 취소한 뒤에 늦게 온 소식이 화면을 되살리면 안 된다
+    if (get().phase !== "downloading") return;
+    set({ phase: "unpacking" });
+  },
   finish: (ok, cancelled) => {
     /* ★★**두 번 와도 한 번만 매듭짓는다.** 끝났다는 소식이 둘이다 — 소켓(`update_staged`)과
        요청의 답(`start` 의 ★★주). 어느 쪽이 먼저 와도 되고, 뒤에 온 것은 여기서 조용히
        돌아간다. 안 그러면 토스트가 두 번 뜬다. */
-    if (get().phase !== "downloading") return;
+    if (get().phase !== "downloading" && get().phase !== "unpacking") return;
     set({ phase: ok ? "staged" : "idle", done: 0, total: 0 });
     if (!ok && !cancelled) toast(t("update.failed"), "warn");
     /* ★★**다 받으면 한 번 더 알린다** (사용자 지시 2026-08-26: *"모달을 꺼도 설치 다되면
@@ -126,7 +139,7 @@ export const useUpdate = create<S>((set, get) => ({
          ★★소켓이 못 오면(끊겼거나 놓쳤거나) 화면이 「받는 중」에서 영영 멈춘다
            (사용자 지적 2026-08-27: *"다 받은 후에 텍스트가 안 바뀜"*). 답으로도 매듭짓는다 —
            소켓이 이미 처리했으면 단계가 `downloading` 이 아니라 여기서 아무 일도 안 한다. */
-      if (get().phase === "downloading") {
+      if (get().phase === "downloading" || get().phase === "unpacking") {
         if (r.ok) get().finish(true);
         else {
           toast(r.error || t("update.failed"), "warn");

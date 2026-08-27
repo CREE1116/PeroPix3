@@ -799,6 +799,10 @@ function handle(m: Record<string, any>, set: Setter, get: () => S) {
         useUpdate.getState().setProgress(Number(m.done ?? 0), Number(m.total ?? 0)),
       );
       break;
+    case "update_unpack":
+      // ★다 받았다 — 이제 푸는 중이라고 화면에 알린다 (`store/update` 의 ★★주)
+      void import("./update").then(({ useUpdate }) => useUpdate.getState().unpack());
+      break;
     case "update_staged":
       // ★취소는 실패가 아니다 — 붉은 줄을 띄우지 않는다 (`useUpdate.finish`)
       void import("./update").then(({ useUpdate }) =>

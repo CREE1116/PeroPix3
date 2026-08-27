@@ -471,6 +471,8 @@ export const ko: Dict = {
     found: "새 버전 v{v} ({size})",
     now: "지금 업데이트",
     downloading: "받는 중 {done} / {total}",
+    /** 다 받고 푸는 동안 — ★「받는 중 100%」에 멈춰 보이던 자리다 (2026-08-27) */
+    unpacking: "설치 중…",
     ready: "받았습니다. 다시 켜면 적용됩니다.",
     restart: "지금 다시 켜기",
     cancel: "그만두기",

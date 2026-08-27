@@ -20,6 +20,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import shutil
 import zipfile
@@ -110,6 +111,7 @@ async def stage(
     app_dir: Path,
     current: str,
     on_progress: Callable[[int, int], Awaitable[None]] | None = None,
+    on_unpack: Callable[[], Awaitable[None]] | None = None,
 ) -> dict[str, Any]:
     """새 판을 받아 `.update/new/` 에 풀어 둔다. **앱 파일은 아직 안 건드린다.**
 
@@ -151,7 +153,30 @@ async def stage(
     if zpath.stat().st_size < 1000:
         return {"ok": False, "error": "받은 파일이 너무 작습니다"}
 
+    # ★★**여기서부터가 「설치」다** (사용자 지적 2026-08-27: *"다 받은 후에 설치중으로
+    #   텍스트가 안 바뀌고 132.3/132.3 에서 멈춰 있다가 완료됨"*). 전체 판은 132MB 를
+    #   풀어 350MB 를 쓰는데, 그동안 아무 소식도 안 나가 화면은 받는 중 그대로였다.
+    if on_unpack:
+        try:
+            await on_unpack()
+        except Exception:
+            pass
+
     new = stage_dir / "new"
+    # ★★**푸는 일은 딴 실로 보낸다.** `extractall` 과 `shutil.move` 는 통짜로 막는 일이라
+    #   여기서 그냥 부르면 **백엔드가 그 몇십 초 동안 통째로 멈춘다** — 그림도, 저장도,
+    #   방금 보낸 「설치 중」 다음의 어떤 소식도 못 나간다. 업데이트 중에도 앱은 살아 있어야
+    #   한다는 것이 2026-08-26 결정이다.
+    err = await asyncio.to_thread(_unpack, zpath, new)
+    if err:
+        return {"ok": False, "error": err}
+
+    zpath.unlink(missing_ok=True)
+    return {"ok": True, "kind": got["kind"], "version": got["latest"], "dir": str(new)}
+
+
+def _unpack(zpath: Path, new: Path) -> str | None:
+    """받은 zip 을 `new/` 에 푼다. **딴 실에서 돈다** (위 ★★주). 문제가 있으면 그 까닭을 돌려준다."""
     shutil.rmtree(new, ignore_errors=True)
     new.mkdir(parents=True)
     with zipfile.ZipFile(zpath) as z:
@@ -160,7 +185,7 @@ async def stage(
         for m in z.namelist():
             p = (new / m).resolve()
             if not str(p).startswith(str(new.resolve())):
-                return {"ok": False, "error": f"수상한 경로가 들어 있습니다: {m}"}
+                return f"수상한 경로가 들어 있습니다: {m}"
         z.extractall(new)
 
     # ★전체 zip 은 `PeroPix/` 한 겹을 쓰고 있다 (`Compress-Archive` 가 폴더째 담는다) —
@@ -171,9 +196,7 @@ async def stage(
         for e in inner.iterdir():
             shutil.move(str(e), str(new / e.name))
         inner.rmdir()
-
-    zpath.unlink(missing_ok=True)
-    return {"ok": True, "kind": got["kind"], "version": got["latest"], "dir": str(new)}
+    return None
 
 
 def clear(app_dir: Path) -> None:
