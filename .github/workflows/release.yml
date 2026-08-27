@@ -130,7 +130,11 @@ jobs:
           # ★`--match 'v*'` — 릴리즈가 아닌 태그(`chip-edit-before`)에 걸리지 않게.
           PREV=$(git describe --tags --abbrev=0 --match 'v*' "${GITHUB_REF_NAME}^" 2>/dev/null || true)
           REQ=false
-          if [ -n "$PREV" ] && [ -n "$(git diff --name-only "$PREV" HEAD -- backend/requirements.txt models/censor || true)" ]; then
+          # ★★**패치에 안 담기는 것이 바뀌면 전체로 보낸다.** 의존성(`requirements.txt`)과
+          #   검열 모델이 그렇고, 거기에 **`scripts/full-required.txt`** 를 더한다 — 폴더
+          #   배치처럼 「파일 목록만 봐서는 안 드러나는」 변화를 손으로 적어 두는 자리다.
+          #   그 파일의 **내용이 바뀐 판**만 깃발이 켜진다 (있다는 것만으로는 안 켜진다).
+          if [ -n "$PREV" ] && [ -n "$(git diff --name-only "$PREV" HEAD -- backend/requirements.txt models/censor scripts/full-required.txt || true)" ]; then
             REQ=true
           fi
           printf '{"version":"%s","patch_from":"%s","requires_full":%s}' "$VERSION" "${PREV#v}" "$REQ" > _dist/patch-info.json
