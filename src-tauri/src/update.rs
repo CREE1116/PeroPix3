@@ -69,6 +69,61 @@ pub fn apply(root: &Path) -> std::io::Result<()> {
 
 /// 새 exe 를 띄운다. ★부모가 죽어도 살아 있어야 하므로 **잡에 매달지 않는다**
 /// (사이드카와 정반대다 — 그쪽은 함께 죽어야 하고 이쪽은 살아남아야 한다).
+/// 새 판을 띄우기 **직전에 디스크를 데운다** (사용자 결정 2026-08-27).
+///
+/// ★★**왜 필요한가 — 실측.** 패치 직후 첫 실행에서 파이썬이 제 임포트를 끝내는 데만
+///   **16.6초**가 걸렸고(로그 `[boot]` 줄과 `[start]` 시각 대조), 그 다음 실행은 0.9초였다.
+///   앱 옆의 `python/` 은 **파일 5,317개 · 202MB** 인데, 업데이트가 132MB 를 받아 350MB 를
+///   풀면서 OS 파일 캐시가 통째로 밀려난다. 그러면 다음 실행이 그 5천 개를 회전 디스크에서
+///   **흩어진 채** 다시 읽는다. 여기서 **순서대로 한 번 훑어** 캐시에 올려 두면, 그 읽기가
+///   차례 읽기 한 번으로 바뀌고 값은 「설치 중」 화면 안에서 치러진다.
+///
+/// ★★**위험을 셋 다 막는다** (사용자 조건: *"별다른 위험성이 없으면"*):
+///   1. **읽기만 한다.** 열고, 버리는 버퍼에 담고, 닫는다 — 쓰지도 지우지도 옮기지도 않는다.
+///   2. **실패를 전부 삼킨다.** 못 읽는 파일 하나 때문에 업데이트가 멈추면 안 된다.
+///   3. **시간 상한이 있다.** 디스크가 병든 경우에도 여기서 오래 붙들려 있지 않는다 —
+///      상한을 넘으면 그냥 그만두고 다음으로 간다 (덜 데워졌을 뿐, 결과는 같다).
+pub fn warm(paths: &[PathBuf], budget: std::time::Duration) -> (usize, u64) {
+    let t0 = std::time::Instant::now();
+    let mut buf = vec![0u8; 256 * 1024];
+    let mut files = 0usize;
+    let mut bytes = 0u64;
+    let mut stack: Vec<PathBuf> = paths.to_vec();
+    while let Some(p) = stack.pop() {
+        if t0.elapsed() >= budget {
+            break;
+        }
+        if p.is_dir() {
+            if let Ok(rd) = std::fs::read_dir(&p) {
+                for e in rd.flatten() {
+                    stack.push(e.path());
+                }
+            }
+            continue;
+        }
+        if let Ok(mut f) = std::fs::File::open(&p) {
+            use std::io::Read;
+            files += 1;
+            loop {
+                match f.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => bytes += n as u64,
+                }
+                if t0.elapsed() >= budget {
+                    break;
+                }
+            }
+        }
+    }
+    (files, bytes)
+}
+
+/// 데울 자리 — ★**부팅에 실제로 읽히는 것만**이다. 검열 모델(38MB)은 쓸 때 비로소
+/// 읽히므로 넣지 않는다: 안 쓸 사람에게 그 시간을 물릴 이유가 없다.
+pub fn warm_targets(root: &Path) -> Vec<PathBuf> {
+    vec![root.join("python"), root.join("backend"), root.join("PeroPix.exe")]
+}
+
 pub fn relaunch(root: &Path) -> std::io::Result<()> {
     // ★★**이름을 박지 않는다** — 꾸러미에 담기는 이름은 `PeroPix.exe` 이고 빌드가 내는
     //   이름은 `peropix.exe` 다 (`scripts/portable.ps1` 이 바꿔 담는다). 지금 돌고 있는
@@ -89,4 +144,60 @@ pub fn relaunch(root: &Path) -> std::io::Result<()> {
         cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
     }
     cmd.spawn().map(|_| ())
+}
+
+#[cfg(test)]
+mod warm_tests {
+    use super::warm;
+    use std::path::PathBuf;
+    use std::time::Duration;
+
+    /// 임시 자리에 작은 파일 몇 개를 만든다 (하위 폴더 포함)
+    fn fixture(name: &str, n: usize) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("peropix-warm-{name}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("안쪽")).unwrap();
+        for i in 0..n {
+            std::fs::write(dir.join(format!("a{i}.bin")), vec![7u8; 4096]).unwrap();
+            std::fs::write(dir.join("안쪽").join(format!("b{i}.bin")), vec![7u8; 4096]).unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn 하위_폴더까지_읽는다() {
+        let dir = fixture("all", 3);
+        let (files, bytes) = warm(&[dir.clone()], Duration::from_secs(30));
+        assert_eq!(files, 6, "위 3 + 안쪽 3");
+        assert_eq!(bytes, 6 * 4096);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// ★상한이 실제로 멈추는가 — 병든 디스크에서 업데이트가 붙들리지 않게 하는 장치다
+    #[test]
+    fn 시간_상한에서_그만둔다() {
+        let dir = fixture("budget", 50);
+        let (files, _) = warm(&[dir.clone()], Duration::from_secs(0));
+        assert_eq!(files, 0, "상한이 0이면 한 개도 안 읽는다");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// ★없는 자리를 줘도 조용히 넘어간다 (읽기 실패를 삼키는지)
+    #[test]
+    fn 없는_자리는_조용히_넘어간다() {
+        let (files, bytes) = warm(&[PathBuf::from("Z:/없는/자리")], Duration::from_secs(5));
+        assert_eq!((files, bytes), (0, 0));
+    }
+
+    /// ★★**아무것도 안 바꾼다** — 읽기만 하는지 파일 내용과 목록으로 확인한다
+    #[test]
+    fn 읽기만_한다() {
+        let dir = fixture("readonly", 2);
+        let before: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.path()).collect();
+        warm(&[dir.clone()], Duration::from_secs(30));
+        let after: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.path()).collect();
+        assert_eq!(before.len(), after.len(), "파일 수가 바뀌면 안 된다");
+        assert_eq!(std::fs::read(dir.join("a0.bin")).unwrap(), vec![7u8; 4096], "내용이 바뀌면 안 된다");
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

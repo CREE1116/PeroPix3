@@ -312,6 +312,19 @@ fn open_log(root: &Path) -> Option<File> {
     std::fs::OpenOptions::new().create(true).append(true).open(&path).ok()
 }
 
+/// 껍데기가 로그에 한 줄 남긴다.
+/// ★★**로그 파일을 아는 곳은 여기 하나다** (`open_log`) — 부르는 쪽이 경로를 알면 어긋난다.
+/// ★못 써도 조용히 넘어간다. 로그를 남기려다 앱이 멈추면 안 된다.
+pub fn log_line(root: &Path, line: &str) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(root.join("logs").join(LOG_NAME))
+    {
+        let _ = writeln!(f, "{line}");
+    }
+}
+
 pub fn spawn() -> std::io::Result<Child> {
     let root = root();
     let python = find_python(&root);
