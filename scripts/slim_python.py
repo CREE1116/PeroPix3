@@ -72,6 +72,36 @@ def pure(d: Path) -> bool:
     return True
 
 
+def bundle(sp: Path, zpath: Path) -> tuple[list[Path], int]:
+    """순수한 꾸러미를 `zpath` 한 덩이로 묶고, 원본 폴더는 지운다.
+
+    ★★**담을 것만 컴파일한다** (실측 2026-08-27, 이것 때문에 첫 판이 헛돌았다).
+      처음에는 site-packages 를 **통째로** 컴파일했는데, `legacy=True` 는 `.pyc` 를 소스
+      **옆에** 만들므로 zip 에 안 담는 꾸러미(numpy·PIL·onnxruntime…)에도 `.pyc` 가 한 벌씩
+      생겼다 - 실측 **1,039개 21MB**. 곁가지 93MB 를 빼고도 배포 zip 이 132MB 그대로였던
+      까닭이다: 뺀 만큼 `.pyc` 로 도로 채웠다.
+    ★`legacy=True` 자체는 그대로 둔다 - zip 안의 배치가 `foo/bar.pyc` 라야 zipimport 가 읽는다.
+    """
+    picked = [d for d in sorted(sp.iterdir()) if d.is_dir() and d.name != "__pycache__" and pure(d)]
+    for d in picked:
+        # ★`workers=1` — 0(=CPU 전부)은 **멀티프로세스**라, 이 모듈을 임포트해서 쓰는
+        #   쪽에서 `__main__` 보호 없이 부르면 그대로 터진다 (판정이 잡았다).
+        #   묶는 것은 수백 개뿐이라 병렬이 필요 없다.
+        compileall.compile_dir(str(d), quiet=2, legacy=True, force=True, workers=1)
+
+    files = 0
+    with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
+        for d in picked:
+            for f in d.rglob("*.pyc"):
+                if f.parent.name == "__pycache__":
+                    continue
+                z.write(f, f.relative_to(sp).as_posix())
+                files += 1
+    for d in picked:
+        shutil.rmtree(d, ignore_errors=True)
+    return picked, files
+
+
 def main() -> int:
     _utf8_out()
     py = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(sys.executable).parent
@@ -101,21 +131,8 @@ def main() -> int:
     print(f"[줄이기] 곁가지 뺌 — {freed / 1048576:.0f}MB")
 
     # ── 2. 순수 꾸러미를 zip 으로 ─────────────────────────────────
-    # ★`legacy=True` 로 `.pyc` 를 소스 **옆에** 만든다 (zip 안의 배치와 같아진다)
-    compileall.compile_dir(str(sp), quiet=2, legacy=True, force=True, workers=0)
-
-    picked = [d for d in sorted(sp.iterdir()) if d.is_dir() and d.name != "__pycache__" and pure(d)]
     zpath = py / "deps.zip"
-    files = 0
-    with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
-        for d in picked:
-            for f in d.rglob("*.pyc"):
-                if f.parent.name == "__pycache__":
-                    continue
-                z.write(f, f.relative_to(sp).as_posix())
-                files += 1
-    for d in picked:
-        shutil.rmtree(d, ignore_errors=True)
+    picked, files = bundle(sp, zpath)
     print(f"[줄이기] zip 한 덩이 — 꾸러미 {len(picked)}개 · 모듈 {files}개 · "
           f"{zpath.stat().st_size / 1048576:.1f}MB")
     print("        " + ", ".join(d.name for d in picked))
