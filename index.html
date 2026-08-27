@@ -28,9 +28,19 @@
       }
       :root[data-theme="dark"] { --boot-bg: #16161a; --boot-fg: #7c6cf0; --boot-line: #2a2a31; --boot-dim: rgba(236,236,241,0.55); }
       html, body { margin: 0; height: 100%; background: var(--boot-bg); }
+      /* ★★**리액트가 그리는 자리와 정확히 같아야 한다** (사용자 지적 2026-08-27: *"미리
+         보여주는 거랑 제대로 로드했을 때 보여주는 거랑 비율이 달라서 게이지가 갑자기
+         축소된 느낌"*). 두 가지가 어긋나 있었다:
+           · **세로 자리** — 리액트 쪽은 타이틀바(34px) **아래** 남은 자리의 가운데다
+             (`App.tsx` 의 `<TitleBar/>` + `flex:1` + `placeItems:center`). 여기는 화면
+             전체의 가운데라 17px 위에 있었다.
+           · **사이 간격** — 여기는 20px, 리액트는 `--sp-5`(12px) 였다. 덩어리 높이가
+             달라져 붙는 순간 줄어든 것처럼 보인다.
+         ★숫자를 옮겨 적은 자리다. 타이틀바 높이(`app/TitleBar`)나 `--sp-5` 를 고치면 여기도
+           함께 고친다 — i18n 판정이 그 셋을 묶어 본다. */
       #boot {
-        position: fixed; inset: 0; display: grid; place-content: center;
-        justify-items: center; gap: 20px;
+        position: fixed; inset: 34px 0 0 0; display: grid; place-content: center;
+        justify-items: center; gap: 12px; padding: 20px;
       }
       #boot .mark {
         width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center;
