@@ -1,0 +1,123 @@
+# -*- coding: utf-8 -*-
+"""꾸러미에 들어갈 파이썬을 **줄인다** — 꾸러미를 만들 때 한 번 돈다 (2026-08-27).
+
+★★**왜 하나** — 실측으로, 한동안 쉬었다 앱을 켜면 백엔드가 뜨는 데 **8.8초**가 걸렸다
+  (바로 다시 켜면 1.0초). 파일 캐시가 식으면 부팅이 **낱개 파일 354개**를 회전 디스크에서
+  흩어진 채 다시 읽기 때문이다. 용량은 7.5MB 뿐인데 **여는 횟수**가 시간이었다.
+
+두 가지를 한다:
+  1. **안 쓰는 꾸러미를 뺀다** — `onnxruntime` 을 pip 로 깔 때 딸려 온 곁가지다.
+     쓰지 않는 것을 확인했다: 소스에서 그것을 부르는 자리가 주석·pytest 설정·벤치마크
+     스크립트뿐이었고, 임포트를 막아 놓고 **검열 추론과 서버 임포트가 그대로 되는 것**을
+     확인했다 (2026-08-27).
+  2. **순수 파이썬 꾸러미를 zip 한 덩이로 묶는다** — 표준 라이브러리가 이미 그 방식이다
+     (`python311.zip`). 낱개 수백 개가 파일 하나가 되면 여는 횟수가 그만큼 준다.
+
+★★**묶는 것은 「순수한 것」뿐이다.** 하나라도 `.py`·`.pyc`·`.pyi`·`py.typed` 가 아닌 것이
+  들어 있으면 그 꾸러미는 그대로 둔다. 까닭:
+    · `.pyd`·`.dll` 은 zip 에서 못 읽는다 (OS 가 파일을 요구한다).
+    · 데이터 파일을 `__file__` 로 여는 코드가 흔하다 (`certifi` 의 `cacert.pem` 이 그렇다).
+      zip 안에서는 그 경로가 실재하지 않아 **조용히 깨진다.**
+★`__init__.py` 가 없는 폴더(네임스페이스 꾸러미)도 그대로 둔다 — zipimport 가 못 다룬다.
+★**점으로 시작하는 폴더는 문서다** — `fastapi/.agents/skills/*.md` 처럼 조수용 안내가 들어
+  있다. 실행에 안 읽히므로 순수 판정에서 빼고, 묶을 때도 안 담는다 (그래서 함께 사라진다).
+★zip 에는 **`.pyc` 만** 담는다. zipimport 는 캐시를 못 남기므로, `.py` 를 담으면 켤 때마다
+  다시 컴파일한다. `python311.zip` 도 같은 이유로 `.pyc` 만 들어 있다.
+"""
+from __future__ import annotations
+
+import compileall
+import shutil
+import sys
+import zipfile
+from pathlib import Path
+
+#: 우리 실행 경로에 없는 곁가지 (2026-08-27 확인)
+DROP = ["sympy", "mpmath", "pip", "setuptools", "pkg_resources", "_distutils_hack", "wheel"]
+#: 이것만 들어 있으면 「순수」하다
+PURE_SUFFIX = {".py", ".pyc", ".pyi"}
+PURE_NAME = {"py.typed"}
+SKIP_SUFFIX = {".dist-info", ".egg-info", ".egg-link", ".pth"}
+
+
+def pure(d: Path) -> bool:
+    """이 폴더를 zip 에 담아도 되나 — 위 ★★주의 규칙."""
+    if not (d / "__init__.py").exists():
+        return False
+    for f in d.rglob("*"):
+        if f.is_dir():
+            continue
+        if f.parent.name == "__pycache__":
+            continue
+        if any(part.startswith(".") for part in f.relative_to(d).parts[:-1]):
+            continue  # 점 폴더 = 문서 (위 ★주)
+        if f.suffix in PURE_SUFFIX or f.name in PURE_NAME:
+            continue
+        return False
+    return True
+
+
+def main() -> int:
+    py = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(sys.executable).parent
+    sp = py / "Lib" / "site-packages"
+    if not sp.is_dir():
+        print(f"[줄이기] site-packages 가 없다: {sp}")
+        return 1
+
+    # ── 1. 곁가지 빼기 ────────────────────────────────────────────
+    freed = 0
+    for name in DROP:
+        for d in list(sp.glob(name)) + list(sp.glob(name + "-*")):
+            if d.is_dir():
+                freed += sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
+                shutil.rmtree(d, ignore_errors=True)
+            elif d.is_file():
+                freed += d.stat().st_size
+                d.unlink()
+    # ★★**`.pth` 찌꺼기도 함께 치운다.** `setuptools` 를 빼면 `distutils-precedence.pth` 가
+    #   남아, 파이썬이 **켤 때마다** `_distutils_hack` 을 못 찾겠다는 자취를 뱉는다
+    #   (실측 2026-08-27 — 로그가 그 소리로 덮였다).
+    for f in sp.glob("*.pth"):
+        body = f.read_text(encoding="utf-8", errors="replace")
+        if any(name in body for name in DROP):
+            f.unlink()
+            print(f"[줄이기] 찌꺼기 치움 — {f.name}")
+    print(f"[줄이기] 곁가지 뺌 — {freed / 1048576:.0f}MB")
+
+    # ── 2. 순수 꾸러미를 zip 으로 ─────────────────────────────────
+    # ★`legacy=True` 로 `.pyc` 를 소스 **옆에** 만든다 (zip 안의 배치와 같아진다)
+    compileall.compile_dir(str(sp), quiet=2, legacy=True, force=True, workers=0)
+
+    picked = [d for d in sorted(sp.iterdir()) if d.is_dir() and d.name != "__pycache__" and pure(d)]
+    zpath = py / "deps.zip"
+    files = 0
+    with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
+        for d in picked:
+            for f in d.rglob("*.pyc"):
+                if f.parent.name == "__pycache__":
+                    continue
+                z.write(f, f.relative_to(sp).as_posix())
+                files += 1
+    for d in picked:
+        shutil.rmtree(d, ignore_errors=True)
+    print(f"[줄이기] zip 한 덩이 — 꾸러미 {len(picked)}개 · 모듈 {files}개 · "
+          f"{zpath.stat().st_size / 1048576:.1f}MB")
+    print("        " + ", ".join(d.name for d in picked))
+
+    # ── 3. 그 zip 을 경로에 올린다 ────────────────────────────────
+    # ★`._pth` 의 경로는 **python.exe 옆** 기준이다. `python311.zip` 바로 뒤에 둔다.
+    pth = next(py.glob("python3*._pth"), None)
+    if not pth:
+        print("[줄이기] ._pth 를 못 찾았다 — zip 이 경로에 안 올라간다")
+        return 1
+    lines = pth.read_text(encoding="utf-8").splitlines()
+    if "deps.zip" not in lines:
+        at = next((i for i, l in enumerate(lines) if l.strip().endswith(".zip")), -1)
+        lines.insert(at + 1, "deps.zip")
+        pth.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"[줄이기] {pth.name} 에 deps.zip 등록")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

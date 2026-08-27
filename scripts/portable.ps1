@@ -88,6 +88,14 @@ if (-not $keepPython) {
   Write-Host "[포터블] 의존성 설치"
   & (Join-Path $py "python.exe") -m pip install --no-warn-script-location -r (Join-Path $root "backend/requirements.txt")
   if ($LASTEXITCODE -ne 0) { throw "pip 설치 실패" }
+
+  # ★★**깐 뒤에 줄인다** (2026-08-27). 곁가지를 빼고, 순수 파이썬 꾸러미를 zip 한 덩이로
+  #   묶는다 — 까닭과 규칙은 `scripts/slim_python.py` 머리에 있다.
+  #   실측: 부팅에 읽는 낱개 파일 354개 → 133개, 곁가지 36MB 빠짐.
+  # ★`-SkipPython` 으로 파이썬을 남겨 둔 경우에는 **다시 돌리지 않는다** (이미 줄어 있다).
+  Write-Host "[포터블] 파이썬 줄이기"
+  & (Join-Path $py "python.exe") (Join-Path $root "scripts/slim_python.py") $py
+  if ($LASTEXITCODE -ne 0) { throw "파이썬 줄이기 실패" }
 }
 
 # ── 앱 ─────────────────────────────────────────────────────────────
