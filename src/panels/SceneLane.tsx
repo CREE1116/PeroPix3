@@ -1610,14 +1610,20 @@ function CardGroup(p: GroupProps) {
             <SceneRow {...p} cell={c} index={i} grip={p.gripOf("scene", c.id)} />
           </Fragment>
         ))}
+        {/* 이 카드의 **끝**에 놓을 때 — ★★자리는 **마지막 씬 바로 뒤**이지 「씬 추가」 뒤가
+            아니다 (사용자 지적 2026-08-28: *"맨 아래로 옮길 때 씬 추가 뒤에 표시된다"*).
+            ★같은 까닭으로 **줄 안쪽**에 둔다: 밖에 두면 세로 모드에서 기둥 줄 바깥이라
+            아무 데도 안 보였다 (*"가장 끝으로 옮기려 하면 표시가 안 뜬다"*).
+            ★축도 함께 넘긴다 — 안 넘기면 세로 모드에서 가로 막대가 그려진다. */}
+        <DropLine on={sceneAt !== null && (sceneAt < 0 || sceneAt >= p.card.cells.length)} vert={p.vert} />
         {p.vert && addScene}
       </div>
       {!p.vert && addScene}
       </>
       )}
-      {/* 이 카드의 **끝**에 놓을 때. ★접혀 있으면 줄이 없어 **언제나 끝**이라, 접힌 카드에도
-          이 표시만은 뜬다 (`useLaneReorder` 의 `index: -1`) */}
-      <DropLine on={sceneAt !== null && (sceneAt < 0 || sceneAt >= p.card.cells.length)} />
+      {/* ★접힌 카드에는 줄이 없어 **언제나 끝**이다 — 그때만 이 자리에 표시한다
+          (`useLaneReorder` 의 `index: -1`) */}
+      {p.folded && <DropLine on={sceneAt !== null} vert={p.vert} />}
     </div>
   );
 }
@@ -1679,7 +1685,12 @@ function SceneRow(
           ? {
               flexDirection: "column" as const,
               flexShrink: 0,
-              ...(expanded ? { minWidth: p.w + 12 } : { width: p.w + 12 }),
+              /* ★★**세로 모드에서는 펼쳐도 폭이 그대로다** (사용자 지적 2026-08-28:
+                 *"씬 프롬프트 입력란을 클릭하면 보이는 가로폭을 안 지키고 가로로 길게
+                 늘어난다"*). 가로 모드에서 펼치면 **아래로** 자라는데(`minHeight`),
+                 세로에서 같은 규칙을 쓰면 **옆으로** 자라 옆 기둥들을 밀어낸다.
+                 기둥은 이미 세로로 꽉 차 있으므로 편집기는 그 안에서 아래로 흐르면 된다. */
+              width: p.w + 12,
               borderRight: "1px solid var(--line-soft)",
             }
           : {
