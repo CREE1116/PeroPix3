@@ -5,7 +5,8 @@ import { useLlm } from "../store/llm";
 import { useCli, CLI_EFFORTS } from "../store/cli";
 import { useUi } from "../store/ui";
 // ★같은 모양을 두 벌 만들지 않는다 — 설정 화면의 묶음 상자를 그대로 쓴다
-import { Group } from "./Settings";
+import { Group, btn } from "./Settings";
+import { Icon } from "../components/Icon";
 import { Help } from "../components/Tip";
 import { openExternal } from "../lib/openExternal";
 
@@ -18,7 +19,11 @@ import { openExternal } from "../lib/openExternal";
 /** 「쓰려는 모델이 목록에 없다」의 유일한 출구.
  *
  *  ★목록을 잠근 대신(직접 입력 제거) **막다른 길을 만들지 않는다** — 없으면 요청할 곳을 준다.
- *  ★주소는 백엔드가 준다 (`agent.SUPPORT_URL`). 여기 박으면 두 곳이 어긋난다. */
+ *  ★주소는 백엔드가 준다 (`agent.SUPPORT_URL`). 여기 박으면 두 곳이 어긋난다.
+ *  ★★**주소를 글자로 보이지 않는다** (사용자 지시 2026-08-27) — 일반 옵션의
+ *    「버그 신고 / 건의」와 **같은 단추**를 쓴다. 같은 곳으로 가는 길이 화면마다 다른
+ *    모습이면(한쪽은 링크, 한쪽은 단추) 같은 곳인지 알 수 없고, 주소는 읽어 봐야
+ *    아무 소용이 없다. */
 function AskForModel({ url }: { url: string }) {
   const t = useI18n((s) => s.t);
   if (!url) return null;
@@ -29,9 +34,16 @@ function AskForModel({ url }: { url: string }) {
         data-llm-ask-link
         onClick={() => openExternal(url)}
         data-tip={url}
-        style={{ color: "var(--accent)", textDecoration: "underline" }}
+        style={{
+          ...btn,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "var(--sp-2)",
+          verticalAlign: "middle",
+        }}
       >
-        {url.replace(/^https?:\/\//, "")}
+        {Icon.external}
+        {t("settings.support")}
       </button>
     </div>
   );
@@ -582,11 +594,6 @@ const field: React.CSSProperties = {
   fontFamily: "var(--font-mono)",
 };
 
-const btn: React.CSSProperties = {
-  border: "1px solid var(--line)",
-  borderRadius: "var(--r-2)",
-  background: "var(--panel)",
-  color: "var(--ink-soft)",
-  padding: "4px var(--sp-4)",
-  fontSize: "var(--text-2xs)",
-};
+/* ★단추 모양은 **설정 화면의 것을 그대로 쓴다** (`Settings` 에서 들여온다).
+   여기 같은 값을 한 벌 더 두고 있었는데, 한쪽만 고쳐지면 같은 자리의 단추가
+   서로 다르게 보인다 — 이 파일 머리의 「같은 모양을 두 벌 만들지 않는다」와 어긋났다. */

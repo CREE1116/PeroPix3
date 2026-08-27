@@ -510,7 +510,7 @@ export const en = {
     reasoning: "Reasoning",
     effortDefault: "Model default",
     effortOff: "Off",
-    modelMissing: "Model you need isn't listed? Ask on Discord:",
+    modelMissing: "Model you need isn't listed? Send us a request.",
     guide: "Your instructions",
     guidePlaceholder: "e.g.\n- never use the thighhighs tag\n- keep replies short",
     guideHint: "Ask the assistant to remember something and it edits this. Applies to every engine. Previous versions are kept in data/.guide-bak/.",

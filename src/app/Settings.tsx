@@ -520,7 +520,7 @@ const checkRow: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const btn: React.CSSProperties = {
+export const btn: React.CSSProperties = {
   border: "1px solid var(--line)",
   borderRadius: "var(--r-2)",
   background: "var(--panel)",

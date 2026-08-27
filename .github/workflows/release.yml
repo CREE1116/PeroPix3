@@ -116,7 +116,16 @@ jobs:
       - name: patch-info.json
         shell: bash
         run: |
-          PREV=$(git tag --sort=-version:refname | grep -v "^${GITHUB_REF_NAME}$" | head -n 1)
+          # ★★**커밋 순서로 바로 앞 태그**를 고른다 (실측 2026-08-27).
+          #   예전에는 `git tag --sort=-version:refname | head -1` 이었는데, 그것은 **버전
+          #   크기순**이라 옛 `v3.0.0-rc.1` 이 언제나 맨 위였다 (3 > 0). 그 하나가 두 값을
+          #   동시에 망쳤다: `patch_from` 이 늘 `3.0.0-rc.1` 이라 앱의 「내 버전 ≥ patch_from」이
+          #   거짓이 되고, rc.1 이후로는 `requirements.txt` 가 당연히 바뀌었으니
+          #   `requires_full` 도 늘 참이었다. 그래서 **패치는 한 번도 쓰인 적이 없고**
+          #   (릴리즈 다섯 개의 patch-info.json 이 전부 같았다) 늘 132MB 를 받았다.
+          #   28MB 짜리 패치는 같은 릴리즈에 올라간 채 아무도 안 받았다.
+          # ★`--match 'v*'` — 릴리즈가 아닌 태그(`chip-edit-before`)에 걸리지 않게.
+          PREV=$(git describe --tags --abbrev=0 --match 'v*' "${GITHUB_REF_NAME}^" 2>/dev/null || true)
           REQ=false
           if [ -n "$PREV" ] && [ -n "$(git diff --name-only "$PREV" HEAD -- backend/requirements.txt models/censor || true)" ]; then
             REQ=true

@@ -190,8 +190,16 @@ def _unpack(zpath: Path, new: Path) -> str | None:
 
     # ★전체 zip 은 `PeroPix/` 한 겹을 쓰고 있다 (`Compress-Archive` 가 폴더째 담는다) —
     #   한 겹이면 벗겨서 **패치와 같은 모습**으로 맞춘다. 껍데기가 갈래를 몰라도 되게.
+    # ★★**그 한 겹이 앱 폴더일 때만 벗긴다** (2026-08-27, 판정이 드러낸 지뢰).
+    #   예전에는 겉이 하나면 이름을 안 보고 벗겼다. 그러면 언젠가 **백엔드만 담은 패치**를
+    #   만드는 날, 겉의 하나가 `backend/` 라서 그것을 벗기고 `server.py` 를 앱 뿌리에
+    #   쏟아 놓는다 — 갈아 끼우기가 그대로 실행되어 앱이 통째로 어긋난다.
+    #   ★표식은 **앱 폴더에만 있는 것**으로 본다 (`PeroPix.exe`·`version.json`).
     kids = list(new.iterdir())
-    if len(kids) == 1 and kids[0].is_dir():
+    looks_like_app = len(kids) == 1 and kids[0].is_dir() and any(
+        (kids[0] / m).exists() for m in ("PeroPix.exe", "version.json")
+    )
+    if looks_like_app:
         inner = kids[0]
         for e in inner.iterdir():
             shutil.move(str(e), str(new / e.name))

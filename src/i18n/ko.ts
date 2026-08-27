@@ -526,7 +526,7 @@ export const ko: Dict = {
     reasoning: "추론 강도",
     effortDefault: "모델 기본값",
     effortOff: "끄기",
-    modelMissing: "쓰려는 모델이 없나요? 디스코드로 요청해 주세요:",
+    modelMissing: "쓰려는 모델이 없나요? 요청해 주세요.",
     guide: "내 지침",
     guidePlaceholder: "예)\n- thighhighs 태그는 쓰지 않는다\n- 답은 짧게",
     guideHint: "조수에게 「기억해」 라고 하면 이 문서를 고칩니다. 엔진(API·CLI)과 무관하게 지켜집니다. 직전 내용은 data/.guide-bak/ 에 남습니다.",
