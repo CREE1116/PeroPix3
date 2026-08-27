@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
+import time
 import zipfile
 from pathlib import Path
 from typing import Any, Callable, Awaitable
@@ -172,7 +173,55 @@ async def stage(
         return {"ok": False, "error": err}
 
     zpath.unlink(missing_ok=True)
+
+    # ★★**데우는 것도 「설치」 안에서 끝낸다** (사용자 지적 2026-08-27: *"설치가 완료되었다고
+    #   했는데 재시작을 누르니 갑자기 다시 설치 중이라고 함"*). 처음에는 껍데기가 다시 켜기
+    #   **직전**에 데웠는데, 그러면 「다시 켜기」를 누른 뒤 12초가 조용히 흘러 **누른 것이
+    #   안 먹은 것처럼** 보인다. 기다림은 이미 기다리는 중인 이 자리에 있어야 한다.
+    # ★데우는 대상은 **새로 놓일 파일**이다. 갈아 끼우기는 이름 바꾸기라 여기서 캐시에 올린
+    #   것이 그대로 살아 있다. 패치에는 `python/` 이 안 들어 있으므로(exe·backend 뿐),
+    #   그때는 **지금 쓰고 있는 `python/`** 을 데운다 — 그것이 다음 실행에 다시 읽힐 것이다.
+    targets = [new]
+    if not (new / "python").exists():
+        targets.append(app_dir / "python")
+    files, bytes_, secs = await asyncio.to_thread(warm, targets, 12.0)
+    print(f"[update] 미리 읽기 {files}개 · {bytes_ // 1048576}MB · {secs:.1f}초", flush=True)
+
     return {"ok": True, "kind": got["kind"], "version": got["latest"], "dir": str(new)}
+
+
+def warm(targets: list[Path], budget: float) -> tuple[int, int, float]:
+    """다음 실행이 읽을 파일을 **미리 한 번 읽어** OS 캐시에 올린다 (실측 2026-08-27).
+
+    ★★**왜** — 패치 직후 첫 실행에서 파이썬이 제 임포트를 끝내는 데만 16.6초가 걸렸다.
+      앱 옆 `python/` 이 파일 5,317개·202MB 인데, 업데이트가 파일 캐시를 밀어내는 바람에
+      그 5천 개를 회전 디스크에서 흩어진 채 다시 읽기 때문이다. 여기서 차례로 한 번 훑으면
+      그 읽기가 캐시에서 끝난다.
+    ★★**위험을 셋 다 막는다**: ①**읽기만 한다** — 열고, 버리고, 닫는다. ②실패를 전부
+      삼킨다 — 못 읽는 파일 하나로 업데이트가 멈추면 안 된다. ③**시간 상한**이 있다 —
+      디스크가 느려도 여기 붙들리지 않는다 (덜 데워졌을 뿐 결과는 같다).
+    """
+    t0 = time.monotonic()
+    files = 0
+    total = 0
+    stack = list(targets)
+    while stack:
+        if time.monotonic() - t0 >= budget:
+            break
+        p = stack.pop()
+        try:
+            if p.is_dir():
+                stack.extend(p.iterdir())
+                continue
+            with open(p, "rb") as f:
+                files += 1
+                while chunk := f.read(256 * 1024):
+                    total += len(chunk)
+                    if time.monotonic() - t0 >= budget:
+                        break
+        except Exception:
+            continue
+    return files, total, time.monotonic() - t0
 
 
 def _unpack(zpath: Path, new: Path) -> str | None:

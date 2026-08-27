@@ -57,16 +57,9 @@ fn apply_update(app: tauri::AppHandle) -> Result<(), String> {
         state.kill();
     }
     update::apply(&root).map_err(|e| format!("갈아 끼우지 못했습니다: {e}"))?;
-    /* ★★**띄우기 전에 디스크를 데운다** (사용자 결정 2026-08-27, 실측 근거는 `update::warm`
-         의 ★★주). 여기서 몇 초를 쓰는 대신 **다음 실행의 15초**가 사라진다. 값을 치르는
-         자리도 여기가 맞다 — 화면은 「설치 중」이고, 사용자는 기다리는 중이다.
-       ★상한을 둔다: 못 데워도 앱은 그냥 뜬다 (느릴 뿐이다). */
-    let t = std::time::Instant::now();
-    let (n, b) = update::warm(&update::warm_targets(&root), std::time::Duration::from_secs(12));
-    backend::log_line(
-        &root,
-        &format!("[update] 미리 읽기 {n}개 · {}MB · {:.1}초", b / 1_048_576, t.elapsed().as_secs_f32()),
-    );
+    /* ★데우기는 **여기 없다** — 「설치 중」 단계 안에서 백엔드가 한다 (`backend/update.py`
+       의 `warm`). 처음에는 여기서 했는데, 그러면 「다시 켜기」를 누른 뒤 12초가 조용히 흘러
+       **누른 것이 안 먹은 것처럼** 보였다 (사용자 지적 2026-08-27). 이 자리는 즉시여야 한다. */
     /* ★★**띄우기 전에 자물쇠를 놓는다** (2026-08-27에 잡았다). 안 놓으면 새로 뜬 앱이
          「이 폴더의 PeroPix 가 이미 실행 중」으로 보고 **곧바로 스스로 닫는다** — 업데이트가
          끝나면 앱이 사라지는 셈이다. `app.exit(0)` 은 아래에서 부르므로, 그때까지 우리는
