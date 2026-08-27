@@ -161,6 +161,10 @@ jobs:
             _dist/patch-${{ env.VERSION }}.zip
             _dist/patch-info.json
           draft: true
-          generate_release_notes: true
+          # ★★**자동 변경 이력을 안 붙인다** (사용자 지시 2026-08-27). 커밋 목록이 통째로
+          #   들어가 릴리즈가 지저분해지고, **그것이 그대로 디스코드 알림까지 딸려 간다**
+          #   (`notify-discord.yml` 이 릴리즈 본문을 그대로 싣는다).
+          #   ★본문은 초안을 공개하기 전에 **손으로 적는다** — 받는 사람이 읽을 것만.
+          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

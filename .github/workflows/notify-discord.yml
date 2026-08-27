@@ -38,7 +38,6 @@ jobs:
           echo "$REL" | jq -r '.body // ""' > /tmp/body.txt
           {
             echo "tag=$(echo "$REL" | jq -r '.tag_name')"
-            echo "url=$(echo "$REL" | jq -r '.html_url')"
             echo "draft=$(echo "$REL" | jq -r '.draft')"
           } >> "$GITHUB_OUTPUT"
 
@@ -46,7 +45,6 @@ jobs:
         env:
           HOOK: ${{ secrets.DISCORD_WEBHOOK }}
           TAG: ${{ steps.rel.outputs.tag }}
-          URL: ${{ steps.rel.outputs.url }}
           DRAFT: ${{ steps.rel.outputs.draft }}
         run: |
           set -euo pipefail
@@ -63,16 +61,19 @@ jobs:
           VER="${TAG#v}"
           DL="https://github.com/${{ github.repository }}/releases/download/${TAG}/PeroPix-${VER}-win64.zip"
 
-          # ★★**글자 수를 여기서 자른다.** 디스코드는 2,000자를 넘으면 **400 으로 되돌린다** —
-          #   릴리즈 노트를 자동 생성하면 커밋 목록이 길어져 쉽게 넘는다. 잘린 뒤는 노트 링크로 간다.
+          # ★★**디스코드 상한(2,000자)을 넘지 않게만 자른다.** 넘으면 400 으로 되돌아오고,
+          #   머리말과 내려받기 줄이 차지하는 만큼을 빼고 남는 자리를 본문에 준다 — 짧으면 안 자른다.
           #   ★자르기는 `jq` 로 한다: 바이트가 아니라 **글자** 기준이라 한글이 중간에 안 끊긴다.
           jq -n \
             --arg tag "$TAG" \
             --arg body "$(cat /tmp/body.txt)" \
             --arg dl "$DL" \
-            --arg url "$URL" \
-            '($body | if length > 1200 then .[0:1200] + "\n…" else . end) as $b
-             | {content: "🚀 **PeroPix \($tag)** 릴리즈!\n\n\($b)\n\n📥 [내려받기](\($dl))\n🔗 [릴리즈 노트](\($url))"}' \
+            '"🚀 **PeroPix \($tag)** 릴리즈!" as $head
+             | "\n\n📥 [내려받기](\($dl))" as $tail
+             | (2000 - ($head | length) - ($tail | length) - 3) as $room
+             | ($body | if length > $room then .[0:$room] + "…" else . end) as $b
+             | (if ($b | gsub("\\s"; "")) == "" then "" else "\n\n" + $b end) as $mid
+             | {content: ($head + $mid + $tail)}' \
             > /tmp/payload.json
 
           # ★★**실패를 삼키지 않는다.** 그냥 `curl` 은 400 을 받아도 성공으로 끝나, 알림이
