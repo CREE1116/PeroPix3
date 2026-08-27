@@ -15,27 +15,21 @@
     if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
   } catch (e) {}
 
-  /* 첫 문구 — 언어 고르는 규칙도 앱과 같다 (`src/i18n/index.ts` 의 `detect()`):
+  /* 언어 — 규칙은 앱과 같다 (`src/i18n/index.ts` 의 `detect()`):
      저장된 것 → 없으면 브라우저 언어 → 그래도 모르면 영어.
-     ★★문구는 `boot.backend` 를 **옮겨 적은 것**이다. 그 세 줄을 고치면 여기도 함께 고친다 —
-       딕셔너리를 불러올 수 없다. 그 번들이 오기 전에 그려야 하는 자리이기 때문이다. */
-  var SAY = {
-    ko: "엔진을 깨우는 중…",
-    en: "Starting the engine…",
-    ja: "エンジンを起動中…",
-  };
+
+     ★★**글자를 여기서 적지 않는다** (2026-08-27, 한 번 그렇게 했다가 못 뜬 자리).
+       이 파일은 `<head>` 에서 읽히므로 글자 칸이 아직 없어 `DOMContentLoaded` 를 기다렸는데,
+       그 사건은 **모듈 스크립트가 다 돌고 난 뒤**에 온다 (명세가 그렇다). 개발 중에는 그것이
+       10초 뒤이고, 그때는 이미 리액트가 `#root` 를 비워 **글자 칸 자체가 없다.**
+       그래서 화면에는 막대만 10초 동안 떠 있었다.
+     ★★대신 **표식만 남긴다.** 문구 세 줄은 `index.html` 에 처음부터 적혀 있고, 어느 것을
+       보일지는 CSS 가 이 표식으로 고른다 — 자바스크립트가 아예 안 돌아도 한 줄은 뜬다. */
   var l = "";
   try { l = localStorage.getItem("peropix.locale") || ""; } catch (e) {}
   if (l !== "ko" && l !== "en" && l !== "ja") {
     var n = (navigator.language || "").toLowerCase();
     l = n.indexOf("ko") === 0 ? "ko" : n.indexOf("ja") === 0 ? "ja" : "en";
   }
-  /* ★이 파일은 `<head>` 에서 읽히므로 글자 칸이 아직 없다 — 문서를 다 읽은 뒤에 적는다.
-     로컬 파일이라 그 사이가 눈에 띄지 않는다. */
-  function say() {
-    var el = document.getElementById("boot-say");
-    if (el) el.textContent = SAY[l];
-  }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", say);
-  else say();
+  document.documentElement.setAttribute("data-boot-locale", l);
 })();
