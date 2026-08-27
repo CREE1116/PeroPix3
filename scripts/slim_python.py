@@ -40,6 +40,21 @@ PURE_NAME = {"py.typed"}
 SKIP_SUFFIX = {".dist-info", ".egg-info", ".egg-link", ".pth"}
 
 
+def _utf8_out() -> None:
+    """★★**내는 글자를 UTF-8 로 못 박는다** (실측 2026-08-27, 릴리즈가 여기서 죽었다).
+
+    GitHub 러너의 파이썬은 표준 출력을 **cp1252** 로 잡는다. 그 자리에 한글을 찍으면
+    `UnicodeEncodeError` 로 스크립트가 끝나고, 워크플로는 「파이썬 줄이기 실패」만 남긴다 —
+    정작 줄이기는 잘 되고 있었는데 **말하다가 죽은 것**이다.
+    ★`errors="replace"` 를 함께 둔다: 어떤 콘솔이든 여기서 다시 죽지 않게.
+    """
+    for s in (sys.stdout, sys.stderr):
+        try:
+            s.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
 def pure(d: Path) -> bool:
     """이 폴더를 zip 에 담아도 되나 — 위 ★★주의 규칙."""
     if not (d / "__init__.py").exists():
@@ -58,6 +73,7 @@ def pure(d: Path) -> bool:
 
 
 def main() -> int:
+    _utf8_out()
     py = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(sys.executable).parent
     sp = py / "Lib" / "site-packages"
     if not sp.is_dir():
