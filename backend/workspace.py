@@ -444,30 +444,53 @@ class Store:
             except OSError:
                 pass
 
+    #: 색인 줄에서 경로를 꺼낼 때 찾는 조각. ★우리가 `json.dumps` 로 쓰므로 모양이 고정이다.
+    _FILE_KEY = '"file": "'
+
+    @classmethod
+    def _file_of(cls, line: str) -> str | None:
+        """색인 한 줄에서 `file` 값만 꺼낸다 — **줄을 통째로 파싱하지 않는다** (아래 ★★주).
+        ★경로에는 따옴표·역슬래시가 안 들어간다 (`safe_name` 이 막는다). 그래서 이 정도로 족하다."""
+        i = line.find(cls._FILE_KEY)
+        if i < 0:
+            return None
+        j = line.find('"', i + len(cls._FILE_KEY))
+        return line[i + len(cls._FILE_KEY):j] if j > 0 else None
+
     def _rewrite_paths(self, ws: str, moves: dict[str, str]) -> None:
         """색인과 곁파일의 `file` 을 새 경로로 바꾼다 (`renumber` 전용).
 
         ★append-only 인 파일을 **통째로 다시 쓰는** 유일한 자리다. 그래서 임시 파일에 쓴 뒤
-          바꿔치기한다 — 쓰다 죽어도 앞의 것이 남는다."""
+          바꿔치기한다 — 쓰다 죽어도 앞의 것이 남는다.
+
+        ★★**바뀌는 줄만 파싱한다** (실측 2026-08-27). 곁파일(`records-env.jsonl`)은 생성
+          환경을 통째로 담아 **쉽게 90MB를 넘는다** (개발 워크스페이스 실측 92MB). 예전에는
+          모든 줄을 `json.loads` → `json.dumps` 로 굴려 **1.40초**가 들었다 — 그것도 **몇 장을
+          옮기든 늘 같은 값**이라, 사용자에게는 「15장이든 100장이든 비슷한 딜레이」로 보였다.
+          바뀌는 줄만 굴리면 **0.46초**다 (나머지는 그대로 흘려 쓴다).
+        """
         d = self.dir_of(ws)
         for name in (RECORDS_NAME, ENV_NAME):
             p = d / name
             if not p.is_file():
                 continue
-            out = []
-            for line in p.read_text(encoding="utf-8").splitlines():
-                if not line.strip():
-                    continue
-                try:
-                    row = json.loads(line)
-                except Exception:
-                    out.append(line)      # ★못 읽는 줄은 **그대로 둔다** (버리지 않는다)
-                    continue
-                if isinstance(row, dict) and row.get("file") in moves:
-                    row["file"] = moves[row["file"]]
-                out.append(json.dumps(row, ensure_ascii=False))
             tmp = p.with_suffix(p.suffix + ".tmp")
-            tmp.write_text("\n".join(out) + "\n", encoding="utf-8")
+            with p.open("r", encoding="utf-8") as fin, tmp.open("w", encoding="utf-8") as fout:
+                for line in fin:
+                    if not line.strip():
+                        continue
+                    f = self._file_of(line)
+                    if f is not None and f in moves:
+                        try:
+                            row = json.loads(line)
+                            row["file"] = moves[f]
+                            fout.write(json.dumps(row, ensure_ascii=False) + "\n")
+                            continue
+                        except Exception:
+                            pass          # ★못 읽는 줄은 **그대로 둔다** (버리지 않는다)
+                    fout.write(line if line.endswith("\n") else line + "\n")
+            # ★임시 파일을 **바꿔치기**한다 — 지우는 연산을 이 파일에 두지 않는다
+            #   (`test_output_safety` 가 그것을 지킨다: 생성물은 사람이 지울 때만 사라진다).
             tmp.replace(p)
 
     def append_record(self, ws: str, rec: dict) -> None:

@@ -1218,7 +1218,11 @@ async def renumber_files(ws: str, body: RenumberBody):
       `async` 안에서 그대로 부르면 **이벤트 루프가 그동안 멈춘다** — 이미 뜬 그림은 멀쩡한데
       새로 받아야 하는 것(큰 그림·아직 안 뜬 썸네일)만 몇 초 동안 안 나오고, 끝나는 순간
       한꺼번에 뜬다. 사용자가 본 「5초 뒤 화면이 한 번 깜빡」이 그것이다."""
-    return await asyncio.to_thread(store.renumber, ws, body.items)
+    # ★걸린 시간을 남긴다 — 「느리다」는 제보가 오면 여기 숫자부터 본다
+    t0 = time.perf_counter()
+    got = await asyncio.to_thread(store.renumber, ws, body.items)
+    say("info", "renumber", f"{len(got.get('pairs') or [])}장 · {time.perf_counter() - t0:.2f}초")
+    return got
 
 
 # ── 썸네일 ────────────────────────────────────────────────────────
