@@ -1212,8 +1212,13 @@ class RenumberBody(BaseModel):
 async def renumber_files(ws: str, body: RenumberBody):
     """씬 순서가 바뀌면 **파일 이름의 씬 번호도 따라간다** (사용자 지시 2026-08-24).
 
-    ★조수가 시켰든 사람이 끌어다 놓았든 **같은 길**을 지난다 — 화면의 `moveScene` 이 부른다."""
-    return store.renumber(ws, body.items)
+    ★조수가 시켰든 사람이 끌어다 놓았든 **같은 길**을 지난다 — 화면의 `moveScene` 이 부른다.
+
+    ★★**딴 실에서 돈다** (실측 2026-08-27). 파일을 옮기고 색인을 다시 쓰는 통짜 작업이라
+      `async` 안에서 그대로 부르면 **이벤트 루프가 그동안 멈춘다** — 이미 뜬 그림은 멀쩡한데
+      새로 받아야 하는 것(큰 그림·아직 안 뜬 썸네일)만 몇 초 동안 안 나오고, 끝나는 순간
+      한꺼번에 뜬다. 사용자가 본 「5초 뒤 화면이 한 번 깜빡」이 그것이다."""
+    return await asyncio.to_thread(store.renumber, ws, body.items)
 
 
 # ── 썸네일 ────────────────────────────────────────────────────────

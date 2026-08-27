@@ -200,7 +200,8 @@ class Store:
         p.mkdir(parents=True, exist_ok=True)
         return p
 
-    def next_name(self, d: Path, prefix: str, fmt: str, ws: str | None = None) -> Path:
+    def next_name(self, d: Path, prefix: str, fmt: str, ws: str | None = None,
+                  names: list[str] | None = None) -> Path:
         """그 폴더에서 **다음 순번**. 시각이 아니라 순번이라 만든 차례가 그대로 보인다.
         ★번호는 **접두마다 따로** 센다 — 멀티에서 슬롯 1의 3장과 슬롯 2의 3장이
         각각 001~003 이 되어야 슬롯 안에서 몇 번째인지 읽힌다.
@@ -216,6 +217,28 @@ class Store:
           이름이 겹치지 않는다."""
         head = f"{prefix}_" if prefix else ""
         used = 0
+        # ★★모으기는 **한 번만** 할 수 있다 — 여러 장을 이어 지을 때는 부르는 쪽이
+        #   목록을 들고 있다가 그대로 넘긴다 (`_names_in` 의 ★★주).
+        if names is None:
+            names = self._names_in(d, ws)
+        for name in names:
+            stem = name.rsplit(".", 1)[0]
+            if not stem.startswith(head):
+                continue
+            part = stem[len(head):].split("_")[0]
+            if part.isdigit():
+                used = max(used, int(part))
+        return d / f"{head}{used + 1:03d}.{fmt}"
+
+    def _names_in(self, d: Path, ws: str | None) -> list[str]:
+        """그 폴더에서 **이미 쓴 이름들** — 폴더 · 휴지통 · 레코드를 합쳐서.
+
+        ★★**비싸다**: 레코드 전량을 읽는다. 여러 장을 이어 이름 지을 때 파일마다
+          다시 부르면 **파일 수의 제곱**이 된다 — 수백 장에서 몇 초가 통째로 들고,
+          그동안 백엔드가 막혀 **그림이 안 뜬다** (실측 2026-08-27, 「씬 순서를 바꾸면
+          5초 멈춘다」의 절반이 이것이었다). 그래서 `renumber` 는 폴더마다 한 번만
+          모아 두고, 자리를 하나 정할 때마다 그 목록에 이름을 더해 간다.
+        """
         spots = [d]
         names: list[str] = []
         if ws:
@@ -260,15 +283,9 @@ class Store:
         for spot in spots:
             if not spot.is_dir():
                 continue
-            names += [f.name for f in spot.glob(f"{head}*")]
-        for name in names:
-            stem = name.rsplit(".", 1)[0]
-            if not stem.startswith(head):
-                continue
-            part = stem[len(head):].split("_")[0]
-            if part.isdigit():
-                used = max(used, int(part))
-        return d / f"{head}{used + 1:03d}.{fmt}"
+            # ★접두로 안 거른다 — 거르는 것은 부르는 쪽(`next_name`)의 몫이다
+            names += [f.name for f in spot.glob("*")]
+        return names
 
     def rel(self, ws: str, path: Path) -> str:
         return path.relative_to(self.dir_of(ws)).as_posix()
@@ -351,10 +368,21 @@ class Store:
             stash.append((tmp, lead, ext))
 
         # ② 제 이름을 준다
+        # ★★**이름 목록은 폴더마다 한 번만 모은다** (실측 2026-08-27). 파일마다 다시 모으면
+        #   레코드 전량을 그때마다 읽어 **파일 수의 제곱**이 된다 (`_names_in` 의 ★★주).
+        #   자리를 하나 정할 때마다 그 목록에 이름을 더해 두면, 다시 훑지 않고도 다음 번호가
+        #   제대로 나온다 — 훑는 것과 결과가 같다.
         pairs = []
+        seen: dict[Path, list[str]] = {}
         for tmp, lead, ext in stash:
-            dst = self.next_name(tmp.parent, lead, ext, ws)
+            # ★`setdefault` 를 쓰면 안 된다 — **둘째 인자를 매번 평가**해서 캐시가 통째로
+            #   헛돌았다 (실측 2026-08-27: 600장에서 `_names_in` 이 600번 불렸다).
+            names = seen.get(tmp.parent)
+            if names is None:
+                names = seen[tmp.parent] = self._names_in(tmp.parent, ws)
+            dst = self.next_name(tmp.parent, lead, ext, ws, names)
             tmp.rename(dst)
+            names.append(dst.name)
             pairs.append({"file": self.rel(ws, dst), "to": self.rel(ws, dst)})
         # ★짝은 **옛 경로 → 새 경로**여야 한다 (위에서 tmp 를 거쳤으므로 다시 맞춘다)
         for (src, _, _), p in zip(plan, pairs):
