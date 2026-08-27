@@ -8,7 +8,7 @@ import { uniqueName } from "../lib/uniqueName";
 import { makeBlock, parseSegs, type Block } from "../lib/blocks";
 import { wrapSetTabInCard } from "../lib/sceneCards";
 export { takesOf, takesOfScene, dedupeByFile, type Rec } from "../lib/takes";
-import { dedupeByFile } from "../lib/takes";
+import { dedupeByFile, takesOf } from "../lib/takes";
 import type { Rec } from "../lib/takes";
 import { moveTo } from "../lib/moveTo";
 import { planDelete, type DelPlan, type DelTarget } from "../lib/delPlan";
@@ -323,6 +323,9 @@ type S = {
   setPreview: (patch: Partial<NonNullable<Spec["preview"]>>) => void;
   /** 셀은 이름만(빈 태그) 또는 이름+태그로 준다 — 포즈세트 카드가 후자다 */
   addSceneGroup: (name: string, cells: (string | { name: string; tags?: string; blocks?: Block[] })[]) => void;
+  /** 씬 자리가 바뀌면 **파일 이름의 씬 번호도 따라간다** (사용자 지시 2026-08-24).
+   *  ★한 번에 하나만 돈다 — 자세한 것은 구현부의 ★★주. */
+  renumberSet: (groupId: string) => Promise<void>;
   closeSet: (id: string) => void;
   renameSceneGroup: (id: string, name: string) => void;
 
@@ -393,6 +396,62 @@ type S = {
  *  ★`styleOn: false` 를 **명시**한다 — 값이 없으면 「켜짐」으로 읽히는데(옛 워크스페이스가
  *    카드를 잃지 않게 한 규칙, `prompt.load`), 새 것은 꺼진 채로 시작해야 한다. */
 const freshPrompt = (): TabPrompt => ({ base: [], baseUc: [], styleOn: false });
+
+/** 개명이 도는 중인가 — ★**한 번에 하나만** (`renumberSet` 의 ★★주) */
+let renumBusy = false;
+/** 도는 동안 또 들어온 그룹 — 끝나고 한 번만 다시 돈다 */
+const renumAgain = new Set<string>();
+
+/** 실제로 서버에 개명을 시키고 화면의 경로를 갈아 끼운다.
+ *  ★기록·「지운 것」·**별표**가 전부 경로로 적혀 있다 — 셋을 함께 옮긴다. */
+async function runRenumber(
+  get: () => S,
+  set: (p: Partial<S>) => void,
+  groupId: string,
+): Promise<void> {
+  const { current, spec, records } = get();
+  const tab = spec?.sceneGroups.find((x) => x.id === groupId);
+  if (!current || !spec || tab?.kind !== "sceneGroup") return;
+  /* ★값으로 가져오면 순환이 된다 (`gen.ts` 가 이 파일을 부른다) — **부를 때** 싣는다. */
+  const { useGen } = await import("./gen");
+  const excludeNo = !!useGen.getState().params.exclude_slot_number;
+  const cells = allCells(tab);
+  const items = cells.flatMap((c, i) =>
+    takesOf(records, { id: tab.id, name: tab.name, idOnly: tab.idOnly }, c).map((r) => ({
+      file: r.file,
+      cell_no: i + 1,
+      cell: c.name,
+      exclude_no: excludeNo,
+    })),
+  );
+  if (!items.length) return;
+  try {
+    const r = await api<{ pairs: { file: string; to: string }[] }>(
+      `/api/workspaces/${encodeURIComponent(current)}/renumber`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) },
+    );
+    const moves = new Map(r.pairs.filter((p) => p.file !== p.to).map((p) => [p.file, p.to]));
+    if (!moves.size) return;
+    const now = get().spec;
+    if (!now) return;
+    const sel = now.selection;
+    set({
+      records: get().records.map((x) => (moves.has(x.file) ? { ...x, file: moves.get(x.file)! } : x)),
+      spec: {
+        ...now,
+        selection: {
+          ...sel,
+          // ★「지운 것」과 **별표**가 둘 다 경로로 적혀 있다 — 하나만 옮기면 나머지가 풀린다
+          deleted: sel.deleted.map((f) => moves.get(f) ?? f),
+          starred: (sel.starred ?? []).map((f) => moves.get(f) ?? f),
+        },
+      },
+    });
+    queueSave(get);
+  } catch {
+    /* 이름만 옛것으로 남는다 — 자리 이동은 이미 됐다 */
+  }
+}
 
 const newSpec = (name: string): Spec => ({
   version: 1,
@@ -1503,6 +1562,7 @@ export const useWs = create<S>((set, get) => ({
             : k,
         ),
       });
+      void get().renumberSet(groupId);
       return;
     }
 
@@ -1515,6 +1575,7 @@ export const useWs = create<S>((set, get) => ({
         return k;
       }),
     });
+    void get().renumberSet(groupId);
   },
 
   /** 카드 순서 — 그 카드의 씬 전부가 함께 움직인다 (번호는 위 `moveScene` 주석과 같다) */
@@ -1528,18 +1589,36 @@ export const useWs = create<S>((set, get) => ({
     const put = toIndex < 0 ? rest.length : Math.min(rest.length, toIndex > at ? toIndex - 1 : toIndex);
     if (put === at) return;
     get().patchSceneGroup(groupId, { cards: [...rest.slice(0, put), tab.cards[at], ...rest.slice(put)] });
+    // ★카드가 움직이면 그 안의 씬 번호가 통째로 밀린다 (번호는 **탭 안에서 통째로** 센다)
+    void get().renumberSet(groupId);
   },
 
-  /* ★★**씬 자리가 바뀌어도 파일 이름은 안 건드린다** (사용자 결정 2026-08-27).
-
-     예전에는 자리를 옮길 때마다 그 그룹의 그림 파일을 **전부 개명**했다
-     (2026-08-24 지시 *"씬 위치가 변경되면 파일 네이밍도 자동으로 변경"*). 대가가 셋이었다:
-       · 한 번 끌 때마다 수백 번의 이름 바꾸기 (충돌을 피하려 임시 이름을 거쳐 **두 번씩**),
-       · 별표는 경로로 적히는데 **따라가지 않아** 풀렸다 — 「별표만 보기」에서는 사라져 보였다,
-       · 기다리지 않고 보내서, 빠르게 두 번 끌면 옛 경로로 만든 계획이 적용됐다.
-     v2 도 자리만 바꾸고 이름은 안 건드렸다 (`index.html` 의 `startSlotDrag` 뒤에 서버 호출이
-     없다). 번호는 **만들 때의 자리**로 굳는다.
-     ★되살리지 말 것 — 되살린다면 별표 remap 과 「한 번에 하나만」이 함께 와야 한다. */
+  /** 씬 자리가 바뀌면 **파일 이름의 씬 번호도 따라간다** (사용자 지시 2026-08-24).
+   *
+   *  ★★**한 번에 하나만 보낸다** (2026-08-27). 예전에는 기다리지 않고 보내서, 빠르게 두 번
+   *    끌면 **옛 경로로 만든 계획**이 뒤늦게 적용됐다 — 기록이 없는 파일을 가리켜 그림이
+   *    통째로 안 떴다. 도는 중에 또 요청이 오면 **끝난 뒤 한 번만** 다시 돈다.
+   *  ★★**별표도 새 경로를 따라간다.** 별표는 파일 경로로 적히는데(`selection.starred`)
+   *    예전에는 「지운 것」만 옮겨서, 개명하면 별이 조용히 풀렸다 —
+   *    「별표만 보기」에서는 그림이 **사라져 보였다** (사용자 지적 2026-08-27).
+   *  ★썸네일 캐시는 **서버가 함께 옮긴다** (`workspace.py` 의 `_move_thumbs`). 안 옮기면
+   *    개명한 그림이 전부 다시 구워져 수십 초가 든다 — 그것이 「무겁다」의 정체였다.
+   */
+  async renumberSet(groupId) {
+    if (renumBusy) {
+      renumAgain.add(groupId);
+      return;
+    }
+    renumBusy = true;
+    try {
+      await runRenumber(get, set, groupId);
+    } finally {
+      renumBusy = false;
+      const next = [...renumAgain];
+      renumAgain.clear();
+      for (const g of next) void get().renumberSet(g);
+    }
+  },
 
   renameSceneGroup(id, name) {
     const spec = get().spec;

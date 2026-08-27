@@ -1200,6 +1200,24 @@ async def restore_files(ws: str, body: TrashBody):
 
 
 
+class RenumberBody(BaseModel):
+    """씬 자리가 바뀌었을 때 **바뀐 뒤의** 번호·이름 (선결 조건 3-8).
+
+    ★누가 어느 씬인지는 화면이 안다(`cell_id` 로 묶는다) — 서버는 **이름 규칙**만 안다."""
+
+    items: list[dict] = []
+
+
+@app.post("/api/workspaces/{ws}/renumber")
+async def renumber_files(ws: str, body: RenumberBody):
+    """씬 순서가 바뀌면 **파일 이름의 씬 번호도 따라간다** (사용자 지시 2026-08-24).
+
+    ★조수가 시켰든 사람이 끌어다 놓았든 **같은 길**을 지난다 — 화면의 `moveScene` 이 부른다."""
+    return store.renumber(ws, body.items)
+
+
+# ── 썸네일 ────────────────────────────────────────────────────────
+
 @app.get("/api/thumb/{ws}/{rel:path}")
 def get_derived_thumb(ws: str, rel: str):
     """생성물의 **파생 썸네일** — 히스토리 줄·셀 그리드가 쓴다 (원본은 /api/file).
