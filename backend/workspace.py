@@ -95,10 +95,42 @@ def file_lead(cell_no: int | None, cell: str | None, exclude_no: bool) -> str:
 
 class Store:
     def __init__(self, root: Path):
+        #: 방금 옮긴 그림의 옛 이름 → 지금 이름 (위 ★★주)
+        self._moved: dict[tuple[str, str], str] = {}
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
 
     # ── 워크스페이스 ──────────────────────────────────────────
+    #: 방금 옮긴 그림의 **옛 이름 → 지금 이름** (`renumber` 가 적는다).
+    #
+    #  ★★**왜 들고 있나** (사용자 지적 2026-08-27: *"클릭해서 크게 보는 원본이 안 보이다가
+    #    5초 뒤 화면이 깜빡하고 나서 보인다"*). 개명은 파일을 먼저 옮기고, 화면은 그 답을
+    #    받고 나서야 경로를 갈아 끼운다 — 그 **틈** 동안 화면은 **옛 경로**로 그림을 부른다.
+    #    그때 404 를 주면 `<img>` 는 거기서 끝난다 (스스로 다시 시도하지 않는다). 그래서
+    #    경로가 갱신되어 `src` 가 바뀌는 순간에야 뜬다 — 그 「깜빡」이 그것이었다.
+    #    ★이미 크게 본 적 있는 그림만 멀쩡했던 까닭도 같다: 그건 웹뷰 캐시에 있었다.
+    #  ★한 번 옮긴 것을 또 옮길 수 있으므로 **사슬을 따라간다** (`_current`).
+    #  ★캐시일 뿐이라 앱을 껐다 켜면 사라진다 — 그때는 화면도 새 경로를 들고 있다.
+    _MOVED_CAP = 20_000
+
+    def _remember_moves(self, ws: str, moves: dict[str, str]) -> None:
+        for old, new in moves.items():
+            self._moved[(ws, old)] = new
+        if len(self._moved) > self._MOVED_CAP:      # 오래된 절반을 버린다
+            for k in list(self._moved)[: len(self._moved) // 2]:
+                self._moved.pop(k, None)
+
+    def _current(self, ws: str, rel: str) -> str:
+        """옛 이름으로 물어도 **지금 이름**을 준다 (위 ★★주). 사슬을 따라가되 고리는 끊는다."""
+        seen: set[str] = set()
+        while rel not in seen:
+            seen.add(rel)
+            nxt = self._moved.get((ws, rel))
+            if not nxt:
+                break
+            rel = nxt
+        return rel
+
     def dir_of(self, ws: str) -> Path:
         return self.root / safe_name(ws)
 
@@ -389,6 +421,7 @@ class Store:
             p["file"] = self.rel(ws, src)
 
         moves = {p["file"]: p["to"] for p in pairs}
+        self._remember_moves(ws, moves)
         self._move_thumbs(ws, moves)
         self._rewrite_paths(ws, moves)
         return {"pairs": pairs}
@@ -553,12 +586,15 @@ class Store:
         src = self.file_path(ws, rel)
         if not src:
             return None
-        return thumbs.derive(src, self.dir_of(ws) / THUMB_DIR / thumbs.flat_name(rel))
+        # ★캐시 이름도 **지금 이름**으로 짓는다 — 옛 이름으로 물어 왔다고 옛 이름의 캐시를
+        #   또 만들면 같은 그림의 썸네일이 두 벌이 된다 (`_moved` 의 ★★주).
+        return thumbs.derive(src, self.dir_of(ws) / THUMB_DIR / thumbs.flat_name(self._current(ws, rel)))
 
     def file_path(self, ws: str, rel: str) -> Path | None:
-        """워크스페이스 밖으로 나가는 경로를 막는다."""
+        """워크스페이스 밖으로 나가는 경로를 막는다.
+        ★방금 개명한 것은 **옛 이름으로 와도** 답한다 (`_moved` 의 ★★주)."""
         base = self.dir_of(ws).resolve()
-        p = (base / rel).resolve()
+        p = (base / self._current(ws, rel)).resolve()
         if not str(p).startswith(str(base)) or not p.exists():
             return None
         return p
