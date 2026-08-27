@@ -356,13 +356,12 @@ defineAction({
 
 /* ── 씬 자리 옮기기 ────────────────────────────────────────────
    ★★*"미소 씬이랑 슬픔 씬 위치를 바꿔줘"* 가 이것이다 (사용자 시나리오 2026-08-24).
-     자리를 옮기면 **파일 이름의 씬 번호도 따라간다** (`renumberSet`) — 사람이 끌어다
-     놓았을 때와 **같은 길**이라 조수가 시켜도 자동으로 맞는다. */
+   ★**이미 만든 그림의 파일 이름은 안 바뀐다** (사용자 결정 2026-08-27) — 사람이 끌어다
+     놓았을 때와 같은 길이고, 그쪽도 안 바꾼다 (`store/workspace` 의 ★★주). */
 
 defineAction({
   id: "move_scene",
   desc: "★**씬 자리를 옮긴다.** «미소를 맨 앞으로»·«미소와 슬픔 자리를 바꿔줘» 가 이것이다. "
-    + "자리가 바뀌면 **그림 파일 이름의 씬 번호도 따라간다.** "
     + "`before` 를 주면 그 씬 앞으로, 비우면 맨 뒤로 간다.",
   args: {
     scene: { type: "string", desc: "옮길 씬 이름 또는 id", required: true },
@@ -624,9 +623,7 @@ defineAction({
       return err("not_found", `그런 씬이 없습니다: ${key}`, {
         what: "scene", given: key, candidates: nearBy(key, cells.map((c) => c.name)),
       });
-    /* ★씬은 카드 안에 있어 전용 setter 가 없다 — 카드를 통째로 갈아 끼운다.
-       ★★이름이 바뀌면 **파일 이름도 따라가야** 한다 (3-8): 파일 앞 조각이
-         `<번호>_<씬 이름>` 이라 이름만 바꾸면 옛 이름이 파일에 그대로 남는다. */
+    /* ★씬은 카드 안에 있어 전용 setter 가 없다 — 카드를 통째로 갈아 끼운다. */
     /* ★옛 값을 먼저 뜬다 — 고친 뒤에는 무엇이었는지 알 길이 없다 */
     const wasCell = Object.fromEntries(
       Object.keys(patch).map((k) => [k, (cell as Record<string, unknown>)[k]]),
@@ -637,10 +634,11 @@ defineAction({
         cells: k.cells.map((c) => (c.id === cell.id ? { ...c, ...patch } : c)),
       })),
     } as never);
-    if (patch.name) void ws.renumberSet(cur.id);
+    /* ★이름을 바꿔도 **이미 만든 파일은 안 건드린다** (사용자 결정 2026-08-27,
+       `store/workspace` 의 ★★주). 파일 이름은 만들 때의 자리·이름으로 굳는다. */
     return {
       ok: true,
-      did: `씬 「${cell.name}」 → ${done}` + (patch.name ? " (파일 이름도 함께 갱신)" : ""),
+      did: `씬 「${cell.name}」 → ${done}`,
       at: { kind: "prompt", workspace: ws.current ?? undefined, sceneGroup: cur.id, scene: cell.id },
       before: undoApply("scene", cell.id, wasCell),
     };
