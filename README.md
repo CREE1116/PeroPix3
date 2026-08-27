@@ -5,7 +5,7 @@
 # PeroPix
 
 **A desktop workbench for NovelAI image generation.**<br>
-Lay scenes out on a lane, hit generate once, and get the whole set.
+Lay scenes out on a lane, queue them once, and get the whole set.
 
 [![Release](https://img.shields.io/github/v/release/mrm987/PeroPix3?label=download&color=5865F2)](https://github.com/mrm987/PeroPix3/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/mrm987/PeroPix3/total?color=5865F2)](https://github.com/mrm987/PeroPix3/releases)
@@ -18,19 +18,22 @@ Lay scenes out on a lane, hit generate once, and get the whole set.
 
 ---
 
-Generating one image at a time is fine until you want twenty of the same character in
-different scenes. PeroPix is built for that: write the parts that stay the same once,
-line up the parts that change, and run them together.
+NovelAI does the generating. PeroPix is the workbench in front of it — and one image at a
+time is fine until you want twenty of the same character in different scenes. Here you
+write the parts that stay the same once, line up the parts that change, and send the lot
+to a queue.
 
-- **Scene lane** — each scene is a card on a lane. Fill in what differs, generate the lane
-  in one go. Every result stays attached to the scene that produced it.
+- **Scene lane and queue** — each scene is a card on a lane. Fill in what differs, queue
+  the lane, and keep working while it runs; every result stays attached to the scene that
+  produced it.
 - **Prompt blocks** — build a prompt out of labelled blocks instead of one long line.
   Toggle, reorder, and weight them without hunting through commas.
 - **Card deck** — save a style or a character as a card and drop it into any scene.
   Fix the card once and every scene that uses it follows.
 - **Wildcards** — pools of alternatives that pick themselves at generation time.
-- **Inpaint and Enhance** — paint a mask and redraw just that area, or re-run a finished
-  image with a different strength. Vibe transfer and upscaling are in the same place.
+- **NovelAI's own tools, in the same place** — inpainting, enhance, vibe transfer and
+  upscaling run on the scene you already have, with its prompt and settings carried over.
+  No round trip to the website and back.
 - **Censoring** — an on-device model finds the regions and covers them. Nothing leaves
   your machine; you choose the method and the strength.
 - **AI assistant** — hand it a workspace and describe what you want in words; it edits
