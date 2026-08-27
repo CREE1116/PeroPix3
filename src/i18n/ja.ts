@@ -841,6 +841,7 @@ export const ja: Dict = {
     closeSet: "シーングループを閉じる",
     newSet: "新しいシーングループ",
     newSetTab: "新しいシーングループ",
+    newCard: "新しいシーンカード",
     posePrefix: "シーン {n}",
   },
 

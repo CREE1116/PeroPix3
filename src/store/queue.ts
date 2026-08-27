@@ -485,7 +485,7 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
            화면의 윗줄과 아랫줄이 어긋난 채로 남는다 (`workspace.switchTab` 참조). */
         const owner = (hit as { tabId?: string }).tabId;
         if (owner && owner !== useWs.getState().spec?.activeTab) useWs.getState().switchTab(owner);
-        useWs.getState().setActiveTab(hit.id);
+        useWs.getState().setActiveSceneGroup(hit.id);
       }
       const ws = useWs.getState();
       const spec = ws.spec;
@@ -721,7 +721,7 @@ async function legacyAction(action: string, args: Record<string, any>): Promise<
       const groupId = String(args.set ?? "");
       const hit = useWs.getState().spec?.sceneGroups.find((x) => x.id === groupId);
       if (!hit) return { error: "그 세트가 이미 없습니다." };
-      useWs.getState().setActiveTab(hit.id);
+      useWs.getState().setActiveSceneGroup(hit.id);
       const area = String(args.area ?? "base");
       const blocks = (args.blocks ?? []) as Block[];
       if (args.scene) {

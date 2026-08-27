@@ -842,6 +842,7 @@ export const en = {
     closeSet: "Close scene group",
     newSet: "New scene group",
     newSetTab: "New scene group",
+    newCard: "New scene card",
     posePrefix: "Scene {n}",
   },
 

@@ -74,7 +74,7 @@ export async function openAt(at: AgentAt): Promise<void> {
   }
   const groupId = at.kind === "prompt" ? at.sceneGroup : at.sceneGroup;
   if (groupId && useWs.getState().spec?.sceneGroups.some((x) => x.id === groupId)) {
-    useWs.getState().setActiveTab(groupId);
+    useWs.getState().setActiveSceneGroup(groupId);
   }
   if (at.kind === "prompt") {
     /* ★씬 칸은 **골라서** 데려간다 — 캔버스에 사는 것이라 왼쪽 패널의 `reveal` 이 못 닿는다.

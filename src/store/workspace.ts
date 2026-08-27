@@ -316,7 +316,7 @@ type S = {
   deleteFiles: (files: string[], opts?: { undo?: boolean }) => Promise<void>;
   isDeleted: (file: string) => boolean;
   activeSceneGroup: () => SceneGroup | undefined;
-  setActiveTab: (id: string) => void;
+  setActiveSceneGroup: (id: string) => void;
   /** 그 탭(`chars`)의 생성 옵션을 담아 둔다 (`store/gen` 이 부른다) */
   stashGen: (tabId: string, params: GenParams) => void;
   /** 큰 그림 보기 설정을 고친다 (워크스페이스에 남는다) */
@@ -1094,7 +1094,7 @@ export const useWs = create<S>((set, get) => ({
     queueSave(get);
   },
 
-  setActiveTab(id) {
+  setActiveSceneGroup(id) {
     const spec = get().spec;
     if (!spec || spec.activeSceneGroup === id) return;
     // ★떠나는 탭에 지금 편집기 내용을 담고, 오는 탭의 것을 꺼낸다.
@@ -1399,7 +1399,10 @@ export const useWs = create<S>((set, get) => ({
         ...tab.cards,
         {
           id: `k${cseq}`,
-          name: card.name ?? t("sceneGroup.newSet"),
+          /* ★★**씬 카드에는 씬 카드의 이름**을 준다 (사용자 지적 2026-08-27) — 여기서
+             그룹의 이름말을 빌려 쓰고 있어, 새 카드가 「새 씬 그룹」으로 생겼다.
+             ★번호 규칙은 다른 층과 같다 (`lib/uniqueName`): 처음은 맨이름, 겹치면 2, 3… */
+          name: card.name ?? uniqueName(t("sceneGroup.newCard"), tab.cards.map((k) => k.name)),
           srcId: card.srcId,
           color: card.color,
           cells,

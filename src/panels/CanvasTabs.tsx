@@ -31,7 +31,7 @@ import { Icon } from "../components/Icon";
  *    아래 그림의 「캐릭터」도 이제 화면에서는 「탭」이다. 아래층 문구(`tabs.*`)에
  *    「탭」을 되살리지 말 것. 두 줄이 같은 이름이 되면 구별이 안 된다. */
 export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sceneGroups" }) {
-  const { spec, setActiveTab, renameSceneGroup, addSceneGroup,
+  const { spec, setActiveSceneGroup, renameSceneGroup, addSceneGroup,
     switchTab, addTab, renameTab, moveTab, moveSceneGroup, planRemove, removeAt } = useWs();
   const tr = useI18n((s) => s.t);
   const [editing, setEditing] = useState<string | null>(null);
@@ -72,7 +72,12 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sceneGrou
         }}
       >
       {inGroup.map((t, i) => {
-        const on = t.id === spec.activeTab;
+        /* ★★**씬 그룹은 `activeSceneGroup` 과 맞댄다** (사용자 지적 2026-08-27:
+           *"지금 선택된 씬 그룹이 선택되어 있는 표시가 안 보임"*). 2026-08-24 개명 전에는
+           `activeTab` 이 **씬 그룹**을 가리켰는데, 그 이름이 지금은 **캐릭터 탭**의 것이라
+           여기서는 그룹 id 와 탭 id 를 맞대고 있었다 — 영영 맞지 않아 아무것도 안 켜졌다.
+           ★같은 함정을 두 번 밟지 않게 스토어의 창구 이름도 `setActiveSceneGroup` 으로 고쳤다. */
+        const on = t.id === spec.activeSceneGroup;
         const hp = setOrd.handleProps(i);
         return (
           <Fragment key={t.id}>
@@ -80,7 +85,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sceneGrou
           <div
             ref={setOrd.register(i)}
             {...hp}
-            onClick={() => setActiveTab(t.id)}
+            onClick={() => setActiveSceneGroup(t.id)}
             onDoubleClick={() => setEditing(t.id)}
             data-scene-set={t.id}
             style={{
