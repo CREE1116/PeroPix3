@@ -231,9 +231,20 @@ pub fn lock_app_dir() -> Option<File> {
 /// 실행 하나의 경계 표시. ★자를 때 **이 줄을 기준으로** 잘라내므로 문구를 바꾸지 않는다.
 const MARK: &str = "=== PeroPix 실행 시작 ===";
 /// 이 크기를 넘으면 오래된 실행부터 걷어낸다
-const LOG_MAX: u64 = 5 * 1024 * 1024;
+///
+/// ★★**크기는 「읽는 사람」에 맞춰 잡았다** (사용자 지시 2026-08-27: *"검토도 클로드가 할
+///   텐데 너무 많아서 맥락 찾기가 어렵지만 않으면 됨"*). 실측으로 실행 한 번이 **1KB 남짓**
+///   이므로(접근 로그를 끈 뒤), 128KB 면 **최근 백 회분**이 남는다 — 고장 난 실행과 그 앞
+///   몇 회를 함께 보기에 넉넉하고, 통째로 읽어도 맥락이 묻히지 않는 양이다.
+const LOG_MAX: u64 = 256 * 1024;
 /// 걷어낸 뒤 남길 대략의 크기
-const LOG_KEEP: u64 = 2 * 1024 * 1024;
+const LOG_KEEP: u64 = 128 * 1024;
+/// ★**한 실행이 이만큼을 넘으면** 그 실행이라도 앞을 자른다. 경계로만 자르는 규칙은
+///   「마지막 한 회는 통째로」를 지키는데, 그 한 회가 오류를 쏟아 낸 경우에는 그것만으로
+///   파일이 한없이 커진다. 이 천장이 그 경우를 막는다 — 여기서는 줄 경계로 자른다.
+const LOG_HARD: u64 = 1024 * 1024;
+/// 앞이 잘렸을 때 남기는 표시 — 읽는 사람이 「여기가 처음이 아니다」를 알아야 한다
+const CUT_NOTE: &str = "…(앞부분이 잘렸습니다)\n";
 
 /// 로그 이름 — ★★**파일은 하나뿐이다** (사용자 지시 2026-08-27: *"로그 파일은 하나만
 /// 생기게"*). 파이썬의 두 물줄기(stdout·stderr)도 여기로 함께 흘린다.
@@ -251,13 +262,26 @@ pub const LOG_NAME: &str = "peropix.log";
 /// 뒤에서부터 경계를 훑어, 남는 양이 `keep` 을 넘는 첫 경계를 고른다. 그래서 잘려 나가는
 /// 것은 언제나 **완결된 옛 실행**이고, 남는 실행은 처음부터 끝까지 온전하다.
 /// ★경계가 하나도 없으면(옛 파일) 0 — 아무것도 안 자른다. 다음 실행부터 경계가 생긴다.
-fn trim_at(text: &str, keep: u64) -> usize {
+fn trim_at(text: &str, keep: u64, hard: u64) -> usize {
     let mut cut = 0usize;
     for (i, _) in text.match_indices(MARK).collect::<Vec<_>>().into_iter().rev() {
         cut = i;
         if (text.len() - i) as u64 >= keep {
             break;
         }
+    }
+    // ★천장을 넘으면 줄 경계에서 한 번 더 자른다 (위 `LOG_HARD` 주석)
+    // ★★**바이트로 자르지 않는다** — 한글은 세 바이트라 `text[want..]` 가 글자 한가운데를
+    //   짚으면 **패닉**이다. 여기는 앱이 켜질 때 도는 자리라 그대로 창이 안 뜬다
+    //   (판정이 잡았다: `한_실행이_너무_크면_줄_경계에서_자른다`). 줄바꿈 자리는
+    //   언제나 글자 경계이므로 그것만 훑는다.
+    if (text.len() - cut) as u64 > hard {
+        let want = text.len() - hard as usize;
+        cut = text
+            .match_indices('\n')
+            .find(|(i, _)| *i >= want)
+            .map(|(i, _)| i + 1)
+            .unwrap_or(text.len());
     }
     cut
 }
@@ -274,8 +298,14 @@ fn open_log(root: &Path) -> Option<File> {
 
     if std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0) > LOG_MAX {
         if let Ok(text) = std::fs::read_to_string(&path) {
-            let cut = trim_at(&text, LOG_KEEP);
-            let _ = std::fs::write(&path, &text[cut..]);
+            let cut = trim_at(&text, LOG_KEEP, LOG_HARD);
+            let kept = &text[cut..];
+            let body = if kept.starts_with(MARK) {
+                kept.to_string()
+            } else {
+                format!("{CUT_NOTE}{kept}")
+            };
+            let _ = std::fs::write(&path, body);
         }
     }
 
@@ -345,7 +375,7 @@ mod log_tests {
     #[test]
     fn 경계에서만_자른다() {
         let text = runs(3, 10);
-        let cut = trim_at(&text, 1);
+        let cut = trim_at(&text, 1, u64::MAX);
         assert!(text[cut..].starts_with(MARK), "자른 자리가 실행의 첫머리라야 한다");
     }
 
@@ -353,7 +383,7 @@ mod log_tests {
     fn 남길_양보다_많이_남긴다() {
         let text = runs(5, 20);
         let keep = 200u64;
-        let cut = trim_at(&text, keep);
+        let cut = trim_at(&text, keep, u64::MAX);
         assert!((text.len() - cut) as u64 >= keep, "남긴 양이 상한보다 적으면 안 된다");
         assert!(cut > 0, "다섯 회분이면 앞쪽은 걷어내야 한다");
     }
@@ -362,7 +392,7 @@ mod log_tests {
     fn 마지막_한_회는_통째로_남는다() {
         let text = runs(3, 5);
         // 아주 작은 상한이면 마지막 회 하나만 남는다 — 그래도 그 회는 온전하다
-        let cut = trim_at(&text, 1);
+        let cut = trim_at(&text, 1, u64::MAX);
         let kept = &text[cut..];
         assert_eq!(kept.matches(MARK).count(), 1);
         assert!(kept.contains("실행3 줄"));
@@ -372,6 +402,19 @@ mod log_tests {
     fn 경계가_없으면_안_자른다() {
         assert_eq!(trim_at("경계 없는 옛 로그
 여러 줄
-", 1), 0);
+", 1, u64::MAX), 0);
+    }
+
+    /// ★한 실행이 천장을 넘으면 **그 실행이라도** 앞을 자른다 — 안 그러면 오류를 쏟아 낸
+    ///   실행 하나로 파일이 한없이 커진다. 자른 자리는 줄 경계다.
+    #[test]
+    fn 한_실행이_너무_크면_줄_경계에서_자른다() {
+        let text = runs(1, 2000);
+        let hard = 1000u64;
+        let cut = trim_at(&text, 1, hard);
+        let kept = &text[cut..];
+        assert!(cut > 0, "천장을 넘었으면 잘라야 한다");
+        assert!((kept.len() as u64) <= hard, "천장 안으로 들어와야 한다");
+        assert!(!kept.starts_with('\n') && text[..cut].ends_with('\n'), "줄 한가운데를 자르면 안 된다");
     }
 }
