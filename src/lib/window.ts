@@ -6,6 +6,8 @@
  *
  *  브라우저(vite dev)에서 열었을 땐 Tauri 가 없으므로 조용히 무시한다. */
 
+import { logLine } from "./report";
+
 export type ResizeDir =
   | "North"
   | "NorthEast"
@@ -80,9 +82,18 @@ export const appWindow = {
       // ★두 값 다 물리 픽셀이라 그대로 견준다 (화면 배율을 거치지 않는다)
       const full =
         Math.abs(pos.y - wa.position.y) <= 2 && Math.abs(size.height - wa.size.height) <= 2;
+      // ★진단 — 재는 값이 실제로 어떤지 (사용자 지적 2026-08-28: 사용자 창에서만 안 된다)
+      logLine(
+        "info",
+        "창세로",
+        `창 y=${pos.y} h=${size.height} x=${pos.x} w=${size.width} · 작업영역 y=${wa.position.y} h=${wa.size.height} · full=${full} back=${JSON.stringify(vFitBack)}`,
+      );
       if (full) {
         const back = vFitBack;
-        if (!back) return; // 손으로 이미 꽉 채워 둔 창 — 되돌릴 자리가 없다
+        if (!back) {
+          logLine("warn", "창세로", "이미 꽉 찼는데 되돌릴 자리가 없어 아무 일도 안 함");
+          return;
+        }
         vFitBack = null;
         await w.setPosition(new PhysicalPosition(pos.x, back.y));
         await w.setSize(new PhysicalSize(size.width, back.h));
@@ -91,9 +102,12 @@ export const appWindow = {
       vFitBack = { y: pos.y, h: size.height };
       await w.setPosition(new PhysicalPosition(pos.x, wa.position.y));
       await w.setSize(new PhysicalSize(size.width, wa.size.height));
+      const after = await w.outerSize();
+      logLine("info", "창세로", `늘린 뒤 h=${after.height} (바란 값 ${wa.size.height})`);
     } catch (e) {
       // ★거부되면 **조용히** 아무 일도 안 일어난다 — 그래서 까닭을 남긴다 (위 ★★주)
-      console.error("[window] 세로 최대화 실패 — capabilities 의 창 조작 권한을 본다", e);
+      logLine("error", "창세로", `실패 — capabilities 의 창 조작 권한을 본다: ${String(e)}`);
+      console.error("[window] 세로 최대화 실패", e);
     }
   },
   /** ★★**늘리기 전 자리는 늘 갱신해 둔다** — 크기가 바뀔 때마다 부른다.

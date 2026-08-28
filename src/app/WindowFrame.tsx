@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { appWindow, type ResizeDir } from "../lib/window";
+import { logLine } from "../lib/report";
 
 /** 창 가장자리 리사이즈 손잡이.
  *
@@ -50,6 +51,12 @@ function ResizeHandles() {
    *  이어진다는 보장이 없다. 누른 자리와 시각만 보면 어긋날 일이 없다. */
   const last = useRef({ dir: "", at: 0 });
 
+  /* ★진단 — 이 판이 화면에 올라와 있는지, 두 번째 누름이 오는지를 로그로 남긴다
+     (사용자 지적 2026-08-28: QA 인스턴스에서는 되는데 사용자 창에서만 안 된다). */
+  useEffect(() => {
+    logLine("info", "창테두리", "손잡이 준비 (2026-08-28 판)");
+  }, []);
+
   const grab = (dir: ResizeDir) => (e: React.MouseEvent) => {
     // 좌클릭만. 이벤트가 아래로 새면 창 이동과 겹친다.
     if (e.button !== 0) return;
@@ -60,6 +67,8 @@ function ResizeHandles() {
        좌우에는 윈도우도 같은 기능을 주지 않으므로 여기서도 없다. */
     const now = performance.now();
     const dbl = last.current.dir === dir && now - last.current.at < DBL_MS;
+    const dt = last.current.dir === dir ? Math.round(now - last.current.at) : -1;
+    logLine("info", "창테두리", `${dir} 누름 dt=${dt}ms dbl=${dbl}`);
     last.current = { dir, at: dbl ? 0 : now };
     if (dbl) {
       if (dir === "North" || dir === "South") appWindow.fitVertical();
