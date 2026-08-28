@@ -63,6 +63,19 @@ export function AiChat({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { cfg, lines, wire, sending, error, ask, confirm, list, id: cur, title: chatTitle, cliSessionGone,
           loadConfig, restore, send, stop, newChat, open, remove } = useLlm();
   const [showList, setShowList] = useState(false);
+  /* ★지난 대화 목록은 **밖을 누르면 닫힌다** (사용자 지시 2026-08-29: *"다시 버튼을 눌러야만
+     닫힘"*). 목록 자신과 여는 버튼 안쪽 클릭은 예외다 — 버튼까지 잡으면 토글이 두 번 돌아
+     닫히자마자 다시 열린다. */
+  useEffect(() => {
+    if (!showList) return;
+    const onDown = (e: PointerEvent) => {
+      const el = e.target as HTMLElement;
+      if (el.closest("[data-ai-history]") || el.closest("[data-ai-list]")) return;
+      setShowList(false);
+    };
+    window.addEventListener("pointerdown", onDown);
+    return () => window.removeEventListener("pointerdown", onDown);
+  }, [showList]);
   const { engine, exe, scanning, detect } = useCli();
   const ws = useWs((s) => s.current);
   const tab = useWs((s) => s.activeSceneGroup());
