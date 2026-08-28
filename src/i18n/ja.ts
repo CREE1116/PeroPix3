@@ -814,7 +814,7 @@ export const ja: Dict = {
     blockTags: "タグ",
     picked: "{n}枚選択",
     enhanceSkip: "まだ強化していないものだけ",
-    cardLabel: "POSE SET",
+    cardLabel: "SCENE CARD",
     numberHint: "保存ファイル名の先頭に付く番号 (001_001.png)",
     seedReuse: "このシードで固定（ランダムを切る）",
     running: "生成中…",
