@@ -67,10 +67,17 @@ function ResizeHandles() {
       if (e.clientY > 28) return;
       const el = e.target as HTMLElement | null;
       if (el?.closest("[data-resize-edge]")) return;
+      /* ★★손잡이가 아닌 것이 받았으면 **무엇이 얼마만큼 덮고 있는지**까지 남긴다
+         (사용자 지적 2026-08-28: *"커서가 바뀌는 구간이 100이면 아래 50%에서만 먹는다"*).
+         창틀 판정(`WM_NCHITTEST`)이 껍데기에 한 번도 안 오는 것을 확인했으므로, 그 죽은
+         구간은 **화면 안**에 있다. 무엇이 위에 깔려 있는지가 곧 답이다. */
       logLine(
         "info",
         "창테두리",
-        `빗나감 y=${Math.round(e.clientY)} 대상=${el?.tagName ?? "?"} 끌기영역=${!!el?.closest("[data-tauri-drag-region]")}`,
+        `빗나감 y=${Math.round(e.clientY)} 대상=${el?.tagName ?? "?"}` +
+          `${el?.getAttribute?.("data-resize-edge") ? "(손잡이?!)" : ""}` +
+          ` 끌기영역=${!!el?.closest("[data-tauri-drag-region]")}` +
+          ` 그자리것=${document.elementFromPoint(e.clientX, e.clientY)?.tagName ?? "?"}`,
       );
     };
     document.addEventListener("mousedown", near, true);
@@ -88,7 +95,7 @@ function ResizeHandles() {
     const now = performance.now();
     const dbl = last.current.dir === dir && now - last.current.at < DBL_MS;
     const dt = last.current.dir === dir ? Math.round(now - last.current.at) : -1;
-    logLine("info", "창테두리", `${dir} 누름 dt=${dt}ms dbl=${dbl}`);
+    logLine("info", "창테두리", `${dir} 누름 y=${Math.round(e.clientY)} dt=${dt}ms dbl=${dbl}`);
     last.current = { dir, at: dbl ? 0 : now };
     if (dbl) {
       if (dir === "North" || dir === "South") appWindow.fitVertical();
