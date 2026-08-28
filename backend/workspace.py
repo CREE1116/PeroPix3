@@ -542,6 +542,18 @@ class Store:
     #: 색인 줄에서 경로를 꺼낼 때 찾는 조각. ★우리가 `json.dumps` 로 쓰므로 모양이 고정이다.
     _FILE_KEY = '"file": "'
 
+    #: 바이트 판 — 줄 하나가 수십 KB 라 **풀지 않고** 경로만 꺼낸다 (`_rewrite_paths` 의 ★★주)
+    _FILE_KEY_B = b'"file": "'
+
+    @classmethod
+    def _file_of_bytes(cls, raw: bytes) -> bytes | None:
+        i = raw.find(cls._FILE_KEY_B)
+        if i < 0:
+            return None
+        i += len(cls._FILE_KEY_B)
+        j = raw.find(b'"', i)
+        return raw[i:j] if j > 0 else None
+
     @classmethod
     def _file_of(cls, line: str) -> str | None:
         """색인 한 줄에서 `file` 값만 꺼낸다 — **줄을 통째로 파싱하지 않는다** (아래 ★★주).
@@ -553,12 +565,14 @@ class Store:
         return line[i + len(cls._FILE_KEY):j] if j > 0 else None
 
     def _rewrite_paths(self, ws: str, moves: dict[str, str], patch: dict | None = None) -> None:
-        """색인의 `file` 을 새 경로로 바꾸고, 곁파일에는 **이정표를 남긴다** (`renumber`·`move_scene_group`).
+        """색인과 곁파일의 `file` 을 새 경로로 바꾼다 (`renumber`·`move_scene_group`).
 
         ★`patch` 를 주면 그 줄에 값을 함께 심는다 (세트 이름이 바뀌었을 때).
-        ★★**곁파일은 다시 쓰지 않는다** (2026-08-28) — 100MB를 넘는 파일이라 한 판에 0.44초가
-          들고 그 값이 장수와 무관했다. 대신 이정표를 덧붙이고 찾는 쪽이 따라간다
-          (`_note_moves`·`heavy_of` 의 ★★주).
+        ★★**바이트로 훑는다** (2026-08-28). 곁파일은 100MB를 넘고(실측 112MB) 줄 하나가 수십 KB
+          라, 글자로 풀었다가 다시 담으면 **바뀌지 않는 줄에도** 그 비용이 든다. 바뀌는 줄만
+          풀고 나머지는 바이트 그대로 흘려 쓴다.
+          ★한때 「이정표만 덧붙이기」로 아예 안 쓰게 해 봤다가 되돌렸다 — 이름이 재사용되면
+            이정표가 모호해진다 (`heavy_of` 의 ★★주).
 
         ★append-only 인 파일을 **통째로 다시 쓰는** 유일한 자리다. 그래서 임시 파일에 쓴 뒤
           바꿔치기한다 — 쓰다 죽어도 앞의 것이 남는다.
@@ -570,28 +584,28 @@ class Store:
           바뀌는 줄만 굴리면 **0.46초**다 (나머지는 그대로 흘려 쓴다).
         """
         d = self.dir_of(ws)
-        self._note_moves(ws, moves)          # ★곁파일은 이정표만 (위 ★★주)
-        for name in (RECORDS_NAME,):
+        hit = {k.encode("utf-8") for k in moves}
+        for name in (RECORDS_NAME, ENV_NAME):
             p = d / name
             if not p.is_file():
                 continue
             tmp = p.with_suffix(p.suffix + ".tmp")
-            with p.open("r", encoding="utf-8") as fin, tmp.open("w", encoding="utf-8") as fout:
-                for line in fin:
-                    if not line.strip():
+            with p.open("rb") as fin, tmp.open("wb") as fout:
+                for raw in fin:
+                    if not raw.strip():
                         continue
-                    f = self._file_of(line)
-                    if f is not None and f in moves:
+                    f = self._file_of_bytes(raw)
+                    if f is not None and f in hit:
                         try:
-                            row = json.loads(line)
-                            row["file"] = moves[f]
-                            if patch:
+                            row = json.loads(raw.decode("utf-8"))
+                            row["file"] = moves[f.decode("utf-8")]
+                            if patch and name == RECORDS_NAME:
                                 row.update(patch)
-                            fout.write(json.dumps(row, ensure_ascii=False) + "\n")
+                            fout.write(json.dumps(row, ensure_ascii=False).encode("utf-8") + b"\n")
                             continue
                         except Exception:
                             pass          # ★못 읽는 줄은 **그대로 둔다** (버리지 않는다)
-                    fout.write(line if line.endswith("\n") else line + "\n")
+                    fout.write(raw if raw.endswith(b"\n") else raw + b"\n")
             # ★임시 파일을 **바꿔치기**한다 — 지우는 연산을 이 파일에 두지 않는다
             #   (`test_output_safety` 가 그것을 지킨다: 생성물은 사람이 지울 때만 사라진다).
             self._replace(tmp, p)
@@ -642,53 +656,31 @@ class Store:
         ★찾는 자리는 곁파일이고, **뒤에서부터** 본다 (같은 경로가 여러 번 적혔으면 마지막 것).
         ★파싱하기 전에 **경로 문자열이 그 줄에 있는지**부터 본다 — 줄 하나가 수십 KB 라
           전부 파싱하면 느리다.
-        ★★**옮긴 자리는 이정표를 따라간다** (`{"file": 새 경로, "was": 옛 경로}`, 2026-08-28).
-          그림이 옮겨질 때 이 파일을 통째로 다시 쓰지 않고 **이정표 한 줄만 덧붙이기** 때문이다
-          (`_note_moves` 의 ★★주). 뒤에서부터 보므로 이정표가 먼저 잡히고, 거기서 옛 경로로
-          갈아타 계속 훑는다. 고리는 `seen` 으로 끊는다.
+        ★★**곁파일의 `file` 은 언제나 지금 경로다.** 그림이 옮겨지거나 이름이 바뀌면 이 파일을
+          **그때 다시 쓴다** (`_rewrite_paths`).
+          ★한때 「이정표 한 줄만 덧붙이고 되짚기」로 바꿔 봤다가 되돌렸다 (스트레스 2026-08-28).
+            개명·옮기기로 **비워진 이름을 다른 그림이 다시 가져가기** 때문에, 경로만으로는 그
+            이정표가 어느 그림의 것인지 가릴 수 없다 — 남의 이정표에 걸려 환경을 못 찾았다.
+            빠르기는 **다시 쓰는 방식을 바이트 단위로** 만들어 되찾았다 (같은 주 참조).
         ★곁파일에 없으면 색인의 옛 줄을 되짚는다 (쪼개지기 전에 적힌 그림)."""
         d = self.dir_of(ws)
         for name in (ENV_NAME, RECORDS_NAME):
             p = d / name
             if not p.exists():
                 continue
-            want, seen = file, {file}
             for ln in reversed(p.read_text(encoding="utf-8").splitlines()):
-                if want not in ln:
+                if file not in ln:
                     continue
                 try:
                     r = json.loads(ln)
                 except Exception:
                     continue
-                if r.get("file") != want:
+                if r.get("file") != file:
                     continue
                 got = {k: r[k] for k in HEAVY_KEYS if r.get(k) is not None}
                 if got:
                     return got
-                was = r.get("was")
-                if isinstance(was, str) and was not in seen:   # ★이정표 — 옛 경로로 갈아탄다
-                    want = was
-                    seen.add(was)
         return {}
-
-    def _note_moves(self, ws: str, moves: dict[str, str]) -> None:
-        """옮긴 자리를 곁파일에 **이정표 한 줄씩** 남긴다 — `{"file": 새 경로, "was": 옛 경로}`.
-
-        ★★**왜 다시 안 쓰나** (실측 2026-08-28). 곁파일은 생성 환경을 통째로 담아 쉽게 100MB를
-          넘는다 (사용자 워크스페이스 실측 112MB). 옮길 때마다 통째로 읽고 다시 쓰면 **한 판에
-          0.44초**가 들고, 그 값은 **몇 장을 옮기든 같다** — 씬 하나를 옮겨도 1초를 기다리게 된다.
-          이정표는 장당 100바이트 남짓이라 수백 장이어도 덧붙이기 한 번이다 (실측 5ms).
-        ★찾는 쪽이 그것을 따라간다 (`heavy_of` 의 ★★주). 읽는 자리는 거기 하나뿐이다.
-        ★색인(`records.jsonl`)은 **그대로 다시 쓴다** — 화면이 통째로 읽어 가는 정본이라
-          경로가 옛것이면 안 되고, 크기도 곁파일의 1/200 이다 (실측 600KB · 0.01초).
-        ★지우는 연산이 아니다 (덧붙이기뿐) — 생성물 안전 규칙 그대로다."""
-        if not moves:
-            return
-        d = self.dir_of(ws)
-        d.mkdir(parents=True, exist_ok=True)
-        with (d / ENV_NAME).open("a", encoding="utf-8") as f:
-            for was, now in moves.items():
-                f.write(json.dumps({"file": now, "was": was}, ensure_ascii=False) + "\n")
 
     def split_records(self, ws: str) -> int:
         """색인에 남아 있는 무거운 것을 곁파일로 옮긴다. 옮긴 줄 수를 돌려준다.
@@ -1053,32 +1045,33 @@ class Store:
         # ④ 색인·곁파일 — 곁파일을 먼저 (`append_record` 와 같은 순서)
         #   ★★곁파일은 **줄을 통째로 옮긴다** (워크스페이스가 갈리므로 이정표로는 못 따라간다).
         #     같은 워크스페이스 안의 옮기기(`move_scene_group`·`renumber`)와 다른 점이다.
+        #   ★바이트로 훑는다 — 곁파일은 100MB를 넘고 줄 하나가 수십 KB 다 (`_rewrite_paths` 의 ★★주).
         sd = self.dir_of(src_ws)
         dd = self.dir_of(dst_ws)
         dd.mkdir(parents=True, exist_ok=True)
+        hit = {k.encode("utf-8") for k in moves}
         for name in (ENV_NAME, RECORDS_NAME):
             p = sd / name
             if not p.is_file():
                 continue
             tmp = p.with_suffix(p.suffix + ".tmp")
-            with p.open("r", encoding="utf-8") as fin, tmp.open("w", encoding="utf-8") as fout, \
-                 (dd / name).open("a", encoding="utf-8") as fdst:
+            with p.open("rb") as fin, tmp.open("wb") as fout, (dd / name).open("ab") as fdst:
                 for line in fin:
                     if not line.strip():
                         continue
-                    f = self._file_of(line)
-                    if f is not None and f in moves:
+                    f = self._file_of_bytes(line)
+                    if f is not None and f in hit:
                         try:
-                            row = json.loads(line)
-                            row["file"] = moves[f]
+                            row = json.loads(line.decode("utf-8"))
+                            row["file"] = moves[f.decode("utf-8")]
                             for k in ("scene_group_id", "cell_id"):
                                 if row.get(k) in remap:
                                     row[k] = remap[row[k]]
-                            fdst.write(json.dumps(row, ensure_ascii=False) + "\n")
+                            fdst.write(json.dumps(row, ensure_ascii=False).encode("utf-8") + b"\n")
                             continue
                         except Exception:
                             pass          # ★못 읽는 줄은 주는 쪽에 **그대로 둔다**
-                    fout.write(line if line.endswith("\n") else line + "\n")
+                    fout.write(line if line.endswith(b"\n") else line + b"\n")
             self._replace(tmp, p)
 
         # ⑤ 두 spec — 받는 쪽에 붙이고, 주는 쪽에서 뺀다 (활성 탭·그룹은 `removeTab` 과 같은 규칙)
