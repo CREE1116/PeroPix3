@@ -386,6 +386,8 @@ function SceneActions() {
             try {
               for (const f of multiFiles) await useGallery.getState().keep(ws, f, "", false);
               toast(tr("gallery.kept"));
+              // ★보관했으면 갤러리로 데려간다 (사용자 지시 2026-08-29) — 일괄 변환 보내기와 같은 어법
+              useUi.getState().setMode("gallery");
             } catch (e) {
               toast(String(e), "warn");
             }
@@ -396,6 +398,8 @@ function SceneActions() {
           try {
             const r = await useGallery.getState().keep(ws, f);
             toast(tr(r.removed ? "gallery.unkept" : "gallery.kept"));
+            // ★보관했을 때만 이동한다 — 무른 것(removed)은 갈 곳이 없다
+            if (!r.removed) useUi.getState().setMode("gallery");
           } catch (e) {
             toast(String(e), "warn");
           }

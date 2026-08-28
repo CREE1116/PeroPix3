@@ -254,6 +254,9 @@ export const ko: Dict = {
     button: "업스케일",
     tooLarge: "3MP 보다 큰 그림은 업스케일할 수 없습니다.",
     done: "업스케일 완료. 새 그림으로 저장했습니다",
+    /* ★다중일 때만 묻는다 (사용자 결정 2026-08-29) — 한 장은 공홈처럼 즉시 */
+    confirmMany: "{n}장을 업스케일할까요?",
+    confirmManyBody: "장마다 Anlas 가 소모됩니다.",
   },
 
   gen: {

@@ -250,6 +250,8 @@ export const ja: Dict = {
     button: "アップスケール",
     tooLarge: "3MP より大きい画像はアップスケールできません。",
     done: "アップスケール完了。新しい画像として保存しました",
+    confirmMany: "{n}枚をアップスケールしますか？",
+    confirmManyBody: "1枚ごとに Anlas を消費します。",
   },
 
   gen: {

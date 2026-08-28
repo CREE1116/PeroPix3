@@ -4,6 +4,7 @@ import { useI18n } from "../i18n";
 import { fitSizeToBase, useGen } from "../store/gen";
 import { useImageInput } from "../store/imageInput";
 import { useUi } from "../store/ui";
+import { ask } from "../store/ask";
 import { toast } from "../store/toast";
 import { applyMeta, applyMetaParams, applyMetaVibes, applyRecordedBase } from "./GalleryMeta";
 import { usePrompt } from "../store/prompt";
@@ -201,6 +202,18 @@ export function ImageActions({
       if (!target) return;
       // ★여러 장 골랐으면 **전부** (사용자 지시 2026-08-29) — 한 장씩 차례로 보낸다
       const list = upscale.files?.length ? upscale.files : [target];
+      /* ★다중일 때만 묻는다 (사용자 결정 2026-08-29) — 장수만큼 Anlas 가 한 번에 나간다.
+         한 장은 공홈처럼 즉시다 (버튼의 비용 표기가 안내다). */
+      if (
+        list.length > 1 &&
+        !(await ask({
+          title: t("upscale.confirmMany", { n: list.length }),
+          body: t("upscale.confirmManyBody"),
+          ok: t("upscale.button"),
+          cancel: t("common.cancel"),
+        }))
+      )
+        return;
       for (const f of list) {
         const r = await api<{ file: string; record: Rec }>("/api/upscale", {
           method: "POST",

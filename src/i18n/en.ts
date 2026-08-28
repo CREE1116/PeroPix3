@@ -251,6 +251,8 @@ export const en = {
     button: "Upscale",
     tooLarge: "Images larger than 3MP cannot be upscaled.",
     done: "Upscaled. Saved as a new image",
+    confirmMany: "Upscale {n} images?",
+    confirmManyBody: "Each image costs Anlas.",
   },
 
   gen: {
