@@ -43,10 +43,20 @@ pub fn client_edges(hwnd: *mut core::ffi::c_void) {
            `WM_NCHITTEST`(132) 줄이 한 번도 안 나왔다. 아무 메시지든 첫 것을 한 번 남기면
            「사슬에 아예 안 걸렸다」와 「그 메시지만 안 온다」가 갈린다. */
         {
-            use std::sync::atomic::{AtomicBool, Ordering};
+            use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
             static SAID: AtomicBool = AtomicBool::new(false);
             if !SAID.swap(true, Ordering::Relaxed) {
-                crate::backend::log_line(&format!("[edge] 첫 메시지가 왔다 — msg = {msg} (132 이면 NCHITTEST)"));
+                crate::backend::log_line(&format!("[edge] 첫 메시지가 왔다 — msg = {msg}"));
+            }
+            /* ★★**테두리에서 누른 것**이 우리에게 오는지 본다 (사용자 지적 2026-08-28).
+               비클라이언트 메시지(0x0081~0x00A9)는 창틀에서만 난다 — 그 자리를 눌렀는데
+               여기에 안 찍히면 그 픽셀은 **우리 창의 것이 아니다.**
+               ★값: 161=왼클릭 누름 · 163=왼클릭 더블 · 132=판정 · 160=이동 */
+            if (0x0081..=0x00A9).contains(&msg) {
+                static LAST: AtomicU32 = AtomicU32::new(0);
+                if LAST.swap(msg, Ordering::Relaxed) != msg {
+                    crate::backend::log_line(&format!("[edge] 창틀 메시지 — msg = {msg}"));
+                }
             }
         }
         // ★먼저 tao 에게 묻는다 — 그 답이 가장자리일 때만 바꾼다
