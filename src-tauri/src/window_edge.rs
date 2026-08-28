@@ -52,6 +52,12 @@ pub fn client_edges(hwnd: *mut core::ffi::c_void) {
                 || hit == HTBOTTOMLEFT as i32
                 || hit == HTBOTTOMRIGHT as i32;
             if edge {
+                // ★처음 한 번만 알린다 — 마우스를 움직일 때마다 오므로 흘려 쓰면 로그가 덮인다
+                use std::sync::atomic::{AtomicBool, Ordering};
+                static SAID: AtomicBool = AtomicBool::new(false);
+                if !SAID.swap(true, Ordering::Relaxed) {
+                    println!("[edge] 가장자리 판정을 화면에 넘겼다 (처음 한 번만 알린다)");
+                }
                 return HTCLIENT as LRESULT;
             }
         }
@@ -59,7 +65,11 @@ pub fn client_edges(hwnd: *mut core::ffi::c_void) {
     }
 
     // ★두 번 걸어도 같은 id 면 갈아 끼워질 뿐이라 안전하다
-    unsafe { SetWindowSubclass(hwnd as HWND, Some(hook), 1, 0) };
+    let ok = unsafe { SetWindowSubclass(hwnd as HWND, Some(hook), 1, 0) };
+    /* ★진단 — 걸렸는지, 실제로 바꾸고 있는지를 로그로 남긴다 (사용자 지적 2026-08-28:
+       *"커서가 리사이즈 모양으로 변하는 구간이 100이면 아래 50%에서만 더블클릭이 먹는다"*
+       = OS 테두리가 위쪽을 아직 쥐고 있다는 뜻이다). 원인이 잡히면 걷는다. */
+    println!("[edge] 가장자리 판정 넘기기 설치 = {}", if ok != 0 { "성공" } else { "실패" });
 }
 
 #[cfg(not(windows))]
