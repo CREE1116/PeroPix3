@@ -916,7 +916,6 @@ export const ko: Dict = {
     more: "아래로 내리면 {n}장 더",
     keep: "갤러리에 보관",
     kept: "갤러리에 보관했습니다",
-    unkept: "갤러리에서 뺐습니다",
     renamed: "이름을 바꿨습니다",
     newFolder: "새 폴더",
     newFolderHint: "폴더 이름을 적고 Enter",
@@ -929,7 +928,6 @@ export const ko: Dict = {
     countImages: "{n}장",
     /** 갤러리 단추에 그림을 떨궜을 때 */
     dropToKeep: "여기 놓으면 보관",
-    alreadyKept: "이미 보관돼 있습니다",
     empty: "아직 보관한 그림이 없습니다",
     emptyHint: "크게 본 그림에서 갤러리에 보관을 누르면 여기 모입니다. 작업이 바뀌어도 남습니다.",
     meta: "그림 정보",

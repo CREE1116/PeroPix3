@@ -2233,9 +2233,6 @@ class KeepSave(BaseModel):
     file: str
     folder: str = ""
     meta: dict | None = None
-    # ★★끌어다 놓기는 **무르지 않는다** (`toggle=False`) — 「여기 넣어라」라는 몸짓이라
-    #   이미 있다고 빼 버리면 놓았는데 사라진다. 단추(보관 켜기/끄기)는 기존대로 무른다.
-    toggle: bool = True
 
 
 class KeepFiles(BaseModel):
@@ -2361,7 +2358,7 @@ async def keep_save(body: KeepSave):
         raise HTTPException(404, "그림을 찾지 못했습니다")
     try:
         return keep.save(
-            KEEP_DIR, src, body.folder, body.meta, f"{body.workspace}/{body.file}", body.toggle
+            KEEP_DIR, src, body.folder, body.meta, f"{body.workspace}/{body.file}"
         )
     except ValueError as e:
         raise HTTPException(400, str(e))

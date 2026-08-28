@@ -105,12 +105,8 @@ type S = {
    *    이미 있으면 그대로 두고 `existed` 로 알린다. */
   /** 밖에서 온 그림을 그대로 들인다 (base64 원본 바이트) */
   importImage: (ws: string, data: string, name: string, folder?: string) => Promise<{ file: string }>;
-  keep: (
-    ws: string,
-    file: string,
-    folder?: string,
-    toggle?: boolean,
-  ) => Promise<{ file: string; removed: boolean; existed?: boolean }>;
+  /** ★누르면 언제나 보관 — 무르기(토글)는 걷어냈다 (사용자 결정 2026-08-29, `keep.save`) */
+  keep: (ws: string, file: string, folder?: string) => Promise<{ file: string }>;
   /** 보관함 안에 하위 폴더를 만든다 (앱 안에서 정리할 유일한 창구) */
   newFolder: (ws: string, name: string) => Promise<void>;
   /** ★빈 폴더만 지운다 — 그림째 지우는 창구는 두지 않는다 */
@@ -207,11 +203,11 @@ export const useGallery = create<S>((set, get) => ({
     return r;
   },
 
-  async keep(ws, file, folder = "", toggle = true) {
-    return await api<{ file: string; removed: boolean; existed?: boolean }>(`/api/keep/save`, {
+  async keep(ws, file, folder = "") {
+    return await api<{ file: string }>(`/api/keep/save`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ workspace: ws, file, folder, toggle }),
+      body: JSON.stringify({ workspace: ws, file, folder }),
     });
   },
 

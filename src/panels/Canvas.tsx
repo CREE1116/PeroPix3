@@ -380,26 +380,15 @@ function SceneActions() {
         upscale={{ ws, file, files: multiFiles.length > 1 ? multiFiles : undefined }}
         multi={multiFiles.length}
         onKeep={async () => {
-          /* ★여러 장 골랐으면 전부 보관한다. `toggle: false` — 「여기 넣어라」라는 몸짓이라,
-             이미 보관된 장이 섞여 있어도 무르지 않는다 (끌어다 놓기와 같은 갈래) */
-          if (multiFiles.length > 1) {
-            try {
-              for (const f of multiFiles) await useGallery.getState().keep(ws, f, "", false);
-              toast(tr("gallery.kept"));
-              // ★보관했으면 갤러리로 데려간다 (사용자 지시 2026-08-29) — 일괄 변환 보내기와 같은 어법
-              useUi.getState().setMode("gallery");
-            } catch (e) {
-              toast(String(e), "warn");
-            }
-            return;
-          }
-          const f = await ensureSaved();
-          if (!f) return;
+          /* ★누르면 언제나 보관이다 — 무르기(토글)는 걷어냈다 (사용자 결정 2026-08-29:
+             *"넣기가 빼기로 변하는 게 비직관적"*). 여러 장 골랐으면 전부 보관한다.
+             보관한 뒤에는 갤러리로 데려간다 — 일괄 변환 보내기와 같은 어법. */
           try {
-            const r = await useGallery.getState().keep(ws, f);
-            toast(tr(r.removed ? "gallery.unkept" : "gallery.kept"));
-            // ★보관했을 때만 이동한다 — 무른 것(removed)은 갈 곳이 없다
-            if (!r.removed) useUi.getState().setMode("gallery");
+            const files = multiFiles.length > 1 ? multiFiles : [await ensureSaved()].filter((x): x is string => !!x);
+            if (!files.length) return;
+            for (const f of files) await useGallery.getState().keep(ws, f);
+            toast(tr("gallery.kept"));
+            useUi.getState().setMode("gallery");
           } catch (e) {
             toast(String(e), "warn");
           }

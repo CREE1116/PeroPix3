@@ -94,8 +94,9 @@ function GalleryTab({ on, onClick }: { on: boolean; onClick: () => void }) {
         try {
           const ws = img.ws || useWs.getState().current;
           if (!ws) return;
-          const r = await useGallery.getState().keep(ws, img.file, "", false);
-          toast(t(r.existed ? "gallery.alreadyKept" : "gallery.kept"));
+          // ★누르면 언제나 보관 — 무르기·「이미 있음」 갈래는 걷어냈다 (사용자 결정 2026-08-29)
+          await useGallery.getState().keep(ws, img.file);
+          toast(t("gallery.kept"));
         } catch (e) {
           toast(String(e), "warn");
         }
