@@ -110,3 +110,71 @@ pub fn client_edges(hwnd: *mut core::ffi::c_void) {
 
 #[cfg(not(windows))]
 pub fn client_edges(_hwnd: *mut core::ffi::c_void) {}
+
+/// 창의 **보이지 않는 테두리** 두께 (물리 픽셀, 위·왼·오른·아래).
+///
+/// ★★사용자 지적 2026-08-28: *"커서가 리사이즈 모양으로 변하는 구간이 100이면 아래 50%
+///   정도에서만 더블클릭이 먹는다."* 로그로 재 보니 **화면(웹뷰)에는 `y=4` 위로 아무
+///   이벤트도 안 온다.** 창 높이와 화면 높이는 같은데(1174=1174) 맨 위 4px 이 죽어 있었다.
+///
+/// 까닭은 윈도우의 **크기 조절 테두리가 창 밖으로 한 겹 더 나와 있기** 때문이다
+/// (`WS_THICKFRAME` 의 `SM_CXPADDEDBORDER`). 그 겹은 눈에 안 보이지만 커서를 바꾸고 누름을
+/// 먹는다 — 그래서 「보이는 테두리」의 위쪽 절반이 죽은 것처럼 보였다.
+///
+/// ★재는 방법: `GetWindowRect`(보이지 않는 겹까지)와 DWM 의 **보이는 테두리**를 견준다.
+///   셈으로 맞추지 않는다 — 화면 배율·테마마다 값이 달라서 옮겨 적으면 또 어긋난다.
+#[cfg(windows)]
+pub fn frame_inset(hwnd: *mut core::ffi::c_void) -> (i32, i32, i32, i32) {
+    use windows_sys::Win32::Foundation::{HWND, RECT};
+    use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
+    use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect;
+
+    let h = hwnd as HWND;
+    let mut win = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+    let mut vis = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+    unsafe {
+        if GetWindowRect(h, &mut win) == 0 {
+            return (0, 0, 0, 0);
+        }
+        let ok = DwmGetWindowAttribute(
+            h,
+            DWMWA_EXTENDED_FRAME_BOUNDS as u32,
+            (&mut vis as *mut RECT).cast(),
+            core::mem::size_of::<RECT>() as u32,
+        );
+        if ok != 0 {
+            return (0, 0, 0, 0);
+        }
+    }
+    let dwm = (
+        (vis.top - win.top).max(0),
+        (vis.left - win.left).max(0),
+        (win.right - vis.right).max(0),
+        (win.bottom - vis.bottom).max(0),
+    );
+    /* ★★DWM 이 0 을 주면 **시스템 값으로 물러선다** — 테두리 없는 창에는 DWM 이 그릴 틀이
+       없어 두 사각형이 같게 나올 수 있다. 실측된 죽은 띠(4px, 배율 1)는 `SM_CYFRAME` 과
+       정확히 같았다 — 창 라이브러리(tao)가 그 값으로 테두리를 잡는다. */
+    let sys = unsafe {
+        use windows_sys::Win32::UI::HiDpi::GetSystemMetricsForDpi;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{SM_CXFRAME, SM_CYFRAME};
+        let dpi = GetDpiForWindow(h);
+        let dpi = if dpi == 0 { 96 } else { dpi };
+        (
+            GetSystemMetricsForDpi(SM_CYFRAME, dpi),
+            GetSystemMetricsForDpi(SM_CXFRAME, dpi),
+        )
+    };
+    let out = if dwm.0 > 0 || dwm.1 > 0 { dwm } else { (sys.0, sys.1, sys.1, sys.0) };
+    crate::backend::log_line(&format!(
+        "[edge] 보이지 않는 테두리 — DWM 위{} 왼{} 오{} 아래{} · 시스템 위{} 옆{} → 쓰는 값 위{} 왼{} 오{} 아래{}",
+        dwm.0, dwm.1, dwm.2, dwm.3, sys.0, sys.1, out.0, out.1, out.2, out.3
+    ));
+    out
+}
+
+#[cfg(not(windows))]
+pub fn frame_inset(_hwnd: *mut core::ffi::c_void) -> (i32, i32, i32, i32) {
+    (0, 0, 0, 0)
+}

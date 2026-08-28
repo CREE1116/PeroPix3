@@ -26,6 +26,8 @@ windows-sys = { version = "0.59", features = [
   "Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading",
   # ★가장자리 판정을 웹뷰로 넘긴다 (window_edge.rs) — 커서와 누름의 주인을 하나로
   "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging",
+  # ★보이지 않는 테두리 두께를 잰다 (window_edge.rs 의 `frame_inset`)
+  "Win32_Graphics_Dwm", "Win32_UI_HiDpi",
 ] }
 
 [profile.release]

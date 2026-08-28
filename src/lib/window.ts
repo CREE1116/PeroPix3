@@ -53,6 +53,25 @@ export const appWindow = {
     const w = await win();
     return w ? await w.isMaximized() : false;
   },
+  /** 창의 **보이지 않는 테두리** 두께 (CSS 픽셀, 위·왼·오른·아래).
+   *
+   *  ★★가장자리 손잡이를 이만큼 **안쪽으로 물린다** (사용자 지적 2026-08-28: *"커서가
+   *    리사이즈 모양으로 변하는 구간이 100이면 아래 50% 정도에서만 더블클릭이 먹는다"*).
+   *    윈도우의 크기 조절 테두리는 창 **밖으로 한 겹 더** 나와 있는데, 그 겹은 눈에 안
+   *    보이면서 커서를 바꾸고 누름을 먹는다. 로그로 재 보니 화면에는 `y=4` 위로 아무
+   *    이벤트도 안 왔다 — 우리 8px 손잡이의 위쪽 절반이 그 겹에 덮여 있었던 것이다.
+   *  ★두께는 **껍데기가 잰다** — 화면 배율·테마마다 달라서 셈으로 적으면 또 어긋난다. */
+  async frameInset(): Promise<{ top: number; left: number; right: number; bottom: number }> {
+    const none = { top: 0, left: 0, right: 0, bottom: 0 };
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const [t, l, r, b] = await invoke<[number, number, number, number]>("frame_inset");
+      const s = window.devicePixelRatio || 1;
+      return { top: t / s, left: l / s, right: r / s, bottom: b / s };
+    } catch {
+      return none;   // 브라우저로 열었을 때 (Tauri 가 없다)
+    }
+  },
   async startResize(dir: ResizeDir) {
     (await win())?.startResizeDragging(dir as never);
   },

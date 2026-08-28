@@ -150,6 +150,15 @@ function ResizeHandles() {
     document.addEventListener("mouseup", stop, true);
   };
 
+  /** ★★창의 **보이지 않는 테두리**만큼 안쪽으로 물린다 (`lib/window` 의 `frameInset` ★★주).
+   *  그 겹은 눈에 안 보이면서 커서를 바꾸고 누름을 먹는다 — 물리지 않으면 손잡이의 위쪽
+   *  절반이 죽은 채로 남는다 (사용자 지적 2026-08-28: *"아래 50% 정도에서만 먹는다"*).
+   *  ★못 재면 0 이다 — 그때는 지금까지와 같다. */
+  const [in_, setIn] = useState({ top: 0, left: 0, right: 0, bottom: 0 });
+  useEffect(() => {
+    void appWindow.frameInset().then(setIn);
+  }, []);
+
   const base: React.CSSProperties = { position: "absolute", zIndex: 999 };
 
   return (
@@ -158,43 +167,43 @@ function ResizeHandles() {
       <div
         onMouseDown={grab("North")}
         data-resize-edge="North"
-        style={{ ...base, top: 0, left: CORNER, right: CORNER, height: EDGE, cursor: "ns-resize" }}
+        style={{ ...base, top: in_.top, left: CORNER + in_.left, right: CORNER + in_.right, height: EDGE, cursor: "ns-resize" }}
       />
       <div
         onMouseDown={grab("South")}
         data-resize-edge="South"
-        style={{ ...base, bottom: 0, left: CORNER, right: CORNER, height: EDGE, cursor: "ns-resize" }}
+        style={{ ...base, bottom: in_.bottom, left: CORNER + in_.left, right: CORNER + in_.right, height: EDGE, cursor: "ns-resize" }}
       />
       <div
         onMouseDown={grab("West")}
         data-resize-edge="West"
-        style={{ ...base, left: 0, top: CORNER, bottom: CORNER, width: EDGE, cursor: "ew-resize" }}
+        style={{ ...base, left: in_.left, top: CORNER + in_.top, bottom: CORNER + in_.bottom, width: EDGE, cursor: "ew-resize" }}
       />
       <div
         onMouseDown={grab("East")}
         data-resize-edge="East"
-        style={{ ...base, right: 0, top: CORNER, bottom: CORNER, width: EDGE, cursor: "ew-resize" }}
+        style={{ ...base, right: in_.right, top: CORNER + in_.top, bottom: CORNER + in_.bottom, width: EDGE, cursor: "ew-resize" }}
       />
       {/* 모서리 */}
       <div
         onMouseDown={grab("NorthWest")}
         data-resize-edge="NorthWest"
-        style={{ ...base, top: 0, left: 0, width: CORNER, height: CORNER, cursor: "nwse-resize" }}
+        style={{ ...base, top: in_.top, left: in_.left, width: CORNER, height: CORNER, cursor: "nwse-resize" }}
       />
       <div
         onMouseDown={grab("NorthEast")}
         data-resize-edge="NorthEast"
-        style={{ ...base, top: 0, right: 0, width: CORNER, height: CORNER, cursor: "nesw-resize" }}
+        style={{ ...base, top: in_.top, right: in_.right, width: CORNER, height: CORNER, cursor: "nesw-resize" }}
       />
       <div
         onMouseDown={grab("SouthWest")}
         data-resize-edge="SouthWest"
-        style={{ ...base, bottom: 0, left: 0, width: CORNER, height: CORNER, cursor: "nesw-resize" }}
+        style={{ ...base, bottom: in_.bottom, left: in_.left, width: CORNER, height: CORNER, cursor: "nesw-resize" }}
       />
       <div
         onMouseDown={grab("SouthEast")}
         data-resize-edge="SouthEast"
-        style={{ ...base, bottom: 0, right: 0, width: CORNER, height: CORNER, cursor: "nwse-resize" }}
+        style={{ ...base, bottom: in_.bottom, right: in_.right, width: CORNER, height: CORNER, cursor: "nwse-resize" }}
       />
     </>
   );
