@@ -13,11 +13,22 @@ export function WindowFrame({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let un: (() => void) | undefined;
+    let t: ReturnType<typeof setTimeout> | undefined;
     (async () => {
       setMaxed(await appWindow.isMaximized());
-      un = await appWindow.onResized(async () => setMaxed(await appWindow.isMaximized()));
+      un = await appWindow.onResized(async () => {
+        setMaxed(await appWindow.isMaximized());
+        /* ★★**크기가 멎으면 그 자리를 적어 둔다** (`lib/window` 의 `noteHeight`).
+           안 적어 두면 창이 이미 꽉 찬 높이일 때 더블클릭이 되돌릴 자리를 못 찾아
+           **아무 일도 안 한다.** ★끄는 동안 수십 번 오므로 멎은 뒤에 한 번만 부른다. */
+        clearTimeout(t);
+        t = setTimeout(() => void appWindow.noteHeight(), 300);
+      });
     })();
-    return () => un?.();
+    return () => {
+      clearTimeout(t);
+      un?.();
+    };
   }, []);
 
   return (
@@ -89,35 +100,43 @@ function ResizeHandles() {
       {/* 변 */}
       <div
         onMouseDown={grab("North")}
+        data-resize-edge="North"
         style={{ ...base, top: 0, left: CORNER, right: CORNER, height: EDGE, cursor: "ns-resize" }}
       />
       <div
         onMouseDown={grab("South")}
+        data-resize-edge="South"
         style={{ ...base, bottom: 0, left: CORNER, right: CORNER, height: EDGE, cursor: "ns-resize" }}
       />
       <div
         onMouseDown={grab("West")}
+        data-resize-edge="West"
         style={{ ...base, left: 0, top: CORNER, bottom: CORNER, width: EDGE, cursor: "ew-resize" }}
       />
       <div
         onMouseDown={grab("East")}
+        data-resize-edge="East"
         style={{ ...base, right: 0, top: CORNER, bottom: CORNER, width: EDGE, cursor: "ew-resize" }}
       />
       {/* 모서리 */}
       <div
         onMouseDown={grab("NorthWest")}
+        data-resize-edge="NorthWest"
         style={{ ...base, top: 0, left: 0, width: CORNER, height: CORNER, cursor: "nwse-resize" }}
       />
       <div
         onMouseDown={grab("NorthEast")}
+        data-resize-edge="NorthEast"
         style={{ ...base, top: 0, right: 0, width: CORNER, height: CORNER, cursor: "nesw-resize" }}
       />
       <div
         onMouseDown={grab("SouthWest")}
+        data-resize-edge="SouthWest"
         style={{ ...base, bottom: 0, left: 0, width: CORNER, height: CORNER, cursor: "nesw-resize" }}
       />
       <div
         onMouseDown={grab("SouthEast")}
+        data-resize-edge="SouthEast"
         style={{ ...base, bottom: 0, right: 0, width: CORNER, height: CORNER, cursor: "nwse-resize" }}
       />
     </>

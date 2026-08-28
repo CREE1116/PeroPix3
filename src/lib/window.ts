@@ -96,6 +96,29 @@ export const appWindow = {
       console.error("[window] 세로 최대화 실패 — capabilities 의 창 조작 권한을 본다", e);
     }
   },
+  /** ★★**늘리기 전 자리는 늘 갱신해 둔다** — 크기가 바뀔 때마다 부른다.
+   *
+   *  예전에는 `fitVertical` 이 늘리는 그 순간에만 적어 뒀다. 그래서 **창이 이미 꽉 찬
+   *  높이일 때**(손으로 그렇게 맞춰 뒀거나, 윈도우가 위쪽 가장자리로 끌어 붙여 놨을 때)
+   *  되돌릴 자리가 없어 **더블클릭이 아무 일도 안 했다.** 눈에는 「안 먹는다」로만 보인다.
+   *  ★꽉 찬 상태에서는 적지 않는다 — 그것을 적으면 되돌릴 자리가 곧 지금 자리가 된다. */
+  async noteHeight() {
+    try {
+      const w = await win();
+      if (!w) return;
+      const { currentMonitor } = await import("@tauri-apps/api/window");
+      const m = await currentMonitor();
+      if (!m) return;
+      const pos = await w.outerPosition();
+      const size = await w.outerSize();
+      const wa = m.workArea;
+      const full =
+        Math.abs(pos.y - wa.position.y) <= 2 && Math.abs(size.height - wa.size.height) <= 2;
+      if (!full) vFitBack = { y: pos.y, h: size.height };
+    } catch {
+      /* 자리를 못 적어도 하던 일에는 지장이 없다 */
+    }
+  },
   /** ★★**손으로 크기를 조절하면 세로 최대화가 풀린다** (사용자 지적 2026-08-28:
    *  *"확장됐을 때 수동으로 크기 줄이면 원래 아래 부분이 기존 위치로 돌아가는데, 이건
    *  안 돌아감"*).
