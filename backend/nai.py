@@ -419,12 +419,22 @@ def uc_preset_id(model: str, preset_name: str) -> str:
 
 
 def append_prompt(prompt: str, addition: str) -> str:
-    """`text:` 절이 있으면 그 앞에, 없으면 맨 뒤에 붙인다."""
+    """`text:` 절이 있으면 그 앞에, 없으면 맨 뒤에 붙인다.
+
+    ★★프롬프트에 `|` 가 있으면 **첫 조각에만** 붙인다 (사용자 결정 2026-08-29: *"공홈이랑
+      똑같게"*). 공홈은 `|` 로 나뉜 프롬프트에서 덧붙이는 것(퀄리티 접미사·인핸스 문구)을
+      첫 조각에 넣는다 — UC 프리셋 본문도 같은 자리다(번들 `_app` 오프셋 1025550 의
+      `split("|")` 후 첫 조각, 접미사는 1362604). 우리는 끝에 붙여서, `|` 가 든 프롬프트에서만
+      마지막 조각 뒤로 가는 차이가 있었다. `|` 를 캐릭터로 쪼개는 코드는 공홈에도 없다 —
+      `base_caption` 에 그대로 실린다."""
     prompt = prompt or ""
-    m = TEXT_CLAUSE_RE.search(prompt)
+    head, sep, tail = prompt.partition("|")
+    m = TEXT_CLAUSE_RE.search(head)
     if m:
-        return prompt[: m.start()] + addition + prompt[m.start():]
-    return prompt + addition
+        head = head[: m.start()] + addition + head[m.start():]
+    else:
+        head = head + addition
+    return head + sep + tail
 
 
 def resolve_uc(model: str, preset_name: str, prompt: str, user_negative: str) -> str:
