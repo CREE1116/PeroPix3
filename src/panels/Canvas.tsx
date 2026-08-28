@@ -380,11 +380,11 @@ function SceneActions() {
         upscale={{ ws, file, files: multiFiles.length > 1 ? multiFiles : undefined }}
         multi={multiFiles.length}
         onKeep={async () => {
-          /* ★여러 장 골랐으면 전부 보관한다 — 이미 보관된 장을 무르지 않게 `toggle: false` 와
-             같은 뜻의 갈래는 없어, 그대로 keep 을 돌린다 (겹치면 그 장만 물러난다) */
+          /* ★여러 장 골랐으면 전부 보관한다. `toggle: false` — 「여기 넣어라」라는 몸짓이라,
+             이미 보관된 장이 섞여 있어도 무르지 않는다 (끌어다 놓기와 같은 갈래) */
           if (multiFiles.length > 1) {
             try {
-              for (const f of multiFiles) await useGallery.getState().keep(ws, f);
+              for (const f of multiFiles) await useGallery.getState().keep(ws, f, "", false);
               toast(tr("gallery.kept"));
             } catch (e) {
               toast(String(e), "warn");
