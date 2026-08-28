@@ -43,6 +43,19 @@ pub fn client_edges(hwnd: *mut core::ffi::c_void) {
         let r = unsafe { DefSubclassProc(hwnd, msg, wp, lp) };
         if msg == WM_NCHITTEST {
             let hit = r as i32;
+            /* ★진단 — **처음 한 번** 원래 답을 그대로 남긴다 (사용자 지적 2026-08-28).
+               「설치 = 성공」인데 바꾼 줄이 없으면 갈래가 둘이다: 후크가 아예 안 불렸거나,
+               불렸는데 tao 가 가장자리라고 답하지 않거나. 이 줄 하나가 그것을 가른다.
+               ★값: 1=본문 · 2=제목줄 · 12=위 · 15=아래 · 10=왼쪽 · 11=오른쪽 (HT*). */
+            {
+                use std::sync::atomic::{AtomicBool, Ordering};
+                static SAID: AtomicBool = AtomicBool::new(false);
+                if !SAID.swap(true, Ordering::Relaxed) {
+                    crate::backend::log_line(&format!(
+                        "[edge] 첫 판정이 왔다 — tao 의 답 = {hit} (1=본문 · 12=위 · 15=아래)"
+                    ));
+                }
+            }
             let edge = hit == HTTOP as i32
                 || hit == HTBOTTOM as i32
                 || hit == HTLEFT as i32
