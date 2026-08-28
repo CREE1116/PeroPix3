@@ -53,34 +53,6 @@ export const appWindow = {
     const w = await win();
     return w ? await w.isMaximized() : false;
   },
-  /** 창의 **보이지 않는 테두리** 두께 (CSS 픽셀, 위·왼·오른·아래).
-   *
-   *  ★★가장자리 손잡이를 이만큼 **안쪽으로 물린다** (사용자 지적 2026-08-28: *"커서가
-   *    리사이즈 모양으로 변하는 구간이 100이면 아래 50% 정도에서만 더블클릭이 먹는다"*).
-   *    윈도우의 크기 조절 테두리는 창 **밖으로 한 겹 더** 나와 있는데, 그 겹은 눈에 안
-   *    보이면서 커서를 바꾸고 누름을 먹는다. 로그로 재 보니 화면에는 `y=4` 위로 아무
-   *    이벤트도 안 왔다 — 우리 8px 손잡이의 위쪽 절반이 그 겹에 덮여 있었던 것이다.
-   *  ★두께는 **껍데기가 잰다** — 화면 배율·테마마다 달라서 셈으로 적으면 또 어긋난다. */
-  async frameInset(): Promise<{ top: number; left: number; right: number; bottom: number }> {
-    const none = { top: 0, left: 0, right: 0, bottom: 0 };
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const [t, l, r, b] = await invoke<[number, number, number, number]>("frame_inset");
-      const s = window.devicePixelRatio || 1;
-      return { top: t / s, left: l / s, right: r / s, bottom: b / s };
-    } catch {
-      return none;   // 브라우저로 열었을 때 (Tauri 가 없다)
-    }
-  },
-  /** 그 화면 좌표의 **픽셀 주인**을 이름으로 (진단용). 껍데기가 `WindowFromPoint` 로 묻는다. */
-  async whoAt(x: number, y: number): Promise<string> {
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      return await invoke<string>("who_at", { x: Math.round(x), y: Math.round(y) });
-    } catch {
-      return "";
-    }
-  },
   async startResize(dir: ResizeDir) {
     (await win())?.startResizeDragging(dir as never);
   },
@@ -90,6 +62,8 @@ export const appWindow = {
    *  시스템 타이틀바를 끄면 창에 **비클라이언트 영역이 없어져**, 윈도우가 그 자리에서
    *  해 주던 일(`WM_NCLBUTTONDBLCLK` → 세로 최대화)이 통째로 사라진다. 가장자리 손잡이를
    *  우리가 그린 것처럼 이것도 우리가 해야 한다.
+   *  ★껍데기에 맡길 수도 없다 — tao 의 창 클래스에 `CS_DBLCLKS` 가 없어 창틀 더블클릭
+   *    메시지가 **애초에 만들어지지 않는다** (소스 확인 2026-08-28). 더블클릭은 화면이 센다.
    *  ★**세로뿐이다.** 윈도우가 이 동작을 주는 것은 위·아래 테두리이고, 좌우 테두리에는
    *    같은 기능이 없다 (MS 문서·Windows 11 설정 항목 「세로로 창 최대화」).
    *  ★작업 표시줄을 덮지 않도록 **작업 영역**(`workArea`)까지만 늘린다.
@@ -114,12 +88,6 @@ export const appWindow = {
       // ★두 값 다 물리 픽셀이라 그대로 견준다 (화면 배율을 거치지 않는다)
       const full =
         Math.abs(pos.y - wa.position.y) <= 2 && Math.abs(size.height - wa.size.height) <= 2;
-      // ★진단 — 재는 값이 실제로 어떤지 (사용자 지적 2026-08-28: 사용자 창에서만 안 된다)
-      logLine(
-        "info",
-        "창세로",
-        `창 y=${pos.y} h=${size.height} x=${pos.x} w=${size.width} · 작업영역 y=${wa.position.y} h=${wa.size.height} · full=${full} back=${JSON.stringify(vFitBack)}`,
-      );
       if (full) {
         const back = vFitBack;
         if (!back) {
@@ -140,8 +108,6 @@ export const appWindow = {
       vFitted = true;
       await w.setPosition(new PhysicalPosition(pos.x, wa.position.y));
       await w.setSize(new PhysicalSize(size.width, wa.size.height));
-      const after = await w.outerSize();
-      logLine("info", "창세로", `늘린 뒤 h=${after.height} (바란 값 ${wa.size.height})`);
     } catch (e) {
       // ★거부되면 **조용히** 아무 일도 안 일어난다 — 그래서 까닭을 남긴다 (위 ★★주)
       logLine("error", "창세로", `실패 — capabilities 의 창 조작 권한을 본다: ${String(e)}`);

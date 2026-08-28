@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { appWindow, type ResizeDir } from "../lib/window";
-import { logLine } from "../lib/report";
 
 /** 창 가장자리 리사이즈 손잡이.
  *
  *  `decorations: false` 로 두면 OS 의 리사이즈 테두리가 사라지므로 직접 만든다.
- *  최대화 상태에서는 손잡이를 숨긴다 (그 상태에서 끌면 창이 어정쩡하게 복원된다). */
-/** 가장자리 두께 — ★★**8px 이다** (사용자 지적 2026-08-28: 로그에 누름이 하나도 안 찍혔다).
- *  5px 은 너무 얇았다. 윈도우는 창 **바깥**에 보이지 않는 테두리를 한 겹 더 두어(`SM_CXSIZEFRAME`
- *  4 + `SM_CXPADDEDBORDER` 4) 실제 잡히는 폭이 8px 안팎인데, 우리는 `decorations:false`·
- *  `shadow:false` 라 그 바깥 겹이 아예 없다 — 창의 첫 픽셀 줄부터가 곧 화면이다.
- *  그래서 같은 8px 을 **안쪽에서** 낸다. 제목줄 단추의 윗머리를 조금 덮는데, 윈도우도 그렇다. */
+ *  최대화 상태에서는 손잡이를 숨긴다 (그 상태에서 끌면 창이 어정쩡하게 복원된다).
+ *
+ *  ★★**가장자리의 주인은 이 손잡이 하나다** (사용자 지적 2026-08-28: *"커서 판정이랑
+ *    더블클릭이 먹는 기준이 동일해야 하는데 그 불일치가 문제"*). Tauri 는 테두리 없는 창에
+ *    투명 덧창(`TAURI_DRAG_RESIZE_BORDERS`)을 따로 깔아 안쪽 4px 을 제 것으로 삼는데, 거기서는
+ *    커서만 바뀌고 화면은 누름을 못 본다 — 그래서 손잡이의 위쪽 절반이 죽어 있었다. 껍데기가
+ *    부팅 때 그 덧창을 걷는다 (`src-tauri/src/window_edge.rs`). 이제 커서를 바꾸는 요소와
+ *    누름·더블클릭을 받는 요소가 같은 것이라 어긋날 자리가 없다. */
+/** 가장자리 두께. ★★손잡이는 창의 **첫 픽셀 줄부터** 선다 — 한때 「보이지 않는 OS 테두리」를
+ *  셈해 4px 안쪽으로 물렸는데, 그 겹은 없었다(DWM 실측 0). 물린 만큼 맨 윗줄에 손잡이가
+ *  없는 상태를 우리가 만들었던 것이라 되돌렸다. */
 const EDGE = 8;
 const CORNER = 16; // 모서리 판정 크기
 
@@ -69,66 +73,6 @@ function ResizeHandles() {
    *  이어진다는 보장이 없다. 누른 자리와 시각만 보면 어긋날 일이 없다. */
   const last = useRef({ dir: "", at: 0 });
 
-  /* ★진단 — 이 판이 화면에 올라와 있는지, 두 번째 누름이 오는지를 로그로 남긴다
-     (사용자 지적 2026-08-28: QA 인스턴스에서는 되는데 사용자 창에서만 안 된다). */
-  useEffect(() => {
-    logLine("info", "창테두리", `손잡이 준비 (두께 ${EDGE}px)`);
-    /* ★★**화면이 창의 어디부터인가** (사용자 지적 2026-08-28: 위쪽 절반이 죽어 있다).
-       껍데기에 창틀 판정이 안 오고 화면에도 누름이 안 오는 구간이 있다 — 그 구간이
-       **웹뷰 밖**인지를 재려면 창과 화면의 자리를 견주어야 한다. */
-    logLine(
-      "info",
-      "창자리",
-      `창 y=${window.screenY} 높이=${window.outerHeight} · 화면 높이=${window.innerHeight}` +
-        ` · 배율=${window.devicePixelRatio}`,
-    );
-    /* ★★**맨 윗줄의 픽셀 주인을 이름으로 묻는다** (조사 2026-08-28). 「누가 먹고 있는가」를
-       짐작으로 좁히다 여러 판을 버렸다 — 사람이 마우스를 올릴 필요 없이, 창 자기 좌표를
-       껍데기에 그대로 물어본다 (`WindowFromPoint`). */
-    void (async () => {
-      const x = window.screenX + Math.round(window.innerWidth / 2);
-      for (const off of [-2, 0, 2, 4, 6, 10]) {
-        const who = await appWindow.whoAt(x, window.screenY + off);
-        logLine("info", "창테두리", `맨위+${off} 주인 = ${who}`);
-      }
-    })();
-    /* ★포인터가 닿은 **모든** 윗줄을 남긴다 (같은 y 는 한 번만). 예전에는 「새 최솟값만」
-       남겨서, `y=4` 가 「그 위로는 못 온다」인지 「그 위를 안 밟았다」인지 못 갈랐다. */
-    const hit = new Set<number>();
-    const seen = (e: PointerEvent) => {
-      const y = Math.round(e.clientY);
-      if (y > 12 || y < 0 || hit.has(y)) return;
-      hit.add(y);
-      logLine("info", "창테두리", `포인터가 닿음 y=${y} (화면 y=${window.screenY + y})`);
-    };
-    document.addEventListener("pointermove", seen, true);
-    /* ★★창 위쪽을 눌렀는데 **손잡이가 아닌 것**이 받았으면 그것도 적는다.
-       손잡이가 떠 있는데 누름이 한 번도 안 온다면 자리를 못 맞히고 있다는 뜻이라,
-       **무엇이 대신 받았는지**를 알아야 두께를 얼마나 늘릴지가 정해진다. */
-    const near = (e: MouseEvent) => {
-      if (e.clientY > 28) return;
-      const el = e.target as HTMLElement | null;
-      if (el?.closest("[data-resize-edge]")) return;
-      /* ★★손잡이가 아닌 것이 받았으면 **무엇이 얼마만큼 덮고 있는지**까지 남긴다
-         (사용자 지적 2026-08-28: *"커서가 바뀌는 구간이 100이면 아래 50%에서만 먹는다"*).
-         창틀 판정(`WM_NCHITTEST`)이 껍데기에 한 번도 안 오는 것을 확인했으므로, 그 죽은
-         구간은 **화면 안**에 있다. 무엇이 위에 깔려 있는지가 곧 답이다. */
-      logLine(
-        "info",
-        "창테두리",
-        `빗나감 y=${Math.round(e.clientY)} 대상=${el?.tagName ?? "?"}` +
-          `${el?.getAttribute?.("data-resize-edge") ? "(손잡이?!)" : ""}` +
-          ` 끌기영역=${!!el?.closest("[data-tauri-drag-region]")}` +
-          ` 그자리것=${document.elementFromPoint(e.clientX, e.clientY)?.tagName ?? "?"}`,
-      );
-    };
-    document.addEventListener("mousedown", near, true);
-    return () => {
-      document.removeEventListener("mousedown", near, true);
-      document.removeEventListener("pointermove", seen, true);
-    };
-  }, []);
-
   const grab = (dir: ResizeDir) => (e: React.MouseEvent) => {
     // 좌클릭만. 이벤트가 아래로 새면 창 이동과 겹친다.
     if (e.button !== 0) return;
@@ -139,8 +83,6 @@ function ResizeHandles() {
        좌우에는 윈도우도 같은 기능을 주지 않으므로 여기서도 없다. */
     const now = performance.now();
     const dbl = last.current.dir === dir && now - last.current.at < DBL_MS;
-    const dt = last.current.dir === dir ? Math.round(now - last.current.at) : -1;
-    logLine("info", "창테두리", `${dir} 누름 y=${Math.round(e.clientY)} dt=${dt}ms dbl=${dbl}`);
     last.current = { dir, at: dbl ? 0 : now };
     if (dbl) {
       if (dir === "North" || dir === "South") appWindow.fitVertical();
@@ -153,8 +95,8 @@ function ResizeHandles() {
        모드로 들어가 마우스를 통째로 가져가서**, 두 번째 누름이 우리에게 오지 않거나 뗀
        자취가 끊긴다. 그래서 더블클릭이 열 번에 한 번쯤만 잡혔다.
        문턱을 두면 **두 번 누르는 동안에는 OS 모드에 아예 안 들어가므로** 두 누름이 다
-       우리에게 온다. 끌기는 3px 만 움직이면 그때부터 평소와 같다 — OS 는 크기 조절을
-       시작할 때 그 변을 커서에 맞추므로, 3px 늦게 시작해도 눈에 띄는 차이가 없다. */
+       우리에게 온다. OS 는 크기 조절을 시작할 때 그 변을 커서에 맞추므로, 몇 px 늦게
+       시작해도 눈에 띄는 차이가 없다. */
     const x0 = e.clientX;
     const y0 = e.clientY;
     const stop = () => {
@@ -174,15 +116,6 @@ function ResizeHandles() {
     document.addEventListener("mouseup", stop, true);
   };
 
-  /** ★★창의 **보이지 않는 테두리**만큼 안쪽으로 물린다 (`lib/window` 의 `frameInset` ★★주).
-   *  그 겹은 눈에 안 보이면서 커서를 바꾸고 누름을 먹는다 — 물리지 않으면 손잡이의 위쪽
-   *  절반이 죽은 채로 남는다 (사용자 지적 2026-08-28: *"아래 50% 정도에서만 먹는다"*).
-   *  ★못 재면 0 이다 — 그때는 지금까지와 같다. */
-  const [in_, setIn] = useState({ top: 0, left: 0, right: 0, bottom: 0 });
-  useEffect(() => {
-    void appWindow.frameInset().then(setIn);
-  }, []);
-
   const base: React.CSSProperties = { position: "absolute", zIndex: 999 };
 
   return (
@@ -191,43 +124,43 @@ function ResizeHandles() {
       <div
         onMouseDown={grab("North")}
         data-resize-edge="North"
-        style={{ ...base, top: in_.top, left: CORNER + in_.left, right: CORNER + in_.right, height: EDGE, cursor: "ns-resize" }}
+        style={{ ...base, top: 0, left: CORNER, right: CORNER, height: EDGE, cursor: "ns-resize" }}
       />
       <div
         onMouseDown={grab("South")}
         data-resize-edge="South"
-        style={{ ...base, bottom: in_.bottom, left: CORNER + in_.left, right: CORNER + in_.right, height: EDGE, cursor: "ns-resize" }}
+        style={{ ...base, bottom: 0, left: CORNER, right: CORNER, height: EDGE, cursor: "ns-resize" }}
       />
       <div
         onMouseDown={grab("West")}
         data-resize-edge="West"
-        style={{ ...base, left: in_.left, top: CORNER + in_.top, bottom: CORNER + in_.bottom, width: EDGE, cursor: "ew-resize" }}
+        style={{ ...base, left: 0, top: CORNER, bottom: CORNER, width: EDGE, cursor: "ew-resize" }}
       />
       <div
         onMouseDown={grab("East")}
         data-resize-edge="East"
-        style={{ ...base, right: in_.right, top: CORNER + in_.top, bottom: CORNER + in_.bottom, width: EDGE, cursor: "ew-resize" }}
+        style={{ ...base, right: 0, top: CORNER, bottom: CORNER, width: EDGE, cursor: "ew-resize" }}
       />
       {/* 모서리 */}
       <div
         onMouseDown={grab("NorthWest")}
         data-resize-edge="NorthWest"
-        style={{ ...base, top: in_.top, left: in_.left, width: CORNER, height: CORNER, cursor: "nwse-resize" }}
+        style={{ ...base, top: 0, left: 0, width: CORNER, height: CORNER, cursor: "nwse-resize" }}
       />
       <div
         onMouseDown={grab("NorthEast")}
         data-resize-edge="NorthEast"
-        style={{ ...base, top: in_.top, right: in_.right, width: CORNER, height: CORNER, cursor: "nesw-resize" }}
+        style={{ ...base, top: 0, right: 0, width: CORNER, height: CORNER, cursor: "nesw-resize" }}
       />
       <div
         onMouseDown={grab("SouthWest")}
         data-resize-edge="SouthWest"
-        style={{ ...base, bottom: in_.bottom, left: in_.left, width: CORNER, height: CORNER, cursor: "nesw-resize" }}
+        style={{ ...base, bottom: 0, left: 0, width: CORNER, height: CORNER, cursor: "nesw-resize" }}
       />
       <div
         onMouseDown={grab("SouthEast")}
         data-resize-edge="SouthEast"
-        style={{ ...base, bottom: in_.bottom, right: in_.right, width: CORNER, height: CORNER, cursor: "nwse-resize" }}
+        style={{ ...base, bottom: 0, right: 0, width: CORNER, height: CORNER, cursor: "nwse-resize" }}
       />
     </>
   );

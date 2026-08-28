@@ -1,222 +1,54 @@
-//! 창 가장자리 판정을 **화면(웹뷰)에 넘긴다.**
+//! 창 가장자리 — **커서가 바뀌는 자리와 누름이 먹는 자리를 하나로** 한다.
 //!
-//! ★★사용자 지적 2026-08-28: *"판정이 보이는 거랑 다름. 커서가 바뀐 곳에서 눌렀는데 안
-//!   되어서 약간 내려서 누르니까 됨."* · *"커서 판정이랑 동일하게 일치시켜야 할 듯."*
+//! ★★사용자 지적 2026-08-28: *"커서가 리사이즈 모양으로 변하는 구간이 100이면 아래 50%
+//!   정도에서만 더블클릭이 먹는다."* · *"커서 판정이랑 동일하게 일치시켜야 할 듯."*
 //!
-//! 까닭은 **테두리가 둘이었기 때문**이다. 우리가 화면에 그린 8px 손잡이 위에, 창 라이브러리
-//! (tao)가 붙여 둔 **OS 테두리**가 한 겹 더 덮여 있었다 — 테두리 없는 창(`decorations: false`)
-//! 이면서 크기 조절이 되고 최대화가 아닐 때, tao 는 `WM_NCHITTEST` 에 `HTTOP`·`HTLEFT` 를
-//! 돌려준다 (`SM_CXFRAME`·`SM_CYFRAME`, 화면 배율에 따라 4~8px).
+//! 그 위쪽 절반의 주인을 `WindowFromPoint` 로 물어 **이름을 받았다**(실측 2026-08-28):
 //!
-//! 그 자리는 **비클라이언트 영역**이라
-//!   · 커서는 OS 가 ↕ 로 바꿔 주고,
-//!   · 누름은 웹뷰에 아예 오지 않는다.
-//! 그래서 「커서가 바뀐 자리를 눌렀는데 아무 일도 안 나고, 조금 아래를 누르면 된다」가 됐다.
-//! 눈에 보이는 것과 먹히는 것이 어긋난 것이 아니라 **주인이 둘**이었던 것이다.
+//!     맨위+0  주인 = TAURI_DRAG_RESIZE_BORDERS   판정=12(HTTOP)
+//!     맨위+2  주인 = TAURI_DRAG_RESIZE_BORDERS   판정=12
+//!     맨위+4  주인 = Chrome_RenderWidgetHostHWND  판정=1(HTCLIENT)
 //!
-//! 그래서 가장자리 판정을 **HTCLIENT 로 되돌려** 웹뷰에 넘긴다. 그러면 커서도 판정도 우리
-//! 손잡이 하나가 정한다 — 어긋날 자리가 없다. 끌어서 크기를 바꾸는 것은 그대로 OS 가 한다
-//! (`startResizeDragging` 이 `WM_NCLBUTTONDOWN` 을 대신 보낸다), 그래서 가장자리를 화면 끝에
-//! 붙였을 때의 스냅도 살아 있다.
+//! **Tauri 가 스스로 깔아 두는 투명 덧창**이다 (`tauri-runtime-wry` 의 `undecorated_resizing.rs`).
+//! `decorations:false` 이고 크기 조절이 되는 창에 붙어, 클라이언트 안쪽 가장자리 `SM_CXFRAME`
+//! (배율 1 에서 4px) 너비의 띠만 남기고 가운데를 도려낸 자식창이다. 그 띠에서:
+//!   · `WM_NCHITTEST` 에 `HTTOP` 등을 돌려주므로 **커서가 크기 조절 모양으로 바뀌고**,
+//!   · `WM_NCLBUTTONDOWN` 을 받으면 부모에게 같은 것을 부쳐 **OS 크기 조절을 시작**한다.
+//!   · 더블클릭은 아무것도 안 한다 (클래스에 `CS_DBLCLKS` 도 없다).
+//! 화면(웹뷰)은 그 띠 밑에 있어 **누름을 아예 못 본다.** 그래서 우리가 그린 8px 손잡이 중
+//! 위쪽 4px 은 커서만 바뀌고 더블클릭이 죽어 있었고, 거기서 시작한 끌기는 우리 손을 안 거쳐
+//! 「늘린 것을 되돌리기」(`lib/window` 의 `unfitFor`)도 건너뛰었다. 같은 뿌리의 한 증상이다.
 //!
-//! ★최대화 상태에서는 tao 가 애초에 판정을 안 하므로 여기도 지나간다.
+//! ★★그래서 **그 덧창을 걷어낸다.** 가장자리는 화면의 손잡이 하나가 맡는다 — 커서도 누름도
+//!   더블클릭도 같은 요소가 받으므로 어긋날 자리가 없다. 끌어서 크기를 바꾸는 것은 지금까지처럼
+//!   `startResizeDragging` 이 OS 에 넘긴다 (화면 끝에 붙였을 때의 스냅도 그대로다).
+//! ★Tauri 는 이미 있으면 다시 만들지 않는다(`attach_resize_handler` 의 `FindWindowExW` 검사) —
+//!   없앤 뒤 되살아나는 길은 `set_decorations`·`set_shadow` 를 다시 부르는 것뿐인데, 이 앱은
+//!   둘 다 안 부른다.
+//! ★같은 프로세스·같은 스레드의 창이라 `DestroyWindow` 로 바로 없앨 수 있다.
+//!
+//! ~~한때 여기에 「tao 가 돌려주는 `HTTOP` 을 `HTCLIENT` 로 바꾸는 후크」가 있었다~~ — 그 판정은
+//! 웹뷰 자식창이 창을 통째로 덮고 있어 부모에게 **아예 오지 않는다**(로그 0회). 죽은 코드라 걷었다.
 
-/// `WM_NCHITTEST` 가 가장자리로 나오면 **본문**으로 바꾼다 (위 모듈 주석).
+/// Tauri 의 크기 조절 덧창을 없앤다. 있었으면 `true`.
 #[cfg(windows)]
-pub fn client_edges(hwnd: *mut core::ffi::c_void) {
-    use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-    use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT,
-        HTTOPRIGHT, WM_NCHITTEST,
-    };
+pub fn drop_tauri_resize_overlay(hwnd: *mut core::ffi::c_void) -> bool {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{DestroyWindow, FindWindowExW};
 
-    unsafe extern "system" fn hook(
-        hwnd: HWND,
-        msg: u32,
-        wp: WPARAM,
-        lp: LPARAM,
-        _id: usize,
-        _data: usize,
-    ) -> LRESULT {
-        /* ★진단 — **후크가 불리기는 하는가** (사용자 지적 2026-08-28). 「설치 = 성공」인데
-           `WM_NCHITTEST`(132) 줄이 한 번도 안 나왔다. 아무 메시지든 첫 것을 한 번 남기면
-           「사슬에 아예 안 걸렸다」와 「그 메시지만 안 온다」가 갈린다. */
-        {
-            use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-            static SAID: AtomicBool = AtomicBool::new(false);
-            if !SAID.swap(true, Ordering::Relaxed) {
-                crate::backend::log_line(&format!("[edge] 첫 메시지가 왔다 — msg = {msg}"));
-            }
-            /* ★★**테두리에서 누른 것**이 우리에게 오는지 본다 (사용자 지적 2026-08-28).
-               비클라이언트 메시지(0x0081~0x00A9)는 창틀에서만 난다 — 그 자리를 눌렀는데
-               여기에 안 찍히면 그 픽셀은 **우리 창의 것이 아니다.**
-               ★값: 161=왼클릭 누름 · 163=왼클릭 더블 · 132=판정 · 160=이동 */
-            if (0x0081..=0x00A9).contains(&msg) {
-                static LAST: AtomicU32 = AtomicU32::new(0);
-                if LAST.swap(msg, Ordering::Relaxed) != msg {
-                    crate::backend::log_line(&format!("[edge] 창틀 메시지 — msg = {msg}"));
-                }
-            }
-        }
-        // ★먼저 tao 에게 묻는다 — 그 답이 가장자리일 때만 바꾼다
-        let r = unsafe { DefSubclassProc(hwnd, msg, wp, lp) };
-        if msg == WM_NCHITTEST {
-            let hit = r as i32;
-            /* ★진단 — **처음 한 번** 원래 답을 그대로 남긴다 (사용자 지적 2026-08-28).
-               「설치 = 성공」인데 바꾼 줄이 없으면 갈래가 둘이다: 후크가 아예 안 불렸거나,
-               불렸는데 tao 가 가장자리라고 답하지 않거나. 이 줄 하나가 그것을 가른다.
-               ★값: 1=본문 · 2=제목줄 · 12=위 · 15=아래 · 10=왼쪽 · 11=오른쪽 (HT*). */
-            {
-                use std::sync::atomic::{AtomicBool, Ordering};
-                static SAID: AtomicBool = AtomicBool::new(false);
-                if !SAID.swap(true, Ordering::Relaxed) {
-                    crate::backend::log_line(&format!(
-                        "[edge] 첫 판정이 왔다 — tao 의 답 = {hit} (1=본문 · 12=위 · 15=아래)"
-                    ));
-                }
-            }
-            let edge = hit == HTTOP as i32
-                || hit == HTBOTTOM as i32
-                || hit == HTLEFT as i32
-                || hit == HTRIGHT as i32
-                || hit == HTTOPLEFT as i32
-                || hit == HTTOPRIGHT as i32
-                || hit == HTBOTTOMLEFT as i32
-                || hit == HTBOTTOMRIGHT as i32;
-            if edge {
-                // ★처음 한 번만 알린다 — 마우스를 움직일 때마다 오므로 흘려 쓰면 로그가 덮인다
-                use std::sync::atomic::{AtomicBool, Ordering};
-                static SAID: AtomicBool = AtomicBool::new(false);
-                if !SAID.swap(true, Ordering::Relaxed) {
-                    crate::backend::log_line("[edge] 가장자리 판정을 화면에 넘겼다 (처음 한 번만 알린다)");
-                }
-                return HTCLIENT as LRESULT;
-            }
-        }
-        r
-    }
-
-    // ★두 번 걸어도 같은 id 면 갈아 끼워질 뿐이라 안전하다
-    let ok = unsafe { SetWindowSubclass(hwnd as HWND, Some(hook), 1, 0) };
-    /* ★진단 — 걸렸는지, 실제로 바꾸고 있는지를 로그로 남긴다 (사용자 지적 2026-08-28:
-       *"커서가 리사이즈 모양으로 변하는 구간이 100이면 아래 50%에서만 더블클릭이 먹는다"*
-       = OS 테두리가 위쪽을 아직 쥐고 있다는 뜻이다). 원인이 잡히면 걷는다. */
-    crate::backend::log_line(&format!(
-        "[edge] 가장자리 판정 넘기기 설치 = {}",
-        if ok != 0 { "성공" } else { "실패" }
-    ));
-}
-
-#[cfg(not(windows))]
-pub fn client_edges(_hwnd: *mut core::ffi::c_void) {}
-
-/// 창의 **보이지 않는 테두리** 두께 (물리 픽셀, 위·왼·오른·아래).
-///
-/// ★★사용자 지적 2026-08-28: *"커서가 리사이즈 모양으로 변하는 구간이 100이면 아래 50%
-///   정도에서만 더블클릭이 먹는다."* 로그로 재 보니 **화면(웹뷰)에는 `y=4` 위로 아무
-///   이벤트도 안 온다.** 창 높이와 화면 높이는 같은데(1174=1174) 맨 위 4px 이 죽어 있었다.
-///
-/// 까닭은 윈도우의 **크기 조절 테두리가 창 밖으로 한 겹 더 나와 있기** 때문이다
-/// (`WS_THICKFRAME` 의 `SM_CXPADDEDBORDER`). 그 겹은 눈에 안 보이지만 커서를 바꾸고 누름을
-/// 먹는다 — 그래서 「보이는 테두리」의 위쪽 절반이 죽은 것처럼 보였다.
-///
-/// ★재는 방법: `GetWindowRect`(보이지 않는 겹까지)와 DWM 의 **보이는 테두리**를 견준다.
-///   셈으로 맞추지 않는다 — 화면 배율·테마마다 값이 달라서 옮겨 적으면 또 어긋난다.
-#[cfg(windows)]
-pub fn frame_inset(hwnd: *mut core::ffi::c_void) -> (i32, i32, i32, i32) {
-    use windows_sys::Win32::Foundation::{HWND, RECT};
-    use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
-    use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
-    use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect;
-
-    let h = hwnd as HWND;
-    let mut win = RECT { left: 0, top: 0, right: 0, bottom: 0 };
-    let mut vis = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+    // 이름은 `tauri-runtime-wry/src/undecorated_resizing.rs` 의 상수 그대로다
+    let class: Vec<u16> = "TAURI_DRAG_RESIZE_BORDERS\0".encode_utf16().collect();
+    let name: Vec<u16> = "TAURI_DRAG_RESIZE_WINDOW\0".encode_utf16().collect();
     unsafe {
-        if GetWindowRect(h, &mut win) == 0 {
-            return (0, 0, 0, 0);
+        let child = FindWindowExW(hwnd as HWND, std::ptr::null_mut(), class.as_ptr(), name.as_ptr());
+        if child.is_null() {
+            return false;
         }
-        let ok = DwmGetWindowAttribute(
-            h,
-            DWMWA_EXTENDED_FRAME_BOUNDS as u32,
-            (&mut vis as *mut RECT).cast(),
-            core::mem::size_of::<RECT>() as u32,
-        );
-        if ok != 0 {
-            return (0, 0, 0, 0);
-        }
-    }
-    let dwm = (
-        (vis.top - win.top).max(0),
-        (vis.left - win.left).max(0),
-        (win.right - vis.right).max(0),
-        (win.bottom - vis.bottom).max(0),
-    );
-    /* ★★DWM 이 0 을 주면 **시스템 값으로 물러선다** — 테두리 없는 창에는 DWM 이 그릴 틀이
-       없어 두 사각형이 같게 나올 수 있다. 실측된 죽은 띠(4px, 배율 1)는 `SM_CYFRAME` 과
-       정확히 같았다 — 창 라이브러리(tao)가 그 값으로 테두리를 잡는다. */
-    let sys = unsafe {
-        use windows_sys::Win32::UI::HiDpi::GetSystemMetricsForDpi;
-        use windows_sys::Win32::UI::WindowsAndMessaging::{SM_CXFRAME, SM_CYFRAME};
-        let dpi = GetDpiForWindow(h);
-        let dpi = if dpi == 0 { 96 } else { dpi };
-        (
-            GetSystemMetricsForDpi(SM_CYFRAME, dpi),
-            GetSystemMetricsForDpi(SM_CXFRAME, dpi),
-        )
-    };
-    /* ★★**시스템 값으로 물러서지 않는다** (조사 2026-08-28). DWM 의 0 은 「못 쟀다」가
-       아니라 **정말 0** 이다: `shadow: false` 라 tao 가 `WM_NCCALCSIZE` 에 인셋 없이 0 을
-       돌려주므로 **클라이언트 사각형 = 창 사각형**이고, 보이지 않는 겹이 애초에 없다.
-       한때 `SM_CYFRAME`(4) 으로 물러섰다가 **손잡이를 근거 없이 4px 내려** 창의 맨 위 네 줄에
-       손잡이가 없는 상태를 만들었다. 시스템 값은 견줄 거리로만 남긴다. */
-    let out = dwm;
-    crate::backend::log_line(&format!(
-        "[edge] 보이지 않는 테두리 — DWM 위{} 왼{} 오{} 아래{} · 시스템 위{} 옆{} → 쓰는 값 위{} 왼{} 오{} 아래{}",
-        dwm.0, dwm.1, dwm.2, dwm.3, sys.0, sys.1, out.0, out.1, out.2, out.3
-    ));
-    out
-}
-
-#[cfg(not(windows))]
-pub fn frame_inset(_hwnd: *mut core::ffi::c_void) -> (i32, i32, i32, i32) {
-    (0, 0, 0, 0)
-}
-
-/// 그 화면 좌표의 **픽셀 주인**을 이름으로 돌려준다 (진단용).
-///
-/// ★★사용자 지적 2026-08-28: 창 맨 위 몇 줄에는 화면(웹뷰)에도 껍데기에도 아무 이벤트가
-///   안 온다. 「누가 먹고 있는가」를 짐작으로 좁히다 여러 판을 버렸으므로, **이름을 직접
-///   묻는다.** `WindowFromPoint` 는 그 점 밑의 가장 깊은 창을 준다.
-/// ★`WM_NCHITTEST` 는 **시간 제한을 걸어** 묻는다 — 남의 스레드에 그냥 보내면 그쪽이
-///   바쁠 때 우리가 멎는다.
-#[cfg(windows)]
-pub fn who_at(x: i32, y: i32, ours: *mut core::ffi::c_void) -> String {
-    use windows_sys::Win32::Foundation::{HWND, POINT};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetClassNameW, SendMessageTimeoutW, WindowFromPoint, SMTO_ABORTIFHUNG, WM_NCHITTEST,
-    };
-
-    unsafe {
-        let h = WindowFromPoint(POINT { x, y });
-        if h.is_null() {
-            return "없음".into();
-        }
-        let mut buf = [0u16; 128];
-        let n = GetClassNameW(h, buf.as_mut_ptr(), buf.len() as i32);
-        let cls = String::from_utf16_lossy(&buf[..n.max(0) as usize]);
-        let mut hit: usize = 0;
-        let lp = (((y as u32 as isize) & 0xFFFF) << 16) | ((x as u32 as isize) & 0xFFFF);
-        let _ = SendMessageTimeoutW(h, WM_NCHITTEST, 0, lp, SMTO_ABORTIFHUNG, 200, &mut hit);
-        format!(
-            "{cls} (우리창={}) 판정={hit}",
-            if h == ours as HWND { "예" } else { "아니오" }
-        )
+        DestroyWindow(child) != 0
     }
 }
 
 #[cfg(not(windows))]
-pub fn who_at(_x: i32, _y: i32, _ours: *mut core::ffi::c_void) -> String {
-    String::new()
+pub fn drop_tauri_resize_overlay(_hwnd: *mut core::ffi::c_void) -> bool {
+    false
 }

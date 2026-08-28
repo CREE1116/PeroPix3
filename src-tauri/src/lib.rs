@@ -11,35 +11,6 @@ use tauri::{Manager, RunEvent};
 /// 이 프로세스가 시작한 순간. ★부팅이 어디서 오래 걸리는지 재는 자 (`uptime_ms`).
 static START: OnceLock<Instant> = OnceLock::new();
 
-/// 창의 **보이지 않는 테두리** 두께 (CSS 픽셀로 바꾸는 것은 화면이 한다).
-///
-/// ★★화면이 그린 8px 손잡이의 **위쪽 절반이 죽어 있던** 까닭이다 (사용자 지적 2026-08-28).
-///   그 겹은 눈에 안 보이면서 커서를 바꾸고 누름을 먹는다 — 손잡이를 그만큼 안쪽으로
-///   물려야 「커서가 바뀌는 자리」와 「먹는 자리」가 같아진다. 까닭은 `window_edge` 머리에.
-#[tauri::command]
-fn frame_inset(window: tauri::WebviewWindow) -> (i32, i32, i32, i32) {
-    #[cfg(windows)]
-    if let Ok(h) = window.hwnd() {
-        return window_edge::frame_inset(h.0 as isize as *mut core::ffi::c_void);
-    }
-    let _ = window;
-    (0, 0, 0, 0)
-}
-
-/// 그 화면 좌표의 **픽셀 주인**을 이름으로 (진단용 — `window_edge::who_at` 의 ★★주).
-#[tauri::command]
-fn who_at(window: tauri::WebviewWindow, x: i32, y: i32) -> String {
-    #[cfg(windows)]
-    if let Ok(h) = window.hwnd() {
-        let ours = h.0 as isize as *mut core::ffi::c_void;
-        let out = window_edge::who_at(x, y, ours);
-        backend::log_line(&format!("[edge] ({x},{y}) 주인 = {out}"));
-        return out;
-    }
-    let _ = (window, x, y);
-    String::new()
-}
-
 /// 껍데기가 켜진 뒤 흐른 시간(ms). ★화면이 **자기가 언제 처음 돌았는지**를 알기 위한 값이다 —
 /// 창을 만들고 웹뷰가 문서를 받아 번들을 돌리기까지가 여기 다 들어 있다. 그 구간은 화면
 /// 스스로는 잴 수 없다 (`performance.timeOrigin` 은 문서가 생긴 뒤부터다).
@@ -199,7 +170,7 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![backend_url, app_root, update_staged, apply_update, uptime_ms, frame_inset, who_at])
+        .invoke_handler(tauri::generate_handler![backend_url, app_root, update_staged, apply_update, uptime_ms])
         .setup(move |app| {
             // ★`apply_update` 가 새 판을 띄우기 전에 자물쇠를 놓을 수 있게 맡겨 둔다
             app.manage(InstanceLock(lock));
@@ -214,11 +185,6 @@ pub fn run() {
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.set_background_color(Some(tauri::window::Color(0x16, 0x16, 0x1a, 0xff)));
             }
-            /* ★★가장자리 판정을 **화면에 넘긴다** — 커서와 누름의 주인을 하나로
-               (사용자 지적 2026-08-28: *"커서 판정이랑 동일하게 일치시켜야 할 듯"*).
-               까닭은 `window_edge.rs` 머리에.
-               ★**사이드카를 띄운 뒤**에 부른다 — 로그 파일이 그때 열리므로, 앞서 부르면
-                 여기서 적는 줄이 다음 실행의 자르기에 걸려 사라진다. */
             match backend::spawn() {
                 Ok(child) => {
                     app.manage(backend::Backend(Mutex::new(Some(child))));
@@ -230,10 +196,16 @@ pub fn run() {
                     app.manage(backend::Backend(Mutex::new(None)));
                 }
             }
+            /* ★★Tauri 가 깔아 둔 크기 조절 덧창을 걷는다 — 커서·누름·더블클릭의 주인을
+               화면의 손잡이 하나로 (사용자 지적 2026-08-28). 까닭은 `window_edge.rs` 머리에.
+               ★사이드카를 띄운 뒤에 한다 — 로그 파일이 그때 열린다. */
             #[cfg(windows)]
             if let Some(w) = app.get_webview_window("main") {
                 match w.hwnd() {
-                    Ok(h) => window_edge::client_edges(h.0 as isize as *mut core::ffi::c_void),
+                    Ok(h) => {
+                        let gone = window_edge::drop_tauri_resize_overlay(h.0 as isize as *mut core::ffi::c_void);
+                        backend::log_line(&format!("[edge] Tauri 크기 조절 덧창 걷기 = {}", if gone { "걷음" } else { "없었음" }));
+                    }
                     Err(e) => backend::log_line(&format!("[edge] 창 손잡이를 못 얻었다: {e}")),
                 }
             }
