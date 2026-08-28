@@ -177,7 +177,12 @@ class Store:
         """그 그림이 **지금 어디 있는지** 적어 둔다 (위 ★★주). 옮기는 도중에도 부른다.
         ★`to_ws` 를 주면 **다른 워크스페이스로** 간 것이다 (`move_tab`) — 찾는 쪽이 그 폴더까지 따라간다."""
         dst = to_ws or ws
-        self._moved[(ws, self.rel(ws, was))] = (dst, self.rel(dst, now))
+        self._track_rel(ws, self.rel(ws, was), dst, self.rel(dst, now))
+
+    def _track_rel(self, ws: str, was: str, dst_ws: str, now: str) -> None:
+        """같은 것을 **상대경로 문자열로** 적는다 — 폴더째 옮길 때는 장마다 경로를 정규화할 이유가
+        없다 (실측 2026-08-28: 400장에서 그 정규화만 403ms 였다)."""
+        self._moved[(ws, was)] = (dst_ws, now)
         if len(self._moved) > self._MOVED_CAP:      # 오래된 절반을 버린다
             for k in list(self._moved)[: len(self._moved) // 2]:
                 self._moved.pop(k, None)
@@ -509,17 +514,21 @@ class Store:
         self._rewrite_paths(ws, moves)
         return {"pairs": pairs}
 
-    def _move_thumbs(self, ws: str, moves: dict[str, str]) -> None:
+    def _move_thumbs(self, ws: str, moves: dict[str, str], dst_ws: str | None = None) -> None:
         """파생 썸네일 캐시를 새 이름으로 따라 옮긴다 (위 ★★주).
 
         ★캐시일 뿐이라 실패해도 그냥 넘어간다 — 없으면 다음 요청에 다시 구워진다.
-          다만 **덮어쓰지 않는다**: 목표 자리에 이미 있으면 그것이 더 새것일 수 있다."""
+          다만 **덮어쓰지 않는다**: 목표 자리에 이미 있으면 그것이 더 새것일 수 있다.
+        ★`dst_ws` 를 주면 **다른 워크스페이스로** 간다 (탭 옮기기). 안 주면 제자리다 (개명)."""
         d = self.dir_of(ws) / THUMB_DIR
+        t = self.dir_of(dst_ws or ws) / THUMB_DIR
         if not d.is_dir():
             return
+        if t is not d:
+            t.mkdir(parents=True, exist_ok=True)
         for old, new in moves.items():
             src = d / thumbs.flat_name(old)
-            dst = d / thumbs.flat_name(new)
+            dst = t / thumbs.flat_name(new)
             if not src.is_file() or dst.exists():
                 continue
             try:
@@ -541,10 +550,12 @@ class Store:
         return line[i + len(cls._FILE_KEY):j] if j > 0 else None
 
     def _rewrite_paths(self, ws: str, moves: dict[str, str], patch: dict | None = None) -> None:
-        """색인과 곁파일의 `file` 을 새 경로로 바꾼다 (`renumber`·`move_scene_group`).
+        """색인의 `file` 을 새 경로로 바꾸고, 곁파일에는 **이정표를 남긴다** (`renumber`·`move_scene_group`).
 
-        ★`patch` 를 주면 그 줄의 **색인 쪽에만** 값을 함께 심는다 (세트 이름이 바뀌었을 때).
-          곁파일 줄에는 `file` 과 무거운 것뿐이라 심을 자리가 없다.
+        ★`patch` 를 주면 그 줄에 값을 함께 심는다 (세트 이름이 바뀌었을 때).
+        ★★**곁파일은 다시 쓰지 않는다** (2026-08-28) — 100MB를 넘는 파일이라 한 판에 0.44초가
+          들고 그 값이 장수와 무관했다. 대신 이정표를 덧붙이고 찾는 쪽이 따라간다
+          (`_note_moves`·`heavy_of` 의 ★★주).
 
         ★append-only 인 파일을 **통째로 다시 쓰는** 유일한 자리다. 그래서 임시 파일에 쓴 뒤
           바꿔치기한다 — 쓰다 죽어도 앞의 것이 남는다.
@@ -556,7 +567,8 @@ class Store:
           바뀌는 줄만 굴리면 **0.46초**다 (나머지는 그대로 흘려 쓴다).
         """
         d = self.dir_of(ws)
-        for name in (RECORDS_NAME, ENV_NAME):
+        self._note_moves(ws, moves)          # ★곁파일은 이정표만 (위 ★★주)
+        for name in (RECORDS_NAME,):
             p = d / name
             if not p.is_file():
                 continue
@@ -570,7 +582,7 @@ class Store:
                         try:
                             row = json.loads(line)
                             row["file"] = moves[f]
-                            if patch and name == RECORDS_NAME:
+                            if patch:
                                 row.update(patch)
                             fout.write(json.dumps(row, ensure_ascii=False) + "\n")
                             continue
@@ -627,25 +639,53 @@ class Store:
         ★찾는 자리는 곁파일이고, **뒤에서부터** 본다 (같은 경로가 여러 번 적혔으면 마지막 것).
         ★파싱하기 전에 **경로 문자열이 그 줄에 있는지**부터 본다 — 줄 하나가 수십 KB 라
           전부 파싱하면 느리다.
+        ★★**옮긴 자리는 이정표를 따라간다** (`{"file": 새 경로, "was": 옛 경로}`, 2026-08-28).
+          그림이 옮겨질 때 이 파일을 통째로 다시 쓰지 않고 **이정표 한 줄만 덧붙이기** 때문이다
+          (`_note_moves` 의 ★★주). 뒤에서부터 보므로 이정표가 먼저 잡히고, 거기서 옛 경로로
+          갈아타 계속 훑는다. 고리는 `seen` 으로 끊는다.
         ★곁파일에 없으면 색인의 옛 줄을 되짚는다 (쪼개지기 전에 적힌 그림)."""
         d = self.dir_of(ws)
         for name in (ENV_NAME, RECORDS_NAME):
             p = d / name
             if not p.exists():
                 continue
+            want, seen = file, {file}
             for ln in reversed(p.read_text(encoding="utf-8").splitlines()):
-                if file not in ln:
+                if want not in ln:
                     continue
                 try:
                     r = json.loads(ln)
                 except Exception:
                     continue
-                if r.get("file") != file:
+                if r.get("file") != want:
                     continue
                 got = {k: r[k] for k in HEAVY_KEYS if r.get(k) is not None}
                 if got:
                     return got
+                was = r.get("was")
+                if isinstance(was, str) and was not in seen:   # ★이정표 — 옛 경로로 갈아탄다
+                    want = was
+                    seen.add(was)
         return {}
+
+    def _note_moves(self, ws: str, moves: dict[str, str]) -> None:
+        """옮긴 자리를 곁파일에 **이정표 한 줄씩** 남긴다 — `{"file": 새 경로, "was": 옛 경로}`.
+
+        ★★**왜 다시 안 쓰나** (실측 2026-08-28). 곁파일은 생성 환경을 통째로 담아 쉽게 100MB를
+          넘는다 (사용자 워크스페이스 실측 112MB). 옮길 때마다 통째로 읽고 다시 쓰면 **한 판에
+          0.44초**가 들고, 그 값은 **몇 장을 옮기든 같다** — 씬 하나를 옮겨도 1초를 기다리게 된다.
+          이정표는 장당 100바이트 남짓이라 수백 장이어도 덧붙이기 한 번이다 (실측 5ms).
+        ★찾는 쪽이 그것을 따라간다 (`heavy_of` 의 ★★주). 읽는 자리는 거기 하나뿐이다.
+        ★색인(`records.jsonl`)은 **그대로 다시 쓴다** — 화면이 통째로 읽어 가는 정본이라
+          경로가 옛것이면 안 되고, 크기도 곁파일의 1/200 이다 (실측 600KB · 0.01초).
+        ★지우는 연산이 아니다 (덧붙이기뿐) — 생성물 안전 규칙 그대로다."""
+        if not moves:
+            return
+        d = self.dir_of(ws)
+        d.mkdir(parents=True, exist_ok=True)
+        with (d / ENV_NAME).open("a", encoding="utf-8") as f:
+            for was, now in moves.items():
+                f.write(json.dumps({"file": now, "was": was}, ensure_ascii=False) + "\n")
 
     def split_records(self, ws: str) -> int:
         """색인에 남아 있는 무거운 것을 곁파일로 옮긴다. 옮긴 줄 수를 돌려준다.
@@ -726,7 +766,7 @@ class Store:
 
     # ── 그림을 다른 자리로 (탭 옮기기·씬 그룹 옮기기가 함께 쓴다) ──
     def _relocate(self, src_ws: str, rows: list[dict], dst_ws: str, tab_name: str,
-                  group_name: str | None = None) -> dict[str, str]:
+                  group_name: str | None = None, others: set[str] | None = None) -> dict[str, str]:
         """그 줄들의 그림을 **`<받는 쪽>/output/멀티/<탭>/<세트>/`** 로 옮기고, 옛 경로 → 새 경로 표를 준다.
 
         ★탭을 통째로 옮기는 것(`move_tab`)과 씬 그룹만 옮기는 것(`move_scene_group`)이 여기서는
@@ -740,6 +780,13 @@ class Store:
         ★같은 뿌리 아래라 `rename` 이다 — 바이트를 다시 쓰지 않는다.
         ★`group_name` 을 주면 **그 이름의 폴더 하나로** 모은다 (씬 그룹 옮기기). 안 주면 줄마다
           제가 적힌 세트 이름을 쓴다 (탭 옮기기 — 그 탭의 세트가 여럿이라 줄마다 다르다)."""
+        # ★★**한 폴더가 통째로 가면 `rename` 한 번이다** (실측 2026-08-28: 그림 736장을 한 장씩
+        #   옮기면 0.4초, 폴더째면 1ms 남짓). 조건은 셋 — 받는 자리가 하나이고, 그 폴더가 아직
+        #   없고, 옮길 줄이 **그 폴더의 파일 전부**여야 한다 (색인에 없는 파일까지 따라가되,
+        #   남아야 할 파일을 데려가지 않게).
+        whole = self._whole_dir_move(src_ws, rows, dst_ws, tab_name, group_name, others)
+        if whole is not None:
+            return whole
         moves: dict[str, str] = {}
         names: dict[Path, list[str]] = {}
         for r in rows:
@@ -763,18 +810,56 @@ class Store:
             p.rename(target)
             moves[rel] = self.rel(dst_ws, target)
 
-        st = self.dir_of(src_ws) / THUMB_DIR
-        dt = self.dir_of(dst_ws) / THUMB_DIR
-        if st.is_dir() and moves:
-            dt.mkdir(parents=True, exist_ok=True)
-            for old, new in moves.items():
-                a = st / thumbs.flat_name(old)
-                b = dt / thumbs.flat_name(new)
-                if a.is_file() and not b.exists():
-                    try:
-                        a.rename(b)
-                    except OSError:
-                        pass
+        self._move_thumbs(src_ws, moves, dst_ws)
+        return moves
+
+    def _whole_dir_move(self, src_ws: str, rows: list[dict], dst_ws: str, tab_name: str,
+                        group_name: str | None, others: set[str] | None = None) -> dict[str, str] | None:
+        """세트 폴더가 **통째로** 옮겨지는 경우 — `rename` 한 번으로 끝낸다 (위 ★★주). 아니면 `None`.
+
+        ★받는 폴더가 이미 있으면 안 된다 (이름이 겹치는 세트가 그쪽에 있다는 뜻이다) — 그때는
+          한 장씩 가면서 `next_name` 이 번호를 새로 준다.
+        ★★**그 폴더를 다른 세트와 나눠 쓰면 안 된다** (`others` — 이 워크스페이스 색인의 나머지
+          경로). 폴더 이름은 `<탭>/<세트>` 라, 옛 데이터에 같은 이름의 세트가 둘 있으면 한 폴더를
+          나눠 쓴다. 그때 통째로 옮기면 **남의 세트 그림까지 데려간다.**
+        ★반대로 **색인에 없는 파일·하위 폴더는 함께 간다** (업스케일 결과가 앉는 `output/`,
+          사람이 넣어 둔 것). 그 폴더가 그 세트의 자리이므로 거기 있는 것은 그 세트의 것이고,
+          두고 가면 **빈 폴더에 남아** 어디서도 안 보이게 된다.
+        ★자취(`_track`)는 한 장씩과 똑같이 남긴다 — 화면이 새 목록을 받기 전의 요청을 덮는다."""
+        if not rows:
+            return None
+        # ★판정은 **문자열로** 한다 — 장마다 경로를 정규화하면 그것만으로 수백 ms 다 (`_track_rel` 의 ★주)
+        rels = [str(r.get("file") or "").replace("\\", "/") for r in rows]
+        if not all(rels):
+            return None
+        parents = {r.rsplit("/", 1)[0] for r in rels if "/" in r}
+        if len(parents) != 1 or len(parents) != len(set(parents)):
+            return None                      # 여러 폴더에 흩어져 있다 — 한 장씩
+        src_rel = parents.pop()
+        src_dir = self.dir_of(src_ws) / src_rel
+        if not src_dir.is_dir():
+            return None
+        gname = group_name if group_name is not None else str(rows[0].get("scene_group") or "")
+        if group_name is None and any(str(r.get("scene_group") or "") != gname for r in rows):
+            return None                      # 세트 이름이 줄마다 다르다 — 한 장씩
+        dst_dir = self.dir_of(dst_ws) / OUT_DIR / MULTI_DIR / safe_name(tab_name) / safe_name(gname)
+        if dst_dir == src_dir or dst_dir.exists():
+            return None                      # 같은 자리이거나 받는 폴더가 이미 있다
+        if others and any(o.startswith(src_rel + "/") for o in others):
+            return None                      # 그 폴더를 **다른 세트와 나눠 쓴다** — 한 장씩
+        mine = {r.rsplit("/", 1)[1] for r in rels}
+        here = {p.name for p in src_dir.iterdir() if p.is_file()}
+        if mine - here:
+            return None                      # 색인이 가리키는 것이 그 폴더에 없다 — 한 장씩
+        dst_rel = self.rel(dst_ws, dst_dir)
+        dst_dir.parent.mkdir(parents=True, exist_ok=True)
+        moves: dict[str, str] = {}
+        for rel in rels:                      # ★옮기기 **전에** 자취를 적는다
+            now = f"{dst_rel}/{rel.rsplit('/', 1)[1]}"
+            self._track_rel(src_ws, rel, dst_ws, now)
+            moves[rel] = now
+        src_dir.rename(dst_dir)
+        self._move_thumbs(src_ws, moves, dst_ws)
         return moves
 
     # ── 씬 그룹을 같은 워크스페이스의 다른 탭으로 ──────────────
@@ -818,18 +903,22 @@ class Store:
             raise ValueError("마지막 세트는 옮길 수 없습니다")
 
         # ① 그 그룹의 그림 — id 로 묶고, id 가 없는 옛 줄은 세트 이름으로 (`takesOf` 의 폴백과 같다)
+        rows_all = self.records(ws)
         mine = [
-            r for r in self.records(ws)
+            r for r in rows_all
             if r.get("scene_group_id") == group_id
             or (not r.get("scene_group_id") and r.get("scene_group") == g.get("name"))
         ]
+        # ★그 폴더를 다른 세트와 나눠 쓰는지 보려면 **나머지 줄의 경로**가 필요하다 (`_whole_dir_move`)
+        ours = {str(r.get("file") or "") for r in mine}
+        others = {str(r.get("file") or "") for r in rows_all} - ours
         # ★이름이 겹치면 뒤에 번호 (사용자 제안 2026-08-28) — 세트 이름도 폴더라, 그대로 두면
         #   받는 탭의 같은 이름 세트와 **한 폴더에 섞인다**
         was = str(g.get("name") or "")
         name = unique_name(was, [str(x.get("name") or "") for x in groups
                                  if x.get("tabId") == to_tab_id and x.get("id") != group_id])
         g["name"] = name
-        moves = self._relocate(ws, mine, ws, str(to.get("name") or ""), name)
+        moves = self._relocate(ws, mine, ws, str(to.get("name") or ""), name, others)
         # ② 경로를 갈아 끼운다 — 같은 워크스페이스라 줄이 오갈 곳이 없고, id 도 그대로다.
         #   ★이름이 바뀌었으면 색인의 세트 이름도 함께 — 폴더와 적힌 이름이 어긋나면 다음 생성이
         #     또 다른 폴더로 간다
@@ -947,15 +1036,20 @@ class Store:
                     cell["id"] = fresh(cell.get("id"))
 
         # ② 그 탭의 그림 — id 로 묶고, id 가 없는 옛 줄은 세트 이름으로 (`takesOf` 의 폴백과 같다)
+        rows_all = self.records(src_ws)
         mine = [
-            r for r in self.records(src_ws)
+            r for r in rows_all
             if r.get("scene_group_id") in gids
             or (not r.get("scene_group_id") and r.get("scene_group") in gnames)
         ]
+        ours = {str(r.get("file") or "") for r in mine}
+        others = {str(r.get("file") or "") for r in rows_all} - ours
         # ③ 파일·썸네일을 받는 쪽 자리로 (`_relocate` — 씬 그룹 옮기기와 같은 일이라 한곳에 있다)
-        moves = self._relocate(src_ws, mine, dst_ws, str(tab.get("name") or ""))
+        moves = self._relocate(src_ws, mine, dst_ws, str(tab.get("name") or ""), None, others)
 
         # ④ 색인·곁파일 — 곁파일을 먼저 (`append_record` 와 같은 순서)
+        #   ★★곁파일은 **줄을 통째로 옮긴다** (워크스페이스가 갈리므로 이정표로는 못 따라간다).
+        #     같은 워크스페이스 안의 옮기기(`move_scene_group`·`renumber`)와 다른 점이다.
         sd = self.dir_of(src_ws)
         dd = self.dir_of(dst_ws)
         dd.mkdir(parents=True, exist_ok=True)
