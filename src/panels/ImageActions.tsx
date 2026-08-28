@@ -322,6 +322,19 @@ export function ImageActions({
             <button data-act-prompt onClick={() => void showPrompt()} disabled={busy} style={btn}>
               {t("act.showPrompt")}
             </button>
+            {/* ★태그 뽑기 — 「프롬프트 보기」 바로 오른쪽, 아이콘으로 (사용자 지시 2026-08-29).
+                워크스페이스 파일에만 뜻이 있다 (`upscale` 과 같은 조건). 아이콘 단추라 툴팁이 이름이다. */}
+            {upscale && (
+              <button
+                data-act-tagger
+                onClick={() => void runTagger()}
+                disabled={busy}
+                data-tip={t("act.tagger")}
+                style={iconBtn}
+              >
+                {Icon.tag}
+              </button>
+            )}
             {!hideSettings && (
               <button
                 data-act-settings
@@ -337,13 +350,6 @@ export function ImageActions({
               </button>
             )}
           </>
-        )}
-        {/* ★태그 뽑기 — 「프롬프트 보기」 옆 (사용자 설계 2026-08-29). 워크스페이스 파일에만
-            뜻이 있다 (`upscale` 과 같은 조건). 글자 무리의 규칙대로 툴팁을 안 단다. */}
-        {upscale && !isMulti && (
-          <button data-act-tagger onClick={() => void runTagger()} disabled={busy} style={btn}>
-            {t("act.tagger")}
-          </button>
         )}
         {/* ★「설정을 가져다 쓰는 것」 무리에 둔다 — 이 단추가 옮기는 것도 그림 한 장과
             **그 그림의 설정**이다 (페로픽스파이도 `.result-meta` 에서 「설정 불러오기」
@@ -530,10 +536,17 @@ export function ImageActions({
 type TaggerStatus = { ready: boolean; downloading: boolean; got: number; total: number; error: string };
 type TagResult = { tags: { tag: string; score: number; character: boolean }[]; caption: string };
 
-/** 태거 결과 — 태그 칩 목록과 「전체 복사」 (사용자 승인 2026-08-29).
- *  ★적용 버튼을 달지 않는다 — `PromptView` 와 같은 이유다: 어디에 넣을지는 사용자가 안다. */
+/** 태거 결과 — **`PromptView` 와 같은 골격**이다 (사용자 지시 2026-08-29: 스타일 통일).
+ *  캐릭터·판권 태그와 일반 태그를 두 절로 나눠, 프롬프트 보기의 줄(라벨·줄 복사·코드 상자)
+ *  그대로 보여 준다. ★적용 버튼을 달지 않는다 — `PromptView` 와 같은 이유다. */
 function TagView({ result, onClose }: { result: TagResult; onClose: () => void }) {
   const t = useI18n((s) => s.t);
+  const chars = result.tags.filter((x) => x.character).map((x) => x.tag);
+  const rows: { label: string; text: string; accent?: string }[] = [
+    ...(chars.length ? [{ label: t("tagger.charTags"), text: chars.join(", "), accent: "var(--accent)" }] : []),
+    { label: t("tagger.generalTags"), text: result.tags.filter((x) => !x.character).map((x) => x.tag).join(", ") },
+  ];
+
   return (
     <div
       data-tag-view
@@ -559,47 +572,65 @@ function TagView({ result, onClose }: { result: TagResult; onClose: () => void }
           overflowY: "auto",
           display: "flex",
           flexDirection: "column",
-          gap: "var(--sp-4)",
+          gap: "var(--sp-3)",
         }}
       >
-        <b style={{ fontSize: "var(--text-sm)" }}>{t("tagger.title")}</b>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sp-2)" }}>
-          {result.tags.map((x) => (
-            <span
-              key={x.tag}
-              data-tip={x.score.toFixed(2)}
-              style={{
-                fontSize: "var(--text-xs)",
-                padding: "2px var(--sp-3)",
-                borderRadius: "var(--r-2)",
-                /* ★캐릭터·판권 태그는 강조 테두리 — 재현의 핵심이라 먼저 눈에 들어와야 한다 */
-                border: `1px solid ${x.character ? "var(--accent)" : "var(--line)"}`,
-                background: "var(--panel)",
-                color: "var(--ink)",
-              }}
-            >
-              {x.tag}
-            </span>
-          ))}
-        </div>
-        <div style={{ display: "flex", gap: "var(--sp-3)", justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)" }}>
+          <b style={{ fontSize: "var(--text-md)" }}>{t("tagger.title")}</b>
+          <span style={{ flex: 1 }} />
           <button
             data-tag-copy
-            onClick={() => {
-              void navigator.clipboard.writeText(result.caption);
-              toast(t("tagger.copied"));
-            }}
-            style={{
-              fontSize: "var(--text-xs)",
-              padding: "var(--sp-2) var(--sp-4)",
-              border: "1px solid var(--line)",
-              borderRadius: "var(--r-2)",
-              background: "var(--panel)",
-            }}
+            onClick={() => void navigator.clipboard?.writeText(result.caption).then(() => toast(t("act.copied")))}
+            style={btn}
           >
-            {t("tagger.copyAll")}
+            {t("act.copy")}
+          </button>
+          <button data-tag-close onClick={onClose} style={btn}>
+            {t("act.close")}
           </button>
         </div>
+        {rows.map((r, i) => (
+          <div key={i}>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
+              <div style={{ flex: 1, fontSize: "var(--text-2xs)", color: r.accent ?? "var(--ink-dim)" }}>
+                {r.label}
+              </div>
+              <button
+                data-tag-copy-one={i}
+                disabled={!r.text}
+                onClick={() =>
+                  void navigator.clipboard?.writeText(r.text).then(() => toast(t("act.copied")))
+                }
+                style={{
+                  display: "grid",
+                  placeItems: "center",
+                  padding: 2,
+                  borderRadius: "var(--r-1)",
+                  color: r.text ? "var(--ink-faint)" : "var(--ink-ghost)",
+                }}
+                data-tip={t("act.copy")}
+              >
+                {Icon.copy}
+              </button>
+            </div>
+            <pre
+              style={{
+                margin: "2px 0 0",
+                padding: "var(--sp-2)",
+                background: "var(--code-bg)",
+                borderRadius: "var(--r-1)",
+                fontFamily: "var(--font-mono)",
+                fontSize: "var(--text-2xs)",
+                lineHeight: 1.5,
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-all",
+                color: "var(--ink-soft)",
+              }}
+            >
+              {r.text || t("prompt.empty")}
+            </pre>
+          </div>
+        ))}
       </div>
     </div>
   );

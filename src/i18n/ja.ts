@@ -261,8 +261,8 @@ export const ja: Dict = {
     dlOk: "ダウンロード",
     dlStarted: "ダウンロードを開始しました。終わったらもう一度押してください。",
     downloading: "ダウンロード中 {pct}%。終わったらもう一度押してください。",
-    copyAll: "すべてコピー",
-    copied: "タグをコピーしました",
+    charTags: "キャラクター・作品タグ",
+    generalTags: "一般タグ",
   },
 
   gen: {

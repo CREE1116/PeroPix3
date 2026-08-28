@@ -267,8 +267,8 @@ export const ko: Dict = {
     dlOk: "내려받기",
     dlStarted: "내려받기 시작. 끝나면 다시 눌러 주세요.",
     downloading: "내려받는 중 {pct}%. 끝나면 다시 눌러 주세요.",
-    copyAll: "전체 복사",
-    copied: "태그를 복사했습니다",
+    charTags: "캐릭터·작품 태그",
+    generalTags: "일반 태그",
   },
 
   gen: {

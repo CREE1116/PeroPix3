@@ -262,8 +262,8 @@ export const en = {
     dlOk: "Download",
     dlStarted: "Download started. Press again when it finishes.",
     downloading: "Downloading {pct}%. Press again when it finishes.",
-    copyAll: "Copy all",
-    copied: "Tags copied",
+    charTags: "Character / series tags",
+    generalTags: "General tags",
   },
 
   gen: {
