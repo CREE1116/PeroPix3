@@ -38,6 +38,7 @@ export function ImageActions({
   onEnhance,
   upscale,
   onKeep,
+  onConvert,
   onClone,
   onLeave,
   extra,
@@ -73,6 +74,8 @@ export function ImageActions({
    *  ★배율을 안 받는다: 공홈이 언제나 4 로 보낸다 (`nai.py UPSCALE_SCALE`) */
   upscale?: { ws: string; file: string };
   onKeep?: () => void | Promise<void>;
+  /** 「일괄 변환으로 보내기」 — 워크스페이스 파일에만 뜻이 있다 (캔버스가 준다) */
+  onConvert?: () => void | Promise<void>;
   /** 「새 탭으로 복제」 — **워크스페이스 파일에만** 뜻이 있다 (보관함에서는 안 넘어온다).
    *  ★미저장 그림에도 안 뜬다: 그때는 부르는 쪽이 이 줄 대신 다른 줄을 그린다 (`SceneActions`) */
   onClone?: () => void | Promise<void>;
@@ -355,6 +358,18 @@ export function ImageActions({
             style={iconBtn}
           >
             {Icon.images}
+          </button>
+        )}
+        {onConvert && (
+          /* ★생성 직후 메타데이터를 지워 내보내는 길 (사용자 지시 2026-08-29) —
+             파일 관리의 「일괄 이름 변환으로 보낸다」와 같은 창구로 간다 */
+          <button
+            data-act-convert
+            onClick={() => void onConvert()}
+            data-tip={t("tools.sendConvert")}
+            style={iconBtn}
+          >
+            {Icon.external}
           </button>
         )}
         {extra}

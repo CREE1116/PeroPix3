@@ -576,6 +576,7 @@ export const en = {
     rowFailed: "Failed",
     exif: "EXIF reader",
     rename: "Batch convert",
+    sendConvert: "Send to batch convert",
     files: "File manager",
     dropHint: "or click to choose",
     exifDrop: "Drop an image here. Files from outside work too",

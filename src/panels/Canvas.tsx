@@ -13,6 +13,7 @@ import { imgUrl } from "../lib/imgUrl";
 import { Icon } from "../components/Icon";
 import { toast } from "../store/toast";
 import { ImageActions } from "./ImageActions";
+import { useConvertQueue } from "./tools/ConvertTool";
 import { MaskEditor } from "../components/MaskEditor";
 import { useImageInput } from "../store/imageInput";
 import { EnhanceDialog } from "./EnhanceDialog";
@@ -364,6 +365,17 @@ function SceneActions() {
           } catch (e) {
             toast(String(e), "warn");
           }
+        }}
+        /* ★일괄 변환으로 보내기 (사용자 지시 2026-08-29: *"생성하고 바로 메타데이터 지워서
+             쓰게"*) — 파일 관리의 「일괄 이름 변환으로 보낸다」와 같은 창구다 (`useConvertQueue`).
+           ★목록을 **교체**한다 (파일 관리와 같은 어법) — 이 버튼은 「지금 이 한 장」의 몸짓이다.
+           ★메타 제거 여부는 변환 도구의 체크가 정한다 (설정이 저장되므로 한 번 켜면 유지). */
+        onConvert={async () => {
+          const f = await ensureSaved();
+          if (!f) return;
+          useConvertQueue.setState({ items: [{ name: f.split("/").pop() ?? f, rel: `${ws}/${f}` }] });
+          useUi.getState().setMode("utility");
+          useUi.getState().setView("tab", "tools", "convert" as never);
         }}
         extra={
           <>
