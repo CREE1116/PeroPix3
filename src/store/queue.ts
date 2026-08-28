@@ -136,6 +136,22 @@ function startHeartbeat() {
  *  ★소켓이 생기기 전 구간을 이것이 지킨다 (`connect` 의 ★주) */
 let connecting = false;
 
+/** **지금 그리고 있는 대기 칸**의 번호 (없으면 `null`).
+ *
+ *  ★★규칙을 여기 하나에 둔다 (사용자 지적 2026-08-28: *"스트리밍 썸네일이 같은 씬에 걸려
+ *    있는 모든 생성 대기 썸네일에 표시됨"*). 중간 그림(`steps`)은 **씬 단위로** 오므로,
+ *    「그 씬의 어느 칸이 지금 그려지는가」를 아는 자리가 없으면 그 씬의 대기 칸 전부가
+ *    같은 그림을 읽는다. 줄과 큰 그림이 **같은 답**을 봐야 한다.
+ *  ★어느 씬인지는 **서버가 말한다**(`current_cell`). 옛 백엔드가 안 줄 때만 맨 앞으로 물러선다. */
+export function runningPendingId(groupId: string | null | undefined): string | null {
+  const { progress, pending } = useQueue.getState();
+  if (!(progress.total > progress.completed)) return null;
+  const mine = pending.filter((p) => p.groupId === groupId);
+  const cur = progress.current_cell;
+  const cell = cur && cur.scene_group_id === groupId ? cur.cell_id : null;
+  return (cell ? mine.find((p) => p.cellId === cell)?.id : mine[0]?.id) ?? null;
+}
+
 export const useQueue = create<S>((set, get) => ({
   connected: false,
   progress: EMPTY,

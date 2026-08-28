@@ -3,7 +3,7 @@ import { useI18n } from "../i18n";
 import { DropLine } from "../components/DropLine";
 import { useGen } from "../store/gen";
 import { usePrompt } from "../store/prompt";
-import { useQueue } from "../store/queue";
+import { runningPendingId, useQueue } from "../store/queue";
 import { LANE_MAX, LANE_MIN, useUi } from "../store/ui";
 import { allCells, useWs, takesOfScene, type Rec, type SceneCard, type Slot } from "../store/workspace";
 import { newestFirst } from "../lib/takes";
@@ -63,9 +63,6 @@ export function SceneLane() {
   const { records, current: ws, activeSceneGroup, isDeleted, isStarred, toggleStar,
     patchSceneGroup, setCard, addCard, removeCard, addSlot, moveScene, moveCard } = useWs();
   const pending = useQueue((s) => s.pending);
-  // ★구독해서 읽는다. `getState()` 로 읽으면 진행이 바뀌어도 다시 그리지 않아
-  //   「생성 중」이 영영 안 뜬다 (사용자 지적 2026-08-14)
-  const progress = useQueue((s) => s.progress);
   const laneSize = useUi((u) => u.laneSize);
   /** 씬을 아래에 두나 오른쪽에 두나 — 무대를 그리는 것은 `Canvas`, 켜고 끄는 것은 여기다 */
   const laneSide = useUi((u) => u.laneSide);
@@ -532,15 +529,16 @@ export function SceneLane() {
    *  바꾸면 UI 가 안 그려졌다. 같은 함정을 `StyleSection` 이 먼저 밟았다.
    *
    *  서버가 지금 만들고 있는 씬 — 이 세트의 것일 때만 쓴다 (`store/queue` 의 `current_cell`) */
-  /** ★「별표만 보기」 — 훅이라 **이른 반환보다 위**에 둔다 (바로 아래 `nowCell` 의 ★★주) */
+  /** ★「별표만 보기」 — 훅이라 **이른 반환보다 위**에 둔다 (바로 위 ★★주) */
   const starOnly = useUi((u) => u.laneStarOnly);
   /** 칸별 **그리는 중인 그림** — 훅이라 이른 반환보다 위에 둔다 */
   const steps = useQueue((q) => q.steps);
-  const nowCell = useQueue((q) =>
-    q.progress.current_cell && q.progress.current_cell.scene_group_id === tab?.id
-      ? q.progress.current_cell.cell_id
-      : null,
-  );
+  /** 지금 그리고 있는 **대기 칸의 번호**.
+   *  ★★셈하는 규칙은 `store/queue.runningPendingId` **하나**다 (큰 그림도 같은 답을 본다).
+   *  ★★**구독해서 읽는다.** `getState()` 로만 읽으면 진행이 바뀌어도 다시 안 그려
+   *    「생성 중」이 영영 안 뜬다 (사용자 지적 2026-08-14). 고르개가 스토어가 바뀔 때마다
+   *    돌고, 값이 그대로면 리액트는 다시 그리지 않는다. */
+  const runId = useQueue(() => runningPendingId(tab?.id));
 
   if (tab?.kind !== "sceneGroup") return null;
 
@@ -574,7 +572,6 @@ export function SceneLane() {
   const h = Math.min(LANE_MAX, Math.max(LANE_MIN, laneSize));
   const w = h;
   const queued = pending.filter((p) => p.groupId === tab.id);
-  const running = progress.total > progress.completed;
 
   /** 그 씬의 결과 (숨긴 것 제외).
    *  ★갈 씬이 없는 결과는 **첫 씬**이 받는다 (`takesOfScene`, v2 이식 — 감사 D6)
@@ -980,14 +977,9 @@ export function SceneLane() {
                    예전에는 `queued[0]`(내 목록의 맨 앞)을 찍었는데, 배치가 겹치면 그 순서가
                    실제 진행과 어긋나 **엉뚱한 칸에 「생성 중」이 뜨고 그림은 「대기 중」 칸에
                    나타났다** (사용자 실측). 무엇을 만드는지는 서버가 안다.
-                   ★옛 백엔드(값을 안 주는 경우)에서는 지금까지 하던 대로 물러선다. */
-                firstWaiting={
-                  running
-                    ? (nowCell
-                        ? (queued.find((p) => p.cellId === nowCell)?.id ?? null)
-                        : (queued[0]?.id ?? null))
-                    : null
-                }
+                   ★★규칙은 `store/queue.runningPendingId` **하나**다 — 큰 그림도 같은 답을
+                     봐야 한다 (안 그러면 줄과 큰 자리가 서로 다른 칸을 「생성 중」으로 안다). */
+                firstWaiting={runId}
                 view={view}
                 headw={headw}
                 base={base}

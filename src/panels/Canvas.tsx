@@ -5,7 +5,7 @@ import { useGen } from "../store/gen";
 import { useWs, takesOfScene, allCells, allScenes, type ShotEnv } from "../store/workspace";
 import { SceneLane, takeSrc } from "./SceneLane";
 import { useSceneFocus } from "../store/sceneFocus";
-import { useQueue } from "../store/queue";
+import { runningPendingId, useQueue } from "../store/queue";
 import { removeTakes, stepTake } from "../lib/sceneTakes";
 import { useUi } from "../store/ui";
 import { CanvasTabs } from "./CanvasTabs";
@@ -552,6 +552,8 @@ function ScenePreview() {
   const pendingSel = useSceneFocus((s) => s.pending);
   /** 지금 고른 칸에 **그리는 중인 그림** (`store/queue` 의 `steps`) */
   const stepImg = useQueue((q) => (cell ? (q.steps[cell] ?? "") : ""));
+  /** 지금 그리고 있는 대기 칸 — 씬 줄과 **같은 답**을 본다 (`store/queue.runningPendingId`) */
+  const runId = useQueue(() => runningPendingId(activeSceneGroup()?.id));
   const previews = usePreviews((s) => s.items);
 
   /* ★캐릭터 배치 — 큰 그림 위에 판을 겹친다 (`CharPositioner` 머리 주석).
@@ -775,8 +777,14 @@ function ScenePreview() {
             ...(cur?.preview || movable ? null : dragSourceStyle),
           }}
         />
-      ) : stepImg ? (
-        /* ★★**그리는 중이면 그 그림을 띄운다** (사용자 지시 2026-08-26). 대기 칸을 골라 둔
+      ) : (!pendingSel || pendingSel === runId) && stepImg ? (
+        /* ★★★**고른 대기 칸이 「지금 그리는 것」일 때만 띄운다** (사용자 지적 2026-08-28:
+             *"스트리밍 썸네일이 같은 씬에 걸려 있는 모든 생성 대기 썸네일에 표시됨"*).
+           중간 그림은 **씬 단위로** 온다 — 그 씬에 대기 칸이 여럿이면, 둘째를 골라 둬도
+           첫째가 그리는 그림이 뜬다. 그 자리에 나올 것이 아닌데 그 자리에 보이는 셈이다.
+           ★아무것도 안 골랐을 때는 그대로 띄운다 — 그때는 「어느 칸의 것」이라고 말하는
+             자리가 없어서 어긋날 것도 없다.
+           ★★**그리는 중이면 그 그림을 띄운다** (사용자 지시 2026-08-26). 대기 칸을 골라 둔
              사람은 «그 자리에 무엇이 나오나»를 보고 있는 것이라, 큰 자리가 비어 있으면
              기다림이 그대로 빈 화면이다. 씬 줄의 칸에 까는 것과 **같은 그림**이다
              (`store/queue` 의 `steps`).
