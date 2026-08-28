@@ -30,11 +30,13 @@ export function WindowFrame({ children }: { children: ReactNode }) {
 
 /** 더블클릭으로 치는 간격 — 윈도우 기본값과 같은 500ms */
 const DBL_MS = 500;
+/** 이만큼 움직여야 「끄는 것」으로 본다 */
+const DRAG_PX = 3;
 
 function ResizeHandles() {
   /** ★★**더블클릭을 여기서 직접 센다** (`onDoubleClick` 을 안 쓴다).
-   *  첫 누름에서 이미 `startResizeDragging` 이 포인터를 가져가므로, 브라우저의 더블클릭
-   *  판정이 그 뒤까지 이어진다는 보장이 없다. 누른 자리와 시각만 보면 어긋날 일이 없다. */
+   *  OS 크기 조절이 시작되면 포인터가 그쪽으로 넘어가, 브라우저의 더블클릭 판정이 그 뒤까지
+   *  이어진다는 보장이 없다. 누른 자리와 시각만 보면 어긋날 일이 없다. */
   const last = useRef({ dir: "", at: 0 });
 
   const grab = (dir: ResizeDir) => (e: React.MouseEvent) => {
@@ -42,17 +44,42 @@ function ResizeHandles() {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
+
     /* ★★위·아래 테두리를 두 번 누르면 **세로로만 화면 끝까지** (`lib/window` 의 ★★주).
-       좌우에는 윈도우도 같은 기능을 주지 않으므로 여기서도 없다.
-       ★첫 누름은 평소대로 크기 조절을 시작한다 — 움직이지 않고 뗐으므로 크기는 그대로다.
-         윈도우의 테두리 더블클릭도 같은 순서로 돈다. */
-    const dbl = last.current.dir === dir && e.timeStamp - last.current.at < DBL_MS;
-    last.current = { dir, at: dbl ? 0 : e.timeStamp };
-    if (dbl && (dir === "North" || dir === "South")) {
-      appWindow.fitVertical();
+       좌우에는 윈도우도 같은 기능을 주지 않으므로 여기서도 없다. */
+    const now = performance.now();
+    const dbl = last.current.dir === dir && now - last.current.at < DBL_MS;
+    last.current = { dir, at: dbl ? 0 : now };
+    if (dbl) {
+      if (dir === "North" || dir === "South") appWindow.fitVertical();
       return;
     }
-    appWindow.startResize(dir);
+
+    /* ★★★**누르는 것만으로는 크기 조절을 시작하지 않는다 — 움직여야 시작한다**
+       (사용자 지적 2026-08-28: *"엄청 많이 시도했는데 중간에 딱 한 번 되고 그 외에는 다 안 됨"*).
+       앞 판은 첫 누름에서 곧장 `startResizeDragging` 을 불렀다. 그러면 **OS 가 크기 조절
+       모드로 들어가 마우스를 통째로 가져가서**, 두 번째 누름이 우리에게 오지 않거나 뗀
+       자취가 끊긴다. 그래서 더블클릭이 열 번에 한 번쯤만 잡혔다.
+       문턱을 두면 **두 번 누르는 동안에는 OS 모드에 아예 안 들어가므로** 두 누름이 다
+       우리에게 온다. 끌기는 3px 만 움직이면 그때부터 평소와 같다 — OS 는 크기 조절을
+       시작할 때 그 변을 커서에 맞추므로, 3px 늦게 시작해도 눈에 띄는 차이가 없다. */
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const stop = () => {
+      document.removeEventListener("mousemove", move, true);
+      document.removeEventListener("mouseup", stop, true);
+    };
+    function move(m: MouseEvent) {
+      if (Math.abs(m.clientX - x0) < DRAG_PX && Math.abs(m.clientY - y0) < DRAG_PX) return;
+      stop();
+      void (async () => {
+        // ★세로로 늘려 둔 창을 손으로 다시 조절하면 **반대쪽 변이 원래 자리로** 돌아간다
+        if (dir === "North" || dir === "South") await appWindow.unfitFor(dir);
+        appWindow.startResize(dir);
+      })();
+    }
+    document.addEventListener("mousemove", move, true);
+    document.addEventListener("mouseup", stop, true);
   };
 
   const base: React.CSSProperties = { position: "absolute", zIndex: 999 };

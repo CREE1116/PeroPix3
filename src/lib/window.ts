@@ -96,6 +96,47 @@ export const appWindow = {
       console.error("[window] 세로 최대화 실패 — capabilities 의 창 조작 권한을 본다", e);
     }
   },
+  /** ★★**손으로 크기를 조절하면 세로 최대화가 풀린다** (사용자 지적 2026-08-28:
+   *  *"확장됐을 때 수동으로 크기 줄이면 원래 아래 부분이 기존 위치로 돌아가는데, 이건
+   *  안 돌아감"*).
+   *
+   *  세로로 늘린 상태에서 한쪽 변을 잡아 끌면, **반대쪽 변은 늘리기 전 자리로** 돌아가야
+   *  한다 — 늘린 것은 「잠깐 맞춰 둔 상태」이지 그 창의 크기가 아니기 때문이다.
+   *  ★위 변을 끌면 아래 변을, 아래 변을 끌면 위 변을 되돌린다.
+   *  ★크기 조절을 **시작하기 직전에** 부른다. 되돌린 뒤 OS 가 그 변을 커서에 맞춘다.
+   *  ★늘려 둔 상태가 아니면 아무 일도 안 한다. */
+  async unfitFor(dir: "North" | "South") {
+    try {
+      const w = await win();
+      const back = vFitBack;
+      if (!w || !back) return;
+      const { currentMonitor } = await import("@tauri-apps/api/window");
+      const { PhysicalPosition, PhysicalSize } = await import("@tauri-apps/api/dpi");
+      const m = await currentMonitor();
+      if (!m) return;
+      const pos = await w.outerPosition();
+      const size = await w.outerSize();
+      const wa = m.workArea;
+      const fitted =
+        Math.abs(pos.y - wa.position.y) <= 2 && Math.abs(size.height - wa.size.height) <= 2;
+      if (!fitted) return;
+      vFitBack = null;
+      if (dir === "North") {
+        // 아래 변을 원래 자리로 — 위 변은 지금 자리에 둔 채 높이만 줄인다
+        const h = back.y + back.h - pos.y;
+        if (h > 0) await w.setSize(new PhysicalSize(size.width, h));
+      } else {
+        // 위 변을 원래 자리로 — 아래 변은 지금 자리를 지킨다
+        const h = pos.y + size.height - back.y;
+        if (h > 0) {
+          await w.setPosition(new PhysicalPosition(pos.x, back.y));
+          await w.setSize(new PhysicalSize(size.width, h));
+        }
+      }
+    } catch (e) {
+      console.error("[window] 세로 최대화 풀기 실패", e);
+    }
+  },
   /** 최대화 상태가 바뀔 때마다 콜백. 정리 함수를 돌려준다. */
   async onResized(cb: () => void): Promise<() => void> {
     const w = await win();
