@@ -331,6 +331,19 @@ fn open_log(root: &Path) -> Option<File> {
     std::fs::OpenOptions::new().create(true).append(true).open(&path).ok()
 }
 
+/// 껍데기가 **로그 파일에 한 줄** 적는다.
+///
+/// ★★`println!` 은 갈 데가 없다 (사용자 지적으로 알게 됨 2026-08-28). 창만 있는 앱이라
+///   stdout 이 어디에도 안 붙어 있고, `spawn` 이 파일로 흘려 주는 것은 **파이썬 자식의
+///   출력**뿐이다. 그래서 껍데기가 적은 줄은 지금까지 통째로 사라지고 있었다 —
+///   진단을 넣어 놓고 「아무 줄도 없다」를 결론으로 읽을 뻔했다.
+/// ★쓰는 자리가 드물어 열고 닫는 값은 문제가 안 된다 (부팅 때 몇 줄).
+pub fn log_line(msg: &str) {
+    if let Some(mut f) = open_log(&root()) {
+        let _ = writeln!(f, "{msg}");
+    }
+}
+
 pub fn spawn() -> std::io::Result<Child> {
     let root = root();
     let python = find_python(&root);

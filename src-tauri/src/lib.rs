@@ -184,23 +184,28 @@ pub fn run() {
                ★설정 파일로는 못 준다 — `tauri.conf.json` 의 창 스키마에 그 열쇠가 없다. */
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.set_background_color(Some(tauri::window::Color(0x16, 0x16, 0x1a, 0xff)));
-                /* ★★가장자리 판정을 **화면에 넘긴다** — 커서와 누름의 주인을 하나로
-                   (사용자 지적 2026-08-28: *"커서 판정이랑 동일하게 일치시켜야 할 듯"*).
-                   까닭은 `window_edge.rs` 머리에. */
-                #[cfg(windows)]
-                if let Ok(h) = w.hwnd() {
-                    window_edge::client_edges(h.0 as isize as *mut core::ffi::c_void);
-                }
             }
+            /* ★★가장자리 판정을 **화면에 넘긴다** — 커서와 누름의 주인을 하나로
+               (사용자 지적 2026-08-28: *"커서 판정이랑 동일하게 일치시켜야 할 듯"*).
+               까닭은 `window_edge.rs` 머리에.
+               ★**사이드카를 띄운 뒤**에 부른다 — 로그 파일이 그때 열리므로, 앞서 부르면
+                 여기서 적는 줄이 다음 실행의 자르기에 걸려 사라진다. */
             match backend::spawn() {
                 Ok(child) => {
                     app.manage(backend::Backend(Mutex::new(Some(child))));
-                    println!("[backend] spawned on port {}", backend::backend_port());
+                    backend::log_line(&format!("[backend] spawned on port {}", backend::backend_port()));
                 }
                 Err(e) => {
                     // 백엔드가 안 떠도 창은 띄운다 — 프론트가 상태를 표시하고 로그를 안내한다.
-                    eprintln!("[backend] spawn failed: {e}");
+                    backend::log_line(&format!("[backend] spawn failed: {e}"));
                     app.manage(backend::Backend(Mutex::new(None)));
+                }
+            }
+            #[cfg(windows)]
+            if let Some(w) = app.get_webview_window("main") {
+                match w.hwnd() {
+                    Ok(h) => window_edge::client_edges(h.0 as isize as *mut core::ffi::c_void),
+                    Err(e) => backend::log_line(&format!("[edge] 창 손잡이를 못 얻었다: {e}")),
                 }
             }
             Ok(())
