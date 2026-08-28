@@ -60,6 +60,24 @@ function ResizeHandles() {
      (사용자 지적 2026-08-28: QA 인스턴스에서는 되는데 사용자 창에서만 안 된다). */
   useEffect(() => {
     logLine("info", "창테두리", `손잡이 준비 (두께 ${EDGE}px)`);
+    /* ★★**화면이 창의 어디부터인가** (사용자 지적 2026-08-28: 위쪽 절반이 죽어 있다).
+       껍데기에 창틀 판정이 안 오고 화면에도 누름이 안 오는 구간이 있다 — 그 구간이
+       **웹뷰 밖**인지를 재려면 창과 화면의 자리를 견주어야 한다. */
+    logLine(
+      "info",
+      "창자리",
+      `창 y=${window.screenY} 높이=${window.outerHeight} · 화면 높이=${window.innerHeight}` +
+        ` · 배율=${window.devicePixelRatio}`,
+    );
+    /* ★맨 윗줄에 실제로 포인터가 오는가 — 오는 값 중 **가장 작은 y** 를 한 번 남긴다.
+       테두리를 훑는 동안 4 아래가 한 번도 안 오면 그 픽셀은 화면의 것이 아니다. */
+    let minY = 999;
+    const seen = (e: PointerEvent) => {
+      if (e.clientY >= minY || e.clientY > 12) return;
+      minY = e.clientY;
+      logLine("info", "창테두리", `포인터가 닿은 가장 위 = y=${Math.round(e.clientY)}`);
+    };
+    document.addEventListener("pointermove", seen, true);
     /* ★★창 위쪽을 눌렀는데 **손잡이가 아닌 것**이 받았으면 그것도 적는다.
        손잡이가 떠 있는데 누름이 한 번도 안 온다면 자리를 못 맞히고 있다는 뜻이라,
        **무엇이 대신 받았는지**를 알아야 두께를 얼마나 늘릴지가 정해진다. */
@@ -81,7 +99,10 @@ function ResizeHandles() {
       );
     };
     document.addEventListener("mousedown", near, true);
-    return () => document.removeEventListener("mousedown", near, true);
+    return () => {
+      document.removeEventListener("mousedown", near, true);
+      document.removeEventListener("pointermove", seen, true);
+    };
   }, []);
 
   const grab = (dir: ResizeDir) => (e: React.MouseEvent) => {
