@@ -219,8 +219,15 @@ export function BlockBody({
       if (!el) return;
       if (ta.current && (el === ta.current || ta.current.contains(el))) return;
       if (el.closest?.("[data-tag-suggest]") || el.closest?.("[data-block-drawer]")) return;
-      commitNow();
-      if (fill) onDone?.();
+      /* ★★★**지금 이 순간의 글**로 담는다 (사용자 지적 2026-08-28: *"다른 데 눌러서
+         해제하면 편집 취소가 아니고 그대로 저장되어야 함"*).
+         듣는 자리는 **한 번만** 매달리는데(`[fill, editing]`), 그 안에서 `commitNow` 를
+         곧장 부르면 **매달릴 때의 글**이 담긴다 — 그 시점의 글은 아직 한 글자도 안 친
+         원문이라, 밖을 누를 때마다 **친 것이 통째로 되돌려졌다.** 저장처럼 보이지만
+         값이 옛것이라 눈에는 「취소」로 보인다.
+         ★그래서 **가장 최근 것을 가리키는 상자**(`commitRef`)를 거쳐 부른다. */
+      commitRef.current();
+      if (fill) onDoneRef.current?.();
     };
     document.addEventListener("pointerdown", onDown, true);
     return () => document.removeEventListener("pointerdown", onDown, true);
@@ -377,6 +384,13 @@ export function BlockBody({
     onChange(b);
     return b;
   };
+
+  /** ★★**늘 최신을 가리키는 상자** — 오래 매달려 있는 듣는 자리가 이것을 거쳐 부른다.
+   *  매 렌더 갈아 끼우므로 낡은 글로 담을 일이 없다 (위 바깥 누름 처리의 ★★★주). */
+  const commitRef = useRef(commitNow);
+  commitRef.current = commitNow;
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
 
   /** ★★칩 줄과 글 상자는 **같은 상자**다 (사용자 지적 2026-08-20:
    *  *"블록 텍스트 편집 영역이 실제 보이는 것보다 좁음"*).
