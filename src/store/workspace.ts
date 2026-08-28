@@ -568,10 +568,15 @@ async function runRenumber(
   );
   if (!items.length) return;
   try {
-    const r = await api<{ pairs: { file: string; to: string }[] }>(
+    /* ★★**여기도 파일을 옮긴다** (사용자 지적 2026-08-28: *"씬 이동에는 이 로직이 안 먹고 있는 것
+       같은데? 씬 순서 바꾸는 거"*). 씬 자리가 바뀌면 그 세트의 그림 **전부**가 이름을 바꾼다 —
+       실측: 300장이면 이름 바꾸기만 600회 687ms 다 (한 장을 임시 이름으로 비켰다가 제 이름을
+       주므로 장당 두 번). 옮기기와 같은 부류의 일이라 같은 잠금을 두른다. */
+    const r = await withBusy(t("busy.renumbering"), () =>
+      api<{ pairs: { file: string; to: string }[] }>(
       `/api/workspaces/${encodeURIComponent(current)}/renumber`,
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) },
-    );
+    ));
     const moves = new Map(r.pairs.filter((p) => p.file !== p.to).map((p) => [p.file, p.to]));
     if (!moves.size) return;
     const now = get().spec;

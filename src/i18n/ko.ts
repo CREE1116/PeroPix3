@@ -24,6 +24,7 @@ export const ko: Dict = {
   },
 
   busy: {
+    renumbering: "씬 순서에 맞춰 그림 이름을 바꾸는 중…",
     generating: "생성 중인 씬이 있습니다. 끝난 뒤에 옮겨 주세요.",
     movingTab: "「{name}」 탭을 옮기는 중…",
     movingGroup: "「{name}」 씬 그룹을 옮기는 중…",

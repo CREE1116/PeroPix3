@@ -173,21 +173,10 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
   .boot-bar { animation: none; transform: none; width: 100% !important; opacity: 0.5; }
 }
 
-/* 파일을 옮기는 동안 화면을 덮는 표시 (`app/BusyOverlay`).
-   ★★**막는 것은 처음부터, 보이는 것은 나중에** (사용자 지적 2026-08-28). 덮개는 뜬 순간부터
-     클릭을 막지만 **투명하게 시작**해 서서히 짙어진다 — 100ms 만에 끝나는 이동에서는 아무것도
-     안 보이고, 오래 걸리는 것만 어두워진다. 늦게 「막기 시작」하면 그 사이 클릭이 반쯤 먹혀
-     「되는 줄 알았는데 안 되는」 구간이 생긴다. */
-@keyframes peropix-veil {
-  0%, 35% { opacity: 0; }
-  100%    { opacity: 1; }
-}
-.busy-veil { animation: peropix-veil 700ms ease-out forwards; }
-@media (prefers-reduced-motion: reduce) {
-  .busy-veil { animation: none; opacity: 1; }
-}
-
-/* 도는 표시 — 얼마나 남았는지 알 수 없으므로 돈다 */
+/* 파일을 옮기는 동안 화면을 덮는 표시 (`app/BusyOverlay`) — 얼마나 남았는지 알 수 없으므로 돈다.
+   ★★**처음부터 어둡다** (사용자 지적 2026-08-28: *"어차피 천천히 하나 빠르게 하나 깜빡여서 그냥
+     처음부터 바로 어두운 게 나은 듯. 그게 조작 불가 인지가 더 잘 됨"*). 서서히 짙어지게 해 봤지만
+     짧은 작업에서는 결국 한 번 번쩍이는 것으로 보였고, **막혀 있다는 사실이 늦게 읽혔다.** */
 @keyframes peropix-spin { to { transform: rotate(360deg); } }
 .busy-spin { animation: peropix-spin 0.8s linear infinite; }
 @media (prefers-reduced-motion: reduce) {

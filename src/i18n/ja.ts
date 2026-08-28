@@ -24,6 +24,7 @@ export const ja: Dict = {
   },
 
   busy: {
+    renumbering: "シーン順に合わせて画像名を変更中…",
     generating: "生成中のシーンがあります。終わってから移動してください。",
     movingTab: "「{name}」タブを移動中…",
     movingGroup: "シーングループ「{name}」を移動中…",

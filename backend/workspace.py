@@ -451,15 +451,17 @@ class Store:
         ★꽂아 둔 썸네일(`data/thumbs`)은 그대로 둔다 — `tid` 가 내용에서 나와 경로와 무관하다.
         """
         base = self.dir_of(ws)
-        plan: list[tuple[Path, str, str]] = []   # (지금 경로, 새 접두, 확장자)
+        plan: list[tuple[Path, str, str, str]] = []   # (지금 경로, 새 접두, 확장자, 상대경로)
         for it in items:
-            rel = str(it.get("file") or "")
-            # ★★워크스페이스 **밖으로 못 나간다** — 경로는 조수가 줄 수도 있는 값이다
-            try:
-                src = (base / rel).resolve()
-                src.relative_to(base.resolve())
-            except (ValueError, OSError):
+            rel = str(it.get("file") or "").replace("\\", "/")
+            # ★★워크스페이스 **밖으로 못 나간다** — 경로는 조수가 줄 수도 있는 값이다.
+            #   ★검사는 **문자열로** 한다 (2026-08-28). 예전에는 파일마다 `resolve()` 를 두 번씩
+            #     불렀는데, 윈도우에서 그것만으로 300장에 **855ms** 였다 (실측: 전체 1,158ms 중).
+            #     막으려는 것은 `..`·절대경로이고, 그건 문자열로 그대로 가려진다.
+            parts = [x for x in rel.split("/") if x not in ("", ".")]
+            if not parts or ".." in parts or rel.startswith("/") or ":" in parts[0]:
                 continue
+            src = base.joinpath(*parts)
             if not src.is_file():
                 continue
             lead = file_lead(it.get("cell_no"), it.get("cell"), bool(it.get("exclude_no")))
@@ -468,7 +470,7 @@ class Store:
                 continue
             if not lead and "_" not in src.name:
                 continue
-            plan.append((src, lead, src.suffix.lstrip(".")))
+            plan.append((src, lead, src.suffix.lstrip("."), "/".join(parts)))
         if not plan:
             return {"pairs": []}
 
@@ -478,11 +480,12 @@ class Store:
         #   임시 이름으로 가 있어 **옛 이름도 새 이름도 없다** — 그 몇 초 동안 그림 요청이
         #   전부 404 였다. 그래서 옮길 때마다 **지금 어디 있는지**를 적어 둔다 (`_track`).
         stash: list[tuple[Path, str, str, Path]] = []
-        for src, lead, ext in plan:
+        for src, lead, ext, rel in plan:
             tmp = src.with_name(f".renum-{uuid.uuid4().hex[:8]}.{ext}")
             # ★★**옮기기 전에 적는다.** 뒤에 적으면 그 사이(마이크로초)에 온 요청이 아무 데도
             #   못 닿는다. 먼저 적어 두면 찾는 쪽이 사슬을 훑어 **옛 자리든 새 자리든** 잡는다.
-            self._track(ws, src, tmp)
+            # ★자취도 **문자열로** 적는다 (`_track_rel` 의 ★주) — `rel()` 을 장마다 부르면 그만큼 든다
+            self._track_rel(ws, rel, ws, rel.rsplit("/", 1)[0] + "/" + tmp.name if "/" in rel else tmp.name)
             src.rename(tmp)
             stash.append((tmp, lead, ext, src))
 
@@ -506,7 +509,7 @@ class Store:
             names.append(dst.name)
             pairs.append({"file": self.rel(ws, dst), "to": self.rel(ws, dst)})
         # ★짝은 **옛 경로 → 새 경로**여야 한다 (위에서 tmp 를 거쳤으므로 다시 맞춘다)
-        for (src, _, _), p in zip(plan, pairs):
+        for (src, _, _, _), p in zip(plan, pairs):
             p["file"] = self.rel(ws, src)
 
         moves = {p["file"]: p["to"] for p in pairs}

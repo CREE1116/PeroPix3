@@ -24,6 +24,7 @@ export const en = {
   },
 
   busy: {
+    renumbering: "Renaming images to match the new scene order…",
     generating: "A scene here is still generating. Move it once that finishes.",
     movingTab: "Moving tab \"{name}\"…",
     movingGroup: "Moving scene group \"{name}\"…",
