@@ -256,7 +256,8 @@ export const en = {
   },
 
   tagger: {
-    title: "Extracted tags",
+    title: "Tagger",
+    subtitle: "Tags auto-extracted from this image.",
     dlTitle: "Download the tagger model?",
     dlBody: "A one-time download of about 1.26GB. The app stays usable while it downloads.",
     dlOk: "Download",
@@ -719,7 +720,7 @@ export const en = {
     clone: "Duplicate into a new tab",
     cloned: "Duplicated into a new tab",
     showPrompt: "View prompt",
-    tagger: "Extract tags",
+    tagger: "Tagger (auto-extract tags from this image)",
     /** ★글자로 남는 **유일한** 단추다 — 이름 자체가 짧은 낱말이라 아이콘이 오히려 흐리다.
      *  ★군더더기를 붙이지 않는다 (사용자 지적 2026-08-19: 「이 그림으로 (i2i)」였다) */
     i2i: "i2i",

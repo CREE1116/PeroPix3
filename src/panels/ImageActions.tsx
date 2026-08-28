@@ -577,6 +577,8 @@ function TagView({ result, onClose }: { result: TagResult; onClose: () => void }
       >
         <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)" }}>
           <b style={{ fontSize: "var(--text-md)" }}>{t("tagger.title")}</b>
+          {/* ★무엇인지 한 줄로 밝힌다 (사용자 지시 2026-08-29: "이미지에서 자동 추출했다고") */}
+          <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-dim)" }}>{t("tagger.subtitle")}</span>
           <span style={{ flex: 1 }} />
           <button
             data-tag-copy
