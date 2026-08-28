@@ -447,20 +447,24 @@ export function SceneLane() {
   /* ★★탭을 옮기면 **그 탭 몫으로 담아 두고**, 돌아오면 그대로 되살린다
        (사용자 지시 2026-08-22). 예전에는 비웠는데, 돌아왔을 때 보던 장을 다시 찾아
        눌러야 했다. 담고 되살리는 규칙은 `store/sceneFocus` 하나에 있다. */
-  const groupId = tab?.id;
+  /* ★★메모 열쇠는 **워크스페이스까지** 갖는다 (사용자 보고 2026-08-28: 한동안 안 열었던 다른
+     워크스페이스에 들어가면 깨진 그림이 떴다). 세트 id 는 워크스페이스마다 `tab_1` 처럼 같은
+     씨앗에서 시작해 **서로 겹치므로**, id 만으로 담으면 다른 워크스페이스에서 보던 장이
+     되살아나 이 워크스페이스에 **없는 파일**을 가리킨다. */
+  const focusKey = tab ? `${ws}/${tab.id}` : undefined;
   /** ★★**처음 뜰 때는 놓지 않는다** (사용자 지적 2026-08-19: 인페인트에 들어갔다 나오면
    *  고른 것이 풀려 있었다). 마스크 편집기는 캔버스 자리를 통째로 차지해서 이 줄이 **언마운트**
    *  되고, 돌아올 때 다시 마운트된다 — 그때마다 이 효과가 돌아 골라 둔 장을 지웠다.
    *  탭이 **실제로 바뀐 때만** 놓는다. */
-  const lastTab = useRef(groupId);
+  const lastTab = useRef(focusKey);
   useEffect(() => {
-    if (lastTab.current === groupId) return;
+    if (lastTab.current === focusKey) return;
     const prev = lastTab.current;
-    lastTab.current = groupId;
+    lastTab.current = focusKey;
     // ★고른 것은 `switchTab` 이 함께 푼다 (`store/sceneFocus`)
-    useSceneFocus.getState().switchTab(prev, groupId);
+    useSceneFocus.getState().switchTab(prev, focusKey);
     clearUndo();   // ★없어진 블록·그림을 되살리려 들면 안 된다
-  }, [groupId]);
+  }, [focusKey]);
 
   // Del = 숨김(휴지통) · Ctrl+Z = 되돌리기 · Esc = 선택 해제 (멀티 무대의 규칙 그대로)
   useEffect(() => {
