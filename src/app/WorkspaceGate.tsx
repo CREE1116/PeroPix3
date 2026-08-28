@@ -1,6 +1,6 @@
 import { useI18n } from "../i18n";
 import { ask } from "../store/ask";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useWs } from "../store/workspace";
 import { Icon } from "../components/Icon";
 
@@ -15,10 +15,13 @@ import { Icon } from "../components/Icon";
  *
  *  `onClose` 가 없으면 **닫을 수 없는 모달**이다 (열린 워크스페이스가 하나도 없어 갈 데가 없다). */
 export function WorkspaceGate({ onClose }: { onClose?: () => void } = {}) {
-  const { list, loading, open, create, remove, openWs, current } = useWs();
+  const { list, loading, open, create, remove, renameWs, openWs, current } = useWs();
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  /** 이름을 고치는 중인 행 (사용자 지시 2026-08-29: 삭제 옆에 이름변경) — 행 안에서 바로 고친다 */
+  const [editing, setEditing] = useState<string | null>(null);
+  const cancelEdit = useRef(false);
   const t = useI18n((s) => s.t);
 
   // Esc 로도 닫는다 — 닫을 데가 있을 때만
@@ -172,6 +175,51 @@ export function WorkspaceGate({ onClose }: { onClose?: () => void } = {}) {
                   background: here ? "var(--accent-bg)" : "transparent",
                 }}
               >
+                {editing === w.name ? (
+                  /* ★행 안에서 바로 고친다 — Enter·밖 클릭 = 확정, Esc = 취소 (편집기의 규칙 그대로) */
+                  <div
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      padding: "var(--sp-2) var(--sp-5)",
+                    }}
+                  >
+                    <input
+                      autoFocus
+                      defaultValue={w.name}
+                      onFocus={(e) => e.currentTarget.select()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") e.currentTarget.blur();
+                        if (e.key === "Escape") {
+                          cancelEdit.current = true;
+                          e.currentTarget.blur();
+                        }
+                      }}
+                      onBlur={(e) => {
+                        const next = e.currentTarget.value;
+                        setEditing(null);
+                        if (cancelEdit.current) {
+                          cancelEdit.current = false;
+                          return;
+                        }
+                        if (next.trim() && next !== w.name)
+                          renameWs(w.name, next).catch((err) => setErr(String(err)));
+                      }}
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        fontSize: "var(--text-md)",
+                        color: "var(--ink)",
+                        background: "var(--panel)",
+                        border: "1px solid var(--accent)",
+                        borderRadius: "var(--r-1)",
+                        padding: "var(--sp-2) var(--sp-3)",
+                      }}
+                    />
+                  </div>
+                ) : (
                 <button
                   onClick={() => void pick(() => open(w.name))}
                   style={{
@@ -221,6 +269,20 @@ export function WorkspaceGate({ onClose }: { onClose?: () => void } = {}) {
                   >
                     {w.updatedAt?.replace("T", " ").slice(0, 16) ?? ""}
                   </span>
+                </button>
+                )}
+                <button
+                  data-ws-rename={w.name}
+                  onClick={() => setEditing(w.name)}
+                  data-tip={t("gate.rename")}
+                  style={{
+                    display: "grid",
+                    placeItems: "center",
+                    padding: "0 var(--sp-3)",
+                    color: "var(--ink-faint)",
+                  }}
+                >
+                  {Icon.pencil}
                 </button>
                 <button
                   data-ws-delete={w.name}

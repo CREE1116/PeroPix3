@@ -268,6 +268,8 @@ type S = {
   closeWs: (name: string) => Promise<void>;
   create: (name?: string) => Promise<void>;
   rename: (name: string) => Promise<void>;
+  /** 게이트 목록의 이름변경 — 열려 있지 않은 워크스페이스도 받는다 */
+  renameWs: (old: string, name: string) => Promise<void>;
   remove: (name: string) => Promise<void>;
   save: () => Promise<void>;
   addRecord: (r: Rec) => void;
@@ -963,25 +965,34 @@ export const useWs = create<S>((set, get) => ({
   },
 
   async rename(name) {
-    const cur = get().current;
-    if (!name.trim() || name === cur) return;
+    await get().renameWs(get().current, name);
+  },
+
+  /** ★게이트 목록의 이름변경이 쓴다 (사용자 지시 2026-08-29) — **아무 워크스페이스나** 받는다.
+   *  열려 있지 않은 것은 서버 폴더·목록만 바뀌고, 열려 있으면 탭·현재 이름까지 따라간다. */
+  async renameWs(old, name) {
+    if (!name.trim() || name === old) return;
     const r = await api<{ name: string }>(
-      `/api/workspaces/${encodeURIComponent(cur)}/rename`,
+      `/api/workspaces/${encodeURIComponent(old)}/rename`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
       },
     );
-    const spec = get().spec;
-    if (spec) spec.name = r.name;
     const { items } = await api<{ items: WsInfo[] }>("/api/workspaces");
     // ★탭도 새 이름으로 — 옛 이름이 탭에 남으면 눌러도 없는 워크스페이스를 부른다
-    const tabs = get().openWs.map((n) => (n === cur ? r.name : n));
+    const tabs = get().openWs.map((n) => (n === old ? r.name : n));
     saveTabs(tabs);
-    saveActive(r.name);
-    set({ list: items, current: r.name, openWs: tabs });
-    await get().save();
+    if (get().current === old) {
+      const spec = get().spec;
+      if (spec) spec.name = r.name;
+      saveActive(r.name);
+      set({ list: items, current: r.name, openWs: tabs });
+      await get().save();
+    } else {
+      set({ list: items, openWs: tabs });
+    }
   },
 
   /** ★워크스페이스 삭제도 **휴지통을 거친다** (사용자 결정 2026-08-18, v2-port-audit D7).

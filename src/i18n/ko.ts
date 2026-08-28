@@ -45,6 +45,7 @@ export const ko: Dict = {
     emptyLine2: "위에서 첫 워크스페이스를 만들어 시작하세요.",
     deleteConfirm: '"{name}" 을 삭제할까요?\n생성물도 함께 휴지통으로 갑니다.',
     delete: "삭제",
+    rename: "이름 변경",
     opened: "탭으로 열려 있음",
     here: "지금 보고 있음",
   },
@@ -744,7 +745,9 @@ export const ko: Dict = {
     atFile: "파일 관리에서 그 폴더를 엽니다",
     atGuide: "지침 화면을 엽니다",
     atQueue: "그 씬 그룹으로 갑니다",
-    title: "AI",
+    /* ★패널 라벨 — 「AI」 두 글자로는 존재가 안 읽혔다 (사용자 지시 2026-08-29: *"길게,
+       좀 더 눈에 띄게"*). 접힌 기둥(Rail)과 패널 머리가 같이 쓴다. */
+    title: "AI 어시스턴트",
     engineHint: "지금 쓰는 엔진 (누르면 설정으로)",
     contextAt: "AI 가 보고 있는 곳: {at}",
     newChatTitle: "새 대화",
