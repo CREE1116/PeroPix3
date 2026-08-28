@@ -725,20 +725,26 @@ export function SceneLane() {
             ★★모양은 **해상도 고르기의 비율 사각형과 같은 것**이다 (`components/Ratio`,
               사용자 지시 2026-08-22) — 같은 뜻(가로냐 세로냐)을 두 곳에서 다르게 그리지 않는다.
             ★**지금 상태**를 그린다 (아래에 있으면 가로, 오른쪽에 있으면 세로).
-            ★강조하지 않는다 (사용자 지시) — 켜짐/꺼짐이 아니라 **둘 중 하나**라,
-              색을 달리하면 한쪽이 특별한 상태로 읽힌다. 가르는 것은 아이콘 하나다. */}
+            ★★**버튼 껍데기를 입힌다** (사용자 지시 2026-08-29: *"엄청 중요하고 자주 쓰는
+              버튼인데 버튼같이 안 생겨서 존재를 모르는 것 같음"*) — 테두리·면을 주고 올리면
+              강조색이 돈다 (`globals.css` 의 `.lane-side-btn`). 한때 「강조하지 않는다」였는데
+              그 결정은 켜짐/꺼짐으로 오독되는 색을 막자는 것이었고, 껍데기는 그와 무관하다.
+              상태를 가르는 것은 여전히 아이콘 하나다. */}
         <button
           data-lane-side={laneSide}
+          className="lane-side-btn"
           onClick={() => useUi.getState().setLaneSide(vert ? "bottom" : "right")}
           data-tip={t(vert ? "canvas.laneToBottom" : "canvas.laneToRight")}
           style={{
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
-            width: 22,
-            height: 22,
+            width: 26,
+            height: 26,
+            flexShrink: 0,
             borderRadius: "var(--r-1)",
-            border: "1px solid transparent",
+            border: "1px solid var(--line)",
+            background: "var(--panel)",
           }}
         >
           <Ratio {...(vert ? RATIO_PORTRAIT : RATIO_LANDSCAPE)} max={13} />
