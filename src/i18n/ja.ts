@@ -28,7 +28,7 @@ export const ja: Dict = {
     generating: "生成中のシーンがあります。終わってから移動してください。",
     movingTab: "「{name}」タブを移動中…",
     movingGroup: "シーングループ「{name}」を移動中…",
-    tooLong: "移動に時間がかかっています。画面のロックを解除しました — 作業は続行します。",
+    tooLong: "移動に時間がかかっています。画面のロックを解除しました。作業は続行します。",
   },
 
   gate: {
@@ -456,7 +456,7 @@ export const ja: Dict = {
     removeConfirm: "「{name}」タブを削除します (シーングループ {t}件・画像 {n}枚)",
     lastOne: "最後のタブは削除できません。",
     movedTo: "「{name}」タブを「{ws}」へ移動しました（画像 {n} 枚）",
-    moveFailed: "「{name}」タブを移動できませんでした — {why}",
+    moveFailed: "「{name}」タブを移動できませんでした: {why}",
   },
 
   update: {
@@ -854,7 +854,7 @@ export const ja: Dict = {
    *  「タブ」を戻さないこと (2026-08-18)。 */
   sceneGroup: {
     movedTo: "シーングループ「{name}」を「{tab}」タブへ移動しました（画像 {n} 枚）",
-    moveFailed: "シーングループ「{name}」を移動できませんでした — {why}",
+    moveFailed: "シーングループ「{name}」を移動できませんでした: {why}",
     closeConfirm: "シーングループ「{name}」を閉じます (画像 {n} 枚)",
     closeConfirmBody: "画像ファイルはゴミ箱に入ります。アプリ起動時に24時間経過したものから削除されます。",
     closeSet: "シーングループを閉じる",

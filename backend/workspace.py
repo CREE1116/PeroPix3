@@ -980,6 +980,52 @@ class Store:
         self._move_thumbs(src_ws, moves, dst_ws)
         return moves
 
+    # ── 별표·숨김은 그림을 따라간다 ───────────────────────────
+    @staticmethod
+    def _carry_selection(spec: dict, moves: dict[str, str]) -> None:
+        """비파괴 선별(별표·숨김)의 경로를 새 경로로 갈아 끼운다.
+
+        ★★**경로로 적혀 있어서 옮기면 조용히 풀린다** (사용자 지적 2026-08-28: *"씬끼리 옮길 땐
+          별표 데이터가 유지되는데, 다른 탭으로 보내면 사라짐"*). 별표는 「별표만 보기」에서
+          그림이 사라져 보이고, 숨김은 **숨긴 그림이 되살아난다** — 뒤쪽이 더 나쁘다.
+        ★개명(`renumber`)에서는 화면이 같은 일을 한다 (`store/workspace.ts` 의 `runRenumber`)."""
+        sel = spec.get("selection")
+        if not isinstance(sel, dict) or not moves:
+            return
+        for k in ("starred", "deleted"):
+            v = sel.get(k)
+            if isinstance(v, list):
+                sel[k] = [moves.get(str(f), f) for f in v]
+
+    @staticmethod
+    def _hand_selection(src: dict, dst: dict, moves: dict[str, str]) -> None:
+        """워크스페이스를 건너갈 때 — 그 그림들의 선별을 **받는 쪽으로 넘긴다**.
+
+        ★주는 쪽에서 빼지 않으면 없는 경로가 남고, 받는 쪽에 넣지 않으면 숨긴 그림이 되살아난다.
+        ★받는 쪽에 `selection` 이 없으면 세운다 — 화면은 `deleted` 가 **늘 있다고 보고** 읽는다
+          (`store/workspace.ts` 의 `isDeleted`)."""
+        ssel = src.get("selection")
+        if not isinstance(ssel, dict) or not moves:
+            return
+        go: dict[str, list[str]] = {}
+        for k in ("starred", "deleted"):
+            v = ssel.get(k)
+            if not isinstance(v, list):
+                continue
+            ssel[k] = [f for f in v if str(f) not in moves]
+            got = [moves[str(f)] for f in v if str(f) in moves]
+            if got:
+                go[k] = got
+        if not go:
+            return
+        dsel = dst.get("selection")
+        if not isinstance(dsel, dict):
+            dsel = dst["selection"] = {}
+        dsel.setdefault("deleted", [])
+        for k, got in go.items():
+            cur = dsel.get(k) if isinstance(dsel.get(k), list) else []
+            dsel[k] = cur + [g for g in got if g not in cur]
+
     # ── 씬 그룹을 같은 워크스페이스의 다른 탭으로 ──────────────
     def move_scene_group(self, ws: str, group_id: str, to_tab_id: str, fill: dict | None = None) -> dict:
         """씬 그룹 하나를 **다른 탭 밑으로 옮긴다** (사용자 지시 2026-08-28: *"씬 그룹을 다른 탭에
@@ -1042,6 +1088,7 @@ class Store:
         #     또 다른 폴더로 간다
         if moves:
             self._rewrite_paths(ws, moves, {"scene_group": name} if name != was else None)
+            self._carry_selection(spec, moves)   # ★별표·숨김도 새 경로로 (그 함수의 ★★주)
 
         # ③ spec — 받는 탭의 **줄 끝**에 세운다 (줄 차례가 곧 배열 차례다)
         rest = [x for x in groups if x.get("id") != group_id]
@@ -1211,6 +1258,7 @@ class Store:
             self._replace(tmp, p)
 
         # ⑤ 두 spec — 받는 쪽에 붙이고, 주는 쪽에서 뺀다 (활성 탭·그룹은 `removeTab` 과 같은 규칙)
+        self._hand_selection(src, dst, moves)   # ★별표·숨김도 함께 건너간다 (그 함수의 ★주)
         dst.setdefault("tabs", []).append(tab)
         dst.setdefault("sceneGroups", []).extend(groups)
         self.save(dst_ws, dst)

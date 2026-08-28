@@ -5,9 +5,11 @@
 //!
 //! 그 위쪽 절반의 주인을 `WindowFromPoint` 로 물어 **이름을 받았다**(실측 2026-08-28):
 //!
-//!     맨위+0  주인 = TAURI_DRAG_RESIZE_BORDERS   판정=12(HTTOP)
-//!     맨위+2  주인 = TAURI_DRAG_RESIZE_BORDERS   판정=12
-//!     맨위+4  주인 = Chrome_RenderWidgetHostHWND  판정=1(HTCLIENT)
+//! ```text
+//! 맨위+0  주인 = TAURI_DRAG_RESIZE_BORDERS   판정=12(HTTOP)
+//! 맨위+2  주인 = TAURI_DRAG_RESIZE_BORDERS   판정=12
+//! 맨위+4  주인 = Chrome_RenderWidgetHostHWND  판정=1(HTCLIENT)
+//! ```
 //!
 //! **Tauri 가 스스로 깔아 두는 투명 덧창**이다 (`tauri-runtime-wry` 의 `undecorated_resizing.rs`).
 //! `decorations:false` 이고 크기 조절이 되는 창에 붙어, 클라이언트 안쪽 가장자리 `SM_CXFRAME`

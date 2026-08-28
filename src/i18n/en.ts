@@ -28,12 +28,12 @@ export const en = {
     generating: "A scene here is still generating. Move it once that finishes.",
     movingTab: "Moving tab \"{name}\"…",
     movingGroup: "Moving scene group \"{name}\"…",
-    tooLong: "This move is taking a while. The screen is unlocked — the work continues.",
+    tooLong: "This move is taking a while. The screen is unlocked; the work continues.",
   },
 
   gate: {
     readFailed: "Could not read the workspace file for \"{name}\". Please open it again.",
-    readBack: "The screen held another workspace's content — reloaded \"{name}\" from the server.",
+    readBack: "The screen held another workspace's content, so \"{name}\" was reloaded from the server.",
     closeTab: "Close workspace",
     openAnother: "Open another workspace",
     newWorkspace: "New workspace",
@@ -458,7 +458,7 @@ export const en = {
     removeConfirm: 'Delete the tab "{name}"? ({t} scene groups, {n} images)',
     lastOne: "The last tab cannot be deleted.",
     movedTo: "Moved tab \"{name}\" to \"{ws}\" ({n} images)",
-    moveFailed: "Could not move tab \"{name}\" — {why}",
+    moveFailed: "Could not move tab \"{name}\": {why}",
   },
 
   update: {
@@ -855,7 +855,7 @@ export const en = {
    *  word "tab" out of this group (2026-08-18). */
   sceneGroup: {
     movedTo: "Moved scene group \"{name}\" to tab \"{tab}\" ({n} images)",
-    moveFailed: "Could not move scene group \"{name}\" — {why}",
+    moveFailed: "Could not move scene group \"{name}\": {why}",
     closeConfirm: "Close scene group \"{name}\" ({n} images)",
     closeConfirmBody: "The image files stay in the trash. Items older than 24 hours are cleared on app start.",
     closeSet: "Close scene group",
