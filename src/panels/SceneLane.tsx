@@ -2003,11 +2003,17 @@ function SceneRow(
                 /* ★**잘라 채우지 않는다** (사용자 지적 2026-08-26: *"비율이 깨진다"*).
                    칸의 가로세로비는 씬 줄이 정하고 그림의 비는 해상도가 정해서 둘이 다르다 —
                    `cover` 면 그 차이만큼 잘려 나가 다른 그림처럼 보인다. */
-                backgroundImage: p.stepOf(c.id) ? `url(${p.stepOf(c.id)})` : "none",
+                /* ★★★**지금 그리는 칸에만 깐다** (사용자 지적 2026-08-28: *"다중 생성했을 때
+                     스트리밍 썸네일이 같은 씬에 걸려 있는 모든 생성 대기 썸네일에 표시됨"*).
+                   중간 프레임은 **씬 단위로** 온다(`steps[cellId]`) — 그 씬의 대기 칸이 여럿이면
+                   전부 같은 값을 읽어 **한 그림이 여러 칸에 깔렸다.** 실제로 그리고 있는 칸은
+                   하나뿐이고, 그것이 `run`(서버가 말하는 `current_cell`)이다. */
+                backgroundImage: run && p.stepOf(c.id) ? `url(${p.stepOf(c.id)})` : "none",
                 backgroundSize: "contain",
                 backgroundRepeat: "no-repeat",
                 backgroundPosition: "center",
-                ...(p.stepOf(c.id)
+                // ★글자를 흰색으로 바꾸는 것도 **그림이 깔린 칸에만** (바로 위 ★★★주)
+                ...(run && p.stepOf(c.id)
                   ? { color: "#fff", textShadow: "0 1px 3px rgba(0,0,0,0.8)" }
                   : null),
               }}
