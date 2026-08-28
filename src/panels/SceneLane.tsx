@@ -1189,7 +1189,8 @@ export function SceneLane() {
  *  ★규칙을 한 곳에 둔다 — 줄의 칸 · PIP · 끄는 잔상이 같은 판정을 써야 한다. */
 export function takeSrc(r: Rec, base: string, ws: string, thumb: boolean): string {
   if (r.preview) return `data:image/${r.preview.fmt};base64,${r.preview.b64}`;
-  return thumb ? thumbUrlOf(base, ws, r.file) : imgUrl(base, ws, r.file);
+  // ★`ts` 를 주소에 싣는다 — 같은 경로에 다른 그림이 와도 옛 캐시가 안 나온다 (`imgUrl.ts` 의 ★★주)
+  return thumb ? thumbUrlOf(base, ws, r.file, r.ts) : imgUrl(base, ws, r.file, r.ts);
 }
 
 /** 비었을 때 — ★그릇만 있는 상태. 여기서는 씬을 못 만든다 (씬은 카드에 속한다) */

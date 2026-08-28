@@ -6,12 +6,21 @@
  *      큰 화면·라이트박스·드래그한 그림의 원본  →  imgUrl   (원본 PNG)
  *      히스토리 줄·셀 그리드                    →  thumbUrlOf (512px WebP)
  *
- *  썸네일은 서버가 원본에서 굽고 캐시한다 (backend/thumbs.py). 지워도 다시 생긴다. */
-export const imgUrl = (base: string, ws: string, file: string) =>
-  `${base}/api/file/${encodeURIComponent(ws)}/${file}`;
+ *  썸네일은 서버가 원본에서 굽고 캐시한다 (backend/thumbs.py). 지워도 다시 생긴다.
+ *
+ *  ★★`v` = 그 그림의 레코드 `ts` — **같은 경로에 다른 그림이 앉아도 주소가 갈리게** 한다
+ *    (사용자 보고 2026-08-28: 새 탭으로 복제한 그림에 전혀 다른 썸네일이 떴다). 응답에
+ *    `immutable` 캐시가 붙는데, 지운 파일의 번호를 다음 생성·복제가 재발급하면 같은 주소에
+ *    다른 그림이 온다 — 웹뷰는 재검증 없이 옛 캐시를 보여 준다. 레코드가 새로 적히면 `ts` 가
+ *    다르므로 주소가 갈린다. 서버는 쿼리를 안 보므로 아무것도 안 바뀐다.
+ *    레코드가 없는 자리(경로만 든 폴백)는 비워 둔다 — 그때는 그냥 경로 주소다. */
+const ver = (v?: string) => (v ? `?v=${encodeURIComponent(v)}` : "");
 
-export const thumbUrlOf = (base: string, ws: string, file: string) =>
-  `${base}/api/thumb/${encodeURIComponent(ws)}/${file}`;
+export const imgUrl = (base: string, ws: string, file: string, v?: string) =>
+  `${base}/api/file/${encodeURIComponent(ws)}/${file}${ver(v)}`;
+
+export const thumbUrlOf = (base: string, ws: string, file: string, v?: string) =>
+  `${base}/api/thumb/${encodeURIComponent(ws)}/${file}${ver(v)}`;
 
 /** 보관함(갤러리)의 그림 — 워크스페이스를 안 낀다 (`/api/keep/file/...`) */
 export const keepUrl = (base: string, rel: string) =>

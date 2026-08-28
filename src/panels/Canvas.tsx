@@ -316,7 +316,7 @@ function SceneActions() {
        하단바와 맞닿는다. 아래를 0 으로 둔 것은 그 전제 위의 값이었다. */
     <div style={{ flexShrink: 0, padding: vert ? "var(--sp-3) var(--sp-4)" : "var(--sp-3) var(--sp-4) 0" }}>
       <ImageActions
-        url={un ? `data:image/${un.preview.fmt};base64,${un.preview.b64}` : imgUrl(base, ws, file)}
+        url={un ? `data:image/${un.preview.fmt};base64,${un.preview.b64}` : imgUrl(base, ws, file, rec?.ts)}
         name={un ? tr("scenes.unsaved") : file.split("/").pop() ?? file}
         seed={(un ?? rec)?.seed ?? 0}
         loadMeta={loadMeta}
