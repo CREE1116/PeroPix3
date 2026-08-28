@@ -24,6 +24,8 @@ export const ko: Dict = {
   },
 
   gate: {
+    readFailed: "「{name}」 워크스페이스 파일을 읽지 못했습니다. 다시 열어 주세요.",
+    readBack: "화면 내용이 이 워크스페이스 것이 아니라서 「{name}」을 서버에서 다시 읽었습니다.",
     closeTab: "워크스페이스 닫기",
     openAnother: "워크스페이스 하나 더 열기",
     newWorkspace: "새 워크스페이스",
@@ -462,6 +464,7 @@ export const ko: Dict = {
     removeConfirm: "「{name}」 탭을 지웁니다 (씬 그룹 {t}개 · 그림 {n}장)",
     lastOne: "마지막 탭은 지울 수 없습니다.",
     movedTo: "「{name}」 탭을 「{ws}」로 옮겼습니다 (그림 {n}장)",
+    moveFailed: "「{name}」 탭을 옮기지 못했습니다 — {why}",
   },
 
   update: {

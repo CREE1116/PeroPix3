@@ -5,7 +5,7 @@ import { Icon } from "../components/Icon";
 import { useReorder } from "../lib/useReorder";
 import { DragGhost } from "../cards/DragGhost";
 import { DropLine } from "../components/DropLine";
-import { useTabDrop } from "../lib/tabDrop";
+import { justDropped, useTabDrop } from "../lib/tabDrop";
 
 /** 열어 둔 워크스페이스 — **캐릭터 줄 위**에 선다 (사용자 지시 2026-08-08).
  *
@@ -54,7 +54,8 @@ export function WorkspaceTabs({ onAdd }: { onAdd: () => void }) {
             {...hp}
             data-ws-tab={name}
             data-on={on ? "" : undefined}
-            onClick={() => !on && void open(name)}
+            // ★탭을 놓은 직후의 클릭은 전환이 아니다 (`justDropped` 의 ★주)
+            onClick={() => !on && !justDropped() && void open(name)}
             data-tip={name}
             style={{
               display: "flex",

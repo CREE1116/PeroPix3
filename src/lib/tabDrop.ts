@@ -7,10 +7,23 @@ import { create } from "zustand";
  *    빛난다. 형제라 한쪽 상태로는 다른 쪽이 못 보므로 여기 둔다.
  *  ★탭 차례 바꾸기(`useReorder`)와 **같은 끌기**다 — 손을 뗀 자리가 워크스페이스 탭이면
  *    차례 대신 옮기기가 된다. 끌기를 두 벌 두지 않는다. */
-export const useTabDrop = create<{ over: string | null; set: (v: string | null) => void }>((set) => ({
+export const useTabDrop = create<{
+  over: string | null;
+  /** 마지막으로 탭을 **워크스페이스 탭에 놓은** 시각 (`performance.now()`) */
+  droppedAt: number;
+  set: (v: string | null) => void;
+  markDropped: () => void;
+}>((set) => ({
   over: null,
+  droppedAt: 0,
   set: (over) => set({ over }),
+  markDropped: () => set({ droppedAt: performance.now() }),
 }));
+
+/** 방금 탭을 놓았나 — 놓은 자리의 워크스페이스 탭에 **클릭이 따라온다** (실사고 2026-08-28: 그 클릭이
+ *  옮기기가 끝나기 전에 받는 쪽을 열어 옮기기 전 상태를 보여 줬고, 옮기기 응답이 엉뚱한 자리에
+ *  대입되는 길을 열었다). 워크스페이스 탭은 이 동안의 클릭을 무시한다. */
+export const justDropped = (): boolean => performance.now() - useTabDrop.getState().droppedAt < 500;
 
 /** 그 화면 좌표 밑의 워크스페이스 탭 이름 (없으면 `null`).
  *  ★포인터가 잡혀 있어도(`setPointerCapture`) `elementFromPoint` 는 좌표로 찾으므로 그대로 된다. */

@@ -16,7 +16,10 @@ from __future__ import annotations
 import copy
 import json
 import re
+import threading
+import time
 import uuid
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -94,13 +97,52 @@ def file_lead(cell_no: int | None, cell: str | None, exclude_no: bool) -> str:
     return "_".join(x for x in (no, tag) if x)
 
 
+class SpecMismatch(ValueError):
+    """다른 워크스페이스의 spec 을 이 이름으로 쓰려 했다 (`Store.save` 의 ★★주). 서버는 409 로 돌려준다."""
+
+
 class Store:
     def __init__(self, root: Path):
         #: 방금 옮긴 그림의 옛 이름 → 지금 이름 (위 ★★주)
         #: ★값도 (ws, rel) 이다 — 탭을 다른 워크스페이스로 옮기면 그림이 **다른 폴더**로 간다
         self._moved: dict[tuple[str, str], tuple[str, str]] = {}
+        #: 워크스페이스마다 하나 — spec 을 읽고·고치고·쓰는 동안 다른 요청이 끼어들지 못하게
+        #  (`locked` 의 ★주). 스레드(`move_tab`)와 루프(`PUT`)가 같은 파일을 동시에 만졌다.
+        self._locks: dict[str, threading.RLock] = {}
+        self._locks_guard = threading.Lock()
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
+
+    @contextmanager
+    def locked(self, *wss: str):
+        """그 워크스페이스(들)의 spec 을 만지는 동안 잡는다 — **이름순**으로 잡아 둘을 동시에 잡아도 안 엉킨다.
+
+        ★실사고 2026-08-28: 탭 옮기기(`move_tab`, 스레드)가 도는 사이 화면의 자동 저장(`PUT`, 루프)이
+          같은 `workspace.json` 을 바꿔치기하다 `PermissionError` 가 났다 — 임시 파일 교체는 그 파일을
+          누가 읽고 있으면 거부된다. 읽기·쓰기를 한 줄로 세운다."""
+        names = sorted(set(wss))
+        with self._locks_guard:
+            locks = [self._locks.setdefault(n, threading.RLock()) for n in names]
+        for lk in locks:
+            lk.acquire()
+        try:
+            yield
+        finally:
+            for lk in reversed(locks):
+                lk.release()
+
+    @staticmethod
+    def _replace(tmp: Path, target: Path) -> None:
+        """임시 파일을 제자리로 **바꿔치기** — 윈도우는 그 파일을 누가 읽는 중이면 `WinError 5` 로
+        거부한다 (백신·탐색기·우리 자신의 동시 읽기). 잠깐 쉬고 몇 번 더 해 본다 (실측 2026-08-28: 두 번 났다)."""
+        for i in range(6):
+            try:
+                tmp.replace(target)
+                return
+            except PermissionError:
+                if i == 5:
+                    raise
+                time.sleep(0.05 * (i + 1))
 
     # ── 워크스페이스 ──────────────────────────────────────────
     #: 방금 옮긴 그림의 **옛 이름 → 지금 이름** (`renumber` 가 적는다).
@@ -177,14 +219,26 @@ class Store:
           길이 없다** (`store/workspace.ts` 의 `save` 는 spec 이 없으면 안 보내고, `newSpec` 은
           탭 하나를 갖고 태어나며, `removeTab` 은 마지막 탭을 안 지운다). 일어날 수 없는 것을
           막는 검사는 아무 일도 안 하면서 다음 사람을 헷갈리게 한다.
+        ★★**남의 spec 은 이 이름으로 못 쓴다** (실사고 2026-08-28). 탭을 다른 워크스페이스로 끌어
+          놓는 사이 화면이 그 워크스페이스로 넘어갔고, 옮기기 응답(출발 쪽 spec)이 **지금 화면의
+          spec 자리**에 대입돼 자동 저장이 `qa_test` 의 spec 을 `test` 이름으로 썼다 — 탭 10개가
+          탭 1개로 덮였다. 화면 상태가 어떻게 꼬여도 마지막에 서는 문지기가 이것이다: 파일에 이미
+          id 가 있고 들어온 spec 의 id 가 다르면 거부한다 (`SpecMismatch` → 409). id 는 워크스페이스를
+          만들 때 한 번 찍히고(`newSpec`) 복제하는 길이 없어 오탐이 없다. 백업 대신 **사전 차단**이라는
+          결정(2026-08-25)의 연장이다.
         """
         d = self.dir_of(ws)
-        d.mkdir(parents=True, exist_ok=True)
-        spec["updatedAt"] = datetime.now().isoformat(timespec="seconds")
-        # 임시 파일에 쓴 뒤 교체 — 쓰는 중 앱이 죽어도 기존 파일이 남는다
-        tmp = d / (SPEC_NAME + ".tmp")
-        tmp.write_text(json.dumps(spec, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(d / SPEC_NAME)
+        with self.locked(ws):
+            cur = self.load(ws)
+            have, got = (cur or {}).get("id"), spec.get("id")
+            if have and got and have != got:
+                raise SpecMismatch(f"다른 워크스페이스의 내용입니다 ({got} → {ws}:{have})")
+            d.mkdir(parents=True, exist_ok=True)
+            spec["updatedAt"] = datetime.now().isoformat(timespec="seconds")
+            # 임시 파일에 쓴 뒤 교체 — 쓰는 중 앱이 죽어도 기존 파일이 남는다
+            tmp = d / (SPEC_NAME + ".tmp")
+            tmp.write_text(json.dumps(spec, ensure_ascii=False, indent=2), encoding="utf-8")
+            self._replace(tmp, d / SPEC_NAME)
         return spec
 
     def rename(self, old: str, new: str) -> str:
@@ -504,7 +558,7 @@ class Store:
                     fout.write(line if line.endswith("\n") else line + "\n")
             # ★임시 파일을 **바꿔치기**한다 — 지우는 연산을 이 파일에 두지 않는다
             #   (`test_output_safety` 가 그것을 지킨다: 생성물은 사람이 지울 때만 사라진다).
-            tmp.replace(p)
+            self._replace(tmp, p)
 
     def append_record(self, ws: str, rec: dict) -> None:
         """레코드 한 줄. ★무거운 것은 **곁파일로 갈라** 적는다 (`ENV_NAME` 머리 주석).
@@ -608,10 +662,10 @@ class Store:
         # ★이미 곁파일이 있으면 **앞에 잇는다** — 새로 적힌 줄이 뒤에 와야 마지막 것이 이긴다
         old_env = (d / ENV_NAME).read_text(encoding="utf-8").splitlines() if (d / ENV_NAME).exists() else []
         env_tmp.write_text("\n".join(heavy_lines + old_env) + "\n", encoding="utf-8")
-        env_tmp.replace(d / ENV_NAME)
+        self._replace(env_tmp, d / ENV_NAME)
         idx_tmp = d / (RECORDS_NAME + ".tmp")
         idx_tmp.write_text("\n".join(light_lines) + "\n", encoding="utf-8")
-        idx_tmp.replace(p)
+        self._replace(idx_tmp, p)
         return moved
 
     def thumb_path(self, ws: str, rel: str) -> Path | None:
@@ -651,6 +705,14 @@ class Store:
 
     # ── 탭을 다른 워크스페이스로 ─────────────────────────────
     def move_tab(self, src_ws: str, tab_id: str, dst_ws: str, fill: dict | None = None) -> dict:
+        """탭 하나를 **다른 워크스페이스로 옮긴다** — `_move_tab_locked` 를 두 워크스페이스의 잠금 안에서.
+        ★잠금 밖에서 돌던 때의 실사고는 `save` 의 ★★주·`locked` 의 ★주."""
+        if src_ws == dst_ws:
+            raise ValueError("같은 워크스페이스입니다")
+        with self.locked(src_ws, dst_ws):
+            return self._move_tab_locked(src_ws, tab_id, dst_ws, fill)
+
+    def _move_tab_locked(self, src_ws: str, tab_id: str, dst_ws: str, fill: dict | None = None) -> dict:
         """탭 하나를 **다른 워크스페이스로 옮긴다** — 씬 그룹·그림·레코드·썸네일 캐시가 함께 간다
         (사용자 지시 2026-08-28: *"탭을 끌어다가 다른 워크스페이스에 두면 거기로 옮겨지게"*).
 
@@ -671,9 +733,9 @@ class Store:
           주는 쪽에서는 그 줄을 뺀 사본으로 바꿔치기한다 (`_rewrite_paths` 와 같은 방식).
           지우는 연산은 없다 (`test_output_safety`).
         ★같은 뿌리 아래의 폴더끼리라 `rename` 으로 옮긴다 — 바이트를 다시 쓰지 않는다.
+        ★속도(실측 2026-08-28, 그림 736장): rename 0.4초 + 색인·곁파일 재작성 0.3초. 화면은 이 답을
+          기다리지 않고 **놓는 즉시** 탭을 뺀다 (`store/workspace.ts` 의 `moveTabToWs`).
         """
-        if src_ws == dst_ws:
-            raise ValueError("같은 워크스페이스입니다")
         src = self.load(src_ws)
         dst = self.load(dst_ws)
         if not src or not dst:
@@ -793,7 +855,7 @@ class Store:
                         except Exception:
                             pass          # ★못 읽는 줄은 주는 쪽에 **그대로 둔다**
                     fout.write(line if line.endswith("\n") else line + "\n")
-            tmp.replace(p)
+            self._replace(tmp, p)
 
         # ⑤ 두 spec — 받는 쪽에 붙이고, 주는 쪽에서 뺀다 (활성 탭·그룹은 `removeTab` 과 같은 규칙)
         dst.setdefault("tabs", []).append(tab)

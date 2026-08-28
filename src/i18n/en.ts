@@ -24,6 +24,8 @@ export const en = {
   },
 
   gate: {
+    readFailed: "Could not read the workspace file for \"{name}\". Please open it again.",
+    readBack: "The screen held another workspace's content — reloaded \"{name}\" from the server.",
     closeTab: "Close workspace",
     openAnother: "Open another workspace",
     newWorkspace: "New workspace",
@@ -448,6 +450,7 @@ export const en = {
     removeConfirm: 'Delete the tab "{name}"? ({t} scene groups, {n} images)',
     lastOne: "The last tab cannot be deleted.",
     movedTo: "Moved tab \"{name}\" to \"{ws}\" ({n} images)",
+    moveFailed: "Could not move tab \"{name}\" — {why}",
   },
 
   update: {

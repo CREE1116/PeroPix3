@@ -62,7 +62,7 @@ from blocklib import BlockLib
 from wildcards import Wildcards
 import thumbs
 from thumbs import Pins
-from workspace import Store, safe_name
+from workspace import SpecMismatch, Store, safe_name
 
 # MCP 설정에 적어 줄 **지금 이 서버의 포트** (--port 로 바뀐다)
 # ★리로드 모드에서는 워커가 `main()` 을 안 거치고 모듈만 다시 읽는다 — 포트를 환경에서 받는다
@@ -1083,7 +1083,12 @@ async def get_workspace(ws: str):
 
 @app.put("/api/workspaces/{ws}")
 async def put_workspace(ws: str, body: SpecBody):
-    return {"spec": store.save(ws, body.spec)}
+    """★다른 워크스페이스의 spec 이면 **409** — 파일은 그대로다 (`Store.save` 의 ★★주). 화면은 409 를
+    받으면 지금 워크스페이스를 서버에서 다시 읽는다 (`store/workspace.ts` 의 `save`)."""
+    try:
+        return {"spec": store.save(ws, body.spec)}
+    except SpecMismatch as e:
+        raise HTTPException(409, str(e))
 
 
 @app.post("/api/workspaces/{ws}/rename")

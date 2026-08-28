@@ -24,6 +24,8 @@ export const ja: Dict = {
   },
 
   gate: {
+    readFailed: "「{name}」のワークスペースファイルを読めませんでした。開き直してください。",
+    readBack: "画面の内容がこのワークスペースのものではなかったため「{name}」をサーバーから読み直しました。",
     closeTab: "ワークスペースを閉じる",
     openAnother: "ワークスペースをもう一つ開く",
     newWorkspace: "新しいワークスペース",
@@ -446,6 +448,7 @@ export const ja: Dict = {
     removeConfirm: "「{name}」タブを削除します (シーングループ {t}件・画像 {n}枚)",
     lastOne: "最後のタブは削除できません。",
     movedTo: "「{name}」タブを「{ws}」へ移動しました（画像 {n} 枚）",
+    moveFailed: "「{name}」タブを移動できませんでした — {why}",
   },
 
   update: {

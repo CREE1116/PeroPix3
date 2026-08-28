@@ -400,6 +400,66 @@ type S = {
  *    카드를 잃지 않게 한 규칙, `prompt.load`), 새 것은 꺼진 채로 시작해야 한다. */
 const freshPrompt = (): TabPrompt => ({ base: [], baseUc: [], styleOn: false });
 
+/** 탭이 다른 워크스페이스로 **옮겨지는 중**인 워크스페이스 이름 — 그동안 그 spec 의 자동 저장을 멈춘다
+ *  (`moveTabToWs`·`save`). 화면은 놓는 즉시 탭을 뺀 임시 상태를 들고 있는데, 그것을 서버에 쓰면
+ *  서버가 옮기려는 탭이 파일에서 사라져 옮기기가 실패한다. */
+let moveBusy: string | null = null;
+/** 멈춰 있는 동안 저장이 들어왔나 — 끝나면 한 번 몰아서 쓴다 */
+let saveHeld = false;
+
+/** 지금 워크스페이스를 서버에서 **다시** 읽는다 — 화면이 든 spec 을 버린다 (409 · 옮기기 뒤). */
+async function reload(get: () => S, set: (p: Partial<S>) => void): Promise<void> {
+  const name = get().current;
+  if (!name) return;
+  const r = await api<{ spec: Spec | null; records: Rec[] }>(`/api/workspaces/${encodeURIComponent(name)}`);
+  if (!r.spec || get().current !== name) return;
+  const spec = migrate(r.spec);
+  clearUndo();
+  set({ spec, records: dedupeByFile(r.records ?? []) });
+  usePrompt.getState().load(promptOf(spec, activeGroupOf(spec)));
+}
+
+const activeGroupOf = (spec: Spec): SceneGroup | undefined =>
+  spec.sceneGroups.find((x) => x.id === spec.activeSceneGroup) ?? spec.sceneGroups[0];
+
+/** 탭 하나를 뺀 spec — **화면용 임시 상태**다 (`moveTabToWs`). 서버가 같은 규칙으로 만든 spec 이
+ *  답으로 오면 그것으로 갈린다. 마지막 탭이면 서버와 같은 모양의 빈 탭·빈 세트를 세운다
+ *  (id 만 임시다 — 서버 답이 서버 것으로 바꾼다). */
+function withoutTab(
+  spec: Spec,
+  tabId: string,
+  fill: { tab: string; group: string; prompt: TabPrompt },
+): Spec {
+  const gone = new Set(
+    spec.sceneGroups.filter((x) => x.kind === "sceneGroup" && x.tabId === tabId).map((x) => x.id),
+  );
+  let tabs = (spec.tabs ?? []).filter((c) => c.id !== tabId);
+  let sceneGroups = spec.sceneGroups.filter((x) => !gone.has(x.id));
+  if (!tabs.length) {
+    const tid = "ch_" + Math.random().toString(36).slice(2, 8);
+    tabs = [{ id: tid, name: fill.tab, prompt: fill.prompt }];
+    sceneGroups = [
+      ...sceneGroups,
+      {
+        id: "tab_" + Math.random().toString(36).slice(2, 8),
+        kind: "sceneGroup",
+        name: fill.group,
+        tabId: tid,
+        idOnly: true,
+        cards: [],
+        cellSeq: 0,
+        cardSeq: 0,
+      } as SceneGroup,
+    ];
+  }
+  const activeTab = tabs.some((c) => c.id === spec.activeTab) ? spec.activeTab : tabs[0].id;
+  const mine = sceneGroups.filter((x) => x.kind === "sceneGroup" && x.tabId === activeTab);
+  const activeSceneGroup = sceneGroups.some((x) => x.id === spec.activeSceneGroup)
+    ? spec.activeSceneGroup
+    : (mine[0]?.id ?? sceneGroups[0]?.id ?? "");
+  return { ...spec, tabs, sceneGroups, activeTab, activeSceneGroup };
+}
+
 /** 개명이 도는 중인가 — ★**한 번에 하나만** (`renumberSet` 의 ★★주) */
 let renumBusy = false;
 /** 도는 동안 또 들어온 그룹 — 끝나고 한 번만 다시 돈다 */
@@ -774,7 +834,15 @@ export const useWs = create<S>((set, get) => ({
     const r = await api<{ spec: Spec | null; records: Rec[] }>(
       `/api/workspaces/${encodeURIComponent(name)}`,
     );
-    const spec = migrate(r.spec ?? newSpec(name));
+    if (!r.spec) {
+      /* ★★서버가 spec 을 못 줬다고 **새 spec 을 만들어 그 이름으로 저장하지 않는다** (2026-08-28).
+         예전의 `r.spec ?? newSpec(name)` 은 읽기가 한 번만 헛돌아도(파일 교체 순간·잠금) 그
+         워크스페이스를 빈 탭 하나로 덮는 길이었다. 만드는 창구는 `create` 하나다. */
+      set({ loading: false });
+      toast(t("gate.readFailed", { name }), "warn");
+      return;
+    }
+    const spec = migrate(r.spec);
     clearUndo(); // ★다른 워크스페이스의 파일·블록을 되살리면 안 된다
     const tabs = get().openWs.includes(name) ? get().openWs : [...get().openWs, name];
     saveTabs(tabs);
@@ -874,13 +942,30 @@ export const useWs = create<S>((set, get) => ({
     if (!current || !spec) return;
     // ★편집기 내용은 **활성 탭에** 담는다 (예전엔 spec.prompt 하나였다).
     //   spec.prompt 는 옛 워크스페이스를 여는 씨앗으로만 남는다 — 여기서 더 쓰지 않는다.
+    // ★탭이 서버로 옮겨지는 동안은 쓰지 않는다 — 끝나면 한 번 몰아서 (`moveTabToWs` 의 ★★주)
+    if (moveBusy && moveBusy === current) {
+      saveHeld = true;
+      return;
+    }
     const next = stash(spec, spec.activeSceneGroup);
     set({ spec: next });
-    await api(`/api/workspaces/${encodeURIComponent(current)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ spec: next }),
-    });
+    try {
+      await api(`/api/workspaces/${encodeURIComponent(current)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spec: next }),
+      });
+    } catch (e) {
+      /* ★★409 = 서버가 「다른 워크스페이스의 내용」이라며 거부했다 (`Store.save` 의 ★★주).
+         화면이 든 spec 은 이 워크스페이스 것이 아니므로 버리고 서버 것을 다시 읽는다 —
+         그대로 두면 다음 자동 저장이 또 부딪친다. */
+      if (e instanceof Error && e.message.startsWith("409")) {
+        await reload(get, set);
+        toast(t("gate.readBack", { name: current }), "warn");
+        return;
+      }
+      throw e;
+    }
   },
 
   addRecord(r) {
@@ -1302,7 +1387,7 @@ export const useWs = create<S>((set, get) => ({
   async moveTabToWs(tabId, to) {
     const cur = get().current;
     const spec = get().spec;
-    if (!cur || !spec || to === cur) return;
+    if (!cur || !spec || to === cur || moveBusy) return;
     const tab = (spec.tabs ?? []).find((c) => c.id === tabId);
     if (!tab) return;
     /* ★마지막 탭을 옮기면 **빈 새 탭이 그 자리에 선다** (사용자 지시 2026-08-28). 모양은 여기서
@@ -1311,19 +1396,46 @@ export const useWs = create<S>((set, get) => ({
     // ★떠나는 탭의 생성 옵션을 담고, 밀린 편집을 **먼저** 쓴다 — 서버는 파일의 spec 을 읽는다
     for (const fn of beforeWsSwitch) fn();
     await flushSave(get);
+    // ★그 사이 화면이 다른 워크스페이스로 갔으면 시작하지 않는다
+    if (get().current !== cur || !get().spec) return;
+    /* ★★**놓는 즉시 화면에서 뺀다** (사용자 지시 2026-08-28: *"씬이 그렇듯이 시각적으로는 탭 자체가
+         즉시 드롭하자마자 이동해야 함"*). 서버는 뒤에서 파일·색인을 옮기고(실측 약 1초), 답이 오면
+         그 spec 으로 갈아 끼운다. 실패하면 되돌린다.
+       ★★답은 **화면이 아직 이 워크스페이스일 때만** 대입한다 (실사고 2026-08-28: 옮기는 사이 화면이
+         받는 쪽으로 넘어가 있었고, 출발 쪽 spec 이 받는 쪽 자리에 대입돼 자동 저장이 그것을 받는 쪽
+         이름으로 썼다 — 탭 10개가 사라졌다). 받는 쪽을 보고 있으면 서버 것을 **다시 읽는다** —
+         화면이 든 것은 옮기기 전 spec 이라, 그대로 두면 다음 자동 저장이 옮겨 온 탭을 도로 지운다. */
+    const before = get().spec!;
+    const gone = withoutTab(before, tabId, fill);
+    set({ spec: gone });
+    if (before.activeTab === tabId) usePrompt.getState().load(promptOf(gone, activeGroupOf(gone)));
+    moveBusy = cur;   // ★이 워크스페이스의 자동 저장을 멈춘다 — 임시 상태를 서버에 쓰면 안 된다
     try {
       const r = await api<{ spec: Spec; records: Rec[]; moved: number }>(
         `/api/workspaces/${encodeURIComponent(cur)}/tabs/${encodeURIComponent(tabId)}/move`,
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to, fill }) },
       );
-      const next = migrate(r.spec);
-      clearUndo();   // ★옮겨 간 블록·그림을 되살리면 안 된다
-      set({ spec: next, records: dedupeByFile(r.records ?? []) });
-      const g = next.sceneGroups.find((x) => x.id === next.activeSceneGroup) ?? next.sceneGroups[0];
-      usePrompt.getState().load(promptOf(next, g));
+      if (get().current === cur) {
+        const next = migrate(r.spec);
+        clearUndo();   // ★옮겨 간 블록·그림을 되살리면 안 된다
+        set({ spec: next, records: dedupeByFile(r.records ?? []) });
+        usePrompt.getState().load(promptOf(next, activeGroupOf(next)));
+      } else if (get().current === to) {
+        await reload(get, set);
+      }
       toast(t("tab.movedTo", { name: tab.name, ws: to, n: r.moved }));
     } catch (e) {
-      toast(String(e), "warn");
+      if (get().current === cur) {
+        set({ spec: before });
+        usePrompt.getState().load(promptOf(before, activeGroupOf(before)));
+      }
+      toast(t("tab.moveFailed", { name: tab.name, why: String(e) }), "warn");
+    } finally {
+      moveBusy = null;
+      if (saveHeld) {
+        saveHeld = false;
+        queueSave(get);
+      }
     }
   },
 

@@ -249,6 +249,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sceneGrou
                 const to = useTabDrop.getState().over;
                 useTabDrop.getState().set(null);
                 if (to && to !== wsName && tabOrd.dragIdx != null) {
+                  useTabDrop.getState().markDropped();   // ★따라오는 클릭이 받는 쪽을 열지 않게 (`justDropped`)
                   hp.onPointerCancel();
                   void moveTabToWs(c.id, to);
                   return;
