@@ -52,6 +52,8 @@ export function Settings({
   const weightHl = useUi((s) => s.weightHl);
   const setWeightHl = useUi((s) => s.setWeightHl);
   const setSuggest = useUi((s) => s.setTagSuggest);
+  const artistPrefix = useUi((s) => s.artistPrefix);
+  const setArtistPrefix = useUi((s) => s.setArtistPrefix);
   // ★토큰 유무·앱 버전·요청 창구는 **백엔드가 정본**이다 (`store/health.ts`)
   const has = useHealth((s) => !!s.health?.hasToken);
   const version = useHealth((s) => s.health?.version ?? "");
@@ -261,6 +263,19 @@ export function Settings({
                       onChange={(e) => setSuggest(e.target.checked)}
                     />
                     {t("settings.tagSuggest")}
+                  </label>
+                  {/* ★작가를 고르면 `artist:` 를 단다 — 끌 수 있다 (사용자 지시 2026-08-28) */}
+                  <label
+                    style={checkRow}
+                    data-tip={t("settings.artistPrefixHint")}
+                  >
+                    <input
+                      type="checkbox"
+                      data-artist-prefix-toggle
+                      checked={artistPrefix}
+                      onChange={(e) => setArtistPrefix(e.target.checked)}
+                    />
+                    {t("settings.artistPrefix")}
                   </label>
                   {/* ★가중치 강조 — 칩과 글 상자가 **같은 스위치**를 본다 */}
                   <label

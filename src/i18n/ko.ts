@@ -495,6 +495,8 @@ export const ko: Dict = {
     weightHl: "가중치 강조 색",
     tagSuggest: "태그 자동완성",
     tagSuggestHint: "치는 동안 단부루 태그를 제안합니다. 끄면 Enter·Esc 가 블록 편집기 것으로 돌아갑니다.",
+    artistPrefix: "작가 태그에 artist: 붙이기",
+    artistPrefixHint: "자동완성에서 작가를 고르면 앞에 artist: 를 답니다. 끄면 사전 이름 그대로 들어갑니다.",
     about: "앱 정보",
     log: "로그 열기",
     logHint: "오류가 나면 이 파일을 보내 주세요 (logs/peropix.log)",

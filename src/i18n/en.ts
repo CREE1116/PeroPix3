@@ -479,6 +479,8 @@ export const en = {
     weightHl: "Weight highlight",
     tagSuggest: "Tag autocomplete",
     tagSuggestHint: "Suggests Danbooru tags as you type. With it off, Enter and Esc go back to the block editor.",
+    artistPrefix: "Prefix artist tags with artist:",
+    artistPrefixHint: "Picking an artist from the suggestions inserts it as artist:name. With it off, the plain name goes in.",
     about: "About",
     log: "Open log",
     logHint: "If something breaks, send us this file (logs/peropix.log)",

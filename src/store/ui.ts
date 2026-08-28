@@ -95,6 +95,9 @@ type Persisted = {
   /** 태그 자동완성을 켜 두나 (v2 `tagAutocompleteToggle`). 끄면 목록이 아예 안 뜬다 —
    *  Enter·Esc 도 블록 것으로 되돌아간다 (`TagSuggest.onKeyDown`) */
   tagSuggest: boolean;
+  /** 자동완성에서 **작가**를 고르면 앞에 `artist:` 를 단다 (사용자 지시 2026-08-28).
+   *  ★끌 수 있다 — 접두어 없이 쓰는 사람도 있다. 끄면 사전 이름 그대로 들어간다. */
+  artistPrefix: boolean;
   /** 가중치 강조 색 (칩·글 상자 둘 다) — 끄면 평범한 글자로 보인다 */
   weightHl: boolean;
   /** 파일 관리의 보기 — 썸네일 격자 / 이름·크기·수정일 목록 (v2 `fmViewThumbnail`·`fmViewList`) */
@@ -185,6 +188,7 @@ const DEFAULTS: Persisted = {
   notifyVolume: 50,
   font: "pretendard",
   tagSuggest: true,
+  artistPrefix: true,
   weightHl: true,
   fmView: "grid",
   streamPreview: true,
@@ -250,6 +254,7 @@ type S = Persisted & {
   setNotifySound: (v: boolean) => void;
   setNotifyVolume: (v: number) => void;
   setTagSuggest: (v: boolean) => void;
+  setArtistPrefix: (v: boolean) => void;
   setWeightHl: (v: boolean) => void;
   setFmView: (v: "grid" | "list") => void;
   setConvertOpenFolder: (v: boolean) => void;
@@ -383,6 +388,10 @@ export const useUi = create<S>((set, get) => ({
     set({ tagSuggest: v });
     get().commitLayout();
   },
+  setArtistPrefix: (v) => {
+    set({ artistPrefix: v });
+    get().commitLayout();
+  },
   setWeightHl: (v) => {
     set({ weightHl: v });
     get().commitLayout();
@@ -462,7 +471,7 @@ export const useUi = create<S>((set, get) => ({
     const { leftWidth, rightWidth, leftCollapsed, rightCollapsed, cols, laneSize, laneHeadW,
       laneHeight, font, aiWidth, aiCollapsed,
       notifyDone, notifySound, notifyVolume, perSlot, curated, agentAuto, agentAskHard,
-      tagSuggest, weightHl, fmView, streamPreview, convertOpenFolder, enhanceLast, convertLast, sizeLast,
+      tagSuggest, artistPrefix, weightHl, fmView, streamPreview, convertOpenFolder, enhanceLast, convertLast, sizeLast,
       laneSide, laneWidth, laneHeadH, view } = get();
     try {
       localStorage.setItem(
@@ -487,6 +496,7 @@ export const useUi = create<S>((set, get) => ({
           agentAuto,
           agentAskHard,
           tagSuggest,
+          artistPrefix,
           weightHl,
           fmView,
           streamPreview,

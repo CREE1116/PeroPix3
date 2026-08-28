@@ -118,7 +118,8 @@ export function useTagSuggest(
     // ★표기를 여기서 바꾸지 않는다 — 밑줄·띄어쓰기를 같게 보는 자리는 `searchTags` 하나다
     //   (예전에는 여기서 띄어쓰기를 밑줄로 바꿔, 띄어쓰기 표기의 태그가 안 걸렸다)
     if (word.length < 2) return close();
-    const found = searchTags(word);
+    // ★작가에 `artist:` 를 달지는 설정이 정한다 (`useUi.artistPrefix`)
+    const found = searchTags(word, 15, { artistPrefix: useUi.getState().artistPrefix });
     if (!found.length) return close();
     setItems(found);
     setSel(0);

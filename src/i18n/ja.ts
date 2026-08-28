@@ -477,6 +477,8 @@ export const ja: Dict = {
     weightHl: "強調の色分け",
     tagSuggest: "タグ自動補完",
     tagSuggestHint: "入力中に Danbooru タグを提案します。切ると Enter・Esc はブロック編集側に戻ります。",
+    artistPrefix: "作者タグに artist: を付ける",
+    artistPrefixHint: "候補から作者を選ぶと artist:名前 の形で入ります。切ると辞書の名前がそのまま入ります。",
     about: "アプリ情報",
     log: "ログを開く",
     logHint: "不具合のときはこのファイルをお送りください (logs/peropix.log)",
