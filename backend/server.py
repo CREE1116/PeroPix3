@@ -233,21 +233,38 @@ def _split_records() -> None:
 
 _split_records()
 
+#: ★★**임포트만으로 사용자 데이터를 고치지 않게 하는 스위치** (실사고 2026-08-28).
+#   아래 이전들은 모듈을 **임포트하는 것만으로** 돈다 — 그런데 판정 하나가(`test_workspace`)
+#   서버를 임포트해서, 판정을 돌린 것만으로 **실제 워크스페이스 전량에 이전이 돌았다.**
+#   판정은 이 값을 켜고 임포트한다 (`PEROPIX_SKIP_MIGRATIONS=1`).
+_SKIP_MIGRATIONS = bool(os.environ.get("PEROPIX_SKIP_MIGRATIONS"))
+
 # ★★**낱말 이전이 먼저다** (2026-08-24). 아래 이전들은 spec 을 열어 고치는데, 그것들이
 #   새 열쇠(`tabs`=탭 · `sets`=세트)를 전제하기 때문이다. 순서를 바꾸면 옛 모양 위에
 #   새 규칙을 얹게 된다 (`migrate_terms.py` 머리 주석).
-for _line in migrate_terms.run(WS_ROOT):
+for _line in (migrate_terms.run(WS_ROOT) if not _SKIP_MIGRATIONS else []):
     print(_line)
 
-for _line in migrate_thumbs.run(cards, store, pins):
+# ★★색인과 곁파일을 잇는 **열쇠**를 옛 줄에 달아 준다 (사용자 승인 2026-08-28, 한 번만 돈다).
+#   그 뒤로는 그림을 옮기거나 이름을 바꿔도 100MB 곁파일을 안 건드린다 (`Store.ensure_keys`).
+for _d in sorted(WS_ROOT.iterdir()) if WS_ROOT.is_dir() and not _SKIP_MIGRATIONS else []:
+    if _d.is_dir() and not _d.name.startswith("."):
+        try:
+            _n = store.ensure_keys(_d.name)
+            if _n:
+                print(f"[열쇠 이전] {_d.name}: {_n}줄")
+        except Exception as _e:            # ★한 워크스페이스가 실패해도 앱은 뜬다
+            print(f"[열쇠 이전] {_d.name}: 실패 ({_e})")
+
+for _line in (migrate_thumbs.run(cards, store, pins) if not _SKIP_MIGRATIONS else []):
     print(f"[썸네일 이전] {_line}")
 
 # ★휴지통은 **켤 때** 비운다 (종료 때가 아니라 — 강제 종료에서는 안 돈다, trash.py 머리 주석)
 # ★★뿌리가 넷이다 (2026-08-18, D7): 워크스페이스(+`workspaces/` 자체) · 보관함 ·
 #   바이브 캐시 · 카드 · 대화. 한 곳만 비우면 나머지 휴지통이 영영 쌓인다.
-for _batch in trash.sweep(WS_ROOT):
+for _batch in (trash.sweep(WS_ROOT) if not _SKIP_MIGRATIONS else []):
     print(f"[휴지통 비움] {_batch}")
-for _root in (DATA_DIR / "cards", DATA_DIR / "chats", DATA_DIR / "vibe-cache"):
+for _root in ((DATA_DIR / "cards", DATA_DIR / "chats", DATA_DIR / "vibe-cache") if not _SKIP_MIGRATIONS else ()):
     for _batch in trash.sweep_at(_root):
         print(f"[휴지통 비움] {_root.name}/{_batch}")
 

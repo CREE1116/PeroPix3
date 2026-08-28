@@ -545,6 +545,18 @@ class Store:
     #: 바이트 판 — 줄 하나가 수십 KB 라 **풀지 않고** 경로만 꺼낸다 (`_rewrite_paths` 의 ★★주)
     _FILE_KEY_B = b'"file": "'
 
+    _KEY_KEY_B = b'"key": "'
+
+    @classmethod
+    def _key_of_bytes(cls, raw: bytes) -> bytes | None:
+        """줄에서 **열쇠**만 꺼낸다 (없으면 `None` — 이전 전의 옛 줄이다)."""
+        i = raw.find(cls._KEY_KEY_B)
+        if i < 0:
+            return None
+        i += len(cls._KEY_KEY_B)
+        j = raw.find(b'"', i)
+        return raw[i:j] if j > 0 else None
+
     @classmethod
     def _file_of_bytes(cls, raw: bytes) -> bytes | None:
         i = raw.find(cls._FILE_KEY_B)
@@ -568,11 +580,12 @@ class Store:
         """색인과 곁파일의 `file` 을 새 경로로 바꾼다 (`renumber`·`move_scene_group`).
 
         ★`patch` 를 주면 그 줄에 값을 함께 심는다 (세트 이름이 바뀌었을 때).
-        ★★**바이트로 훑는다** (2026-08-28). 곁파일은 100MB를 넘고(실측 112MB) 줄 하나가 수십 KB
-          라, 글자로 풀었다가 다시 담으면 **바뀌지 않는 줄에도** 그 비용이 든다. 바뀌는 줄만
-          풀고 나머지는 바이트 그대로 흘려 쓴다.
-          ★한때 「이정표만 덧붙이기」로 아예 안 쓰게 해 봤다가 되돌렸다 — 이름이 재사용되면
-            이정표가 모호해진다 (`heavy_of` 의 ★★주).
+        ★★**곁파일은 안 건드린다** (사용자 승인 2026-08-28). 두 파일을 잇는 것이 경로가 아니라
+          `key` 라, 경로가 바뀌어도 곁파일은 그대로 맞다 (`append_record` 의 ★★주).
+          실측: 그림 740장 옮기기가 954ms → 곁파일을 빼면 색인만 남아 훨씬 싸다.
+          ★**열쇠가 없는 옛 줄**이 섞여 있으면 그 줄들만 곁파일에서도 고친다 (이전 전의 데이터).
+        ★★**바이트로 훑는다**. 줄 하나가 수십 KB 라, 글자로 풀었다가 다시 담으면 바뀌지 않는
+          줄에도 그 비용이 든다. 바뀌는 줄만 풀고 나머지는 바이트 그대로 흘려 쓴다.
 
         ★append-only 인 파일을 **통째로 다시 쓰는** 유일한 자리다. 그래서 임시 파일에 쓴 뒤
           바꿔치기한다 — 쓰다 죽어도 앞의 것이 남는다.
@@ -585,7 +598,10 @@ class Store:
         """
         d = self.dir_of(ws)
         hit = {k.encode("utf-8") for k in moves}
-        for name in (RECORDS_NAME, ENV_NAME):
+        keyless: set[bytes] = set()       # 열쇠가 없어 곁파일도 고쳐야 하는 옛 줄
+        names = [RECORDS_NAME]
+        while names:
+            name = names.pop(0)
             p = d / name
             if not p.is_file():
                 continue
@@ -598,6 +614,8 @@ class Store:
                     if f is not None and f in hit:
                         try:
                             row = json.loads(raw.decode("utf-8"))
+                            if name == RECORDS_NAME and not row.get("key"):
+                                keyless.add(f)     # ★이 줄은 경로로만 이어져 있다
                             row["file"] = moves[f.decode("utf-8")]
                             if patch and name == RECORDS_NAME:
                                 row.update(patch)
@@ -609,19 +627,28 @@ class Store:
             # ★임시 파일을 **바꿔치기**한다 — 지우는 연산을 이 파일에 두지 않는다
             #   (`test_output_safety` 가 그것을 지킨다: 생성물은 사람이 지울 때만 사라진다).
             self._replace(tmp, p)
+            if name == RECORDS_NAME and keyless:
+                hit = keyless             # ★옛 줄만 골라 곁파일도 고친다 (위 ★주)
+                names.append(ENV_NAME)
 
     def append_record(self, ws: str, rec: dict) -> None:
         """레코드 한 줄. ★무거운 것은 **곁파일로 갈라** 적는다 (`ENV_NAME` 머리 주석).
 
         ★순서가 안전장치다: **곁파일을 먼저** 적는다. 거꾸로 하면 그 사이에 죽었을 때
           색인에는 있는데 무거운 것이 없는 그림이 생긴다 (「새 탭으로 복제」가 조용히 빈손이 된다).
-          반대로 곁파일만 남는 것은 해가 없다 — 아무도 안 찾는 줄일 뿐이다."""
+          반대로 곁파일만 남는 것은 해가 없다 — 아무도 안 찾는 줄일 뿐이다.
+        ★★**두 줄을 잇는 것은 `key` 다** (사용자 승인 2026-08-28). 예전에는 **경로**로 이었는데,
+          그림을 옮기거나 이름을 바꿀 때마다 100MB 곁파일을 통째로 다시 써야 했고(실측 0.44초),
+          안 쓰면 이름 재사용 때문에 조용히 어긋났다 (`heavy_of` 의 ★★주). 열쇠는 안 바뀌므로
+          옮길 때 **색인만** 고치면 된다 (600KB · 0.01초)."""
         d = self.dir_of(ws)
         d.mkdir(parents=True, exist_ok=True)
         heavy = {k: rec[k] for k in HEAVY_KEYS if rec.get(k) is not None}
+        key = str(rec.get("key") or uuid.uuid4().hex[:12])
+        rec = {**rec, "key": key}
         if heavy:
             with (d / ENV_NAME).open("a", encoding="utf-8") as f:
-                f.write(json.dumps({"file": rec.get("file"), **heavy}, ensure_ascii=False) + "\n")
+                f.write(json.dumps({"key": key, "file": rec.get("file"), **heavy}, ensure_ascii=False) + "\n")
         light = {k: v for k, v in rec.items() if k not in HEAVY_KEYS}
         with (d / RECORDS_NAME).open("a", encoding="utf-8") as f:
             f.write(json.dumps(light, ensure_ascii=False) + "\n")
@@ -656,31 +683,125 @@ class Store:
         ★찾는 자리는 곁파일이고, **뒤에서부터** 본다 (같은 경로가 여러 번 적혔으면 마지막 것).
         ★파싱하기 전에 **경로 문자열이 그 줄에 있는지**부터 본다 — 줄 하나가 수십 KB 라
           전부 파싱하면 느리다.
-        ★★**곁파일의 `file` 은 언제나 지금 경로다.** 그림이 옮겨지거나 이름이 바뀌면 이 파일을
-          **그때 다시 쓴다** (`_rewrite_paths`).
-          ★한때 「이정표 한 줄만 덧붙이고 되짚기」로 바꿔 봤다가 되돌렸다 (스트레스 2026-08-28).
-            개명·옮기기로 **비워진 이름을 다른 그림이 다시 가져가기** 때문에, 경로만으로는 그
-            이정표가 어느 그림의 것인지 가릴 수 없다 — 남의 이정표에 걸려 환경을 못 찾았다.
-            빠르기는 **다시 쓰는 방식을 바이트 단위로** 만들어 되찾았다 (같은 주 참조).
+        ★★**두 파일을 잇는 것은 `key` 다** (사용자 승인 2026-08-28, `append_record` 의 ★★주).
+          경로로 이으면 그림을 옮길 때마다 100MB 를 다시 써야 하고, 안 쓰면 **비워진 이름을 다른
+          그림이 다시 가져가** 조용히 어긋난다 (스트레스 2026-08-28이 잡았다).
+        ★열쇠가 없는 옛 줄은 **경로로** 찾는다 — 이전(`ensure_keys`)이 돌기 전이나, 옛 백업을
+          되돌린 파일이 그렇다.
         ★곁파일에 없으면 색인의 옛 줄을 되짚는다 (쪼개지기 전에 적힌 그림)."""
         d = self.dir_of(ws)
+        key = self.key_of(ws, file)
+        # ★★**바이트로 훑는다** — 곁파일은 100MB 를 넘는다 (실측 112MB). 글자로 풀어 목록에 담으면
+        #   그것만으로 0.5초가 든다. 맞는 줄 **하나만** 풀면 된다.
+        want_key = f'"key": "{key}"'.encode("utf-8") if key else None
+        want_file = f'"file": "{file}"'.encode("utf-8")
         for name in (ENV_NAME, RECORDS_NAME):
             p = d / name
             if not p.exists():
                 continue
-            for ln in reversed(p.read_text(encoding="utf-8").splitlines()):
-                if file not in ln:
+            # ★★**무거운 것이 든 줄**만 센다 (마지막이 이긴다). 열쇠는 같은데 내용이 없는 줄이
+            #   섞일 수 있다 — 옛 판이 남긴 자국이나 손으로 넣은 줄. 그런 줄이 마지막이라고
+            #   해서 진짜 줄을 가리면 안 된다 (실사례 2026-08-28: 되돌린 실험이 남긴 1,022줄).
+            by_key = by_file = None
+            with p.open("rb") as f:
+                for raw in f:
+                    if not (b'"env"' in raw or b'"resolved"' in raw):
+                        continue
+                    if want_key and want_key in raw:
+                        by_key = raw
+                    elif want_file in raw:
+                        by_file = raw
+            for raw in (by_key, by_file):
+                if raw is None:
                     continue
                 try:
-                    r = json.loads(ln)
+                    r = json.loads(raw.decode("utf-8"))
                 except Exception:
                     continue
-                if r.get("file") != file:
+                # ★열쇠가 있는 줄은 **열쇠로만** 잡는다 — 경로가 같아도 남의 줄일 수 있다
+                if raw is by_key:
+                    if r.get("key") != key:
+                        continue
+                elif r.get("file") != file or r.get("key"):
                     continue
                 got = {k: r[k] for k in HEAVY_KEYS if r.get(k) is not None}
                 if got:
                     return got
         return {}
+
+    def key_of(self, ws: str, file: str) -> str | None:
+        """그 그림의 **열쇠** — 색인에서 찾는다 (없으면 `None`, 옛 줄이다).
+        ★색인은 작다 (실측 600KB · 줄당 211B) — 곁파일(100MB)을 훑는 것과 값이 다르다."""
+        p = self.dir_of(ws) / RECORDS_NAME
+        if not p.exists():
+            return None
+        want = f'"file": "{file}"'.encode("utf-8")
+        last = None
+        with p.open("rb") as f:
+            for raw in f:
+                if want in raw:
+                    last = raw            # ★같은 경로가 여럿이면 **마지막 것**이 지금 그림이다
+        if last is None:
+            return None
+        try:
+            r = json.loads(last.decode("utf-8"))
+        except Exception:
+            return None
+        k = r.get("key")
+        return str(k) if r.get("file") == file and k else None
+
+    def ensure_keys(self, ws: str) -> int:
+        """옛 줄에 **열쇠를 달아 준다** — 한 번만 돈다 (사용자 승인 2026-08-28).
+
+        색인과 곁파일을 경로로 맞대어 같은 열쇠를 심는다. 그 뒤로는 옮기거나 이름을 바꿔도
+        곁파일을 안 건드린다 (`_rewrite_paths`).
+        ★**줄을 버리지 않는다** — 못 읽는 줄은 그대로 흘려 쓴다. 임시 파일에 쓰고 바꿔치기한다.
+        ★색인에 없는 곁줄(옛 그림의 잔여)은 제 열쇠를 새로 받는다 — 아무도 안 찾지만 버리지 않는다.
+        ★이미 다 달려 있으면 아무 파일도 안 쓴다 (0 을 돌려준다)."""
+        d = self.dir_of(ws)
+        idx, env = d / RECORDS_NAME, d / ENV_NAME
+        if not idx.is_file():
+            return 0
+        rows = idx.read_text(encoding="utf-8").splitlines()
+        by_path: dict[str, str] = {}
+        out, added = [], 0
+        for ln in rows:
+            if not ln.strip():
+                continue
+            try:
+                r = json.loads(ln)
+            except Exception:
+                out.append(ln)
+                continue
+            if not r.get("key"):
+                r["key"] = uuid.uuid4().hex[:12]
+                added += 1
+            by_path[str(r.get("file") or "")] = str(r["key"])
+            out.append(json.dumps(r, ensure_ascii=False))
+        env_out, env_added = [], 0
+        if env.is_file():
+            for ln in env.read_text(encoding="utf-8").splitlines():
+                if not ln.strip():
+                    continue
+                try:
+                    r = json.loads(ln)
+                except Exception:
+                    env_out.append(ln)
+                    continue
+                if not r.get("key"):
+                    r = {"key": by_path.get(str(r.get("file") or "")) or uuid.uuid4().hex[:12], **r}
+                    env_added += 1
+                env_out.append(json.dumps(r, ensure_ascii=False))
+        if not added and not env_added:
+            return 0
+        with self.locked(ws):
+            for p, lines in ((idx, out), (env, env_out)):
+                if not lines:
+                    continue
+                tmp = p.with_suffix(p.suffix + ".tmp")
+                tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                self._replace(tmp, p)
+        return added + env_added
 
     def split_records(self, ws: str) -> int:
         """색인에 남아 있는 무거운 것을 곁파일로 옮긴다. 옮긴 줄 수를 돌려준다.
@@ -706,8 +827,10 @@ class Store:
             heavy = {k: r[k] for k in HEAVY_KEYS if r.get(k) is not None}
             if heavy:
                 moved += 1
+                # ★열쇠로 잇는다 (`append_record` 의 ★★주) — 여기서 처음 달아 준다
+                r["key"] = str(r.get("key") or uuid.uuid4().hex[:12])
                 heavy_lines.append(
-                    json.dumps({"file": r.get("file"), **heavy}, ensure_ascii=False))
+                    json.dumps({"key": r["key"], "file": r.get("file"), **heavy}, ensure_ascii=False))
                 r = {k: v for k, v in r.items() if k not in HEAVY_KEYS}
             light_lines.append(json.dumps(r, ensure_ascii=False))
         if not moved:
@@ -1046,10 +1169,19 @@ class Store:
         #   ★★곁파일은 **줄을 통째로 옮긴다** (워크스페이스가 갈리므로 이정표로는 못 따라간다).
         #     같은 워크스페이스 안의 옮기기(`move_scene_group`·`renumber`)와 다른 점이다.
         #   ★바이트로 훑는다 — 곁파일은 100MB를 넘고 줄 하나가 수십 KB 다 (`_rewrite_paths` 의 ★★주).
+        #   ★★곁줄은 **열쇠로** 고른다. 같은 워크스페이스 안의 옮기기·개명은 곁파일을 안 건드리므로
+        #     (`append_record` 의 ★★주) 거기 적힌 경로는 **옛것일 수 있다** — 경로로 고르면 그 줄을
+        #     못 찾아 환경이 주는 쪽에 남는다 (스트레스 2026-08-28이 잡았다). 열쇠가 없는 옛 줄만
+        #     경로로 고른다.
         sd = self.dir_of(src_ws)
         dd = self.dir_of(dst_ws)
         dd.mkdir(parents=True, exist_ok=True)
         hit = {k.encode("utf-8") for k in moves}
+        by_key: dict[bytes, str] = {}
+        for r in mine:
+            k, f = r.get("key"), str(r.get("file") or "")
+            if k and f in moves:
+                by_key[str(k).encode("utf-8")] = moves[f]
         for name in (ENV_NAME, RECORDS_NAME):
             p = sd / name
             if not p.is_file():
@@ -1060,10 +1192,14 @@ class Store:
                     if not line.strip():
                         continue
                     f = self._file_of_bytes(line)
-                    if f is not None and f in hit:
+                    k = self._key_of_bytes(line)
+                    to = by_key.get(k) if k else None
+                    if to is None and f is not None and f in hit and (k is None or name == RECORDS_NAME):
+                        to = moves[f.decode("utf-8")]
+                    if to is not None:
                         try:
                             row = json.loads(line.decode("utf-8"))
-                            row["file"] = moves[f.decode("utf-8")]
+                            row["file"] = to
                             for k in ("scene_group_id", "cell_id"):
                                 if row.get(k) in remap:
                                     row[k] = remap[row[k]]
