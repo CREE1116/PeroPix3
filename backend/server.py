@@ -1103,7 +1103,8 @@ async def get_workspace(ws: str):
     # ★★무거운 것은 목록에서 뺀다 — `resolved`(그때 나간 페이로드, 바이브·베이스 그림의
     #   base64 가 들어 있다)와 `env`(화면 구조 스냅샷)다. **둘 다 화면이 목록에서 안 읽는다.**
     #   필요할 때 한 장씩 `/api/workspaces/{ws}/env` 로 가져간다.
-    return {"spec": spec, "records": await asyncio.to_thread(lambda: [_light(r) for r in store.records(ws)])}
+    # ★파일이 없는 줄은 뺀다 (`Store.live_records` 의 ★★주) — 지운 그림의 목록을 따로 두지 않는다
+    return {"spec": spec, "records": await asyncio.to_thread(lambda: [_light(r) for r in store.live_records(ws)])}
 
 
 @app.put("/api/workspaces/{ws}")

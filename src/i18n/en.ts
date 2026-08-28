@@ -783,7 +783,6 @@ export const en = {
     undoBlockOn: "toggling a block",
     undoText: "text edit",
     undoImages: "image deletion",
-    undoHidden: "hiding images",
     undoStar: "Star undone",
   },
 

@@ -781,7 +781,6 @@ export const ja: Dict = {
     undoBlockOn: "ブロックの切り替え",
     undoText: "テキスト編集",
     undoImages: "画像削除",
-    undoHidden: "画像を隠す",
     undoStar: "星を戻しました",
   },
 

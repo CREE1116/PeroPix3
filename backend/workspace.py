@@ -43,6 +43,12 @@ RECORDS_NAME = "records.jsonl"
 ENV_NAME = "records-env.jsonl"
 #: 색인에서 빼고 곁파일로 보내는 필드
 HEAVY_KEYS = ("resolved", "env")
+#: ★★**별표의 이력** (사용자 결정 2026-08-28). 별표는 `workspace.json` 한 곳에만 적혀서, 그 파일이
+#:  덮어써지면(실사고 2026-08-28: 다른 워크스페이스의 spec 이 이 이름으로 저장됐다) 되살릴 재료가
+#:  없었다. 저장할 때 별표 목록이 **바뀌었을 때만** 한 줄 덧붙인다 — 되돌릴 때는 마지막 줄을 본다.
+#:  ★spec 통째 사본(`.bak/`)을 걷어낸 까닭(`save` 의 ★★주)을 피한다: 타이핑 중 저장에는 별표가
+#:    안 바뀌므로 줄이 안 는다.
+STARS_NAME = "stars.jsonl"
 #: 쪼개기 전 원본을 한 번 남긴다 (지워도 앱은 돈다 — 되살릴 때만 쓴다)
 PRESPLIT_NAME = "records-before-split.jsonl"
 OUT_DIR = "output"     # 생성물이 사는 곳 (사용자 결정 2026-08-08)
@@ -260,7 +266,32 @@ class Store:
             tmp = d / (SPEC_NAME + ".tmp")
             tmp.write_text(json.dumps(spec, ensure_ascii=False, indent=2), encoding="utf-8")
             self._replace(tmp, d / SPEC_NAME)
+            self._note_stars(d, spec)
         return spec
+
+    @staticmethod
+    def _note_stars(d: Path, spec: dict) -> None:
+        """별표 목록이 마지막 줄과 다르면 `stars.jsonl` 에 덧붙인다 (`STARS_NAME` 의 ★★주).
+        ★비교는 **집합**이다 — 경로만 갈아 끼워도(개명·옮기기) 줄이 는다. 그것도 이력이다."""
+        starred = (spec.get("selection") or {}).get("starred")
+        if not isinstance(starred, list):
+            return
+        p = d / STARS_NAME
+        last: list = []
+        if p.is_file():
+            try:
+                lines = p.read_bytes().splitlines()
+                if lines:
+                    last = json.loads(lines[-1].decode("utf-8")).get("starred") or []
+            except Exception:
+                last = []
+        elif not starred:
+            return                              # 별표가 한 번도 없었다 — 파일을 만들 까닭이 없다
+        if set(map(str, last)) == set(map(str, starred)):
+            return
+        row = {"ts": datetime.now().isoformat(timespec="seconds"), "starred": starred}
+        with p.open("ab") as f:
+            f.write(json.dumps(row, ensure_ascii=False).encode("utf-8") + b"\n")
 
     def rename(self, old: str, new: str) -> str:
         a, b = self.dir_of(old), self.dir_of(new)
@@ -677,6 +708,17 @@ class Store:
             out.append(r)
         return out
 
+    def live_records(self, ws: str) -> list[dict]:
+        """색인 중 **파일이 지금 있는 줄**만 — 화면에 주는 목록은 이것이다 (사용자 결정 2026-08-28).
+
+        ★★예전에는 지운 그림을 spec 의 `selection.deleted` 에 **경로로 적어 두고** 화면이 걸렀다.
+          그 목록은 「파일이 없다」는 사실을 베껴 적은 것이라(실측: 1,446개 전부 파일 없음, 어긋남 0),
+          spec 이 덮어써지면 1,441건을 손으로 다시 채워야 했다 (실사고 2026-08-28). 파일의 존재가
+          정본이면 베낄 것도, 어긋날 것도 없다 — 휴지통에서 꺼내면 그대로 다시 보인다.
+        ★실측 256ms (2,647줄, 존재 검사 한 번씩). 부르는 쪽은 스레드로 돈다 (`server.py` 의 규칙)."""
+        d = self.dir_of(ws)
+        return [r for r in self.records(ws) if (d / str(r.get("file") or "")).is_file()]
+
     def heavy_of(self, ws: str, file: str) -> dict:
         """그 그림의 **무거운 것**(`resolved`·`env`). 없으면 빈 것.
 
@@ -983,48 +1025,39 @@ class Store:
     # ── 별표·숨김은 그림을 따라간다 ───────────────────────────
     @staticmethod
     def _carry_selection(spec: dict, moves: dict[str, str]) -> None:
-        """비파괴 선별(별표·숨김)의 경로를 새 경로로 갈아 끼운다.
+        """별표의 경로를 새 경로로 갈아 끼운다.
 
         ★★**경로로 적혀 있어서 옮기면 조용히 풀린다** (사용자 지적 2026-08-28: *"씬끼리 옮길 땐
-          별표 데이터가 유지되는데, 다른 탭으로 보내면 사라짐"*). 별표는 「별표만 보기」에서
-          그림이 사라져 보이고, 숨김은 **숨긴 그림이 되살아난다** — 뒤쪽이 더 나쁘다.
-        ★개명(`renumber`)에서는 화면이 같은 일을 한다 (`store/workspace.ts` 의 `runRenumber`)."""
+          별표 데이터가 유지되는데, 다른 탭으로 보내면 사라짐"*) — 「별표만 보기」에서 그림이
+          사라져 보인다.
+        ★개명(`renumber`)에서는 화면이 같은 일을 한다 (`store/workspace.ts` 의 `runRenumber`).
+        ★지운 그림의 목록(`deleted`)은 더 없다 — 파일의 존재가 정본이다 (`live_records`)."""
         sel = spec.get("selection")
         if not isinstance(sel, dict) or not moves:
             return
-        for k in ("starred", "deleted"):
-            v = sel.get(k)
-            if isinstance(v, list):
-                sel[k] = [moves.get(str(f), f) for f in v]
+        v = sel.get("starred")
+        if isinstance(v, list):
+            sel["starred"] = [moves.get(str(f), f) for f in v]
 
     @staticmethod
     def _hand_selection(src: dict, dst: dict, moves: dict[str, str]) -> None:
-        """워크스페이스를 건너갈 때 — 그 그림들의 선별을 **받는 쪽으로 넘긴다**.
-
-        ★주는 쪽에서 빼지 않으면 없는 경로가 남고, 받는 쪽에 넣지 않으면 숨긴 그림이 되살아난다.
-        ★받는 쪽에 `selection` 이 없으면 세운다 — 화면은 `deleted` 가 **늘 있다고 보고** 읽는다
-          (`store/workspace.ts` 의 `isDeleted`)."""
+        """워크스페이스를 건너갈 때 — 그 그림들의 별표를 **받는 쪽으로 넘긴다**.
+        ★주는 쪽에서 빼지 않으면 없는 경로가 남고, 받는 쪽에 넣지 않으면 별이 풀린다."""
         ssel = src.get("selection")
         if not isinstance(ssel, dict) or not moves:
             return
-        go: dict[str, list[str]] = {}
-        for k in ("starred", "deleted"):
-            v = ssel.get(k)
-            if not isinstance(v, list):
-                continue
-            ssel[k] = [f for f in v if str(f) not in moves]
-            got = [moves[str(f)] for f in v if str(f) in moves]
-            if got:
-                go[k] = got
-        if not go:
+        v = ssel.get("starred")
+        if not isinstance(v, list):
+            return
+        ssel["starred"] = [f for f in v if str(f) not in moves]
+        got = [moves[str(f)] for f in v if str(f) in moves]
+        if not got:
             return
         dsel = dst.get("selection")
         if not isinstance(dsel, dict):
             dsel = dst["selection"] = {}
-        dsel.setdefault("deleted", [])
-        for k, got in go.items():
-            cur = dsel.get(k) if isinstance(dsel.get(k), list) else []
-            dsel[k] = cur + [g for g in got if g not in cur]
+        cur = dsel.get("starred") if isinstance(dsel.get("starred"), list) else []
+        dsel["starred"] = cur + [g for g in got if g not in cur]
 
     # ── 씬 그룹을 같은 워크스페이스의 다른 탭으로 ──────────────
     def move_scene_group(self, ws: str, group_id: str, to_tab_id: str, fill: dict | None = None) -> dict:
@@ -1107,7 +1140,7 @@ class Store:
         if spec.get("activeSceneGroup") == group_id and spec.get("activeTab") == src_tab:
             spec["activeSceneGroup"] = left[0]["id"] if left else new_id
         self.save(ws, spec)
-        return {"ok": True, "moved": len(moves), "spec": spec, "records": self.records(ws)}
+        return {"ok": True, "moved": len(moves), "spec": spec, "records": self.live_records(ws)}
 
     # ── 탭을 다른 워크스페이스로 ─────────────────────────────
     def move_tab(self, src_ws: str, tab_id: str, dst_ws: str, fill: dict | None = None) -> dict:
@@ -1281,7 +1314,7 @@ class Store:
             src["activeSceneGroup"] = pick.get("id") if pick else ""
         self.save(src_ws, src)
         return {"ok": True, "moved": len(moves), "tab_id": tab["id"], "spec": src,
-                "records": self.records(src_ws)}
+                "records": self.live_records(src_ws)}
 
     # ── 새 탭으로 복제 ────────────────────────────────────────
     def copy_to_scene_group(

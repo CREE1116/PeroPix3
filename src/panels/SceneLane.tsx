@@ -60,7 +60,7 @@ const GAP = 6;
 export function SceneLane() {
   const t = useI18n((s) => s.t);
   const base = useGen((g) => g.base);
-  const { records, current: ws, activeSceneGroup, isDeleted, isStarred, toggleStar,
+  const { records, current: ws, activeSceneGroup, isStarred, toggleStar,
     patchSceneGroup, setCard, addCard, removeCard, addSlot, moveScene, moveCard } = useWs();
   const pending = useQueue((s) => s.pending);
   const laneSize = useUi((u) => u.laneSize);
@@ -582,13 +582,11 @@ export function SceneLane() {
   const cells = allCells(tab);
   const all = withPreviews(records, ws, previews);
   const takesOfCell = (c: Slot) =>
-    takesOfScene(all, tab, cells, c)
-      .filter((r) => !isDeleted(r.file))
-      .filter((r) => !starOnly || isStarred(r.file));
+    takesOfScene(all, tab, cells, c).filter((r) => !starOnly || isStarred(r.file));
   /** 별을 단 장이 **몇 개인가** — 거르기 전 목록에서 센다 (거른 뒤에 세면 늘 전부다).
    *  ★단추에 적어 두는 까닭: 0 이면 눌러도 화면이 비므로, 누르기 전에 알아야 한다. */
   const starCount = cells.reduce(
-    (n, c) => n + takesOfScene(all, tab, cells, c).filter((r) => !isDeleted(r.file) && isStarred(r.file)).length,
+    (n, c) => n + takesOfScene(all, tab, cells, c).filter((r) => isStarred(r.file)).length,
     0,
   );
 

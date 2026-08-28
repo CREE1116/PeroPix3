@@ -25,7 +25,6 @@ export function visibleTakes(cellId: string): Rec[] {
   /* ★거르기는 **여기 하나**다 — 줄·큰 그림·다음 장 고르기가 전부 이 목록을 본다 */
   const starOnly = useUi.getState().laneStarOnly;
   return takesOfScene(all, tab, allCells(tab), cell)
-    .filter((r) => !ws.isDeleted(r.file))
     .filter((r) => !starOnly || ws.isStarred(r.file))
     .sort(newestFirst);
 }

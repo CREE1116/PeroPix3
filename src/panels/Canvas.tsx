@@ -542,7 +542,7 @@ function ScenePreview() {
   const startDrag = useDragSource();
   const { base } = useGen();
   const ws = useWs((s) => s.current);
-  const { records, activeSceneGroup, isDeleted, isStarred } = useWs();
+  const { records, activeSceneGroup, isStarred } = useWs();
   /** ★씨 줄과 **같은 거르기**를 건다 — 줄에서 안 보이는 장이 휠로
    *  넘어오면 둘이 어긋난다 (`lib/sceneTakes` 의 거르기와 같은 규칙) */
   const starOnly = useUi((u) => u.laneStarOnly);
@@ -576,7 +576,6 @@ function ScenePreview() {
   const shown =
     sceneSet && scene
       ? [...takesOfScene(merged, sceneSet, allCells(sceneSet), scene.cell)]
-          .filter((r) => !isDeleted(r.file))
           .filter((r) => !starOnly || isStarred(r.file))
           .reverse()
       : [];

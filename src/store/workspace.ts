@@ -243,8 +243,11 @@ export type Spec = {
   /** ★★**비파괴 선별** — 지움과 별표 두 갈래다. 별표는 2026-08-22 에 사용자 지시로
    *  걷었다가 2026-08-25 에 되살렸다 (*"씬 히스토리에서 별표 표시하는 거랑 별표만 보기
    *  기능 다시 되살려 줘"*). 갤러리(보관함)의 별표와는 **다른 것**이다 — 그쪽은 서버가
-   *  들고(`keep.py`) 워크스페이스를 넘나든다. */
-  selection: { deleted: string[]; starred?: string[] };
+   *  들고(`keep.py`) 워크스페이스를 넘나든다.
+   *  ★★**지운 그림의 목록(`deleted`)은 걷었다** (사용자 결정 2026-08-28). 「파일이 없다」는 사실을
+   *    경로로 베껴 적은 것이라 spec 이 덮어써지면 손으로 다시 채워야 했다 — 지금은 서버가 파일이
+   *    없는 줄을 목록에서 빼고 준다 (`Store.live_records`). 옛 파일의 것은 `migrate` 가 뗀다. */
+  selection: { starred?: string[] };
 };
 
 export type WsInfo = { name: string; id?: string | null; updatedAt?: string | null };
@@ -269,20 +272,16 @@ type S = {
   save: () => Promise<void>;
   addRecord: (r: Rec) => void;
 
-  /** ★비파괴 선별 — 파일을 지우지 않고 목록에만 넣는다 (PeroPixfy 의 deletions 방식).
-   *  원본이 살아 있어야 되돌릴 수 있다. */
-  setSelection: (kind: "deleted" | "starred", files: string[], on: boolean) => void;
-  /** 선별을 그때 상태로 되돌린다 — **되돌리기 로그가 담아 둔 길**이다 (`lib/undo`).
+  /** 별표를 여러 장 한 번에 켜고 끈다 (파일은 안 건드린다) */
+  setStars: (files: string[], on: boolean) => void;
+  /** 별표를 그때 상태로 되돌린다 — **되돌리기 로그가 담아 둔 길**이다 (`lib/undo`).
    *  화면에서 직접 부르지 않는다.
    *  ★옛 이름은 `undoSelection` 이었다. 그때는 이 파일이 자기 스택을 들고 있었는데,
    *    스택이 둘이면 부르는 쪽이 순서를 정하게 되고 그것이 곧 엉뚱한 것이 되살아나는 길이었다
    *    (사용자 지시 2026-08-22 로 전역 로그 하나가 됐다 — `lib/undo` 머리 ★★주). */
-  restoreSelection: (
-    kind: "deleted" | "starred",
-    before: string[],
-    trashed?: { file: string; at: string }[],
-  ) => void;
-  toggleDeleted: (file: string) => void;
+  restoreStars: (before: string[]) => void;
+  /** 휴지통에서 **도로 꺼낸다** — `deleteFiles` 의 되돌리기. 줄도 도로 넣는다 (`before` 의 차례로). */
+  restoreFiles: (trashed: TrashEntry[], before: Rec[]) => Promise<void>;
   /** 별표를 켜고 끈다 (씬 히스토리) — ★갤러리의 별표와 다른 자리다 */
   toggleStar: (file: string) => void;
   isStarred: (file: string) => boolean;
@@ -315,7 +314,6 @@ type S = {
   /** ★지우기 = **휴지통으로 이동**. 파일이 실제로 자리에서 없어지고, `Ctrl+Z` 로 되돌아온다.
    *  비우는 것은 앱을 켤 때 (24시간 지난 것) — `backend/trash.py` 머리 주석. */
   deleteFiles: (files: string[], opts?: { undo?: boolean }) => Promise<void>;
-  isDeleted: (file: string) => boolean;
   activeSceneGroup: () => SceneGroup | undefined;
   setActiveSceneGroup: (id: string) => void;
   /** 그 탭(`chars`)의 생성 옵션을 담아 둔다 (`store/gen` 이 부른다) */
@@ -586,12 +584,8 @@ async function runRenumber(
       records: get().records.map((x) => (moves.has(x.file) ? { ...x, file: moves.get(x.file)! } : x)),
       spec: {
         ...now,
-        selection: {
-          ...sel,
-          // ★「지운 것」과 **별표**가 둘 다 경로로 적혀 있다 — 하나만 옮기면 나머지가 풀린다
-          deleted: sel.deleted.map((f) => moves.get(f) ?? f),
-          starred: (sel.starred ?? []).map((f) => moves.get(f) ?? f),
-        },
+        // ★별표는 경로로 적혀 있다 — 안 옮기면 조용히 풀린다
+        selection: { ...sel, starred: (sel.starred ?? []).map((f) => moves.get(f) ?? f) },
       },
     });
     queueSave(get);
@@ -633,7 +627,7 @@ const newSpec = (name: string): Spec => ({
   //   달라서 첫 탭만 「탭 1」이었다. 이름을 짓는 말은 하나면 된다 (`chars.newName`).
   tabs: [{ id: "ch_1", name: t("tab.newName"), prompt: freshPrompt() }],
   activeTab: "ch_1",
-  selection: { deleted: [], starred: [] },
+  selection: { starred: [] },
 });
 
 /** 옛 워크스페이스를 새 구조로 옮긴다 — **탭에 프롬프트가 없으면 spec.prompt 를 씨앗으로.**
@@ -741,7 +735,14 @@ function migrate(spec: Spec): Spec {
     ? spec.activeSceneGroup
     : (mine[0]?.id ?? sets2[0]?.id ?? spec.activeSceneGroup);
   if (activeSceneGroup !== spec.activeSceneGroup) changed = true;
-  return changed ? { ...spec, sceneGroups: sets2, tabs: tabList, activeTab, activeSceneGroup } : spec;
+  /* ★지운 그림의 목록은 걷었다 (2026-08-28, `Spec.selection` 의 ★★주). 옛 파일에 남은 것은 여기서
+     뗀다 — 두면 수십 KB 를 저장마다 끌고 다닌다. */
+  let selection = spec.selection ?? { starred: [] };
+  if ("deleted" in selection) {
+    selection = { starred: selection.starred ?? [] };
+    changed = true;
+  }
+  return changed ? { ...spec, sceneGroups: sets2, tabs: tabList, activeTab, activeSceneGroup, selection } : spec;
 }
 
 /** 선별 되돌리기 스택 — **서버에 저장하지 않는다.**
@@ -1069,66 +1070,68 @@ export const useWs = create<S>((set, get) => ({
        비워진 뒤(24시간)에는 다시 겹칠 수 있다. 그때:
          · 새 레코드를 **버리면** 방금 만든 그림이 화면에 아예 안 뜨고,
          · 옛 그림의 「지움」·「별표」 표식이 **새 그림에 그대로 붙는다.**
-       그 자리에 있는 것은 새 그림이므로 레코드를 갈아 끼우고 표식을 뗀다. */
+       그 자리에 있는 것은 새 그림이므로 레코드를 갈아 끼우고 별표를 뗀다. */
     set({ records: cur.map((x, i) => (i === at ? r : x)) });
     const spec = get().spec;
     if (!spec) return;
-    const { deleted, starred = [] } = spec.selection;
-    if (!deleted.includes(r.file) && !starred.includes(r.file)) return;
-    set({
-      spec: {
-        ...spec,
-        selection: {
-          ...spec.selection,
-          deleted: deleted.filter((f) => f !== r.file),
-          starred: starred.filter((f) => f !== r.file),
-        },
-      },
-    });
+    const starred = spec.selection.starred ?? [];
+    if (!starred.includes(r.file)) return;
+    set({ spec: { ...spec, selection: { ...spec.selection, starred: starred.filter((f) => f !== r.file) } } });
     queueSave(get);
   },
 
-  /** 여러 장을 한 번에 켜고 끈다 — `이것만 남기기`·범위 선택이 쓴다.
+  /** 여러 장을 한 번에 켜고 끈다.
    *
    *  ★한 장씩 `toggle` 을 반복하면 그때마다 spec 이 새로 만들어지고 저장이 예약된다.
    *    20장을 정리하면 스무 번 저장이 나간다. 한 번에 바꾼다. */
-  setSelection(kind, files, on) {
+  setStars(files, on) {
     const spec = get().spec;
     if (!spec || files.length === 0) return;
-    const cur = spec.selection[kind] ?? [];
+    const cur = spec.selection.starred ?? [];
     const touched = new Set(files);
     const next = on
       ? [...cur, ...files.filter((f) => !cur.includes(f))]
       : cur.filter((f) => !touched.has(f));
     if (next.length === cur.length && on) return;
     // ★되돌리는 방법을 **그때 만들어** 로그에 담는다 (`lib/undo`)
-    /* ★문구를 갈라 쓴다 — 별표를 되돌렸는데 「숨김을 되돌렸다」고 하면 무엇을 되돌렸는지가 어긋난다 */
-    pushUndo(t(kind === "starred" ? "common.undoStar" : "common.undoHidden"), () =>
-      get().restoreSelection(kind, cur),
-    );
-    set({ spec: { ...spec, selection: { ...spec.selection, [kind]: next } } });
+    pushUndo(t("common.undoStar"), () => get().restoreStars(cur));
+    set({ spec: { ...spec, selection: { ...spec.selection, starred: next } } });
     queueSave(get);
   },
 
-  /** 선별을 그때 상태로 되돌린다 — 로그가 담아 둔 길이다 (직접 부르지 않는다).
-   *  @param trashed 지운 것이면 **파일도 제자리로** 돌린다 (표시만 되돌리면 깨진 칸이 된다) */
-  restoreSelection(kind, before, trashed) {
+  /** 별표를 그때 상태로 되돌린다 — 로그가 담아 둔 길이다 (직접 부르지 않는다). */
+  restoreStars(before) {
     const spec = get().spec;
     if (!spec) return;
-    set({ spec: { ...spec, selection: { ...spec.selection, [kind]: before } } });
+    set({ spec: { ...spec, selection: { ...spec.selection, starred: before } } });
     queueSave(get);
-    if (trashed?.length) {
-      const ws = get().current;
-      void api(`/api/workspaces/${encodeURIComponent(ws)}/restore`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entries: trashed }),
-      }).catch(() => undefined);
-    }
   },
 
-  toggleDeleted(file) {
-    get().setSelection("deleted", [file], !get().isDeleted(file));
+  async restoreFiles(trashed, before) {
+    const ws = get().current;
+    if (!ws || !trashed.length) return;
+    /* ★그 사이 같은 이름이 생겼으면 휴지통 쪽이 번호를 붙여 꺼낸다 (`trash.restore_at`) — `pairs` 가
+       어디로 갔는지 알려 주므로 줄과 별표를 **새 이름으로** 따라 보낸다 */
+    const r = await api<{ pairs: { file: string; to: string }[] }>(
+      `/api/workspaces/${encodeURIComponent(ws)}/restore`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ entries: trashed }) },
+    );
+    if (get().current !== ws) return;
+    const to = new Map(r.pairs.map((p) => [p.file, p.to]));
+    const cur = get().records;
+    const have = new Set(cur.map((x) => x.file));
+    // ★지우기 전 차례를 지킨다 — 되살린 줄은 제자리에, 그 사이 생긴 줄은 뒤에
+    const back = before
+      .filter((x) => have.has(x.file) || to.has(x.file))
+      .map((x) => (to.has(x.file) ? { ...x, file: to.get(x.file)! } : x));
+    const inBefore = new Set(before.map((x) => x.file));
+    set({ records: [...back, ...cur.filter((x) => !inBefore.has(x.file))] });
+    const spec = get().spec;
+    const starred = spec?.selection.starred ?? [];
+    if (spec && starred.some((f) => to.has(f) && to.get(f) !== f)) {
+      set({ spec: { ...spec, selection: { ...spec.selection, starred: starred.map((f) => to.get(f) ?? f) } } });
+      queueSave(get);
+    }
   },
 
   /** 「새 탭으로 복제」 — 그림 한 장과 **그 그림의 설정**만 담은 새 탭을 만들고 그리로 옮긴다.
@@ -1281,22 +1284,22 @@ export const useWs = create<S>((set, get) => ({
       `/api/workspaces/${encodeURIComponent(current)}/trash`,
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ files }) },
     );
-    // ★목록에서도 뺀다 — 파일은 없어졌지만 레코드는 남아 있어서, 표시를 안 하면 깨진 칸이 된다
-    const cur = spec.selection.deleted;
+    /* ★★**줄을 목록에서 뺀다** — 지운 그림의 목록(`selection.deleted`)은 더 없다 (사용자 결정
+       2026-08-28). 파일의 존재가 정본이라 서버가 주는 목록에는 파일이 없는 줄이 애초에 안 들고
+       (`Store.live_records`), 화면은 그 규칙을 그 자리에서 따라간다. 되돌리면 줄도 돌아온다. */
+    const gone = new Set(files);
+    const before = get().records;
+    set({ records: before.filter((x) => !gone.has(x.file)) });
     /* ★★**되돌릴 수 없는 삭제의 일부면 항목을 안 남긴다** (`undo: false`, 2026-08-25).
        세트·씬을 지우면서 함께 보낸 그림은, `Ctrl+Z` 로 그림만 되살려 봐야 담길 씬이
        이미 없어 **갈 자리 없는 그림**이 된다 (`removeAt` 의 ★★주).
        ★그림 자체는 휴지통에 있으므로 24시간 안에 꺼낼 수 있다 — 잃는 것은 없다. */
     if (opts.undo !== false)
-      pushUndo(t("common.undoImages"), () => get().restoreSelection("deleted", cur, r.moved));
-    const next = [...new Set([...cur, ...files])];
-    set({ spec: { ...spec, selection: { ...spec.selection, deleted: next } } });
-    queueSave(get);
+      pushUndo(t("common.undoImages"), () => void get().restoreFiles(r.moved, before));
   },
-  isDeleted: (file) => !!get().spec?.selection.deleted.includes(file),
 
   toggleStar(file) {
-    get().setSelection("starred", [file], !get().isStarred(file));
+    get().setStars([file], !get().isStarred(file));
   },
 
   /** ★`?? []` — 별표가 없던 시절에 저장된 워크스페이스에는 이 칸이 아예 없다 */
@@ -1774,7 +1777,8 @@ export const useWs = create<S>((set, get) => ({
     const spec = get().spec;
     if (!spec)
       return { kind: target.kind, name: "", files: [], inner: 0, hard: true, zones: [], blocked: "not_found" };
-    return planDelete(spec, get().records, (f) => get().isDeleted(f), target);
+    // ★목록에는 살아 있는 줄만 든다 (`live_records`) — 따로 거를 것이 없다
+    return planDelete(spec, get().records, () => false, target);
   },
 
   async removeAt(target) {

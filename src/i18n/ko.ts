@@ -806,7 +806,6 @@ export const ko: Dict = {
     undoBlockOn: "블록 켜고끄기",
     undoText: "글 편집",
     undoImages: "그림 지우기",
-    undoHidden: "그림 숨기기",
     undoStar: "별표를 되돌렸습니다",
   },
 
