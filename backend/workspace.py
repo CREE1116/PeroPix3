@@ -97,6 +97,22 @@ def file_lead(cell_no: int | None, cell: str | None, exclude_no: bool) -> str:
     return "_".join(x for x in (no, tag) if x)
 
 
+def unique_name(base: str, used) -> str:
+    """새로 서는 이름 — **첫 번째는 그대로, 겹치면 뒤에 2·3…** (사용자 지시 2026-08-28).
+
+    ★규칙의 정본은 화면의 `src/lib/uniqueName.ts` 다 (*"탭, 그룹, 씬, 캐릭터 등등 전부 일관되게"*).
+      여기 한 벌이 더 있는 까닭은 **이름을 짓는 자리가 둘**이기 때문이다: 만들 때는 화면이,
+      옮길 때는 서버가 짓는다. 규칙이 갈리면 같은 이름이 두 폴더로 갈린다.
+    ★비교는 글자 그대로다 — 다듬거나 대소문자를 무시하지 않는다."""
+    taken = set(used)
+    if base not in taken:
+        return base
+    n = 2
+    while f"{base} {n}" in taken:
+        n += 1
+    return f"{base} {n}"
+
+
 class SpecMismatch(ValueError):
     """다른 워크스페이스의 spec 을 이 이름으로 쓰려 했다 (`Store.save` 의 ★★주). 서버는 409 로 돌려준다."""
 
@@ -524,8 +540,11 @@ class Store:
         j = line.find('"', i + len(cls._FILE_KEY))
         return line[i + len(cls._FILE_KEY):j] if j > 0 else None
 
-    def _rewrite_paths(self, ws: str, moves: dict[str, str]) -> None:
-        """색인과 곁파일의 `file` 을 새 경로로 바꾼다 (`renumber` 전용).
+    def _rewrite_paths(self, ws: str, moves: dict[str, str], patch: dict | None = None) -> None:
+        """색인과 곁파일의 `file` 을 새 경로로 바꾼다 (`renumber`·`move_scene_group`).
+
+        ★`patch` 를 주면 그 줄의 **색인 쪽에만** 값을 함께 심는다 (세트 이름이 바뀌었을 때).
+          곁파일 줄에는 `file` 과 무거운 것뿐이라 심을 자리가 없다.
 
         ★append-only 인 파일을 **통째로 다시 쓰는** 유일한 자리다. 그래서 임시 파일에 쓴 뒤
           바꿔치기한다 — 쓰다 죽어도 앞의 것이 남는다.
@@ -551,6 +570,8 @@ class Store:
                         try:
                             row = json.loads(line)
                             row["file"] = moves[f]
+                            if patch and name == RECORDS_NAME:
+                                row.update(patch)
                             fout.write(json.dumps(row, ensure_ascii=False) + "\n")
                             continue
                         except Exception:
@@ -704,7 +725,8 @@ class Store:
         return None
 
     # ── 그림을 다른 자리로 (탭 옮기기·씬 그룹 옮기기가 함께 쓴다) ──
-    def _relocate(self, src_ws: str, rows: list[dict], dst_ws: str, tab_name: str) -> dict[str, str]:
+    def _relocate(self, src_ws: str, rows: list[dict], dst_ws: str, tab_name: str,
+                  group_name: str | None = None) -> dict[str, str]:
         """그 줄들의 그림을 **`<받는 쪽>/output/멀티/<탭>/<세트>/`** 로 옮기고, 옛 경로 → 새 경로 표를 준다.
 
         ★탭을 통째로 옮기는 것(`move_tab`)과 씬 그룹만 옮기는 것(`move_scene_group`)이 여기서는
@@ -715,7 +737,9 @@ class Store:
           새 번호를 받는다.
         ★옮기기 **전에** 자취를 남긴다 (`_track`) — 화면이 새 경로를 받기까지의 틈을 덮는다.
         ★썸네일 캐시도 따라간다 (없으면 다음 요청에 다시 구워진다 — 실패해도 그만이다).
-        ★같은 뿌리 아래라 `rename` 이다 — 바이트를 다시 쓰지 않는다."""
+        ★같은 뿌리 아래라 `rename` 이다 — 바이트를 다시 쓰지 않는다.
+        ★`group_name` 을 주면 **그 이름의 폴더 하나로** 모은다 (씬 그룹 옮기기). 안 주면 줄마다
+          제가 적힌 세트 이름을 쓴다 (탭 옮기기 — 그 탭의 세트가 여럿이라 줄마다 다르다)."""
         moves: dict[str, str] = {}
         names: dict[Path, list[str]] = {}
         for r in rows:
@@ -723,7 +747,7 @@ class Store:
             p = self.file_path(src_ws, rel)
             if not p or not p.is_file():
                 continue
-            d = self.out_dir(dst_ws, str(r.get("scene_group") or ""), tab_name)
+            d = self.out_dir(dst_ws, group_name if group_name is not None else str(r.get("scene_group") or ""), tab_name)
             target = d / p.name
             if target.resolve() == p.resolve():
                 continue                      # ★같은 자리다 (이름이 같은 탭) — 옮길 것이 없다
@@ -766,7 +790,11 @@ class Store:
         ★★그 탭의 **마지막 세트**를 옮기면 그 자리에 빈 세트를 세운다 — 세트가 하나도 없는 탭은
           생성이 불가능하다 (사용자 지시 2026-08-26, `store/workspace.ts` 의 `migrate` 가 여는
           자리에서 메우는 것과 같은 모양이다). 이름은 화면이 `fill` 로 준다 (화면의 언어다).
-        ★받는 탭의 **줄 끝**에 선다 — 끌어다 놓은 것이 어디로 갔는지 눈으로 찾을 수 있어야 한다."""
+        ★받는 탭의 **줄 끝**에 선다 — 끌어다 놓은 것이 어디로 갔는지 눈으로 찾을 수 있어야 한다.
+        ★★**받는 탭에 같은 이름의 세트가 있으면 뒤에 번호를 붙인다** (사용자 제안 2026-08-28).
+          세트 이름도 폴더라, 그대로 두면 그 세트의 그림과 한 폴더에 섞인다. 이름이 바뀌면
+          **색인에 적힌 세트 이름도** 함께 간다 — 폴더와 적힌 이름이 어긋나면 다음 생성이
+          또 다른 폴더로 간다."""
         with self.locked(ws):
             return self._move_group_locked(ws, group_id, to_tab_id, fill)
 
@@ -795,10 +823,18 @@ class Store:
             if r.get("scene_group_id") == group_id
             or (not r.get("scene_group_id") and r.get("scene_group") == g.get("name"))
         ]
-        moves = self._relocate(ws, mine, ws, str(to.get("name") or ""))
-        # ② 경로만 갈아 끼운다 — 같은 워크스페이스라 줄이 오갈 곳이 없고, id 도 그대로다
+        # ★이름이 겹치면 뒤에 번호 (사용자 제안 2026-08-28) — 세트 이름도 폴더라, 그대로 두면
+        #   받는 탭의 같은 이름 세트와 **한 폴더에 섞인다**
+        was = str(g.get("name") or "")
+        name = unique_name(was, [str(x.get("name") or "") for x in groups
+                                 if x.get("tabId") == to_tab_id and x.get("id") != group_id])
+        g["name"] = name
+        moves = self._relocate(ws, mine, ws, str(to.get("name") or ""), name)
+        # ② 경로를 갈아 끼운다 — 같은 워크스페이스라 줄이 오갈 곳이 없고, id 도 그대로다.
+        #   ★이름이 바뀌었으면 색인의 세트 이름도 함께 — 폴더와 적힌 이름이 어긋나면 다음 생성이
+        #     또 다른 폴더로 간다
         if moves:
-            self._rewrite_paths(ws, moves)
+            self._rewrite_paths(ws, moves, {"scene_group": name} if name != was else None)
 
         # ③ spec — 받는 탭의 **줄 끝**에 세운다 (줄 차례가 곧 배열 차례다)
         rest = [x for x in groups if x.get("id") != group_id]
@@ -839,6 +875,9 @@ class Store:
           `fill` 이 없으면(옛 화면) 거절한다.
         ★★옮기는 동안에도 옛 자리로 찾을 수 있다 — 개명(`renumber`)과 같은 자취(`_track`)를
           **워크스페이스 너머로** 남긴다. 화면이 새 목록을 받기까지의 틈에 요청이 와도 404 가 아니다.
+        ★★**이름이 겹치면 뒤에 번호를 붙인다** (사용자 제안 2026-08-28) — 탭 이름이 곧 저장 폴더라
+          (`out_dir`), 같은 이름으로 들어가면 남의 탭 그림과 한 폴더에 섞인다. 규칙은 만들 때와
+          같다 (`unique_name`).
         ★★id 가 받는 쪽과 겹치면 **새 id 를 준다** — 탭·씬 그룹·카드·씬 전부. 워크스페이스마다
           `ch_1`·`t_1` 처럼 같은 씨앗에서 번호를 매기므로 겹치는 일이 흔하다. 레코드의
           `scene_group_id`·`cell_id` 도 같은 표로 바꾼다 — 안 바꾸면 그림이 받는 쪽 화면 어디에도
@@ -895,6 +934,10 @@ class Store:
         tab = copy.deepcopy(tab)
         groups = copy.deepcopy(groups)
         tab["id"] = fresh(tab.get("id"))
+        # ★이름이 겹치면 뒤에 번호 (사용자 제안 2026-08-28) — 탭 이름이 곧 폴더라,
+        #   그대로 두면 남의 탭 그림과 **한 폴더에 섞인다**
+        tab["name"] = unique_name(str(tab.get("name") or ""),
+                                  [str(t.get("name") or "") for t in dst.get("tabs") or []])
         for g in groups:
             g["id"] = fresh(g.get("id"))
             g["tabId"] = tab["id"]

@@ -1677,9 +1677,12 @@ function SceneRow(
   const from = p.view.w
     ? Math.max(0, Math.floor((p.view.x - p.headw - 8) / STEP) - 2)
     : 0;
+  /* ★아직 재기 전(첫 프레임)에는 **앞쪽 한 줌만** 그린다. 예전에는 전부(`total`) 그렸는데,
+     장이 수백인 씬에서는 그 한 프레임에 썸네일을 수백 장 부르게 된다 (`lazy` 를 걷어낸 뒤로는
+     실제로 전부 나간다). 재고 나면 바로 아래 구간으로 좁혀진다 — 자리는 `lead`·`tail` 이 지킨다. */
   const to = p.view.w
     ? Math.min(total, Math.ceil((p.view.x + p.view.w - p.headw - 8) / STEP) + 2)
-    : total;
+    : Math.min(total, 24);
   const lead = from > 0 ? from * STEP - GAP : 0;
   const tail = total - to > 0 ? (total - to) * STEP - GAP : 0;
   const patchCell = (patch: Partial<Slot>) =>
@@ -2088,7 +2091,15 @@ function SceneRow(
                 src={takeSrc(r, p.base, p.ws, true)}
                 alt=""
                 draggable={false}
-                loading="lazy"
+                /* ★★**`loading="lazy"` 를 안 쓴다** (사용자 지적 2026-08-28: *"탭 이동할 때마다
+                     씬에 놓인 썸네일들이 렌더가 안 돼. 커서를 한 번 올려주면 그때 렌더돼"*).
+                   이 줄은 **이미 보이는 구간만 그린다**(위 `from`·`to`) — 그리는 것이 곧 보이는
+                   것이라 미룰 것이 없는데, `lazy` 는 그 위에서 요청을 한 번 더 미뤘다. 칸이
+                   새로 서는 순간(탭 전환)에는 브라우저가 「나중에」로 잡아 두고, 마우스가
+                   지나가 검사가 다시 돌 때에야 받아 왔다. 서버는 멀쩡했다 (실측: 그 세션의
+                   썸네일 요청 17건이 전부 200 — **요청 자체가 늦게 나갔다**).
+                   ★격자로 수백 장을 펴 놓는 화면(갤러리·파일 관리·자동검열)은 구간을 안 나누므로
+                     거기서는 `lazy` 가 그대로 필요하다. */
                 decoding="async"
                 style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", opacity: sel ? 0.6 : 1 }}
               />
