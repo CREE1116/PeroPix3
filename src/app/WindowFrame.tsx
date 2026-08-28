@@ -6,8 +6,13 @@ import { logLine } from "../lib/report";
  *
  *  `decorations: false` 로 두면 OS 의 리사이즈 테두리가 사라지므로 직접 만든다.
  *  최대화 상태에서는 손잡이를 숨긴다 (그 상태에서 끌면 창이 어정쩡하게 복원된다). */
-const EDGE = 5; // 가장자리 두께
-const CORNER = 12; // 모서리 판정 크기
+/** 가장자리 두께 — ★★**8px 이다** (사용자 지적 2026-08-28: 로그에 누름이 하나도 안 찍혔다).
+ *  5px 은 너무 얇았다. 윈도우는 창 **바깥**에 보이지 않는 테두리를 한 겹 더 두어(`SM_CXSIZEFRAME`
+ *  4 + `SM_CXPADDEDBORDER` 4) 실제 잡히는 폭이 8px 안팎인데, 우리는 `decorations:false`·
+ *  `shadow:false` 라 그 바깥 겹이 아예 없다 — 창의 첫 픽셀 줄부터가 곧 화면이다.
+ *  그래서 같은 8px 을 **안쪽에서** 낸다. 제목줄 단추의 윗머리를 조금 덮는데, 윈도우도 그렇다. */
+const EDGE = 8;
+const CORNER = 16; // 모서리 판정 크기
 
 export function WindowFrame({ children }: { children: ReactNode }) {
   const [maxed, setMaxed] = useState(false);
@@ -54,7 +59,22 @@ function ResizeHandles() {
   /* ★진단 — 이 판이 화면에 올라와 있는지, 두 번째 누름이 오는지를 로그로 남긴다
      (사용자 지적 2026-08-28: QA 인스턴스에서는 되는데 사용자 창에서만 안 된다). */
   useEffect(() => {
-    logLine("info", "창테두리", "손잡이 준비 (2026-08-28 판)");
+    logLine("info", "창테두리", `손잡이 준비 (두께 ${EDGE}px)`);
+    /* ★★창 위쪽을 눌렀는데 **손잡이가 아닌 것**이 받았으면 그것도 적는다.
+       손잡이가 떠 있는데 누름이 한 번도 안 온다면 자리를 못 맞히고 있다는 뜻이라,
+       **무엇이 대신 받았는지**를 알아야 두께를 얼마나 늘릴지가 정해진다. */
+    const near = (e: MouseEvent) => {
+      if (e.clientY > 28) return;
+      const el = e.target as HTMLElement | null;
+      if (el?.closest("[data-resize-edge]")) return;
+      logLine(
+        "info",
+        "창테두리",
+        `빗나감 y=${Math.round(e.clientY)} 대상=${el?.tagName ?? "?"} 끌기영역=${!!el?.closest("[data-tauri-drag-region]")}`,
+      );
+    };
+    document.addEventListener("mousedown", near, true);
+    return () => document.removeEventListener("mousedown", near, true);
   }, []);
 
   const grab = (dir: ResizeDir) => (e: React.MouseEvent) => {
