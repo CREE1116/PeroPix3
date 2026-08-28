@@ -166,7 +166,12 @@ pub fn frame_inset(hwnd: *mut core::ffi::c_void) -> (i32, i32, i32, i32) {
             GetSystemMetricsForDpi(SM_CXFRAME, dpi),
         )
     };
-    let out = if dwm.0 > 0 || dwm.1 > 0 { dwm } else { (sys.0, sys.1, sys.1, sys.0) };
+    /* ★★**시스템 값으로 물러서지 않는다** (조사 2026-08-28). DWM 의 0 은 「못 쟀다」가
+       아니라 **정말 0** 이다: `shadow: false` 라 tao 가 `WM_NCCALCSIZE` 에 인셋 없이 0 을
+       돌려주므로 **클라이언트 사각형 = 창 사각형**이고, 보이지 않는 겹이 애초에 없다.
+       한때 `SM_CYFRAME`(4) 으로 물러섰다가 **손잡이를 근거 없이 4px 내려** 창의 맨 위 네 줄에
+       손잡이가 없는 상태를 만들었다. 시스템 값은 견줄 거리로만 남긴다. */
+    let out = dwm;
     crate::backend::log_line(&format!(
         "[edge] 보이지 않는 테두리 — DWM 위{} 왼{} 오{} 아래{} · 시스템 위{} 옆{} → 쓰는 값 위{} 왼{} 오{} 아래{}",
         dwm.0, dwm.1, dwm.2, dwm.3, sys.0, sys.1, out.0, out.1, out.2, out.3
@@ -177,4 +182,41 @@ pub fn frame_inset(hwnd: *mut core::ffi::c_void) -> (i32, i32, i32, i32) {
 #[cfg(not(windows))]
 pub fn frame_inset(_hwnd: *mut core::ffi::c_void) -> (i32, i32, i32, i32) {
     (0, 0, 0, 0)
+}
+
+/// 그 화면 좌표의 **픽셀 주인**을 이름으로 돌려준다 (진단용).
+///
+/// ★★사용자 지적 2026-08-28: 창 맨 위 몇 줄에는 화면(웹뷰)에도 껍데기에도 아무 이벤트가
+///   안 온다. 「누가 먹고 있는가」를 짐작으로 좁히다 여러 판을 버렸으므로, **이름을 직접
+///   묻는다.** `WindowFromPoint` 는 그 점 밑의 가장 깊은 창을 준다.
+/// ★`WM_NCHITTEST` 는 **시간 제한을 걸어** 묻는다 — 남의 스레드에 그냥 보내면 그쪽이
+///   바쁠 때 우리가 멎는다.
+#[cfg(windows)]
+pub fn who_at(x: i32, y: i32, ours: *mut core::ffi::c_void) -> String {
+    use windows_sys::Win32::Foundation::{HWND, POINT};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetClassNameW, SendMessageTimeoutW, WindowFromPoint, SMTO_ABORTIFHUNG, WM_NCHITTEST,
+    };
+
+    unsafe {
+        let h = WindowFromPoint(POINT { x, y });
+        if h.is_null() {
+            return "없음".into();
+        }
+        let mut buf = [0u16; 128];
+        let n = GetClassNameW(h, buf.as_mut_ptr(), buf.len() as i32);
+        let cls = String::from_utf16_lossy(&buf[..n.max(0) as usize]);
+        let mut hit: usize = 0;
+        let lp = (((y as u32 as isize) & 0xFFFF) << 16) | ((x as u32 as isize) & 0xFFFF);
+        let _ = SendMessageTimeoutW(h, WM_NCHITTEST, 0, lp, SMTO_ABORTIFHUNG, 200, &mut hit);
+        format!(
+            "{cls} (우리창={}) 판정={hit}",
+            if h == ours as HWND { "예" } else { "아니오" }
+        )
+    }
+}
+
+#[cfg(not(windows))]
+pub fn who_at(_x: i32, _y: i32, _ours: *mut core::ffi::c_void) -> String {
+    String::new()
 }

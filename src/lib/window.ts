@@ -72,6 +72,15 @@ export const appWindow = {
       return none;   // 브라우저로 열었을 때 (Tauri 가 없다)
     }
   },
+  /** 그 화면 좌표의 **픽셀 주인**을 이름으로 (진단용). 껍데기가 `WindowFromPoint` 로 묻는다. */
+  async whoAt(x: number, y: number): Promise<string> {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      return await invoke<string>("who_at", { x: Math.round(x), y: Math.round(y) });
+    } catch {
+      return "";
+    }
+  },
   async startResize(dir: ResizeDir) {
     (await win())?.startResizeDragging(dir as never);
   },
@@ -117,7 +126,11 @@ export const appWindow = {
           logLine("warn", "창세로", "이미 꽉 찼는데 되돌릴 자리가 없어 아무 일도 안 함");
           return;
         }
-        vFitBack = null;
+        /* ★★**되돌릴 자리를 비우지 않는다** (조사 2026-08-28). 비운 직후 창이 다시 꽉 차면
+           (위 변을 화면 끝까지 끌면 윈도우가 스스로 세로 최대화를 건다) `noteHeight` 는
+           꽉 찬 상태에서 아무것도 안 적으므로 **「늘어났는데 되돌릴 자리는 없음」으로 굳는다.**
+           그 상태는 스스로 빠져나올 길이 없어 그 뒤로 더블클릭도 복원도 영영 안 된다.
+           적는 것은 `noteHeight` 하나에 맡기고, 여기서는 상태만 내린다. */
         vFitted = false;
         await w.setPosition(new PhysicalPosition(pos.x, back.y));
         await w.setSize(new PhysicalSize(size.width, back.h));
@@ -185,7 +198,7 @@ export const appWindow = {
       const fitted =
         Math.abs(pos.y - wa.position.y) <= 2 && Math.abs(size.height - wa.size.height) <= 2;
       if (!fitted) return;
-      vFitBack = null;
+      // ★되돌릴 자리는 비우지 않는다 (바로 위 ★★주) — 적는 것은 `noteHeight` 하나다
       vFitted = false;
       if (dir === "North") {
         // 아래 변을 원래 자리로 — 위 변은 지금 자리에 둔 채 높이만 줄인다

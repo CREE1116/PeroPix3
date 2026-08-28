@@ -26,6 +26,20 @@ fn frame_inset(window: tauri::WebviewWindow) -> (i32, i32, i32, i32) {
     (0, 0, 0, 0)
 }
 
+/// 그 화면 좌표의 **픽셀 주인**을 이름으로 (진단용 — `window_edge::who_at` 의 ★★주).
+#[tauri::command]
+fn who_at(window: tauri::WebviewWindow, x: i32, y: i32) -> String {
+    #[cfg(windows)]
+    if let Ok(h) = window.hwnd() {
+        let ours = h.0 as isize as *mut core::ffi::c_void;
+        let out = window_edge::who_at(x, y, ours);
+        backend::log_line(&format!("[edge] ({x},{y}) 주인 = {out}"));
+        return out;
+    }
+    let _ = (window, x, y);
+    String::new()
+}
+
 /// 껍데기가 켜진 뒤 흐른 시간(ms). ★화면이 **자기가 언제 처음 돌았는지**를 알기 위한 값이다 —
 /// 창을 만들고 웹뷰가 문서를 받아 번들을 돌리기까지가 여기 다 들어 있다. 그 구간은 화면
 /// 스스로는 잴 수 없다 (`performance.timeOrigin` 은 문서가 생긴 뒤부터다).
@@ -185,7 +199,7 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![backend_url, app_root, update_staged, apply_update, uptime_ms, frame_inset])
+        .invoke_handler(tauri::generate_handler![backend_url, app_root, update_staged, apply_update, uptime_ms, frame_inset, who_at])
         .setup(move |app| {
             // ★`apply_update` 가 새 판을 띄우기 전에 자물쇠를 놓을 수 있게 맡겨 둔다
             app.manage(InstanceLock(lock));

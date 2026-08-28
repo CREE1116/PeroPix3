@@ -18,11 +18,17 @@ export function WindowFrame({ children }: { children: ReactNode }) {
   const [maxed, setMaxed] = useState(false);
 
   useEffect(() => {
+    /* ★★**정리가 먼저 돌아도 구독이 남지 않게** 한다 (조사 2026-08-28).
+       `un` 은 비동기 안에서 대입되는데, 리액트의 StrictMode 는 마운트 직후 한 번 정리를
+       돌린다 — 그때 `un` 은 아직 `undefined` 라 **첫 구독이 영영 안 풀렸다.** 크기 한 번에
+       `noteHeight` 가 두 벌 돌고, 그 비동기 왕복이 서로 덮어써 상태가 거꾸로 잡혔다.
+       ★표식(`dead`)을 두어, 늦게 온 구독도 그 자리에서 스스로 풀게 한다. */
+    let dead = false;
     let un: (() => void) | undefined;
     let t: ReturnType<typeof setTimeout> | undefined;
     (async () => {
       setMaxed(await appWindow.isMaximized());
-      un = await appWindow.onResized(async () => {
+      const off = await appWindow.onResized(async () => {
         setMaxed(await appWindow.isMaximized());
         /* ★★**크기가 멎으면 그 자리를 적어 둔다** (`lib/window` 의 `noteHeight`).
            안 적어 두면 창이 이미 꽉 찬 높이일 때 더블클릭이 되돌릴 자리를 못 찾아
@@ -30,8 +36,11 @@ export function WindowFrame({ children }: { children: ReactNode }) {
         clearTimeout(t);
         t = setTimeout(() => void appWindow.noteHeight(), 300);
       });
+      if (dead) off();          // ★이미 정리가 지나갔으면 그 자리에서 푼다
+      else un = off;
     })();
     return () => {
+      dead = true;
       clearTimeout(t);
       un?.();
     };
@@ -47,8 +56,12 @@ export function WindowFrame({ children }: { children: ReactNode }) {
 
 /** 더블클릭으로 치는 간격 — 윈도우 기본값과 같은 500ms */
 const DBL_MS = 500;
-/** 이만큼 움직여야 「끄는 것」으로 본다 */
-const DRAG_PX = 3;
+/** 이만큼 움직여야 「끄는 것」으로 본다.
+ *  ★★**5px 이다** (조사 2026-08-28). 3px 은 윈도우 자신의 더블클릭 허용 오차(`SM_CXDOUBLECLK`,
+ *    4px)보다 **빡빡해서**, 더블클릭의 첫 누름에서 손이 조금만 흔들려도 OS 크기 조절이
+ *    시작되고 **두 번째 누름을 그쪽이 통째로 가져간다.** 8px 띠를 조준하는 동작이라 그
+ *    흔들림이 특히 잦다. */
+const DRAG_PX = 5;
 
 function ResizeHandles() {
   /** ★★**더블클릭을 여기서 직접 센다** (`onDoubleClick` 을 안 쓴다).
@@ -69,13 +82,24 @@ function ResizeHandles() {
       `창 y=${window.screenY} 높이=${window.outerHeight} · 화면 높이=${window.innerHeight}` +
         ` · 배율=${window.devicePixelRatio}`,
     );
-    /* ★맨 윗줄에 실제로 포인터가 오는가 — 오는 값 중 **가장 작은 y** 를 한 번 남긴다.
-       테두리를 훑는 동안 4 아래가 한 번도 안 오면 그 픽셀은 화면의 것이 아니다. */
-    let minY = 999;
+    /* ★★**맨 윗줄의 픽셀 주인을 이름으로 묻는다** (조사 2026-08-28). 「누가 먹고 있는가」를
+       짐작으로 좁히다 여러 판을 버렸다 — 사람이 마우스를 올릴 필요 없이, 창 자기 좌표를
+       껍데기에 그대로 물어본다 (`WindowFromPoint`). */
+    void (async () => {
+      const x = window.screenX + Math.round(window.innerWidth / 2);
+      for (const off of [-2, 0, 2, 4, 6, 10]) {
+        const who = await appWindow.whoAt(x, window.screenY + off);
+        logLine("info", "창테두리", `맨위+${off} 주인 = ${who}`);
+      }
+    })();
+    /* ★포인터가 닿은 **모든** 윗줄을 남긴다 (같은 y 는 한 번만). 예전에는 「새 최솟값만」
+       남겨서, `y=4` 가 「그 위로는 못 온다」인지 「그 위를 안 밟았다」인지 못 갈랐다. */
+    const hit = new Set<number>();
     const seen = (e: PointerEvent) => {
-      if (e.clientY >= minY || e.clientY > 12) return;
-      minY = e.clientY;
-      logLine("info", "창테두리", `포인터가 닿은 가장 위 = y=${Math.round(e.clientY)}`);
+      const y = Math.round(e.clientY);
+      if (y > 12 || y < 0 || hit.has(y)) return;
+      hit.add(y);
+      logLine("info", "창테두리", `포인터가 닿음 y=${y} (화면 y=${window.screenY + y})`);
     };
     document.addEventListener("pointermove", seen, true);
     /* ★★창 위쪽을 눌렀는데 **손잡이가 아닌 것**이 받았으면 그것도 적는다.
