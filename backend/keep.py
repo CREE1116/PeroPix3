@@ -261,6 +261,10 @@ def save(root: Path, src: Path, folder: str, meta: dict | None, key: str = "",
         if src.suffix.lower() == ".png" and (has_comment or not meta):
             # 손대지 않는 것이 가장 정확하다 (다시 인코딩하지 않는다)
             shutil.copy2(src, dst)
+            # ★★mtime 은 **보관한 지금**으로 (사용자 결정 2026-08-29: *"드롭한 순간의 시간순으로"*).
+            #   copy2 는 원본의 mtime(그림을 생성한 시각)을 보존하는데, 목록은 mtime 내림차순이라
+            #   옛 그림을 보관하면 중간에 끼어들었다 — 드롭·재인코딩 갈래는 지금 시각이라 섞였다.
+            dst.touch()
         else:
             png = PngInfo()
             for k, v in info.items():
