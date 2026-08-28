@@ -1072,13 +1072,21 @@ def _light(rec: dict) -> dict:
     return {k: v for k, v in rec.items() if k not in HEAVY_REC}
 
 
+#: ★★**이벤트 루프에서 하면 안 되는 일** (사용자 지적 2026-08-28: *"앱이 멈춘 것처럼"*).
+#  이 서버는 한 프로세스라, `async def` 안에서 **기다리거나 큰 파일을 읽으면 그동안 아무 요청도
+#  못 받는다** — 썸네일도 웹소켓도 **다른 워크스페이스에서 돌고 있는 생성**도 함께 선다.
+#  다음 둘은 반드시 스레드로 보낸다 (`asyncio.to_thread`):
+#    · 워크스페이스 **잠금을 기다리는 것** (`Store.save` — 옮기기가 1~2초 쥐고 있을 수 있다)
+#    · **파일을 통째로 읽고 쓰는 것** (색인 `records`, 곁파일 `heavy_of` — 실측 112MB)
+#  ★동기(`def`) 핸들러는 FastAPI 가 알아서 스레드로 돌린다 (썸네일이 그래서 멀쩡했다).
+#    `async def` 로 적은 것만 이 규칙에 걸린다.
 @app.get("/api/workspaces/{ws}")
 async def get_workspace(ws: str):
-    spec = store.load(ws)
+    spec = await asyncio.to_thread(store.load, ws)
     # ★★무거운 것은 목록에서 뺀다 — `resolved`(그때 나간 페이로드, 바이브·베이스 그림의
     #   base64 가 들어 있다)와 `env`(화면 구조 스냅샷)다. **둘 다 화면이 목록에서 안 읽는다.**
     #   필요할 때 한 장씩 `/api/workspaces/{ws}/env` 로 가져간다.
-    return {"spec": spec, "records": [_light(r) for r in store.records(ws)]}
+    return {"spec": spec, "records": await asyncio.to_thread(lambda: [_light(r) for r in store.records(ws)])}
 
 
 @app.put("/api/workspaces/{ws}")
@@ -1086,7 +1094,8 @@ async def put_workspace(ws: str, body: SpecBody):
     """★다른 워크스페이스의 spec 이면 **409** — 파일은 그대로다 (`Store.save` 의 ★★주). 화면은 409 를
     받으면 지금 워크스페이스를 서버에서 다시 읽는다 (`store/workspace.ts` 의 `save`)."""
     try:
-        return {"spec": store.save(ws, body.spec)}
+        # ★잠금을 **스레드에서** 기다린다 (위 ★★주) — 여기서 기다리면 서버가 통째로 선다
+        return {"spec": await asyncio.to_thread(store.save, ws, body.spec)}
     except SpecMismatch as e:
         raise HTTPException(409, str(e))
 
@@ -1138,7 +1147,8 @@ async def gallery_env(ws: str, file: str):
     ★없을 수 있다 — 이 기능이 생기기 전(2026-08-19)에 만든 그림은 안 남겼다.
       그때는 화면이 **그 그림이 나온 탭**에서 가져간다 (`cloneToNewTab` 의 폴백)."""
     # ★무거운 것은 곁파일에 있다 (`workspace.ENV_NAME` 머리 주석) — 색인을 훑지 않는다
-    return {"env": store.heavy_of(ws, file).get("env")}
+    # ★곁파일은 통째로 읽는다 (실측 112MB) — 루프에서 읽으면 그동안 서버가 선다 (위 ★★주)
+    return {"env": (await asyncio.to_thread(store.heavy_of, ws, file)).get("env")}
 
 
 @app.get("/api/workspaces/{ws}/base")
@@ -1154,7 +1164,7 @@ async def gallery_base(ws: str, file: str):
       `/meta` 나 `/env` 에 얹으면 목록을 훑을 때마다 딸려 온다.
     ★강도·노이즈는 페이로드의 **본이름 그대로** 읽는다 (`strength`·`noise`).
       인페인트는 마스크가 함께 있어야 그 모드로 돌아간다."""
-    par = (store.heavy_of(ws, file).get("resolved") or {}).get("parameters") or {}
+    par = ((await asyncio.to_thread(store.heavy_of, ws, file)).get("resolved") or {}).get("parameters") or {}
     img = par.get("image")
     if not isinstance(img, str) or not img:
         return {"image": ""}
@@ -1618,7 +1628,8 @@ async def _generate_one(body: GenBody) -> dict:
     #   ★없으면 그 그림에서 「설정 불러오기」를 눌렀을 때 캐릭터 카드가 통째로 사라지고
     #     `#1`·`#2` 로 다시 만들어진다 (사용자 지적 2026-08-24) — 카드는 PNG 에 안 남는다.
     shot_env = body.env or (
-        store.heavy_of(body.workspace, body.enhance_from).get("env") if body.enhance_from else None
+        (await asyncio.to_thread(store.heavy_of, body.workspace, body.enhance_from)).get("env")
+        if body.enhance_from else None
     )
 
     # ★자동 저장을 끄면 **파일도 기록도 안 남긴다** — 미리보기로만 돌려준다 (v2 `auto_save`).
@@ -1722,7 +1733,7 @@ async def upscale_image(body: UpscaleBody):
 
     # ★색인은 통째로 읽는다 — 무거운 것을 곁파일로 뺀 뒤로 줄당 211B 라 싸다
     rec = next(
-        (r for r in store.records(body.workspace) if r.get("file") == body.file),
+        (r for r in await asyncio.to_thread(store.records, body.workspace) if r.get("file") == body.file),
         None,
     )
     new_rec = {
@@ -1740,7 +1751,7 @@ async def upscale_image(body: UpscaleBody):
         #   원장은 `env` 하나뿐이라, 여기 없으면 화면은 PNG 메타데이터로 떨어지고
         #   메타데이터에는 **합쳐진 문자열**만 있어 카드가 통째로 사라진다.
         #   업스케일은 프롬프트를 새로 만들지 않으므로 **원본의 것이 곧 이 그림의 것**이다.
-        "env": store.heavy_of(body.workspace, body.file).get("env"),
+        "env": (await asyncio.to_thread(store.heavy_of, body.workspace, body.file)).get("env"),
         "op": "upscale",
     }
     store.append_record(body.workspace, new_rec)
@@ -2165,13 +2176,19 @@ async def gallery_meta(ws: str, file: str):
     p = store.file_path(ws, file)
     if not p:
         raise HTTPException(404, "not found")
-    # ★★프리셋은 **기록이 정본**이다 (그림에는 null 로 비워져 온다, `_sent_from_record`).
-    sent = _sent_from_record(ws, file)
-    m = meta.read(p, sent)
-    # ★그림에 모델 id 가 없을 때만 기록에서 채운다 — 그림이 언제나 정본이다
-    if m is not None and not m.get("nai_model") and sent.get("model"):
-        m["nai_model"] = sent["model"]
-    return {"file": file, "meta": m}
+
+    def read():
+        # ★★프리셋은 **기록이 정본**이다 (그림에는 null 로 비워져 온다, `_sent_from_record`).
+        sent = _sent_from_record(ws, file)
+        m = meta.read(p, sent)
+        # ★그림에 모델 id 가 없을 때만 기록에서 채운다 — 그림이 언제나 정본이다
+        if m is not None and not m.get("nai_model") and sent.get("model"):
+            m["nai_model"] = sent["model"]
+        return m
+
+    # ★곁파일 읽기(실측 112MB)와 그림 메타 읽기가 함께 있다 — 루프에서 하면 서버가 선다
+    #   (위 「이벤트 루프에서 하면 안 되는 일」 ★★주)
+    return {"file": file, "meta": await asyncio.to_thread(read)}
 
 
 KEEP_DIR = APP_DIR / "gallery"

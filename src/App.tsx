@@ -24,6 +24,7 @@ import { useHealth, type Health } from "./store/health";
 import { sameApp } from "./lib/sameApp";
 import { Toasts } from "./app/Toasts";
 import { TipLayer } from "./components/Tip";
+import { BusyOverlay } from "./app/BusyOverlay";
 import { AskDialog } from "./app/AskDialog";
 import { AiChat } from "./panels/AiChat";
 import { Canvas } from "./panels/Canvas";
@@ -231,6 +232,7 @@ export function App() {
         <AskDialog />
         <Toasts />
         <TipLayer />
+        <BusyOverlay />
       </WindowFrame>
     );
 
@@ -467,6 +469,8 @@ export function App() {
       {/* 툴팁 층 — 화면 아무 데나 `data-tip` 을 달면 여기서 뜬다 (`components/Tip`) */}
       <TipLayer />
       <DragLayer />
+      {/* ★파일을 옮기는 동안 조작을 막는 덮개 — **맨 위**다 (`store/busy` 의 ★★주) */}
+      <BusyOverlay />
     </WindowFrame>
   );
 }

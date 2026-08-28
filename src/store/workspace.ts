@@ -3,6 +3,7 @@ import { api, type TrashEntry } from "../lib/backend";
 import { usePrompt, defaultBase, defaultUc, type Char, type Thumb } from "./prompt";
 import { t } from "../i18n";
 import { toast, undoToast } from "./toast";
+import { withBusy } from "./busy";
 import { clearUndo, dropUndoZone, pushUndo } from "../lib/undo";
 import { uniqueName } from "../lib/uniqueName";
 import { makeBlock, parseSegs, type Block } from "../lib/blocks";
@@ -1471,10 +1472,12 @@ export const useWs = create<S>((set, get) => ({
     if (before.activeTab === tabId) usePrompt.getState().load(promptOf(gone, activeGroupOf(gone)));
     moveBusy = cur;   // ★이 워크스페이스의 자동 저장을 멈춘다 — 임시 상태를 서버에 쓰면 안 된다
     try {
-      const r = await api<{ spec: Spec; records: Rec[]; moved: number }>(
+      // ★끝날 때까지 **조작을 잠근다** (`store/busy` 의 ★★주) — 그 사이의 편집은 갈 곳이 없다
+      const r = await withBusy(t("busy.movingTab", { name: tab.name }), () =>
+        api<{ spec: Spec; records: Rec[]; moved: number }>(
         `/api/workspaces/${encodeURIComponent(cur)}/tabs/${encodeURIComponent(tabId)}/move`,
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to, fill }) },
-      );
+      ));
       if (get().current === cur) {
         // ★옮기는 동안 사용자가 다른 탭을 열었을 수 있다 — 그 자리를 지킨다 (`keepView` 의 ★★주)
         const next = keepView(migrate(r.spec), get().spec);
@@ -1524,10 +1527,12 @@ export const useWs = create<S>((set, get) => ({
       usePrompt.getState().load(promptOf(moved, activeGroupOf(moved)));
     moveBusy = cur;
     try {
-      const r = await api<{ spec: Spec; records: Rec[]; moved: number }>(
+      // ★끝날 때까지 **조작을 잠근다** (`store/busy` 의 ★★주)
+      const r = await withBusy(t("busy.movingGroup", { name: g.name }), () =>
+        api<{ spec: Spec; records: Rec[]; moved: number }>(
         `/api/workspaces/${encodeURIComponent(cur)}/scene-groups/${encodeURIComponent(groupId)}/move`,
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to_tab: toTabId, fill }) },
-      );
+      ));
       if (get().current === cur) {
         /* ★★**보고 있는 탭은 화면이 정본이다** (사용자 지적 2026-08-28: *"옮긴 탭으로 들어갔는데
              옮기는 게 완료된 후에 강제로 원래 있던 탭이 열림"*). 옮기는 동안에는 자동 저장을

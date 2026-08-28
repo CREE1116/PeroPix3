@@ -23,6 +23,12 @@ export const ko: Dict = {
     backendFailed: "백엔드 실패",
   },
 
+  busy: {
+    movingTab: "「{name}」 탭을 옮기는 중…",
+    movingGroup: "「{name}」 씬 그룹을 옮기는 중…",
+    tooLong: "옮기기가 오래 걸립니다. 화면 잠금을 풀었습니다 — 작업은 계속됩니다.",
+  },
+
   gate: {
     readFailed: "「{name}」 워크스페이스 파일을 읽지 못했습니다. 다시 열어 주세요.",
     readBack: "화면 내용이 이 워크스페이스 것이 아니라서 「{name}」을 서버에서 다시 읽었습니다.",

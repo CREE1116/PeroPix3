@@ -173,6 +173,13 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
   .boot-bar { animation: none; transform: none; width: 100% !important; opacity: 0.5; }
 }
 
+/* 파일을 옮기는 동안 화면을 덮는 표시 (`app/BusyOverlay`) — 얼마나 남았는지 알 수 없으므로 돈다 */
+@keyframes peropix-spin { to { transform: rotate(360deg); } }
+.busy-spin { animation: peropix-spin 0.8s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .busy-spin { animation: none; opacity: 0.6; }
+}
+
 /* 조수가 도는 중임을 알리는 **살아 있는 표시** (사용자 지적 2026-08-25: *"ai가 작업중인
    동적인 표시가 필요함. 멈춘 건지 작업 중인지 알 수 없음"*).
    ★글자만 띄우면 멈춘 화면과 구분되지 않는다 — 점 셋이 차례로 밝아진다. */

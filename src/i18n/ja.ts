@@ -23,6 +23,12 @@ export const ja: Dict = {
     backendFailed: "バックエンド起動失敗",
   },
 
+  busy: {
+    movingTab: "「{name}」タブを移動中…",
+    movingGroup: "シーングループ「{name}」を移動中…",
+    tooLong: "移動に時間がかかっています。画面のロックを解除しました — 作業は続行します。",
+  },
+
   gate: {
     readFailed: "「{name}」のワークスペースファイルを読めませんでした。開き直してください。",
     readBack: "画面の内容がこのワークスペースのものではなかったため「{name}」をサーバーから読み直しました。",

@@ -23,6 +23,12 @@ export const en = {
     backendFailed: "Backend failed",
   },
 
+  busy: {
+    movingTab: "Moving tab \"{name}\"…",
+    movingGroup: "Moving scene group \"{name}\"…",
+    tooLong: "This move is taking a while. The screen is unlocked — the work continues.",
+  },
+
   gate: {
     readFailed: "Could not read the workspace file for \"{name}\". Please open it again.",
     readBack: "The screen held another workspace's content — reloaded \"{name}\" from the server.",
