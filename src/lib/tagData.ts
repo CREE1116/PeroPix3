@@ -97,11 +97,24 @@ function scan(q: string, max: number, out: TagEntry[], pred?: (t: TagEntry) => b
  *  ★네 종류가 사전의 `type` 과 이름이 같다 — 그래서 표를 따로 두지 않는다. */
 const TYPE_PREFIX = /^(artist|character|copyright|meta):(.*)$/i;
 
+/** 종류 접두어를 붙인 사본 — 사전 항목은 그대로 둔다 (읽기만 한다) */
+const prefixed = (t: TagEntry, type: string): TagEntry => ({
+  ...t,
+  label: `${type}:${t.label}`,
+  value: `${type}:${t.value}`,
+});
+
 export function searchTags(query: string, max = 15): TagEntry[] {
   if (!query || query.length < 2) return [];
   const out: TagEntry[] = [];
   // ① 글자 그대로 — `meta:novel era` 처럼 콜론이 이름의 일부인 태그가 먼저다
   scan(norm(query), max, out);
+  /* ★★**작가는 언제나 `artist:` 를 달고 나간다** (사용자 지시 2026-08-28: *"아티스트 이름으로
+       분류된 태그 입력하면 자동으로 앞에 artist: 붙여 주면 좋겠음"*). 접두어를 안 치고 `dai` 로
+       찾아 골라도 `artist:dairi` 가 들어간다 — 목록에 보이는 글자가 곧 들어갈 글자다.
+     ★사전 항목 자체는 안 건드린다 — 사본을 낸다. */
+  for (let i = 0; i < out.length; i++)
+    if (out[i].type === "artist" && !out[i].value.startsWith("artist:")) out[i] = prefixed(out[i], "artist");
   // ② 접두어 뒤의 이름으로 **그 종류만** 뒤진다. 넣을 값에는 접두어를 도로 붙인다 —
   //    고르는 순간 `artist:` 가 사라지면 사용자가 친 뜻이 바뀐다
   const m = TYPE_PREFIX.exec(query);
@@ -110,9 +123,9 @@ export function searchTags(query: string, max = 15): TagEntry[] {
     const found: TagEntry[] = [];
     scan(norm(m[2]), max - out.length, found, (t) => t.type === type);
     for (const t of found) {
-      const value = `${type}:${t.value}`;
-      if (out.some((x) => x.value === value)) continue;
-      out.push({ ...t, label: `${type}:${t.label}`, value });
+      const p = prefixed(t, type);
+      if (out.some((x) => x.value === p.value)) continue;
+      out.push(p);
     }
   }
   return out;
