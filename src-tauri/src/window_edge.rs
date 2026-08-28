@@ -1,0 +1,66 @@
+//! 창 가장자리 판정을 **화면(웹뷰)에 넘긴다.**
+//!
+//! ★★사용자 지적 2026-08-28: *"판정이 보이는 거랑 다름. 커서가 바뀐 곳에서 눌렀는데 안
+//!   되어서 약간 내려서 누르니까 됨."* · *"커서 판정이랑 동일하게 일치시켜야 할 듯."*
+//!
+//! 까닭은 **테두리가 둘이었기 때문**이다. 우리가 화면에 그린 8px 손잡이 위에, 창 라이브러리
+//! (tao)가 붙여 둔 **OS 테두리**가 한 겹 더 덮여 있었다 — 테두리 없는 창(`decorations: false`)
+//! 이면서 크기 조절이 되고 최대화가 아닐 때, tao 는 `WM_NCHITTEST` 에 `HTTOP`·`HTLEFT` 를
+//! 돌려준다 (`SM_CXFRAME`·`SM_CYFRAME`, 화면 배율에 따라 4~8px).
+//!
+//! 그 자리는 **비클라이언트 영역**이라
+//!   · 커서는 OS 가 ↕ 로 바꿔 주고,
+//!   · 누름은 웹뷰에 아예 오지 않는다.
+//! 그래서 「커서가 바뀐 자리를 눌렀는데 아무 일도 안 나고, 조금 아래를 누르면 된다」가 됐다.
+//! 눈에 보이는 것과 먹히는 것이 어긋난 것이 아니라 **주인이 둘**이었던 것이다.
+//!
+//! 그래서 가장자리 판정을 **HTCLIENT 로 되돌려** 웹뷰에 넘긴다. 그러면 커서도 판정도 우리
+//! 손잡이 하나가 정한다 — 어긋날 자리가 없다. 끌어서 크기를 바꾸는 것은 그대로 OS 가 한다
+//! (`startResizeDragging` 이 `WM_NCLBUTTONDOWN` 을 대신 보낸다), 그래서 가장자리를 화면 끝에
+//! 붙였을 때의 스냅도 살아 있다.
+//!
+//! ★최대화 상태에서는 tao 가 애초에 판정을 안 하므로 여기도 지나간다.
+
+/// `WM_NCHITTEST` 가 가장자리로 나오면 **본문**으로 바꾼다 (위 모듈 주석).
+#[cfg(windows)]
+pub fn client_edges(hwnd: *mut core::ffi::c_void) {
+    use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+    use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT,
+        HTTOPRIGHT, WM_NCHITTEST,
+    };
+
+    unsafe extern "system" fn hook(
+        hwnd: HWND,
+        msg: u32,
+        wp: WPARAM,
+        lp: LPARAM,
+        _id: usize,
+        _data: usize,
+    ) -> LRESULT {
+        // ★먼저 tao 에게 묻는다 — 그 답이 가장자리일 때만 바꾼다
+        let r = unsafe { DefSubclassProc(hwnd, msg, wp, lp) };
+        if msg == WM_NCHITTEST {
+            let hit = r as i32;
+            let edge = hit == HTTOP as i32
+                || hit == HTBOTTOM as i32
+                || hit == HTLEFT as i32
+                || hit == HTRIGHT as i32
+                || hit == HTTOPLEFT as i32
+                || hit == HTTOPRIGHT as i32
+                || hit == HTBOTTOMLEFT as i32
+                || hit == HTBOTTOMRIGHT as i32;
+            if edge {
+                return HTCLIENT as LRESULT;
+            }
+        }
+        r
+    }
+
+    // ★두 번 걸어도 같은 id 면 갈아 끼워질 뿐이라 안전하다
+    unsafe { SetWindowSubclass(hwnd as HWND, Some(hook), 1, 0) };
+}
+
+#[cfg(not(windows))]
+pub fn client_edges(_hwnd: *mut core::ffi::c_void) {}

@@ -1,4 +1,5 @@
 mod backend;
+mod window_edge;
 mod update;
 
 use std::path::{Path, PathBuf};
@@ -183,6 +184,13 @@ pub fn run() {
                ★설정 파일로는 못 준다 — `tauri.conf.json` 의 창 스키마에 그 열쇠가 없다. */
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.set_background_color(Some(tauri::window::Color(0x16, 0x16, 0x1a, 0xff)));
+                /* ★★가장자리 판정을 **화면에 넘긴다** — 커서와 누름의 주인을 하나로
+                   (사용자 지적 2026-08-28: *"커서 판정이랑 동일하게 일치시켜야 할 듯"*).
+                   까닭은 `window_edge.rs` 머리에. */
+                #[cfg(windows)]
+                if let Ok(h) = w.hwnd() {
+                    window_edge::client_edges(h.0 as isize as *mut core::ffi::c_void);
+                }
             }
             match backend::spawn() {
                 Ok(child) => {
