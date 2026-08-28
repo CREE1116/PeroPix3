@@ -77,25 +77,42 @@ export function loadTags(): Promise<void> {
   return loading;
 }
 
-/** 두 단계 검색: 첫 글자 인덱스(앞부터 일치) → 모자라면 전체(포함). */
+/** 두 단계 검색: 첫 글자 인덱스(앞부터 일치) → 모자라면 전체(포함).
+ *  `pred` 를 주면 그것을 통과한 항목만 센다 (종류로 거를 때). */
+function scan(q: string, max: number, out: TagEntry[], pred?: (t: TagEntry) => boolean) {
+  for (const t of INDEX[q[0]] ?? []) {
+    if (out.length >= max) return;
+    if (t._lower!.startsWith(q) && (!pred || pred(t)) && !out.includes(t)) out.push(t);
+  }
+  for (const t of ALL) {
+    if (out.length >= max) return;
+    if (t._lower!.includes(q) && (!pred || pred(t)) && !out.includes(t)) out.push(t);
+  }
+}
+
+/** ★★NAI 가 **종류를 접두어로** 가르는 표기 — `artist:이름` (사용자 지적 2026-08-28:
+ *  *"`artist:` 이렇게 치고 나서 뒤에 작가명 치는데, 자동완성이 안 되어서 불편함"*).
+ *  사전의 작가 이름에는 그 접두어가 없다 (`dairi`, `ruu_(tksymkw)` …). 홑콜론이 낱말 글자라
+ *  `artist:dai` 가 통째로 질의가 되고, 그 글자열을 가진 항목은 하나도 없어 목록이 비었다.
+ *  ★네 종류가 사전의 `type` 과 이름이 같다 — 그래서 표를 따로 두지 않는다. */
+const TYPE_PREFIX = /^(artist|character|copyright|meta):(.*)$/i;
+
 export function searchTags(query: string, max = 15): TagEntry[] {
   if (!query || query.length < 2) return [];
-  const q = norm(query);
   const out: TagEntry[] = [];
-
-  for (const t of INDEX[q[0]] ?? []) {
-    if (t._lower!.startsWith(q)) {
-      out.push(t);
-      if (out.length >= max) return out;
-    }
-  }
-  if (out.length < max) {
-    for (const t of ALL) {
-      if (out.includes(t)) continue;
-      if (t._lower!.includes(q)) {
-        out.push(t);
-        if (out.length >= max) break;
-      }
+  // ① 글자 그대로 — `meta:novel era` 처럼 콜론이 이름의 일부인 태그가 먼저다
+  scan(norm(query), max, out);
+  // ② 접두어 뒤의 이름으로 **그 종류만** 뒤진다. 넣을 값에는 접두어를 도로 붙인다 —
+  //    고르는 순간 `artist:` 가 사라지면 사용자가 친 뜻이 바뀐다
+  const m = TYPE_PREFIX.exec(query);
+  if (m && m[2].length >= 2 && out.length < max) {
+    const type = m[1].toLowerCase();
+    const found: TagEntry[] = [];
+    scan(norm(m[2]), max - out.length, found, (t) => t.type === type);
+    for (const t of found) {
+      const value = `${type}:${t.value}`;
+      if (out.some((x) => x.value === value)) continue;
+      out.push({ ...t, label: `${type}:${t.label}`, value });
     }
   }
   return out;
