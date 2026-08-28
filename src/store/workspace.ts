@@ -385,6 +385,7 @@ type S = {
   /** 탭을 **다른 워크스페이스로** 옮긴다 (사용자 지시 2026-08-28). 씬 그룹·그림·레코드·썸네일
    *  캐시까지 서버가 함께 옮긴다 (`Store.move_tab`). 받는 쪽은 다음에 열 때 읽는다. */
   moveTabToWs: (tabId: string, to: string) => Promise<void>;
+  moveGroupToTab: (groupId: string, toTabId: string) => Promise<void>;
 };
 
 /** 새 워크스페이스의 첫 모습.
@@ -458,6 +459,42 @@ function withoutTab(
     ? spec.activeSceneGroup
     : (mine[0]?.id ?? sceneGroups[0]?.id ?? "");
   return { ...spec, tabs, sceneGroups, activeTab, activeSceneGroup };
+}
+
+/** 씬 그룹 하나를 **다른 탭 밑으로** 옮긴 spec — **화면용 임시 상태**다 (`moveGroupToTab`).
+ *  서버가 같은 규칙으로 만든 spec 이 답으로 오면 그것으로 갈린다 (`Store._move_group_locked`).
+ *  ★받는 탭의 **줄 끝**에 세운다 — 끌어다 놓은 것이 어디로 갔는지 눈으로 찾을 수 있어야 한다.
+ *  ★그 탭의 마지막 세트였으면 빈 세트를 하나 세운다 (세트가 없는 탭은 생성이 불가능하다). */
+function withGroupMoved(spec: Spec, groupId: string, toTabId: string, fillGroup: string): Spec {
+  const g = spec.sceneGroups.find((x) => x.id === groupId);
+  if (!g || g.kind !== "sceneGroup") return spec;
+  const srcTab = g.tabId;
+  const rest = spec.sceneGroups.filter((x) => x.id !== groupId);
+  let at = rest.length;
+  rest.forEach((x, i) => {
+    if (x.kind === "sceneGroup" && x.tabId === toTabId) at = i + 1;
+  });
+  const sceneGroups = [...rest.slice(0, at), { ...g, tabId: toTabId }, ...rest.slice(at)];
+  const left = sceneGroups.filter((x) => x.kind === "sceneGroup" && x.tabId === srcTab);
+  let fresh = "";
+  if (!left.length) {
+    fresh = "tab_" + Math.random().toString(36).slice(2, 8);
+    sceneGroups.push({
+      id: fresh,
+      kind: "sceneGroup",
+      name: fillGroup,
+      tabId: srcTab,
+      idOnly: true,
+      cards: [],
+      cellSeq: 0,
+      cardSeq: 0,
+    } as SceneGroup);
+  }
+  const activeSceneGroup =
+    spec.activeSceneGroup === groupId && spec.activeTab === srcTab
+      ? (left[0]?.id ?? fresh)
+      : spec.activeSceneGroup;
+  return { ...spec, sceneGroups, activeSceneGroup };
 }
 
 /** 개명이 도는 중인가 — ★**한 번에 하나만** (`renumberSet` 의 ★★주) */
@@ -1430,6 +1467,55 @@ export const useWs = create<S>((set, get) => ({
         usePrompt.getState().load(promptOf(before, activeGroupOf(before)));
       }
       toast(t("tab.moveFailed", { name: tab.name, why: String(e) }), "warn");
+    } finally {
+      moveBusy = null;
+      if (saveHeld) {
+        saveHeld = false;
+        queueSave(get);
+      }
+    }
+  },
+
+  /** 씬 그룹을 **다른 탭 밑으로** (사용자 지시 2026-08-28). 서버가 그림·색인·썸네일을 그 탭의
+   *  폴더로 옮긴다 — 배선과 안전장치는 `moveTabToWs` 와 같다 (놓는 즉시 화면에서 옮기고,
+   *  답은 화면이 아직 이 워크스페이스일 때만 대입하며, 그동안 자동 저장을 멈춘다). */
+  async moveGroupToTab(groupId, toTabId) {
+    const cur = get().current;
+    const spec = get().spec;
+    if (!cur || !spec || moveBusy) return;
+    const g = spec.sceneGroups.find((x) => x.id === groupId);
+    if (!g || g.kind !== "sceneGroup" || g.tabId === toTabId) return;
+    const toTab = (spec.tabs ?? []).find((c) => c.id === toTabId);
+    if (!toTab) return;
+    // ★그 탭의 마지막 세트면 빈 세트를 세운다 — 이름은 이 화면의 언어다
+    const fill = { group: t("sceneGroup.newSet") };
+    for (const fn of beforeWsSwitch) fn();
+    await flushSave(get);
+    if (get().current !== cur || !get().spec) return;
+    const before = get().spec!;
+    const moved = withGroupMoved(before, groupId, toTabId, fill.group);
+    set({ spec: moved });
+    clearUndo();   // ★그림의 경로가 바뀐다 — 옛 경로로 되살리면 엉뚱한 것을 부른다
+    if (moved.activeSceneGroup !== before.activeSceneGroup)
+      usePrompt.getState().load(promptOf(moved, activeGroupOf(moved)));
+    moveBusy = cur;
+    try {
+      const r = await api<{ spec: Spec; records: Rec[]; moved: number }>(
+        `/api/workspaces/${encodeURIComponent(cur)}/scene-groups/${encodeURIComponent(groupId)}/move`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to_tab: toTabId, fill }) },
+      );
+      if (get().current === cur) {
+        const next = migrate(r.spec);
+        set({ spec: next, records: dedupeByFile(r.records ?? []) });
+        usePrompt.getState().load(promptOf(next, activeGroupOf(next)));
+      }
+      toast(t("sceneGroup.movedTo", { name: g.name, tab: toTab.name, n: r.moved }));
+    } catch (e) {
+      if (get().current === cur) {
+        set({ spec: before });
+        usePrompt.getState().load(promptOf(before, activeGroupOf(before)));
+      }
+      toast(t("sceneGroup.moveFailed", { name: g.name, why: String(e) }), "warn");
     } finally {
       moveBusy = null;
       if (saveHeld) {

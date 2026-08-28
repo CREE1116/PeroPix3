@@ -870,6 +870,8 @@ export const ko: Dict = {
    *  뜻해서 「장면 묶음」으로 안 읽혔다). 위 줄이 「탭」이라, 이 묶음의 문구에 「탭」을
    *  되살리지 말 것 — 둘 다 「탭」이면 구별이 안 된다 (2026-08-18). */
   sceneGroup: {
+    movedTo: "「{name}」 씬 그룹을 「{tab}」 탭으로 옮겼습니다 (그림 {n}장)",
+    moveFailed: "「{name}」 씬 그룹을 옮기지 못했습니다 — {why}",
     closeConfirm: "「{name}」 씬 그룹을 닫습니다 (그림 {n}장)",
     closeConfirmBody: "그림 파일은 휴지통에 남습니다. 앱을 켤 때 24시간 지난 것부터 비웁니다.",
     closeSet: "씬 그룹 닫기",

@@ -1202,6 +1202,21 @@ async def move_tab(ws: str, tab_id: str, body: MoveTabBody):
         raise HTTPException(400, str(e))
 
 
+class MoveGroupBody(BaseModel):
+    to_tab: str
+    #: 그 탭의 마지막 세트를 옮길 때 세울 **빈 세트의 이름** — 화면이 준다
+    fill: dict | None = None
+
+
+@app.post("/api/workspaces/{ws}/scene-groups/{group_id}/move")
+async def move_scene_group_api(ws: str, group_id: str, body: MoveGroupBody):
+    """씬 그룹을 **같은 워크스페이스의 다른 탭으로** (`Store.move_scene_group`). 파일을 옮기므로 스레드로."""
+    try:
+        return await asyncio.to_thread(store.move_scene_group, ws, group_id, body.to_tab, body.fill)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 class TrashBody(BaseModel):
     files: list[str] = []
     entries: list[dict] = []

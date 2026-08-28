@@ -28,7 +28,7 @@ export function WorkspaceTabs({ onAdd }: { onAdd: () => void }) {
   const t = useI18n((s) => s.t);
   const { openWs, current, open, closeWs, moveWs } = useWs();
   const ord = useReorder(openWs.length, moveWs, { axis: "x", tapSafe: true });
-  /** 탭을 끌어 올려 둔 워크스페이스 — 받을 자리라고 빛난다 (`lib/tabDrop`) */
+  /** 탭을 끌어 올려 둔 자리 — 이 워크스페이스면 받을 자리라고 빛난다 (`lib/tabDrop`) */
   const dropOver = useTabDrop((s) => s.over);
   if (!openWs.length) return null;
 
@@ -78,7 +78,7 @@ export function WorkspaceTabs({ onAdd }: { onAdd: () => void }) {
               // ★평소 커서는 이 탭의 것이다 (`tapSafe` 라 `handleProps` 는 안 정한다)
               cursor: hp.style.cursor ?? (on ? "default" : "pointer"),
               // ★탭을 끌어 올려 둔 자리 — 지금 워크스페이스는 받을 수 없으니 안 빛난다
-              ...(dropOver === name && !on
+              ...(dropOver?.kind === "ws" && dropOver.name === name && !on
                 ? { outline: "2px solid var(--accent)", outlineOffset: -2, background: "var(--accent-bg)" }
                 : null),
             }}

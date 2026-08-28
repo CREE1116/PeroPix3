@@ -1,7 +1,7 @@
 import { Fragment } from "react";
 import { useI18n } from "../i18n";
 import { useReorder } from "../lib/useReorder";
-import { useTabDrop, wsTabAt } from "../lib/tabDrop";
+import { canvasTabAt, justDropped, useTabDrop, wsTabAt } from "../lib/tabDrop";
 import { DragGhost } from "../cards/DragGhost";
 import { DropLine } from "../components/DropLine";
 import { EditableName } from "../components/EditableName";
@@ -34,14 +34,16 @@ import { Icon } from "../components/Icon";
 export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sceneGroups" }) {
   const { spec, setActiveSceneGroup, renameSceneGroup, addSceneGroup,
     switchTab, addTab, renameTab, moveTab, moveSceneGroup, planRemove, removeAt,
-    current: wsName, moveTabToWs } = useWs();
+    current: wsName, moveTabToWs, moveGroupToTab } = useWs();
   const tr = useI18n((s) => s.t);
   const [editing, setEditing] = useState<string | null>(null);
   const [editingChar, setEditingChar] = useState<string | null>(null);
-  /* ★탭을 **워크스페이스 탭 위**에 올려 두었나 (사용자 지적 2026-08-28: *"워크스페이스에
-     드롭하려고 할 때 탭 위치 이동 마커도 같이 뜸"*). 그때 놓으면 차례 바꾸기가 아니라
-     옮기기라, 이 줄의 삽입선은 **일어나지 않을 일**을 가리킨다 — 감춘다. */
-  const overWs = useTabDrop((s) => s.over) != null;
+  /* ★끌던 것을 **받을 자리 위**에 올려 두었나 (사용자 지적 2026-08-28: *"워크스페이스에
+     드롭하려고 할 때 탭 위치 이동 마커도 같이 뜸"*). 거기서 놓으면 차례 바꾸기가 아니라
+     옮기기라, 그 줄의 삽입선은 **일어나지 않을 일**을 가리킨다 — 감춘다. */
+  const dropOver = useTabDrop((s) => s.over);
+  const overWs = dropOver?.kind === "ws";
+  const overTab = dropOver?.kind === "tab";
   /* ★★**두 줄 다 끌어서 차례를 바꾼다** (사용자 지시 2026-08-24). 탭 전체가 손잡이라
      `tapSafe` 로 잡는다 — 문턱(4px)을 넘기 전에는 아무 일도 안 하므로 **눌러서 전환**과
      **두 번 눌러 이름 고치기**가 그대로 살아 있다.
@@ -64,6 +66,34 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sceneGrou
   //   전부 쌓으면 머리가 두꺼워지고, 이 층은 **캔버스의 내용**을 가르는 것이라 그 자리가 맞다
   //   (페로픽스파이도 캔버스 쪽에 둔다). 캐릭터 줄은 위에 남는다 —
   //   캐릭터는 **좌 패널의 프롬프트까지** 소유하므로 세 기둥 위가 맞다.
+  /* ★★**세트를 탭 위에 놓으면 그 탭으로 옮겨진다** (사용자 지시 2026-08-28: *"씬 그룹을 다른
+     탭에 넣는 기능도 추가"*). 차례 바꾸기(`useReorder`)를 그대로 쓰고 손을 뗀 자리만 하나 더
+     본다 — 탭을 워크스페이스에 놓는 것과 **같은 구조**다 (`lib/tabDrop`).
+     ★놓을 때는 차례 처리가 아니라 **취소**로 끝낸다 — 탭 줄 위의 x 로 틈을 셈해 엉뚱한 차례로
+       밀리는 것을 막는다. */
+  const setDragProps = (groupId: string, hp: ReturnType<typeof setOrd.handleProps>) => ({
+    ...hp,
+    onPointerMove: (e: React.PointerEvent) => {
+      hp.onPointerMove(e);
+      if (setOrd.dragIdx != null) useTabDrop.getState().set(canvasTabAt(e.clientX, e.clientY));
+    },
+    onPointerUp: (e: React.PointerEvent) => {
+      const to = useTabDrop.getState().over;
+      useTabDrop.getState().set(null);
+      if (to?.kind === "tab" && to.id !== spec.activeTab && setOrd.dragIdx != null) {
+        useTabDrop.getState().markDropped();   // ★따라오는 클릭이 그 탭으로 넘기지 않게
+        hp.onPointerCancel();
+        void moveGroupToTab(groupId, to.id);
+        return;
+      }
+      hp.onPointerUp(e);
+    },
+    onPointerCancel: () => {
+      useTabDrop.getState().set(null);
+      hp.onPointerCancel();
+    },
+  });
+
   const setRow = (
       <div
         style={{
@@ -87,10 +117,10 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sceneGrou
         const hp = setOrd.handleProps(i);
         return (
           <Fragment key={t.id}>
-          <DropLine on={setOrd.dragIdx != null && setOrd.overIdx === i} vert />
+          <DropLine on={setOrd.dragIdx != null && setOrd.overIdx === i && !overTab} vert />
           <div
             ref={setOrd.register(i)}
-            {...hp}
+            {...setDragProps(t.id, hp)}
             onClick={() => setActiveSceneGroup(t.id)}
             onDoubleClick={() => setEditing(t.id)}
             data-scene-set={t.id}
@@ -185,7 +215,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sceneGrou
           </Fragment>
         );
       })}
-      <DropLine on={setOrd.dragIdx != null && setOrd.overIdx === inGroup.length} vert />
+      <DropLine on={setOrd.dragIdx != null && setOrd.overIdx === inGroup.length && !overTab} vert />
 
       <button
         // ★씬 하나로 시작한다 (사용자 지시 2026-08-04) — 필요한 만큼은 `씬 추가`로 는다.
@@ -252,10 +282,10 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sceneGrou
               onPointerUp: (e: React.PointerEvent) => {
                 const to = useTabDrop.getState().over;
                 useTabDrop.getState().set(null);
-                if (to && to !== wsName && tabOrd.dragIdx != null) {
+                if (to?.kind === "ws" && to.name !== wsName && tabOrd.dragIdx != null) {
                   useTabDrop.getState().markDropped();   // ★따라오는 클릭이 받는 쪽을 열지 않게 (`justDropped`)
                   hp.onPointerCancel();
-                  void moveTabToWs(c.id, to);
+                  void moveTabToWs(c.id, to.name);
                   return;
                 }
                 hp.onPointerUp(e);
@@ -272,7 +302,8 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sceneGrou
                 ref={tabOrd.register(i)}
                 {...dragProps}
                 data-tab={c.id}
-                onClick={() => switchTab(c.id)}
+                // ★세트를 놓은 직후의 클릭은 전환이 아니다 (`justDropped` 의 ★주)
+                onClick={() => !justDropped() && switchTab(c.id)}
                 onDoubleClick={() => setEditingChar(c.id)}
                 data-tip={tr("tab.rename")}
                 style={{
@@ -297,6 +328,10 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sceneGrou
                   opacity: tabOrd.dragIdx === i ? 0.35 : 1,
                   ...hp.style,
                   cursor: hp.style.cursor ?? "pointer",
+                  // ★세트를 끌어 올려 둔 탭 — 지금 탭은 받을 것이 없으니 안 빛난다
+                  ...(overTab && dropOver.id === c.id && c.id !== spec.activeTab
+                    ? { outline: "2px solid var(--accent)", outlineOffset: -2 }
+                    : null),
                 }}
               >
                 <EditableName

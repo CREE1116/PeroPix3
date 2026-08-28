@@ -703,6 +703,122 @@ class Store:
             cur = nxt
         return None
 
+    # ── 그림을 다른 자리로 (탭 옮기기·씬 그룹 옮기기가 함께 쓴다) ──
+    def _relocate(self, src_ws: str, rows: list[dict], dst_ws: str, tab_name: str) -> dict[str, str]:
+        """그 줄들의 그림을 **`<받는 쪽>/output/멀티/<탭>/<세트>/`** 로 옮기고, 옛 경로 → 새 경로 표를 준다.
+
+        ★탭을 통째로 옮기는 것(`move_tab`)과 씬 그룹만 옮기는 것(`move_scene_group`)이 여기서는
+          **같은 일**이다 — 자리를 정하는 것은 `out_dir` 하나이고, 이름이 겹치면 `next_name` 이
+          생성과 같은 규칙으로 번호를 새로 준다.
+        ★★**자리가 그대로면 건드리지 않는다.** 같은 워크스페이스에서 **이름이 같은 탭**으로 옮기면
+          폴더가 같은데(탭 이름은 겹칠 수 있다), 그때도 옮기면 멀쩡한 파일이 「이미 있다」로 읽혀
+          새 번호를 받는다.
+        ★옮기기 **전에** 자취를 남긴다 (`_track`) — 화면이 새 경로를 받기까지의 틈을 덮는다.
+        ★썸네일 캐시도 따라간다 (없으면 다음 요청에 다시 구워진다 — 실패해도 그만이다).
+        ★같은 뿌리 아래라 `rename` 이다 — 바이트를 다시 쓰지 않는다."""
+        moves: dict[str, str] = {}
+        names: dict[Path, list[str]] = {}
+        for r in rows:
+            rel = str(r.get("file") or "")
+            p = self.file_path(src_ws, rel)
+            if not p or not p.is_file():
+                continue
+            d = self.out_dir(dst_ws, str(r.get("scene_group") or ""), tab_name)
+            target = d / p.name
+            if target.resolve() == p.resolve():
+                continue                      # ★같은 자리다 (이름이 같은 탭) — 옮길 것이 없다
+            if target.exists():
+                # ★이름이 겹치면 같은 접두로 다음 번호를 받는다 (생성과 같은 규칙)
+                lead = p.stem.rsplit("_", 1)[0] if "_" in p.stem else ""
+                got = names.get(d)
+                if got is None:
+                    got = names[d] = self._names_in(d, dst_ws)
+                target = self.next_name(d, lead, p.suffix.lstrip("."), dst_ws, got)
+                got.append(target.name)
+            self._track(src_ws, p, target, dst_ws)   # ★옮기기 **전에** 적는다 (`renumber` 와 같은 순서)
+            p.rename(target)
+            moves[rel] = self.rel(dst_ws, target)
+
+        st = self.dir_of(src_ws) / THUMB_DIR
+        dt = self.dir_of(dst_ws) / THUMB_DIR
+        if st.is_dir() and moves:
+            dt.mkdir(parents=True, exist_ok=True)
+            for old, new in moves.items():
+                a = st / thumbs.flat_name(old)
+                b = dt / thumbs.flat_name(new)
+                if a.is_file() and not b.exists():
+                    try:
+                        a.rename(b)
+                    except OSError:
+                        pass
+        return moves
+
+    # ── 씬 그룹을 같은 워크스페이스의 다른 탭으로 ──────────────
+    def move_scene_group(self, ws: str, group_id: str, to_tab_id: str, fill: dict | None = None) -> dict:
+        """씬 그룹 하나를 **다른 탭 밑으로 옮긴다** (사용자 지시 2026-08-28: *"씬 그룹을 다른 탭에
+        넣는 기능도 추가"*). 그림·레코드·썸네일 캐시가 함께 간다.
+
+        ★**탭 옮기기의 축소판이다** — 다른 것은 둘뿐이다: (a) 한 워크스페이스 안이라 id 가 겹칠 일이
+          없어 새 id 를 주지 않는다 (한 spec 안에서 이미 유일하다), (b) 색인·곁파일은 줄이 오갈 곳이
+          없어 **경로만 갈아 끼운다** (`_rewrite_paths` — 개명이 쓰는 그 길).
+        ★★파일이 **받는 탭의 폴더로 간다** — 자리는 `output/멀티/<탭>/<세트>/` 라 탭이 바뀌면 자리도
+          바뀐다. 안 옮기면 탐색기에서는 옛 탭 밑에 있는데 앱에서는 새 탭에 보인다.
+        ★★그 탭의 **마지막 세트**를 옮기면 그 자리에 빈 세트를 세운다 — 세트가 하나도 없는 탭은
+          생성이 불가능하다 (사용자 지시 2026-08-26, `store/workspace.ts` 의 `migrate` 가 여는
+          자리에서 메우는 것과 같은 모양이다). 이름은 화면이 `fill` 로 준다 (화면의 언어다).
+        ★받는 탭의 **줄 끝**에 선다 — 끌어다 놓은 것이 어디로 갔는지 눈으로 찾을 수 있어야 한다."""
+        with self.locked(ws):
+            return self._move_group_locked(ws, group_id, to_tab_id, fill)
+
+    def _move_group_locked(self, ws: str, group_id: str, to_tab_id: str, fill: dict | None = None) -> dict:
+        spec = self.load(ws)
+        if not spec:
+            raise ValueError("워크스페이스를 찾지 못했습니다")
+        groups = spec.get("sceneGroups") or []
+        g = next((x for x in groups if x.get("id") == group_id), None)
+        if not g:
+            raise ValueError("그 씬 그룹이 없습니다")
+        to = next((t for t in (spec.get("tabs") or []) if t.get("id") == to_tab_id), None)
+        if not to:
+            raise ValueError("그 탭이 없습니다")
+        src_tab = g.get("tabId")
+        if src_tab == to_tab_id:
+            raise ValueError("같은 탭입니다")
+        own = [x for x in groups if x.get("tabId") == src_tab]
+        left = [x for x in own if x.get("id") != group_id]
+        if not left and not fill:
+            raise ValueError("마지막 세트는 옮길 수 없습니다")
+
+        # ① 그 그룹의 그림 — id 로 묶고, id 가 없는 옛 줄은 세트 이름으로 (`takesOf` 의 폴백과 같다)
+        mine = [
+            r for r in self.records(ws)
+            if r.get("scene_group_id") == group_id
+            or (not r.get("scene_group_id") and r.get("scene_group") == g.get("name"))
+        ]
+        moves = self._relocate(ws, mine, ws, str(to.get("name") or ""))
+        # ② 경로만 갈아 끼운다 — 같은 워크스페이스라 줄이 오갈 곳이 없고, id 도 그대로다
+        if moves:
+            self._rewrite_paths(ws, moves)
+
+        # ③ spec — 받는 탭의 **줄 끝**에 세운다 (줄 차례가 곧 배열 차례다)
+        rest = [x for x in groups if x.get("id") != group_id]
+        g["tabId"] = to_tab_id
+        at = max((i for i, x in enumerate(rest) if x.get("tabId") == to_tab_id), default=len(rest) - 1) + 1
+        rest.insert(at, g)
+        spec["sceneGroups"] = rest
+        new_id = None
+        if not left:
+            ng = {"id": f"tab_{uuid.uuid4().hex[:8]}", "kind": "sceneGroup",
+                  "name": str((fill or {}).get("group") or ""), "tabId": src_tab,
+                  "idOnly": True, "cards": [], "cellSeq": 0, "cardSeq": 0}
+            spec["sceneGroups"].append(ng)
+            new_id = ng["id"]
+        # ★보고 있던 세트가 나갔으면 그 탭에 남은 것(없으면 방금 세운 빈 세트)으로
+        if spec.get("activeSceneGroup") == group_id and spec.get("activeTab") == src_tab:
+            spec["activeSceneGroup"] = left[0]["id"] if left else new_id
+        self.save(ws, spec)
+        return {"ok": True, "moved": len(moves), "spec": spec, "records": self.records(ws)}
+
     # ── 탭을 다른 워크스페이스로 ─────────────────────────────
     def move_tab(self, src_ws: str, tab_id: str, dst_ws: str, fill: dict | None = None) -> dict:
         """탭 하나를 **다른 워크스페이스로 옮긴다** — `_move_tab_locked` 를 두 워크스페이스의 잠금 안에서.
@@ -793,40 +909,8 @@ class Store:
             if r.get("scene_group_id") in gids
             or (not r.get("scene_group_id") and r.get("scene_group") in gnames)
         ]
-        moves: dict[str, str] = {}
-        names: dict[Path, list[str]] = {}
-        for r in mine:
-            rel = str(r.get("file") or "")
-            p = self.file_path(src_ws, rel)
-            if not p or not p.is_file():
-                continue
-            d = self.out_dir(dst_ws, str(r.get("scene_group") or ""), str(tab.get("name") or ""))
-            target = d / p.name
-            if target.exists():
-                # ★이름이 겹치면 같은 접두로 다음 번호를 받는다 (생성과 같은 규칙)
-                lead = p.stem.rsplit("_", 1)[0] if "_" in p.stem else ""
-                got = names.get(d)
-                if got is None:
-                    got = names[d] = self._names_in(d, dst_ws)
-                target = self.next_name(d, lead, p.suffix.lstrip("."), dst_ws, got)
-                got.append(target.name)
-            self._track(src_ws, p, target, dst_ws)   # ★옮기기 **전에** 적는다 (`renumber` 와 같은 순서)
-            p.rename(target)
-            moves[rel] = self.rel(dst_ws, target)
-
-        # ③ 썸네일 캐시도 따라간다 (없으면 다음 요청에 다시 구워진다 — 실패해도 그만이다)
-        st = self.dir_of(src_ws) / THUMB_DIR
-        dt = self.dir_of(dst_ws) / THUMB_DIR
-        if st.is_dir() and moves:
-            dt.mkdir(parents=True, exist_ok=True)
-            for old, new in moves.items():
-                a = st / thumbs.flat_name(old)
-                b = dt / thumbs.flat_name(new)
-                if a.is_file() and not b.exists():
-                    try:
-                        a.rename(b)
-                    except OSError:
-                        pass
+        # ③ 파일·썸네일을 받는 쪽 자리로 (`_relocate` — 씬 그룹 옮기기와 같은 일이라 한곳에 있다)
+        moves = self._relocate(src_ws, mine, dst_ws, str(tab.get("name") or ""))
 
         # ④ 색인·곁파일 — 곁파일을 먼저 (`append_record` 와 같은 순서)
         sd = self.dir_of(src_ws)

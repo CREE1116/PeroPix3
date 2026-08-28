@@ -846,6 +846,8 @@ export const en = {
   /** ★This lower row is the "set" row. The row above is now called "tab", so keep the
    *  word "tab" out of this group (2026-08-18). */
   sceneGroup: {
+    movedTo: "Moved scene group \"{name}\" to tab \"{tab}\" ({n} images)",
+    moveFailed: "Could not move scene group \"{name}\" — {why}",
     closeConfirm: "Close scene group \"{name}\" ({n} images)",
     closeConfirmBody: "The image files stay in the trash. Items older than 24 hours are cleared on app start.",
     closeSet: "Close scene group",
