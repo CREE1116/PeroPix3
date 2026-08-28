@@ -7,6 +7,8 @@
  *    `{}` `[]` 는 구형이라 만들지 않는다.
  */
 
+import { guardedRanges, isGuarded } from "./naiText.ts";
+
 export type Tag = { t: string; w: number | null };
 
 export type BlockColor = "blue" | "teal" | "purple" | "amber" | "red" | "green" | null;
@@ -231,20 +233,34 @@ export function parseSpans(str: string): (Tag & { start: number; end: number })[
   let cur = 0;
   let m: RegExpExecArray | null;
 
-  /** ★쉼표와 **줄바꿈** 둘 다에서 자른다 */
+  /* ★★**NAI 가 글자로 그리는 자리는 안 자른다** (사용자 지적 2026-08-28: *"우리는 쉼표가
+       칩으로 분할해버림"*). 따옴표 짝과 `text:` 절이 그렇다 — 그 안의 쉼표는 구분자가 아니라
+       **그려질 글자**다. 규칙은 `lib/naiText` 에 있고, 정본은 백엔드(`naitext.py`)다. */
+  const guard = guardedRanges(str);
+
+  /** ★쉼표와 **줄바꿈** 둘 다에서 자른다 — 단, 지켜야 할 구간 안에서는 안 자른다 */
   const plain = (from: number, to: number) => {
-    let i = from;
-    for (const piece of str.slice(from, to).split(/[,\n]/)) {
-      const t = piece.trim();
-      if (t) {
-        const at = i + piece.indexOf(t);
-        out.push({ t, w, start: at, end: at + t.length });
+    const push = (s: number, e: number) => {
+      const seg = str.slice(s, e);
+      const t = seg.trim();
+      if (!t) return;
+      const at = s + seg.indexOf(t);
+      out.push({ t, w, start: at, end: at + t.length });
+    };
+    let start = from;
+    for (let i = from; i < to; i++) {
+      const c = str[i];
+      if ((c === "," || c === "\n") && !isGuarded(guard, i)) {
+        push(start, i);
+        start = i + 1;   // 자른 구분자 한 글자
       }
-      i += piece.length + 1;   // 자른 구분자 한 글자
     }
+    push(start, to);
   };
 
   while ((m = re.exec(str))) {
+    // ★지켜야 할 구간 안의 `::` 는 세기 표시가 아니라 그려질 글자다
+    if (isGuarded(guard, m.index)) continue;
     const opening = m[2] !== undefined;
     // 경계 글자(쉼표·공백)는 구분자라 앞 구간에 남겨 둔다 — `plain` 이 어차피 잘라 낸다
     plain(cur, opening ? m.index + m[1].length : m.index);
