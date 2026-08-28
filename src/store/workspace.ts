@@ -1305,18 +1305,16 @@ export const useWs = create<S>((set, get) => ({
     if (!cur || !spec || to === cur) return;
     const tab = (spec.tabs ?? []).find((c) => c.id === tabId);
     if (!tab) return;
-    // ★마지막 탭은 못 옮긴다 — 씬 그룹이 설 자리가 없어진다 (`removeTab` 과 같은 규칙)
-    if ((spec.tabs?.length ?? 0) <= 1) {
-      toast(t("tab.lastOne"), "warn");
-      return;
-    }
+    /* ★마지막 탭을 옮기면 **빈 새 탭이 그 자리에 선다** (사용자 지시 2026-08-28). 모양은 여기서
+       준다 — 이름은 이 화면의 언어이고, 빈 프롬프트의 골격은 `addTab` 과 같은 `freshPrompt` 다. */
+    const fill = { tab: t("tab.newName"), group: t("sceneGroup.newSet"), prompt: freshPrompt() };
     // ★떠나는 탭의 생성 옵션을 담고, 밀린 편집을 **먼저** 쓴다 — 서버는 파일의 spec 을 읽는다
     for (const fn of beforeWsSwitch) fn();
     await flushSave(get);
     try {
       const r = await api<{ spec: Spec; records: Rec[]; moved: number }>(
         `/api/workspaces/${encodeURIComponent(cur)}/tabs/${encodeURIComponent(tabId)}/move`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to }) },
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to, fill }) },
       );
       const next = migrate(r.spec);
       clearUndo();   // ★옮겨 간 블록·그림을 되살리면 안 된다

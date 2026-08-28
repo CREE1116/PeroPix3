@@ -97,7 +97,8 @@ def file_lead(cell_no: int | None, cell: str | None, exclude_no: bool) -> str:
 class Store:
     def __init__(self, root: Path):
         #: 방금 옮긴 그림의 옛 이름 → 지금 이름 (위 ★★주)
-        self._moved: dict[tuple[str, str], str] = {}
+        #: ★값도 (ws, rel) 이다 — 탭을 다른 워크스페이스로 옮기면 그림이 **다른 폴더**로 간다
+        self._moved: dict[tuple[str, str], tuple[str, str]] = {}
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
 
@@ -114,23 +115,26 @@ class Store:
     #  ★캐시일 뿐이라 앱을 껐다 켜면 사라진다 — 그때는 화면도 새 경로를 들고 있다.
     _MOVED_CAP = 20_000
 
-    def _track(self, ws: str, was: Path, now: Path) -> None:
-        """그 그림이 **지금 어디 있는지** 적어 둔다 (위 ★★주). 옮기는 도중에도 부른다."""
-        self._moved[(ws, self.rel(ws, was))] = self.rel(ws, now)
+    def _track(self, ws: str, was: Path, now: Path, to_ws: str | None = None) -> None:
+        """그 그림이 **지금 어디 있는지** 적어 둔다 (위 ★★주). 옮기는 도중에도 부른다.
+        ★`to_ws` 를 주면 **다른 워크스페이스로** 간 것이다 (`move_tab`) — 찾는 쪽이 그 폴더까지 따라간다."""
+        dst = to_ws or ws
+        self._moved[(ws, self.rel(ws, was))] = (dst, self.rel(dst, now))
         if len(self._moved) > self._MOVED_CAP:      # 오래된 절반을 버린다
             for k in list(self._moved)[: len(self._moved) // 2]:
                 self._moved.pop(k, None)
 
-    def _current(self, ws: str, rel: str) -> str:
-        """옛 이름으로 물어도 **지금 이름**을 준다 (위 ★★주). 사슬을 따라가되 고리는 끊는다."""
-        seen: set[str] = set()
-        while rel not in seen:
-            seen.add(rel)
-            nxt = self._moved.get((ws, rel))
+    def _current(self, ws: str, rel: str) -> tuple[str, str]:
+        """옛 이름으로 물어도 **지금 자리**(ws, rel)를 준다 (위 ★★주). 사슬을 따라가되 고리는 끊는다."""
+        seen: set[tuple[str, str]] = set()
+        cur = (ws, rel)
+        while cur not in seen:
+            seen.add(cur)
+            nxt = self._moved.get(cur)
             if not nxt:
                 break
-            rel = nxt
-        return rel
+            cur = nxt
+        return cur
 
     def dir_of(self, ws: str) -> Path:
         return self.root / safe_name(ws)
@@ -620,7 +624,8 @@ class Store:
             return None
         # ★캐시 이름도 **지금 이름**으로 짓는다 — 옛 이름으로 물어 왔다고 옛 이름의 캐시를
         #   또 만들면 같은 그림의 썸네일이 두 벌이 된다 (`_moved` 의 ★★주).
-        return thumbs.derive(src, self.dir_of(ws) / THUMB_DIR / thumbs.flat_name(self._current(ws, rel)))
+        cw, crel = self._current(ws, rel)
+        return thumbs.derive(src, self.dir_of(cw) / THUMB_DIR / thumbs.flat_name(crel))
 
     def file_path(self, ws: str, rel: str) -> Path | None:
         """워크스페이스 밖으로 나가는 경로를 막는다.
@@ -629,28 +634,33 @@ class Store:
           거치므로 「옛 이름 → 임시 → 새 이름」의 사슬이 생기고, 그 중 **지금 존재하는 칸**이
           어디인지는 순간마다 다르다. 그래서 한 칸씩 짚어 보고 처음 있는 것을 돌려준다 —
           옮기는 도중에 물어도 답이 나온다."""
-        base = self.dir_of(ws).resolve()
-        seen: set[str] = set()
-        cur = rel
+        # ★사슬은 **워크스페이스를 넘을 수 있다** (`move_tab`) — 칸마다 그 워크스페이스 안인지 본다
+        seen: set[tuple[str, str]] = set()
+        cur = (ws, rel)
         while cur not in seen:
             seen.add(cur)
-            p = (base / cur).resolve()
+            base = self.dir_of(cur[0]).resolve()
+            p = (base / cur[1]).resolve()
             if str(p).startswith(str(base)) and p.exists():
                 return p
-            nxt = self._moved.get((ws, cur))
+            nxt = self._moved.get(cur)
             if not nxt:
                 break
             cur = nxt
         return None
 
     # ── 탭을 다른 워크스페이스로 ─────────────────────────────
-    def move_tab(self, src_ws: str, tab_id: str, dst_ws: str) -> dict:
+    def move_tab(self, src_ws: str, tab_id: str, dst_ws: str, fill: dict | None = None) -> dict:
         """탭 하나를 **다른 워크스페이스로 옮긴다** — 씬 그룹·그림·레코드·썸네일 캐시가 함께 간다
         (사용자 지시 2026-08-28: *"탭을 끌어다가 다른 워크스페이스에 두면 거기로 옮겨지게"*).
 
         ★옮기는 것이지 복사가 아니다: 주는 쪽에서는 사라진다. 되돌리려면 도로 끌어오면 된다.
-        ★★마지막 탭은 못 옮긴다 — 씬 그룹이 설 자리가 없어진다 (`store/workspace.ts` 의
-          `removeTab` 과 같은 규칙).
+        ★★마지막 탭을 옮기면 **빈 새 탭을 채운다** (사용자 지시 2026-08-28: *"마지막 탭도 옮기면
+          그냥 즉시 빈 새 탭 만들어 주면 되는 거 아닌가"*). 모양(이름·빈 프롬프트)은 화면이
+          `fill` 로 준다 — 언어도 프롬프트 골격도 화면 것이라 여기서 지어내지 않는다.
+          `fill` 이 없으면(옛 화면) 거절한다.
+        ★★옮기는 동안에도 옛 자리로 찾을 수 있다 — 개명(`renumber`)과 같은 자취(`_track`)를
+          **워크스페이스 너머로** 남긴다. 화면이 새 목록을 받기까지의 틈에 요청이 와도 404 가 아니다.
         ★★id 가 받는 쪽과 겹치면 **새 id 를 준다** — 탭·씬 그룹·카드·씬 전부. 워크스페이스마다
           `ch_1`·`t_1` 처럼 같은 씨앗에서 번호를 매기므로 겹치는 일이 흔하다. 레코드의
           `scene_group_id`·`cell_id` 도 같은 표로 바꾼다 — 안 바꾸면 그림이 받는 쪽 화면 어디에도
@@ -672,7 +682,7 @@ class Store:
         tab = next((t for t in tabs if t.get("id") == tab_id), None)
         if not tab:
             raise ValueError("그 탭이 없습니다")
-        if len(tabs) <= 1:
+        if len(tabs) <= 1 and not fill:
             raise ValueError("마지막 탭은 옮길 수 없습니다")
         groups = [g for g in (src.get("sceneGroups") or []) if g.get("tabId") == tab_id]
         gids = {g.get("id") for g in groups}
@@ -738,6 +748,7 @@ class Store:
                     got = names[d] = self._names_in(d, dst_ws)
                 target = self.next_name(d, lead, p.suffix.lstrip("."), dst_ws, got)
                 got.append(target.name)
+            self._track(src_ws, p, target, dst_ws)   # ★옮기기 **전에** 적는다 (`renumber` 와 같은 순서)
             p.rename(target)
             moves[rel] = self.rel(dst_ws, target)
 
@@ -790,6 +801,15 @@ class Store:
         self.save(dst_ws, dst)
         src["tabs"] = [t for t in tabs if t.get("id") != tab_id]
         src["sceneGroups"] = [g for g in (src.get("sceneGroups") or []) if g.get("id") not in gids]
+        if not src["tabs"]:
+            # ★마지막 탭이 나갔다 — 화면이 준 모양으로 빈 탭과 빈 씬 그룹을 하나씩 세운다
+            nt = {"id": f"ch_{uuid.uuid4().hex[:8]}", "name": str((fill or {}).get("tab") or "")}
+            if (fill or {}).get("prompt") is not None:
+                nt["prompt"] = fill["prompt"]
+            ng = {"id": f"tab_{uuid.uuid4().hex[:8]}", "kind": "sceneGroup",
+                  "name": str((fill or {}).get("group") or ""), "tabId": nt["id"], "idOnly": True, "cards": []}
+            src["tabs"] = [nt]
+            src["sceneGroups"] = [ng]
         if src.get("activeTab") == tab_id:
             src["activeTab"] = src["tabs"][0].get("id")
         if src.get("activeSceneGroup") in gids:

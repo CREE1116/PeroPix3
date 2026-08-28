@@ -1184,13 +1184,15 @@ async def copy_to_tab(ws: str, body: CopyBody):
 
 class MoveTabBody(BaseModel):
     to: str
+    #: 마지막 탭을 옮길 때 그 자리에 세울 **빈 탭의 모양** (이름·씬 그룹 이름·빈 프롬프트) — 화면이 준다
+    fill: dict | None = None
 
 
 @app.post("/api/workspaces/{ws}/tabs/{tab_id}/move")
 async def move_tab(ws: str, tab_id: str, body: MoveTabBody):
     """탭을 **다른 워크스페이스로** 옮긴다 (`Store.move_tab`). 파일을 옮기므로 스레드로 보낸다."""
     try:
-        return await asyncio.to_thread(store.move_tab, ws, tab_id, body.to)
+        return await asyncio.to_thread(store.move_tab, ws, tab_id, body.to, body.fill)
     except ValueError as e:
         raise HTTPException(400, str(e))
 
