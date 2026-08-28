@@ -20,6 +20,10 @@ export type ResizeDir =
 
 /** 세로로 늘리기 전의 자리 — 두 번째 더블클릭이 여기로 되돌린다 */
 let vFitBack: { y: number; h: number } | null = null;
+/** ★지금 세로로 늘려 둔 상태인가 — **묻지 않고 아는** 값이다.
+ *  가장자리를 끌 때마다 창·모니터를 조회하면(왕복 셋) 크기 조절이 그만큼 늦게 시작한다.
+ *  늘려 둔 상태가 아니면 되돌릴 것도 없으므로, 그때는 아무것도 묻지 않고 지나간다. */
+let vFitted = false;
 
 async function win() {
   try {
@@ -95,11 +99,13 @@ export const appWindow = {
           return;
         }
         vFitBack = null;
+        vFitted = false;
         await w.setPosition(new PhysicalPosition(pos.x, back.y));
         await w.setSize(new PhysicalSize(size.width, back.h));
         return;
       }
       vFitBack = { y: pos.y, h: size.height };
+      vFitted = true;
       await w.setPosition(new PhysicalPosition(pos.x, wa.position.y));
       await w.setSize(new PhysicalSize(size.width, wa.size.height));
       const after = await w.outerSize();
@@ -128,6 +134,7 @@ export const appWindow = {
       const wa = m.workArea;
       const full =
         Math.abs(pos.y - wa.position.y) <= 2 && Math.abs(size.height - wa.size.height) <= 2;
+      vFitted = full;
       if (!full) vFitBack = { y: pos.y, h: size.height };
     } catch {
       /* 자리를 못 적어도 하던 일에는 지장이 없다 */
@@ -143,6 +150,8 @@ export const appWindow = {
    *  ★크기 조절을 **시작하기 직전에** 부른다. 되돌린 뒤 OS 가 그 변을 커서에 맞춘다.
    *  ★늘려 둔 상태가 아니면 아무 일도 안 한다. */
   async unfitFor(dir: "North" | "South") {
+    // ★늘려 둔 상태가 아니면 **묻지도 않고** 지나간다 (위 `vFitted` 주석) — 끌기가 늦어진다
+    if (!vFitted) return;
     try {
       const w = await win();
       const back = vFitBack;
@@ -158,6 +167,7 @@ export const appWindow = {
         Math.abs(pos.y - wa.position.y) <= 2 && Math.abs(size.height - wa.size.height) <= 2;
       if (!fitted) return;
       vFitBack = null;
+      vFitted = false;
       if (dir === "North") {
         // 아래 변을 원래 자리로 — 위 변은 지금 자리에 둔 채 높이만 줄인다
         const h = back.y + back.h - pos.y;
