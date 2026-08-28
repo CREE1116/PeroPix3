@@ -100,6 +100,8 @@ export function ImageActions({
   const [seedHot, setSeedHot] = useState(false);
   const opus = useSub((s) => (s.sub?.tier ?? 0) >= 3);
   const [seen, setSeen] = useState<ImageMeta | null>(null);
+  /** 태거 결과 (사용자 승인 2026-08-29) — 모달 하나로 보여 주고 복사해 간다 */
+  const [tagged, setTagged] = useState<TagResult | null>(null);
 
   /** ★쿼리를 하나 붙여 받는다 — 같은 주소를 `<img>` 가 no-cors 로 먼저 캐시해 두면
    *  그 뒤의 `fetch` 가 CORS 로 막힌다 (실측으로 밟았다, 2026-08-04). */
@@ -258,6 +260,48 @@ export function ImageActions({
     }
   };
 
+  /** 태그 뽑기 (사용자 승인 2026-08-29) — *"1girl 만 넣고 나온 캐릭터를 재현할 태그"*.
+   *
+   *  ★모델(1.26GB)은 동봉하지 않는다 — **처음 눌렀을 때** 내려받을지 묻는다 (사용자 설계).
+   *    내려받는 동안 이 단추를 잡아 두지 않는다: 시작만 알리고 놓아 준다. 다시 누르면
+   *    진행률을 알려 주고, 다 받아졌으면 그때부터 돌아간다. */
+  const runTagger = async () => {
+    if (!upscale || busy) return;
+    setBusy(true);
+    try {
+      const st = await api<TaggerStatus>("/api/tagger/status");
+      if (st.error) return void toast(st.error, "warn");
+      if (!st.ready) {
+        if (st.downloading)
+          return void toast(t("tagger.downloading", { pct: Math.round((st.got / st.total) * 100) }));
+        if (
+          await ask({
+            title: t("tagger.dlTitle"),
+            body: t("tagger.dlBody"),
+            ok: t("tagger.dlOk"),
+            cancel: t("common.cancel"),
+          })
+        ) {
+          await api("/api/tagger/download", { method: "POST" });
+          toast(t("tagger.dlStarted"));
+        }
+        return;
+      }
+      const target = ensureFile ? await ensureFile() : upscale.file;
+      if (!target) return;
+      const r = await api<TagResult>("/api/tagger/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspace: upscale.ws, file: target }),
+      });
+      setTagged(r);
+    } catch (e) {
+      toast(String(e), "warn");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <>
       <div
@@ -293,6 +337,13 @@ export function ImageActions({
               </button>
             )}
           </>
+        )}
+        {/* ★태그 뽑기 — 「프롬프트 보기」 옆 (사용자 설계 2026-08-29). 워크스페이스 파일에만
+            뜻이 있다 (`upscale` 과 같은 조건). 글자 무리의 규칙대로 툴팁을 안 단다. */}
+        {upscale && !isMulti && (
+          <button data-act-tagger onClick={() => void runTagger()} disabled={busy} style={btn}>
+            {t("act.tagger")}
+          </button>
         )}
         {/* ★「설정을 가져다 쓰는 것」 무리에 둔다 — 이 단추가 옮기는 것도 그림 한 장과
             **그 그림의 설정**이다 (페로픽스파이도 `.result-meta` 에서 「설정 불러오기」
@@ -471,7 +522,86 @@ export function ImageActions({
       </div>
 
       {seen && <PromptView meta={seen} onClose={() => setSeen(null)} />}
+      {tagged && <TagView result={tagged} onClose={() => setTagged(null)} />}
     </>
+  );
+}
+
+type TaggerStatus = { ready: boolean; downloading: boolean; got: number; total: number; error: string };
+type TagResult = { tags: { tag: string; score: number; character: boolean }[]; caption: string };
+
+/** 태거 결과 — 태그 칩 목록과 「전체 복사」 (사용자 승인 2026-08-29).
+ *  ★적용 버튼을 달지 않는다 — `PromptView` 와 같은 이유다: 어디에 넣을지는 사용자가 안다. */
+function TagView({ result, onClose }: { result: TagResult; onClose: () => void }) {
+  const t = useI18n((s) => s.t);
+  return (
+    <div
+      data-tag-view
+      onPointerDown={(e) => e.target === e.currentTarget && onClose()}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 88,
+        background: "rgba(6,8,12,0.62)",
+        display: "grid",
+        placeItems: "center",
+        padding: "var(--sp-6)",
+      }}
+    >
+      <div
+        style={{
+          background: "var(--bg)",
+          border: "1px solid var(--line)",
+          borderRadius: "var(--r-4)",
+          padding: "var(--sp-5)",
+          width: "min(560px, 92vw)",
+          maxHeight: "80vh",
+          overflowY: "auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: "var(--sp-4)",
+        }}
+      >
+        <b style={{ fontSize: "var(--text-sm)" }}>{t("tagger.title")}</b>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sp-2)" }}>
+          {result.tags.map((x) => (
+            <span
+              key={x.tag}
+              data-tip={x.score.toFixed(2)}
+              style={{
+                fontSize: "var(--text-xs)",
+                padding: "2px var(--sp-3)",
+                borderRadius: "var(--r-2)",
+                /* ★캐릭터·판권 태그는 강조 테두리 — 재현의 핵심이라 먼저 눈에 들어와야 한다 */
+                border: `1px solid ${x.character ? "var(--accent)" : "var(--line)"}`,
+                background: "var(--panel)",
+                color: "var(--ink)",
+              }}
+            >
+              {x.tag}
+            </span>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: "var(--sp-3)", justifyContent: "flex-end" }}>
+          <button
+            data-tag-copy
+            onClick={() => {
+              void navigator.clipboard.writeText(result.caption);
+              toast(t("tagger.copied"));
+            }}
+            style={{
+              fontSize: "var(--text-xs)",
+              padding: "var(--sp-2) var(--sp-4)",
+              border: "1px solid var(--line)",
+              borderRadius: "var(--r-2)",
+              background: "var(--panel)",
+            }}
+          >
+            {t("tagger.copyAll")}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

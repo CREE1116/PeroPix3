@@ -259,6 +259,18 @@ export const ko: Dict = {
     confirmManyBody: "장마다 Anlas 가 소모됩니다.",
   },
 
+  /** 태거 (WD eva02) — 그림에서 재현 태그를 뽑는다 (사용자 승인 2026-08-29) */
+  tagger: {
+    title: "뽑힌 태그",
+    dlTitle: "태거 모델을 내려받을까요?",
+    dlBody: "약 1.26GB 를 한 번만 내려받습니다. 받는 동안에도 앱은 그대로 쓸 수 있습니다.",
+    dlOk: "내려받기",
+    dlStarted: "내려받기 시작. 끝나면 다시 눌러 주세요.",
+    downloading: "내려받는 중 {pct}%. 끝나면 다시 눌러 주세요.",
+    copyAll: "전체 복사",
+    copied: "태그를 복사했습니다",
+  },
+
   gen: {
     needToken: "설정에서 NAI 토큰을 넣어야 생성됩니다.",
     perSlot: "씬당",
@@ -726,6 +738,7 @@ export const ko: Dict = {
     clone: "새 탭으로 복제",
     cloned: "새 탭으로 복제했습니다",
     showPrompt: "프롬프트 보기",
+    tagger: "태그 뽑기",
     /** ★글자로 남는 **유일한** 단추다 — 이름 자체가 짧은 낱말이라 아이콘이 오히려 흐리다.
      *  ★군더더기를 붙이지 않는다 (사용자 지적 2026-08-19: 「이 그림으로 (i2i)」였다) */
     i2i: "i2i",

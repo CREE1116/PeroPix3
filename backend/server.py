@@ -37,6 +37,7 @@ from pydantic import BaseModel
 
 import censor
 import files
+import tagger
 import imgutil
 import keep
 import genqueue
@@ -2639,6 +2640,36 @@ def _censor_open(b: CensorSource):
         raw = b.data.split(",", 1)[-1]
         return Image.open(io.BytesIO(base64.b64decode(raw))), None
     raise HTTPException(400, "그림이 없습니다")
+
+
+# ── 태거 (WD eva02) — 그림에서 재현 태그를 뽑는다 (사용자 승인 2026-08-29) ──
+class TaggerRun(BaseModel):
+    workspace: str
+    file: str
+
+
+@app.get("/api/tagger/status")
+async def tagger_status():
+    """모델이 있나 · 내려받는 중인가 (진행 바이트 포함)."""
+    return tagger.status()
+
+
+@app.post("/api/tagger/download")
+async def tagger_download():
+    """모델 내려받기 시작 (백그라운드) — 진행은 status 를 폴링한다."""
+    return tagger.start_download()
+
+
+@app.post("/api/tagger/run")
+def tagger_run(body: TaggerRun):
+    """태그 뽑기. ★`def` 다 — ONNX 추론이 수 초를 쥔다 (censor 와 같은 규칙)."""
+    p = store.file_path(body.workspace, body.file)
+    if not p:
+        raise HTTPException(404, "그림을 찾지 못했습니다.")
+    try:
+        return tagger.run(p)
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
 
 
 @app.get("/api/censor/models")

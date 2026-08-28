@@ -255,6 +255,17 @@ export const en = {
     confirmManyBody: "Each image costs Anlas.",
   },
 
+  tagger: {
+    title: "Extracted tags",
+    dlTitle: "Download the tagger model?",
+    dlBody: "A one-time download of about 1.26GB. The app stays usable while it downloads.",
+    dlOk: "Download",
+    dlStarted: "Download started. Press again when it finishes.",
+    downloading: "Downloading {pct}%. Press again when it finishes.",
+    copyAll: "Copy all",
+    copied: "Tags copied",
+  },
+
   gen: {
     needToken: "Enter your NAI token in Settings to generate.",
     perSlot: "Per scene",
@@ -708,6 +719,7 @@ export const en = {
     clone: "Duplicate into a new tab",
     cloned: "Duplicated into a new tab",
     showPrompt: "View prompt",
+    tagger: "Extract tags",
     /** ★글자로 남는 **유일한** 단추다 — 이름 자체가 짧은 낱말이라 아이콘이 오히려 흐리다.
      *  ★군더더기를 붙이지 않는다 (사용자 지적 2026-08-19: 「이 그림으로 (i2i)」였다) */
     i2i: "i2i",
