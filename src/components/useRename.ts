@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /** 이름 고치기 — **앱에 하나뿐인 규칙** (사용자 지시 2026-08-20:
  *  *"편집버튼도 모든 편집버튼이 각각 만들어서 일관성이 보장이 안되잖아.
@@ -36,10 +36,54 @@ export function useRename(
   const commit = () => {
     const v = draft.trim();
     if (v && v !== name) onRename?.(v);
+    live.current.done = true;
     setOn(false);
   };
-  const cancel = () => setOn(false);
+  const cancel = () => {
+    // ★버리고 나가는 길은 **`Esc` 하나**다 (사용자 지시 2026-08-28)
+    live.current.done = true;
+    setOn(false);
+  };
   const toggle = () => (on ? commit() : setOn(true));
+
+  /** ★★**밖을 눌러도, 칸이 사라져도 적은 것은 남는다** (사용자 지시 2026-08-28:
+   *  *"텍스트 편집창들 편집하다가 다른 데 눌러서 해제하면 편집 취소가 아니고 그대로
+   *  저장되어야 함. Esc 만 취소."*).
+   *
+   *  `blur` 하나에 기대고 있었는데 그것이 **두 자리에서 안 온다**:
+   *   ① 칩·끌기 손잡이처럼 `pointerdown` 의 기본 동작을 막는 표면을 누르면 초점이 안 빠진다.
+   *   ② 리액트의 `onBlur` 은 **언마운트에는 오지 않는다** — 줄이 접히거나 화면이 바뀌면
+   *      치던 이름이 그대로 사라졌다. 그것이 「취소된 것처럼 보이는」 정체다.
+   *  그래서 바깥 누름을 직접 듣고, 사라질 때도 한 번 담는다. */
+  const live = useRef({ on, draft, name, onRename, done: false });
+  live.current.on = on;
+  live.current.draft = draft;
+  live.current.name = name;
+  live.current.onRename = onRename;
+  useEffect(() => {
+    if (on) live.current.done = false;
+  }, [on]);
+  useEffect(
+    () => () => {
+      const l = live.current;
+      if (!l.on || l.done) return;
+      const v = l.draft.trim();
+      if (v && v !== l.name) l.onRename?.(v);
+    },
+    [],
+  );
+  useEffect(() => {
+    if (!on) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as HTMLElement | null;
+      // 자기 칸과 연필 단추는 비켜 간다 (단추는 눌러서 끝내는 길이 따로 있다)
+      if (t?.closest?.("[data-rename-input]") || t?.closest?.("[data-rename-btn]")) return;
+      commit();
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [on, draft]);
 
   return {
     editing: on,
@@ -48,6 +92,7 @@ export function useRename(
     commit,
     /** 이름 칸에 그대로 펴 넣는다 (`style` 은 자리마다 다르므로 여기서 안 준다) */
     inputProps: {
+      "data-rename-input": "",
       autoFocus: true,
       value: draft,
       onChange: (e: React.ChangeEvent<HTMLInputElement>) => setDraft(e.target.value),
@@ -62,6 +107,7 @@ export function useRename(
     },
     /** 연필 단추에 그대로 펴 넣는다 */
     btnProps: {
+      "data-rename-btn": "",
       onMouseDown: (e: React.MouseEvent) => e.preventDefault(),
       onClick: (e: React.MouseEvent) => {
         e.stopPropagation();
