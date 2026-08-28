@@ -59,31 +59,42 @@ export const appWindow = {
    *  ★**세로뿐이다.** 윈도우가 이 동작을 주는 것은 위·아래 테두리이고, 좌우 테두리에는
    *    같은 기능이 없다 (MS 문서·Windows 11 설정 항목 「세로로 창 최대화」).
    *  ★작업 표시줄을 덮지 않도록 **작업 영역**(`workArea`)까지만 늘린다.
-   *  ★한 번 더 하면 되돌린다 — 윈도우도 그렇다. */
+   *  ★한 번 더 하면 되돌린다 — 윈도우도 그렇다.
+   *
+   *  ★★**창을 옮기고 늘리는 데에는 권한이 따로 필요하다** (사용자 지적 2026-08-28: *"안 되는데?"*).
+   *    `core:default` 에 든 것은 **읽는 것뿐**이다 (`outerPosition`·`outerSize`·`currentMonitor`).
+   *    쓰는 둘(`set-position`·`set-size`)은 `src-tauri/capabilities/default.json` 에 직접
+   *    적어야 하고, 없으면 호출이 **조용히 거부되어 아무 일도 안 일어난다.**
+   *    ★그래서 아래에서 잡아 콘솔에 남긴다. 배선은 `lib/windowPerms.test.ts` 가 지킨다. */
   async fitVertical() {
-    const w = await win();
-    if (!w) return;
-    const { currentMonitor } = await import("@tauri-apps/api/window");
-    const { PhysicalPosition, PhysicalSize } = await import("@tauri-apps/api/dpi");
-    const m = await currentMonitor();
-    if (!m) return;
-    const pos = await w.outerPosition();
-    const size = await w.outerSize();
-    const wa = m.workArea;
-    // ★두 값 다 물리 픽셀이라 그대로 견준다 (화면 배율을 거치지 않는다)
-    const full =
-      Math.abs(pos.y - wa.position.y) <= 2 && Math.abs(size.height - wa.size.height) <= 2;
-    if (full) {
-      const back = vFitBack;
-      if (!back) return; // 손으로 이미 꽉 채워 둔 창 — 되돌릴 자리가 없다
-      vFitBack = null;
-      await w.setPosition(new PhysicalPosition(pos.x, back.y));
-      await w.setSize(new PhysicalSize(size.width, back.h));
-      return;
+    try {
+      const w = await win();
+      if (!w) return;
+      const { currentMonitor } = await import("@tauri-apps/api/window");
+      const { PhysicalPosition, PhysicalSize } = await import("@tauri-apps/api/dpi");
+      const m = await currentMonitor();
+      if (!m) return;
+      const pos = await w.outerPosition();
+      const size = await w.outerSize();
+      const wa = m.workArea;
+      // ★두 값 다 물리 픽셀이라 그대로 견준다 (화면 배율을 거치지 않는다)
+      const full =
+        Math.abs(pos.y - wa.position.y) <= 2 && Math.abs(size.height - wa.size.height) <= 2;
+      if (full) {
+        const back = vFitBack;
+        if (!back) return; // 손으로 이미 꽉 채워 둔 창 — 되돌릴 자리가 없다
+        vFitBack = null;
+        await w.setPosition(new PhysicalPosition(pos.x, back.y));
+        await w.setSize(new PhysicalSize(size.width, back.h));
+        return;
+      }
+      vFitBack = { y: pos.y, h: size.height };
+      await w.setPosition(new PhysicalPosition(pos.x, wa.position.y));
+      await w.setSize(new PhysicalSize(size.width, wa.size.height));
+    } catch (e) {
+      // ★거부되면 **조용히** 아무 일도 안 일어난다 — 그래서 까닭을 남긴다 (위 ★★주)
+      console.error("[window] 세로 최대화 실패 — capabilities 의 창 조작 권한을 본다", e);
     }
-    vFitBack = { y: pos.y, h: size.height };
-    await w.setPosition(new PhysicalPosition(pos.x, wa.position.y));
-    await w.setSize(new PhysicalSize(size.width, wa.size.height));
   },
   /** 최대화 상태가 바뀔 때마다 콜백. 정리 함수를 돌려준다. */
   async onResized(cb: () => void): Promise<() => void> {
