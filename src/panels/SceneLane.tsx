@@ -492,14 +492,20 @@ export function SceneLane() {
       const vert = vertRef.current;
       const fwd = vert ? "ArrowDown" : "ArrowRight";
       const back = vert ? "ArrowUp" : "ArrowLeft";
-      if (e.key === fwd || e.key === back) {
-        if (stepTake(e.key === fwd ? 1 : -1)) e.preventDefault();
-        return;
-      }
       const nextScene = vert ? "ArrowRight" : "ArrowDown";
       const prevScene = vert ? "ArrowLeft" : "ArrowUp";
-      if (e.key === nextScene || e.key === prevScene) {
-        if (stepScene(e.key === nextScene ? 1 : -1)) e.preventDefault();
+      if (e.key === fwd || e.key === back || e.key === nextScene || e.key === prevScene) {
+        /* ★★★**우리가 맡은 키는 브라우저에게 안 넘긴다** (사용자 지적 2026-08-28:
+             *"씬 전환은 잘 되는데 그냥 상하 누르면 원래 조금씩 스크롤되던 게 같이 먹는다"*).
+           앞 판은 **한 칸 옮겼을 때만** 막았다. 그래서 옮길 자리가 없을 때(줄의 끝, 씬의 끝)
+           브라우저 기본 동작이 그대로 살아나 화면이 조금씩 밀렸다 — 옮겨지지도 않고 밀리기만
+           하니 「같이 먹는다」로 보인다.
+           ★막는 기준은 **성공 여부가 아니라 임자**다: 씬을 고른 상태면 이 네 키는 줄의 것이다.
+             아무것도 안 골랐을 때만 평소대로 브라우저에 넘긴다 (위 ★★주의 규칙 그대로). */
+        if (!useSceneFocus.getState().cell) return;
+        e.preventDefault();
+        if (e.key === fwd || e.key === back) stepTake(e.key === fwd ? 1 : -1);
+        else stepScene(e.key === nextScene ? 1 : -1);
         return;
       }
       if ((e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z")) {
