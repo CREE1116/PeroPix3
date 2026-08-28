@@ -39,6 +39,16 @@ pub fn client_edges(hwnd: *mut core::ffi::c_void) {
         _id: usize,
         _data: usize,
     ) -> LRESULT {
+        /* ★진단 — **후크가 불리기는 하는가** (사용자 지적 2026-08-28). 「설치 = 성공」인데
+           `WM_NCHITTEST`(132) 줄이 한 번도 안 나왔다. 아무 메시지든 첫 것을 한 번 남기면
+           「사슬에 아예 안 걸렸다」와 「그 메시지만 안 온다」가 갈린다. */
+        {
+            use std::sync::atomic::{AtomicBool, Ordering};
+            static SAID: AtomicBool = AtomicBool::new(false);
+            if !SAID.swap(true, Ordering::Relaxed) {
+                crate::backend::log_line(&format!("[edge] 첫 메시지가 왔다 — msg = {msg} (132 이면 NCHITTEST)"));
+            }
+        }
         // ★먼저 tao 에게 묻는다 — 그 답이 가장자리일 때만 바꾼다
         let r = unsafe { DefSubclassProc(hwnd, msg, wp, lp) };
         if msg == WM_NCHITTEST {
