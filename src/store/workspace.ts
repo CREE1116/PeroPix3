@@ -414,7 +414,7 @@ async function reload(get: () => S, set: (p: Partial<S>) => void): Promise<void>
   if (!name) return;
   const r = await api<{ spec: Spec | null; records: Rec[] }>(`/api/workspaces/${encodeURIComponent(name)}`);
   if (!r.spec || get().current !== name) return;
-  const spec = migrate(r.spec);
+  const spec = keepView(migrate(r.spec), get().spec);   // ★보고 있는 탭은 화면이 정본이다 (`keepView`)
   clearUndo();
   set({ spec, records: dedupeByFile(r.records ?? []) });
   usePrompt.getState().load(promptOf(spec, activeGroupOf(spec)));
@@ -422,6 +422,29 @@ async function reload(get: () => S, set: (p: Partial<S>) => void): Promise<void>
 
 const activeGroupOf = (spec: Spec): SceneGroup | undefined =>
   spec.sceneGroups.find((x) => x.id === spec.activeSceneGroup) ?? spec.sceneGroups[0];
+
+/** 서버가 준 spec 에 **지금 보고 있는 자리**를 얹는다 (`activeTab`·`activeSceneGroup`).
+ *
+ *  ★★사용자 지적 2026-08-28: *"씬 그룹을 다른 탭에 옮긴 후에 옮긴 탭으로 들어갔는데, 옮기는 게
+ *    완료된 후에 강제로 원래 있던 탭이 열림."* 옮기는 동안에는 자동 저장을 멈추므로(`moveBusy`),
+ *    그 사이에 바꾼 탭은 **파일에 안 적힌다**. 서버는 파일에 적힌 옛 활성 탭을 그대로 돌려주는데
+ *    그것을 통째로 대입하면 화면이 뒤로 끌려간다. 보고 있는 자리는 **화면이 정본**이다.
+ *  ★살아 있는 것만 얹는다 — 없어진 것을 가리키면 화면이 빈 채로 뜬다. 세트는 그 탭의 것이어야
+ *    한다 (아니면 그 탭의 첫 세트로). */
+function keepView(next: Spec, local: Spec | null): Spec {
+  if (!local) return next;
+  const tabs = next.tabs ?? [];
+  const activeTab = tabs.some((c) => c.id === local.activeTab) ? local.activeTab : next.activeTab;
+  const mine = next.sceneGroups.filter((x) => x.kind === "sceneGroup" && x.tabId === activeTab);
+  const keep = mine.some((x) => x.id === local.activeSceneGroup)
+    ? local.activeSceneGroup
+    : next.sceneGroups.some((x) => x.id === next.activeSceneGroup)
+        && mine.some((x) => x.id === next.activeSceneGroup)
+      ? next.activeSceneGroup
+      : (mine[0]?.id ?? next.activeSceneGroup);
+  if (activeTab === next.activeTab && keep === next.activeSceneGroup) return next;
+  return { ...next, activeTab, activeSceneGroup: keep };
+}
 
 /** 탭 하나를 뺀 spec — **화면용 임시 상태**다 (`moveTabToWs`). 서버가 같은 규칙으로 만든 spec 이
  *  답으로 오면 그것으로 갈린다. 마지막 탭이면 서버와 같은 모양의 빈 탭·빈 세트를 세운다
@@ -1453,7 +1476,8 @@ export const useWs = create<S>((set, get) => ({
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to, fill }) },
       );
       if (get().current === cur) {
-        const next = migrate(r.spec);
+        // ★옮기는 동안 사용자가 다른 탭을 열었을 수 있다 — 그 자리를 지킨다 (`keepView` 의 ★★주)
+        const next = keepView(migrate(r.spec), get().spec);
         clearUndo();   // ★옮겨 간 블록·그림을 되살리면 안 된다
         set({ spec: next, records: dedupeByFile(r.records ?? []) });
         usePrompt.getState().load(promptOf(next, activeGroupOf(next)));
@@ -1505,7 +1529,10 @@ export const useWs = create<S>((set, get) => ({
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to_tab: toTabId, fill }) },
       );
       if (get().current === cur) {
-        const next = migrate(r.spec);
+        /* ★★**보고 있는 탭은 화면이 정본이다** (사용자 지적 2026-08-28: *"옮긴 탭으로 들어갔는데
+             옮기는 게 완료된 후에 강제로 원래 있던 탭이 열림"*). 옮기는 동안에는 자동 저장을
+             멈추므로 그 사이에 바꾼 탭이 파일에 없다 — 서버 것을 통째로 대입하면 뒤로 끌려간다. */
+        const next = keepView(migrate(r.spec), get().spec);
         set({ spec: next, records: dedupeByFile(r.records ?? []) });
         usePrompt.getState().load(promptOf(next, activeGroupOf(next)));
       }
