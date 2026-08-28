@@ -78,6 +78,39 @@ export function stepTake(d: 1 | -1): boolean {
   return true;
 }
 
+/** 그 씬에서 **맨 앞 칸**으로 자리를 옮긴다 (없으면 씬만 고른다) */
+function focusFirstOf(cellId: string) {
+  const first = visibleSlots(cellId)[0];
+  if (!first) useSceneFocus.getState().focus(cellId, null);
+  else if (first.file) useSceneFocus.getState().focus(cellId, first.file);
+  else useSceneFocus.setState({ cell: cellId, file: null, pending: first.pending });
+}
+
+/** **옆 씬으로** (`d = +1` 다음 · `-1` 이전). 끝에서는 머문다 — 감싸지 않는다.
+ *
+ *  ★★사용자 지시 2026-08-28: *"방향키 위아래로 하면 씬 간에 전환되게 해 줘.
+ *    세로 모드에선 반대로 작동하고."* 축을 가르는 것은 **씬이 늘어선 방향**이다 —
+ *    아래 모드에서는 씬이 위아래로 쌓이므로 위아래 키가, 세로 모드에서는 씬이 좌우로
+ *    서므로 좌우 키가 씬을 오간다. 장을 넘기는 축(`stepTake`)과 언제나 직각이다.
+ *  ★씬을 옮기면 **그 씬의 맨 앞 칸**에 선다 — 자리만 옮기고 큰 그림을 비우면
+ *    「전환됐다」가 눈에 안 보인다. 맨 앞은 줄에서 왼쪽(세로 모드는 위)이다.
+ *  ★카드를 가로질러 센다: 화면에 보이는 차례가 곧 이 차례다 (`allCells`).
+ *  ★감싸지 않는 것은 `stepTake` 와 같은 까닭이다 — 끝에서 반대편으로 튀면 자리를 잃는다.
+ *  ★훑는 동안 고른 것은 안 푼다 (`stepTake` 의 ★주와 같다). */
+export function stepScene(d: 1 | -1): boolean {
+  const ws = useWs.getState();
+  const tab = ws.spec?.sceneGroups.find((x) => x.id === ws.spec?.activeSceneGroup);
+  if (tab?.kind !== "sceneGroup") return false;
+  const cells = allCells(tab);
+  const { cell } = useSceneFocus.getState();
+  const at = cells.findIndex((c) => c.id === cell);
+  if (at < 0) return false;
+  const next = cells[at + d];
+  if (!next) return false;
+  focusFirstOf(next.id);
+  return true;
+}
+
 /** 이 장(들)을 지우면 **어디로 갈지** — 오른쪽(그 다음으로 옛것) → 없으면 왼쪽 → 없으면 `null`.
  *
  *  ★★**지우기 전에** 부른다. 지운 뒤에 부르면 그 장이 목록에서 빠져 자리를 잃는다 —

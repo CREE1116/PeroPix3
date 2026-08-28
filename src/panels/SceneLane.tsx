@@ -24,7 +24,7 @@ import { useThumbView } from "./PromptSections";
 import { DragGhost } from "../cards/DragGhost";
 import { useLaneReorder, type LaneDrop } from "../lib/useReorder";
 import { useSceneFocus } from "../store/sceneFocus";
-import { removeTakes, stepTake, visibleTakes } from "../lib/sceneTakes";
+import { removeTakes, stepScene, stepTake, visibleTakes } from "../lib/sceneTakes";
 import { clearUndo, undoLast } from "../lib/undo";
 // ★`t` 는 **모듈 것**을 쓴다 — 이 파일 안에서 `t` 는 이벤트 대상 이름으로 자주 가려진다
 import { t as tr } from "../i18n";
@@ -484,11 +484,22 @@ export function SceneLane() {
          예전에는 브라우저 기본대로 줄이 **스크롤**됐다 — 그림을 견주려고 방향키를 눌렀는데
          화면만 밀렸다. 아무것도 안 골랐을 때는 평소대로 스크롤이다.
          ★★**장이 늘어선 방향의 키**다 (사용자 지시 2026-08-22): 아래 모드는 좌우,
-           세로 모드는 위아래. 반대 축의 키는 평소대로 둔다 — 그쪽이 씬을 오가는 방향이다. */
-      const fwd = vertRef.current ? "ArrowDown" : "ArrowRight";
-      const back = vertRef.current ? "ArrowUp" : "ArrowLeft";
+           세로 모드는 위아래.
+         ★★**직각 방향은 씬을 오간다** (사용자 지시 2026-08-28: *"방향키 위아래로 하면 씬 간에
+           전환되게 해 줘. 세로 모드에선 반대로 작동하고"*). 씬이 늘어선 방향이 곧 그 축이다 —
+           아래 모드는 씬이 위아래로 쌓이고, 세로 모드는 좌우로 선다. 두 축이 언제나 직각이라
+           외울 것이 하나뿐이다: **장은 장이 늘어선 쪽으로, 씬은 씬이 늘어선 쪽으로.** */
+      const vert = vertRef.current;
+      const fwd = vert ? "ArrowDown" : "ArrowRight";
+      const back = vert ? "ArrowUp" : "ArrowLeft";
       if (e.key === fwd || e.key === back) {
         if (stepTake(e.key === fwd ? 1 : -1)) e.preventDefault();
+        return;
+      }
+      const nextScene = vert ? "ArrowRight" : "ArrowDown";
+      const prevScene = vert ? "ArrowLeft" : "ArrowUp";
+      if (e.key === nextScene || e.key === prevScene) {
+        if (stepScene(e.key === nextScene ? 1 : -1)) e.preventDefault();
         return;
       }
       if ((e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z")) {

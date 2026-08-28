@@ -50,8 +50,11 @@ export const useSceneFocus = create<S>((set) => ({
      여기 넣으면 **Ctrl·Shift 클릭에서도 풀려 여러 장 고르기가 아예 안 된다** —
      씬 줄(`[data-scene]`)이 **click** 으로 `onFocus` 를 부르는데, 칸의 `stopPropagation` 은
      **pointerdown** 만 막아서 그 click 이 수식키와 상관없이 뒤이어 올라오기 때문이다.
-     ★푸는 것은 **수식키가 없는 것을 아는 자리**가 한다 — 칸을 그냥 누른 갈래(`SceneLane`)와
-       방향키로 장을 넘기는 자리(`sceneTakes.stepTake`). 둘 다 `setPicked([])` 를 부른다. */
+     ★푸는 것은 **수식키가 없는 것을 아는 자리**가 한다 — 칸을 그냥 누른 갈래(`SceneLane`)가
+       `setPicked([])` 를 부른다.
+     ★★**방향키·휠은 안 푼다** (사용자 지시 2026-08-22). 훑고 지나가는 것은 고르는 것이
+       아니기 때문이다 — 그래서 `sceneTakes` 의 `stepTake`·`stepScene` 은 자리만 옮긴다.
+       (이 줄은 한때 「방향키도 푼다」고 적혀 있었다. 코드는 안 풀고 있었다.) */
   focus: (cell, file) => set({ cell, file, pending: null }),
   focusPending: (cell, id) => set({ cell, file: null, pending: id, picked: [] }),
   clear: () => set({ ...EMPTY, picked: [] }),
