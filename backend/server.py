@@ -1197,6 +1197,13 @@ async def copy_to_tab(ws: str, body: CopyBody):
         raise HTTPException(404, str(e))
 
 
+def _refuse_if_generating(ws: str, group_ids: set[str]) -> None:
+    """그 세트들 중 하나라도 생성 중이면 거절한다 (`generating_targets` 의 ★★주)."""
+    busy = {g for (w, g) in genqueue.generating_targets(Q) if w == ws and g in group_ids}
+    if busy:
+        raise HTTPException(409, "생성 중인 씬이 있습니다. 끝난 뒤에 옮겨 주세요.")
+
+
 class MoveTabBody(BaseModel):
     to: str
     #: 마지막 탭을 옮길 때 그 자리에 세울 **빈 탭의 모양** (이름·씬 그룹 이름·빈 프롬프트) — 화면이 준다
@@ -1206,6 +1213,10 @@ class MoveTabBody(BaseModel):
 @app.post("/api/workspaces/{ws}/tabs/{tab_id}/move")
 async def move_tab(ws: str, tab_id: str, body: MoveTabBody):
     """탭을 **다른 워크스페이스로** 옮긴다 (`Store.move_tab`). 파일을 옮기므로 스레드로 보낸다."""
+    # ★생성 중인 씬이 그 탭에 있으면 옮기지 않는다 (`generating_targets` 의 ★★주)
+    spec = store.load(ws) or {}
+    _refuse_if_generating(ws, {str(g.get("id")) for g in (spec.get("sceneGroups") or [])
+                               if g.get("tabId") == tab_id})
     try:
         return await asyncio.to_thread(store.move_tab, ws, tab_id, body.to, body.fill)
     except ValueError as e:
@@ -1221,6 +1232,7 @@ class MoveGroupBody(BaseModel):
 @app.post("/api/workspaces/{ws}/scene-groups/{group_id}/move")
 async def move_scene_group_api(ws: str, group_id: str, body: MoveGroupBody):
     """씬 그룹을 **같은 워크스페이스의 다른 탭으로** (`Store.move_scene_group`). 파일을 옮기므로 스레드로."""
+    _refuse_if_generating(ws, {group_id})   # ★생성 중이면 거절 (`generating_targets` 의 ★★주)
     try:
         return await asyncio.to_thread(store.move_scene_group, ws, group_id, body.to_tab, body.fill)
     except ValueError as e:

@@ -24,6 +24,7 @@ export const ko: Dict = {
   },
 
   busy: {
+    generating: "생성 중인 씬이 있습니다. 끝난 뒤에 옮겨 주세요.",
     movingTab: "「{name}」 탭을 옮기는 중…",
     movingGroup: "「{name}」 씬 그룹을 옮기는 중…",
     tooLong: "옮기기가 오래 걸립니다. 화면 잠금을 풀었습니다 — 작업은 계속됩니다.",

@@ -24,6 +24,7 @@ export const ja: Dict = {
   },
 
   busy: {
+    generating: "生成中のシーンがあります。終わってから移動してください。",
     movingTab: "「{name}」タブを移動中…",
     movingGroup: "シーングループ「{name}」を移動中…",
     tooLong: "移動に時間がかかっています。画面のロックを解除しました — 作業は続行します。",

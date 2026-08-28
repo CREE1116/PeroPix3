@@ -485,6 +485,24 @@ function withoutTab(
   return { ...spec, tabs, sceneGroups, activeTab, activeSceneGroup };
 }
 
+/** 그 세트들 중 **생성 중이거나 큐에 걸린 것**이 있나 (`store/queue` 의 대기 목록).
+ *
+ *  ★★큐는 **넣을 때의 값**을 들고 간다 (워크스페이스·탭 이름·세트 이름). 그래서 생성 중에
+ *    옮기면 도착한 그림이 옛 자리로 저장되고, 워크스페이스를 건너간 경우에는 **떠나온 쪽**에
+ *    기록까지 남아 앱 어디에도 안 뜬다. 그래서 **옮기기를 거절한다** (사용자 결정 2026-08-28).
+ *  ★큐를 취소해서 풀 수 있는 문제가 아니다 — 이미 NAI 로 나간 한 장은 취소가 안 된다.
+ *    끝난 뒤에 옮기면 된다.
+ *  ★여기서 보는 것은 **이 창이 넣은 것**이라, 다른 창이 넣은 것은 서버가 막는다
+ *    (`backend/server.py` 의 `generating_targets`). 화면 쪽은 **바로 알려 주기 위한** 것이다. */
+async function generating(groupIds: Set<string>): Promise<boolean> {
+  /* ★값으로 부르면 순환이 된다 (`store/queue` 가 이 파일을 읽는다) — **부를 때** 싣는다
+     (`runRenumber` 가 `gen.ts` 를 부르는 방식과 같다). */
+  const { useQueue } = await import("./queue");
+  const q = useQueue.getState();
+  const cur = q.progress.current_cell?.scene_group_id ?? null;
+  return q.pending.some((x) => !!x.groupId && groupIds.has(x.groupId)) || (!!cur && groupIds.has(cur));
+}
+
 /** 씬 그룹 하나를 **다른 탭 밑으로** 옮긴 spec — **화면용 임시 상태**다 (`moveGroupToTab`).
  *  서버가 같은 규칙으로 만든 spec 이 답으로 오면 그것으로 갈린다 (`Store._move_group_locked`).
  *  ★받는 탭의 **줄 끝**에 세운다 — 끌어다 놓은 것이 어디로 갔는지 눈으로 찾을 수 있어야 한다.
@@ -1451,6 +1469,12 @@ export const useWs = create<S>((set, get) => ({
     if (!cur || !spec || to === cur || moveBusy) return;
     const tab = (spec.tabs ?? []).find((c) => c.id === tabId);
     if (!tab) return;
+    // ★생성 중인 씬이 그 탭에 있으면 옮기지 않는다 (`generating` 의 ★★주)
+    const mineIds = new Set(spec.sceneGroups.filter((x) => x.kind === "sceneGroup" && x.tabId === tabId).map((x) => x.id));
+    if (await generating(mineIds)) {
+      toast(t("busy.generating"), "warn");
+      return;
+    }
     /* ★마지막 탭을 옮기면 **빈 새 탭이 그 자리에 선다** (사용자 지시 2026-08-28). 모양은 여기서
        준다 — 이름은 이 화면의 언어이고, 빈 프롬프트의 골격은 `addTab` 과 같은 `freshPrompt` 다. */
     const fill = { tab: t("tab.newName"), group: t("sceneGroup.newSet"), prompt: freshPrompt() };
@@ -1514,6 +1538,10 @@ export const useWs = create<S>((set, get) => ({
     if (!g || g.kind !== "sceneGroup" || g.tabId === toTabId) return;
     const toTab = (spec.tabs ?? []).find((c) => c.id === toTabId);
     if (!toTab) return;
+    if (await generating(new Set([groupId]))) {
+      toast(t("busy.generating"), "warn");
+      return;
+    }
     // ★그 탭의 마지막 세트면 빈 세트를 세운다 — 이름은 이 화면의 언어다
     const fill = { group: t("sceneGroup.newSet") };
     for (const fn of beforeWsSwitch) fn();

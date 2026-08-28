@@ -24,6 +24,7 @@ export const en = {
   },
 
   busy: {
+    generating: "A scene here is still generating. Move it once that finishes.",
     movingTab: "Moving tab \"{name}\"…",
     movingGroup: "Moving scene group \"{name}\"…",
     tooLong: "This move is taking a while. The screen is unlocked — the work continues.",

@@ -173,6 +173,37 @@ class GenerationQueue:
         }
 
 
+def generating_targets(q: GenerationQueue) -> set[tuple[str, str]]:
+    """지금 **큐에 있거나 만들고 있는** (워크스페이스, 씬 그룹 id) 들.
+
+    ★★**큐는 넣을 때의 값을 그대로 들고 간다** — 워크스페이스·탭 이름·세트 이름·id 가 요청에
+      박혀 있다 (`store/gen.ts` 의 `generateAll`). 그래서 생성 중에 그 탭·세트를 옮기면 도착한
+      그림이 **옛 자리로** 저장된다: 같은 워크스페이스면 옛 탭 폴더에, 워크스페이스를 건너간
+      경우에는 **떠나온 워크스페이스**에 기록까지 남아 앱 어디에도 안 뜬다.
+    ★★그래서 **옮기기를 거절한다** (사용자 결정 2026-08-28). 큐를 취소해서 풀 수 있는 문제가
+      아니다 — *"nai api는 요청 보낸 거 취소 안 됨"* (사용자). 이미 나간 한 장은 어차피 온다.
+      끝난 뒤에 옮기면 된다.
+    ★대기 중인 잡과 **지금 도는 잡**을 함께 본다 (`genqueue.run_loop` 가 `current_job` 을 든다)."""
+    jobs = list(q.queue)
+    if q.current_job:
+        jobs.append(q.current_job)
+    out: set[tuple[str, str]] = set()
+    for j in jobs:
+        qb = j.get("request")
+        base = getattr(qb, "base", None)
+        if base is None:
+            continue
+        ws = str(getattr(base, "workspace", "") or "")
+        gids = {getattr(base, "scene_group_id", None)}
+        for it in (getattr(qb, "items", None) or []):
+            if isinstance(it, dict) and it.get("scene_group_id"):
+                gids.add(it["scene_group_id"])
+        for g in gids:
+            if ws and g:
+                out.add((ws, str(g)))
+    return out
+
+
 async def run_loop(q: GenerationQueue, process_job) -> None:
     """큐 처리 루프. ★한 번에 **하나만** 돈다."""
     while True:
