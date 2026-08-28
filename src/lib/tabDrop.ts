@@ -29,7 +29,11 @@ export const useTabDrop = create<{
 /** 방금 놓았나 — 놓은 자리에 **클릭이 따라온다** (실사고 2026-08-28: 그 클릭이 옮기기가 끝나기
  *  전에 받는 쪽을 열어 옮기기 전 상태를 보여 줬고, 옮기기 응답이 엉뚱한 자리에 대입되는 길을
  *  열었다). 받는 자리(워크스페이스 탭·탭)는 이 동안의 클릭을 무시한다. */
-export const justDropped = (): boolean => performance.now() - useTabDrop.getState().droppedAt < 500;
+/** ★★창은 **150ms** 다 (사용자 지적 2026-08-28: *"매우 빠를 때는 조작을 막는 UI 자체는 안 뜨지만
+ *  실제로 조작해 보면 탭 전환 같은 게 안 됨"*). 막으려는 것은 **손을 뗄 때 따라오는 그 클릭**
+ *  하나뿐인데(한 프레임 안에 온다), 500ms 로 두었더니 옮기기가 끝난 뒤의 **진짜 클릭까지**
+ *  먹었다 — 옮기기가 115ms 로 빨라지면서 그 구간이 그대로 드러났다. */
+export const justDropped = (): boolean => performance.now() - useTabDrop.getState().droppedAt < 150;
 
 /** 그 화면 좌표 밑의 **워크스페이스 탭** (없으면 `null`).
  *  ★포인터가 잡혀 있어도(`setPointerCapture`) `elementFromPoint` 는 좌표로 찾으므로 그대로 된다. */

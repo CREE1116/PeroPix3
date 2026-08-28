@@ -6,6 +6,8 @@ import { useBusy } from "../store/busy";
  *  ★★**키보드까지 막는다.** 덮개는 마우스만 막는다 — 방향키로 씬을 넘기거나 Ctrl+Z 를 누르면
  *    그 사이에도 상태가 바뀐다. 잡는 자리는 **캡처 단계**라 아래 화면이 받기 전에 끊긴다.
  *  ★**맨 위에 선다** — 확인 창(`AskDialog`)·툴팁보다 위다. 잠긴 동안에는 그 위에 뜰 것이 없다.
+ *  ★★**뜬 순간부터 막고, 보이는 것만 늦다** — 투명하게 시작해 서서히 짙어진다
+ *    (`.busy-veil`). 빠른 이동(실측 115ms)에서는 눈에 안 띄고, 그 동안에도 클릭은 막힌다.
  *  ★움직임을 줄이라는 설정이면 도는 대신 흐리게만 (`globals.css` 의 `.busy-spin`). */
 export function BusyOverlay() {
   const label = useBusy((s) => s.label);
@@ -24,6 +26,7 @@ export function BusyOverlay() {
   return (
     <div
       data-busy
+      className="busy-veil"
       style={{
         position: "fixed",
         inset: 0,
