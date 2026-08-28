@@ -6,7 +6,7 @@ import { useWs, takesOfScene, allCells, allScenes, type ShotEnv } from "../store
 import { SceneLane, takeSrc } from "./SceneLane";
 import { useSceneFocus } from "../store/sceneFocus";
 import { useQueue } from "../store/queue";
-import { removeTakes } from "../lib/sceneTakes";
+import { removeTakes, stepTake } from "../lib/sceneTakes";
 import { useUi } from "../store/ui";
 import { CanvasTabs } from "./CanvasTabs";
 import { imgUrl } from "../lib/imgUrl";
@@ -550,8 +550,6 @@ function ScenePreview() {
   const file = useSceneFocus((s) => s.file);
   /** ★만들어지는 중인 칸을 골랐나 — 그때는 **빈 화면**이다 (안내 문구도 안 띄운다) */
   const pendingSel = useSceneFocus((s) => s.pending);
-  /** 지금 대기 중인 칸들 — 휠이 이것도 지나간다 (아래 `walk` 의 ★★주) */
-  const queued = useQueue((q) => q.pending);
   /** 지금 고른 칸에 **그리는 중인 그림** (`store/queue` 의 `steps`) */
   const stepImg = useQueue((q) => (cell ? (q.steps[cell] ?? "") : ""));
   const previews = usePreviews((s) => s.items);
@@ -590,26 +588,11 @@ function ScenePreview() {
    *  ★차례는 **씬 줄과 같아야** 한다 — 대기 칸이 앞(늦게 넣은 것이 먼저), 그다음이 나온 장이다
    *    (`SceneRow` 의 `waits`·`takes`). 줄에서 보이는 차례와 휠이 다르면 넘길 때마다 튄다.
    *  ★대기 칸은 **파일이 없다** — 그래서 목록의 원소를 파일이 아니라 «둘 중 하나»로 든다. */
-  const waits = queued
-    .filter((p) => p.groupId === (sceneSet?.id ?? null) && p.cellId === cell)
-    .slice()
-    .reverse();
-  const walk: { file?: string; pending?: string }[] = [
-    ...waits.map((w) => ({ pending: w.id })),
-    ...shown.map((r) => ({ file: r.file })),
-  ];
-  const step = (d: 1 | -1) => {
-    if (walk.length < 2) return;
-    const i = pendingSel
-      ? walk.findIndex((x) => x.pending === pendingSel)
-      : walk.findIndex((x) => x.file === file);
-    const next = walk[Math.min(walk.length - 1, Math.max(0, (i < 0 ? 0 : i) + d))];
-    if (!next) return;
-    const f = useSceneFocus.getState();
-    if (next.pending) {
-      if (next.pending !== pendingSel) f.focusPending(cell, next.pending);
-    } else if (next.file && next.file !== file) f.focus(cell, next.file);
-  };
+  /*  ★★**규칙은 `lib/sceneTakes.stepTake` 하나다** (사용자 지적 2026-08-28: *"씬에서 방향키
+        좌우 이동으로 이미지 전환할 때 생성 중 이미지로 전환이 안 됨"*).
+      여기 휠은 2026-08-25 에 대기 칸을 지나가게 고쳤는데, **씬 줄의 방향키는 따로 적혀 있어**
+      파일만 보고 있었다. 같은 지적이 두 번 온 까닭이 그것이다 — 목록도 걸음도 한 곳에 둔다. */
+  const step = (d: 1 | -1) => void stepTake(d);
 
   /* ── 얼마로 볼까 (사용자 지시 2026-08-24) ────────────────────────────────
      ★★설정은 **워크스페이스에 남는다** (`spec.preview`) — *"비율은 워크스페이스 단위로

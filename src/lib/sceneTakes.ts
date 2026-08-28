@@ -4,6 +4,7 @@ import { newestFirst, takesOfScene, type Rec } from "./takes";
 import { allCells, useWs } from "../store/workspace";
 import { usePreviews, withPreviews } from "../store/previews";
 import { useSceneFocus } from "../store/sceneFocus";
+import { useQueue } from "../store/queue";
 
 /** 씬 칸에 **보이는 그대로**의 장 목록과, 그 위를 오가는 규칙.
  *
@@ -29,21 +30,51 @@ export function visibleTakes(cellId: string): Rec[] {
     .sort(newestFirst);
 }
 
-/** 한 장 옆으로 (`d = +1` 오른쪽 · `-1` 왼쪽). 끝에서는 **머문다** — 감싸지 않는다.
+/** 줄에 **보이는 차례 그대로**의 칸 — 「대기·생성 중」이 앞, 그다음이 나온 장.
+ *
+ *  ★★**대기 칸도 한 칸이다** (사용자 지시 2026-08-25 휠 · 2026-08-28 방향키:
+ *    *"씬에서 방향키 좌우 이동으로 이미지 전환할 때 생성 중 이미지로 전환이 안 됨"*).
+ *    대기 칸은 **파일이 없어서** 파일 목록으로는 가리킬 수가 없다 — 그래서 원소를
+ *    「파일이거나 대기 번호」 둘 중 하나로 든다.
+ *  ★★**차례는 씬 줄과 같아야 한다** (`SceneRow` 의 `waits`·`takes`): 늦게 넣은 대기가
+ *    앞이고, 나온 장은 최신이 앞이다. 줄에서 보이는 차례와 다르면 넘길 때마다 튄다.
+ *  ★★규칙을 **여기 하나**에 둔다. 예전에는 큰 그림의 휠(`Canvas`)만 대기 칸을 지나가고
+ *    방향키(`stepTake`)는 파일만 봤다 — 같은 지적이 두 번 온 까닭이 그것이다. */
+export type LaneSlot = { file: string; pending?: undefined } | { pending: string; file?: undefined };
+
+export function visibleSlots(cellId: string): LaneSlot[] {
+  const waits = useQueue
+    .getState()
+    .pending.filter((p) => p.cellId === cellId)
+    .slice()
+    .reverse()
+    .map((p) => ({ pending: p.id }) as LaneSlot);
+  return [...waits, ...visibleTakes(cellId).map((r) => ({ file: r.file }) as LaneSlot)];
+}
+
+/** 한 칸 옆으로 (`d = +1` 오른쪽 · `-1` 왼쪽). 끝에서는 **머문다** — 감싸지 않는다.
  *
  *  ★줄은 **최신이 왼쪽**이다. 그래서 오른쪽이 「그 다음으로 옛것」이다.
- *  ★감싸지 않는 이유: 방향키로 훑을 때 끝에서 반대편으로 튀면 지금 어디인지를 잃는다. */
+ *  ★감싸지 않는 이유: 방향키로 훑을 때 끝에서 반대편으로 튀면 지금 어디인지를 잃는다.
+ *  ★대기 칸에서도 출발한다 — 거기 서 있을 때 방향키가 죽으면 되돌아 나올 길이 없다. */
 export function stepTake(d: 1 | -1): boolean {
-  const { cell, file } = useSceneFocus.getState();
-  if (!cell || !file) return false;
-  const list = visibleTakes(cell);
-  const at = list.findIndex((r) => r.file === file);
+  const { cell, file, pending } = useSceneFocus.getState();
+  if (!cell) return false;
+  const list = visibleSlots(cell);
+  const at = pending
+    ? list.findIndex((x) => x.pending === pending)
+    : file
+      ? list.findIndex((x) => x.file === file)
+      : -1;
   if (at < 0) return false;
   const next = list[at + d];
   if (!next) return false;
-  /* ★방향키는 고른 것을 **안 푼다** — 푸는 것은 「그냥 좌클릭」과 `Esc` 뿐이다
-     (사용자 지시 2026-08-22). 고른 목록이 그 자체로 정본이라, 훑고 지나가도 안 불어난다. */
-  useSceneFocus.getState().focus(cell, next.file);
+  /* ★방향키·휠은 고른 것을 **안 푼다** — 푸는 것은 「그냥 좌클릭」과 `Esc` 뿐이다
+     (사용자 지시 2026-08-22). 고른 목록이 그 자체로 정본이라, 훑고 지나가도 안 불어난다.
+     ★그래서 대기 칸으로 갈 때도 `focusPending`(고른 것을 푼다)을 안 쓰고 자리만 옮긴다 —
+       그쪽은 **클릭**의 창구다. */
+  if (next.file) useSceneFocus.getState().focus(cell, next.file);
+  else useSceneFocus.setState({ cell, file: null, pending: next.pending });
   return true;
 }
 
