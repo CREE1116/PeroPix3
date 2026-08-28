@@ -37,6 +37,7 @@ export function ImageActions({
   revealApi = "/api/files/reveal",
   onEnhance,
   upscale,
+  multi,
   onKeep,
   onConvert,
   onClone,
@@ -72,7 +73,11 @@ export function ImageActions({
   onEnhance?: () => void;
   /** 업스케일 — **워크스페이스 파일에만** 뜻이 있다 (갤러리 보관함에는 안 뜬다).
    *  ★배율을 안 받는다: 공홈이 언제나 4 로 보낸다 (`nai.py UPSCALE_SCALE`) */
-  upscale?: { ws: string; file: string };
+  upscale?: { ws: string; file: string; files?: string[] };
+  /** ★씬 줄에서 **여러 장을 골랐다** (사용자 지시 2026-08-29). 2 이상이면 다중 처리가 되는
+   *  단추(복제·인핸스·업스케일·보관·일괄 변환·삭제)만 남긴다 — 한 장 전용(프롬프트 보기·
+   *  설정 불러오기·i2i·인페인트·폴더 열기·시드)은 어느 장의 것인지 애매하다. */
+  multi?: number;
   onKeep?: () => void | Promise<void>;
   /** 「일괄 변환으로 보내기」 — 워크스페이스 파일에만 뜻이 있다 (캔버스가 준다) */
   onConvert?: () => void | Promise<void>;
@@ -181,6 +186,9 @@ export function ImageActions({
     }
   };
 
+  /** ★여러 장 골랐다 — 다중 처리가 되는 단추만 남긴다 (`multi` prop 의 ★주) */
+  const isMulti = (multi ?? 0) > 1;
+
   /** 업스케일 — 결과는 **원본의 다음 판**으로 붙는다 (원본은 그대로 남는다).
    *  ★배율은 서버가 정한다 (2026-08-21 규격 변경) */
   const cost = dims ? upscaleCost(dims.w, dims.h, opus) : -1;
@@ -191,13 +199,17 @@ export function ImageActions({
       // ★미저장이면 **먼저 파일로 남긴다** — 업스케일은 서버가 그 파일을 연다
       const target = ensureFile ? await ensureFile() : upscale.file;
       if (!target) return;
-      const r = await api<{ file: string; record: Rec }>("/api/upscale", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workspace: upscale.ws, file: target }),
-      });
-      // ★목록을 **다시 읽지 않는다** — 서버가 돌려준 레코드 한 줄만 얹으면 화면이 따라온다
-      useWs.getState().addRecord(r.record);
+      // ★여러 장 골랐으면 **전부** (사용자 지시 2026-08-29) — 한 장씩 차례로 보낸다
+      const list = upscale.files?.length ? upscale.files : [target];
+      for (const f of list) {
+        const r = await api<{ file: string; record: Rec }>("/api/upscale", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ workspace: upscale.ws, file: f }),
+        });
+        // ★목록을 **다시 읽지 않는다** — 서버가 돌려준 레코드 한 줄만 얹으면 화면이 따라온다
+        useWs.getState().addRecord(r.record);
+      }
       toast(t("upscale.done"));
     } catch (e) {
       toast(String(e), "warn");
@@ -245,7 +257,7 @@ export function ImageActions({
           flexWrap: "wrap",
         }}
       >
-        {loadMeta && (
+        {loadMeta && !isMulti && (
           <>
             {/* ★★맨 왼쪽 셋(보기·설정·복제)은 **글자**다 (사용자 지시 2026-08-19).
                 셋 다 「무엇을 어디로」가 걸린 일이라 그림 하나로는 뜻이 안 잡힌다.
@@ -288,20 +300,24 @@ export function ImageActions({
           </button>
         )}
 
-        <span style={{ width: 1, alignSelf: "stretch", background: "var(--line)" }} />
+        {!isMulti && (
+          <>
+            <span style={{ width: 1, alignSelf: "stretch", background: "var(--line)" }} />
 
-        <button data-act-i2i onClick={() => void toBase("img2img")} disabled={busy} style={btn}>
-          {t("act.i2i")}
-        </button>
-        <button
-          data-act-inpaint
-          onClick={() => void toBase("inpaint")}
-          disabled={busy}
-          data-tip={t("act.inpaint")}
-          style={iconBtn}
-        >
-          {Icon.brush}
-        </button>
+            <button data-act-i2i onClick={() => void toBase("img2img")} disabled={busy} style={btn}>
+              {t("act.i2i")}
+            </button>
+            <button
+              data-act-inpaint
+              onClick={() => void toBase("inpaint")}
+              disabled={busy}
+              data-tip={t("act.inpaint")}
+              style={iconBtn}
+            >
+              {Icon.brush}
+            </button>
+          </>
+        )}
         {onEnhance && (
           <button data-act-enhance onClick={onEnhance} data-tip={t("enhance.button")} style={iconBtn}>
             {Icon.spark}
@@ -328,7 +344,7 @@ export function ImageActions({
             </span>
           </button>
         )}
-        {revealPath && (
+        {revealPath && !isMulti && (
           <button
             data-act-reveal
             onClick={() =>
@@ -379,7 +395,7 @@ export function ImageActions({
             ★시드와 해상도는 **한 덩어리**로 — 따로 두면 줄이 넘칠 때 해상도만 다음 줄로
               떨어진다 (실측 2026-08-05) */}
         <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "var(--sp-2)", flexShrink: 0 }}>
-        {seed !== undefined && (
+        {seed !== undefined && !isMulti && (
           <button
             data-act-seed
             /* ★★누르면 **복사하고 지금 시드로 넣는다** (사용자 지시 2026-08-21).
@@ -416,7 +432,7 @@ export function ImageActions({
             seed {seed}
           </button>
         )}
-        {dims && (
+        {dims && !isMulti && (
           <span
             data-act-res
             style={{

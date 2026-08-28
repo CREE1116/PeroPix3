@@ -18,7 +18,7 @@ import { MaskEditor } from "../components/MaskEditor";
 import { useImageInput } from "../store/imageInput";
 import { EnhanceDialog } from "./EnhanceDialog";
 import { useGallery, type ImageMeta } from "../store/gallery";
-import { usePreviews, withPreviews } from "../store/previews";
+import { usePreviews, withPreviews, isPreviewFile } from "../store/previews";
 import { api } from "../lib/backend";
 import { wheelIsOver } from "../lib/wheelAt";
 import {
@@ -200,7 +200,10 @@ function SceneActions() {
   const file = useSceneFocus((s) => s.file);
   /** 지금 지우면 몇 장이 가나 — ★**구독해서 읽는다.** 씬 줄에서 고른 것이 늘고 줄면
    *  이 줄의 안내도 따라 바뀌어야 한다 (`getState()` 로만 읽으면 다시 안 그린다). */
-  const many = useSceneFocus((s) => s.picked).length;
+  const picked = useSceneFocus((s) => s.picked);
+  const many = picked.length;
+  /** ★다중 처리 대상 — 미저장(미리보기)은 파일이 없어 뺀다 (사용자 지시 2026-08-29) */
+  const multiFiles = picked.filter((f) => !isPreviewFile(f));
   const previews = usePreviews((s) => s.items);
   const [enhance, setEnhance] = useState<string[] | null>(null);
   /* ★★**해상도는 프리뷰가 잰 값 그대로**다 (`store/previewBox` 의 `nat`, 2026-08-25).
@@ -286,6 +289,23 @@ function SceneActions() {
    *  ★메타데이터를 **먼저** 읽는다. 탭을 만들고 나서 실패하면 되돌릴 자리가 없다.
    *  ★메타데이터가 없는 그림이면 값은 지금 것이 남는다 — 구조는 그래도 그 탭 것이 온다. */
   const cloneToNewTab = async () => {
+    /* ★여러 장 골랐으면 **한 새 탭의 같은 씬**에 테이크로 쌓인다 (사용자 지시 2026-08-29).
+       구조·설정은 첫 장이 세운다 — 메타데이터 적용(apply)은 보는 장과 첫 장이 다를 수 있어
+       건너뛴다 (환경 스냅샷이 있는 그림은 그것으로 충분하다). */
+    if (multiFiles.length > 1) {
+      try {
+        const landed = await useWs.getState().cloneToNewTab(multiFiles[0], {
+          excludeNo: useGen.getState().params.exclude_slot_number,
+          extraFiles: multiFiles.slice(1),
+        });
+        if (!landed) return;
+        useSceneFocus.getState().focus(landed.cell, landed.file);
+        toast(tr("act.cloned"));
+      } catch (e) {
+        toast(String(e), "warn");
+      }
+      return;
+    }
     try {
       const m = await loadMeta().catch(() => null);
       // ★구조는 **레코드**에서 온다 — 미저장이면 먼저 파일로 남겨야 그 자리가 생긴다
@@ -351,12 +371,26 @@ function SceneActions() {
         /* ★미저장이면 누를 때 저장하고 그 경로로 연다 (`revealPath` 는 함수도 받는다) */
         revealPath={un ? async () => { const f = await ensureSaved(); return f && `${ws}/${f}`; } : `${ws}/${file}`}
         ensureFile={un ? ensureSaved : undefined}
+        /* ★여러 장 골랐으면 **전부** (사용자 지시 2026-08-29) — 인핸스 대화상자는 원래 배치다 */
         onEnhance={async () => {
+          if (multiFiles.length > 1) return setEnhance(multiFiles);
           const f = await ensureSaved();
           if (f) setEnhance([f]);
         }}
-        upscale={{ ws, file }}
+        upscale={{ ws, file, files: multiFiles.length > 1 ? multiFiles : undefined }}
+        multi={multiFiles.length}
         onKeep={async () => {
+          /* ★여러 장 골랐으면 전부 보관한다 — 이미 보관된 장을 무르지 않게 `toggle: false` 와
+             같은 뜻의 갈래는 없어, 그대로 keep 을 돌린다 (겹치면 그 장만 물러난다) */
+          if (multiFiles.length > 1) {
+            try {
+              for (const f of multiFiles) await useGallery.getState().keep(ws, f);
+              toast(tr("gallery.kept"));
+            } catch (e) {
+              toast(String(e), "warn");
+            }
+            return;
+          }
           const f = await ensureSaved();
           if (!f) return;
           try {
@@ -371,9 +405,12 @@ function SceneActions() {
            ★목록을 **교체**한다 (파일 관리와 같은 어법) — 이 버튼은 「지금 이 한 장」의 몸짓이다.
            ★메타 제거 여부는 변환 도구의 체크가 정한다 (설정이 저장되므로 한 번 켜면 유지). */
         onConvert={async () => {
-          const f = await ensureSaved();
-          if (!f) return;
-          useConvertQueue.setState({ items: [{ name: f.split("/").pop() ?? f, rel: `${ws}/${f}` }] });
+          // ★여러 장 골랐으면 전부 싣는다 (사용자 지시 2026-08-29)
+          const files = multiFiles.length > 1 ? multiFiles : [await ensureSaved()].filter((x): x is string => !!x);
+          if (!files.length) return;
+          useConvertQueue.setState({
+            items: files.map((f) => ({ name: f.split("/").pop() ?? f, rel: `${ws}/${f}` })),
+          });
           useUi.getState().setMode("utility");
           useUi.getState().setView("tab", "tools", "convert" as never);
         }}

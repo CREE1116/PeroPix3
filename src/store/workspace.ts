@@ -311,6 +311,8 @@ type S = {
       origin?: { ws: string; file: string } | null;
       scene?: { name?: string; blocks: Block[] };
       seed?: number;
+      /** ★다중 선택 복제 (사용자 지시 2026-08-29) — 첫 장이 세운 **같은 씬**에 테이크로 쌓인다 */
+      extraFiles?: string[];
     },
   ) => Promise<{ file: string; cell: string } | null>;
   /** ★지우기 = **휴지통으로 이동**. 파일이 실제로 자리에서 없어지고, `Ctrl+Z` 로 되돌아온다.
@@ -1285,6 +1287,28 @@ export const useWs = create<S>((set, get) => ({
     // ★목록을 다시 읽지 않는다 — 서버가 돌려준 레코드 한 줄만 얹으면 화면이 따라온다
     //   (업스케일·「파일로 저장」과 같은 방식)
     get().addRecord(r.record);
+    /* ★다중 선택 복제 (사용자 지시 2026-08-29) — 나머지 장도 **같은 씬**으로 보낸다.
+       같은 자리라 테이크로 쌓이고, 구조·설정은 첫 장이 이미 세웠다. */
+    for (const f of o.extraFiles ?? []) {
+      const more = await api<{ file: string; record: Rec }>(
+        `/api/workspaces/${encodeURIComponent(current)}/copy`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            file: f,
+            scene_group: tab.name,
+            scene_group_id: tab.id,
+            cell: cell.name,
+            cell_id: cell.id,
+            cell_no: 1,
+            tab: (sp.tabs ?? []).find((c) => c.id === sp.activeTab)?.name ?? null,
+            exclude_slot_number: o.excludeNo,
+          }),
+        },
+      );
+      get().addRecord(more.record);
+    }
     return { file: r.file, cell: cell.id };
   },
 
