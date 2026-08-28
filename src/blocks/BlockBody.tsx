@@ -51,8 +51,20 @@ export function BlockBody({
   onTab,
   onOpen,
   zone,
+  fill,
+  open,
 }: {
   block: Block;
+  /** ★★**품이 준 자리를 다 쓴다** (사용자 지적 2026-08-28: *"입력 영역이 머리 영역 전체만큼
+   *  커져야 하는데 텍스트 라인만큼만 생긴다"*). 평소에는 글이 늘어난 만큼만 커지는데,
+   *  씬 머리처럼 **칸이 먼저 정해진 자리**에서는 그 칸을 채워야 눌러서 칠 수 있다. */
+  fill?: boolean;
+  /** ★★`fill` 인 자리에서 **품이 아는 「펼쳐져 있나」**. `false` 가 되면 글 상자도 닫는다
+   *  (사용자 지적 2026-08-28: *"글 상자가 씬 안쪽 빈 자리를 눌러야만 풀리고, 이미지를
+   *  고르거나 바깥을 누르면 안 풀린다"*). 까닭은 **초점이 안 빠지기 때문**이다 — 그림 칩은
+   *  `pointerdown` 의 기본 동작을 막아(끌기 때문) 글 상자에서 초점이 나가지 않는다.
+   *  그래서 `blur` 를 기다리는 길로는 닫을 수가 없다. */
+  open?: boolean;
   /** 보여 주기만 하는 자리 (블록 저장소) — 칩도 글 상자도 안 먹는다 */
   readOnly?: boolean;
   onChange: (b: Block) => void;
@@ -140,6 +152,16 @@ export function BlockBody({
     },
     ta,
   );
+  /** ★★**글 상자를 닫으면 자동완성도 접는다** (사용자 지적 2026-08-28: *"자동완성 창이
+   *  떠 있던 상태로 다른 데를 눌러 선택을 해제했다가 다시 클릭해 보면, 아무것도 입력 안
+   *  했는데 이전에 떴던 자동완성이 다시 뜬다"*).
+   *  목록은 글 상자가 사라져도 **뜬 채로 기억되어**, 다음에 열 때 지난 낱말의 후보가
+   *  그대로 다시 그려졌다. 글 상자와 목록은 함께 서고 함께 접혀야 한다. */
+  useEffect(() => {
+    if (!editing) ac.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
+
   /** 편집을 열 때 커서를 놓을 자리. `null` 이면 맨 뒤 */
   const caretAt = useRef<number | null>(null);
   /** Enter·Esc 로 넘어갈 때 뒤따르는 blur 이 한 번 더 반영하지 않게 */
@@ -156,10 +178,54 @@ export function BlockBody({
   const fit = () => {
     const el = ta.current;
     if (!el) return;
+    // ★`fill` 이면 자리를 다 쓰므로 글에 맞춰 키우지 않는다 (위 `fill` 의 ★★주)
+    if (fill) {
+      el.style.height = "100%";
+      return;
+    }
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
   };
   useLayoutEffect(fit, [text, editing]);
+
+  /** 품이 접었으면 글 상자도 닫는다 (위 `open` 의 ★★주). ★적은 것은 담고 닫는다. */
+  useEffect(() => {
+    if (!fill || open !== false || !editing) return;
+    commitNow();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  /** ★★★**밖을 누르면 닫는다 — `blur` 도, 품이 내려 주는 값도 기다리지 않는다.**
+   *
+   *  (사용자 지적 2026-08-28, 세 번째: *"여전히 똑같음"*.) 앞선 두 판은 둘 다 **남이 알려
+   *  주기를 기다리는** 길이었다.
+   *   ① `blur` — 그림 칩·끌기 손잡이는 `pointerdown` 의 기본 동작을 막아서 **초점이 아예
+   *      안 빠진다.** 그래서 그림을 고르면 `blur` 가 오지 않는다.
+   *   ② 품이 내려 주는 `open` — 씬 줄이 접히는 것과 글 상자가 닫히는 것이 **두 상태**라,
+   *      한쪽이라도 어긋나면 그대로 열려 있는다.
+   *  이제 **여기서 직접 듣는다.** 잡기 단계(capture)라 아래에서 누가 막아도 먼저 오고,
+   *  씬 줄 머리가 풀리는 것과 **같은 장치**다 (`SceneLane` 의 바깥 클릭 처리) — 거기서
+   *  잘 도는 것이 확인된 길이다.
+   *  ★비켜 가는 것 셋: 글 상자 자신 · 자동완성 목록 · 서랍(끌어다 놓는 중이면 닫으면 안 된다).
+   *  ★★**어느 자리든 마찬가지다** (사용자 지적 2026-08-28: *"베이스 프롬프트 쪽도 비슷한
+   *    문제 있네. 어딜 누르든 풀려야 하는데 안 풀리는 데가 있음"*). 초점을 막는 표면은
+   *    프롬프트 패널에도 그대로 있다 — 칩·끌기 손잡이·단추가 다 그렇다.
+   *  ★다만 **접는 것은 씬 머리뿐**이다(`fill`). 프롬프트 패널의 블록은 펼침을 사용자가
+   *    따로 정하므로, 글 상자만 닫고 블록은 편 채로 둔다. */
+  useEffect(() => {
+    if (!editing) return;
+    const onDown = (e: PointerEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (!el) return;
+      if (ta.current && (el === ta.current || ta.current.contains(el))) return;
+      if (el.closest?.("[data-tag-suggest]") || el.closest?.("[data-block-drawer]")) return;
+      commitNow();
+      if (fill) onDone?.();
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fill, editing]);
 
   /** ★★값이 갈아 끼워진 **바로 뒤에** 커서를 제자리로 (위 `caretKeep` 의 ★★주).
    *  ★치환은 한 글자를 한 글자로 바꿔 **길이가 안 변하므로** 자리 숫자가 그대로 맞는다.
@@ -290,12 +356,21 @@ export function BlockBody({
     logTextEdit(block, after);
     onChange(after);
     setEditing(false);
+    /* ★★**칸을 다 쓰는 자리에서는 「편집 끝」을 알린다** (사용자 지적 2026-08-28:
+       *"씬 헤드 선택이 해제되면 프롬프트 편집도 같이 풀려야 하는데 안 풀린다.
+       둘이 풀리는 조건이 다르다"*). 씬 머리는 **펼침(품이 아는 것)**과 **글 상자
+       열림(여기가 아는 것)**이 따로 놀아, 한쪽만 닫히면 모습이 어긋났다.
+       ★`fill` 일 때만 알린다 — 프롬프트 패널·카드 편집기는 글 상자를 벗어난다고
+         접히면 안 된다 (거기서는 펼침이 사용자가 따로 정하는 상태다). */
+    if (fill) onDone?.();
   };
 
   /** 고친 것을 반영하고 편집을 닫는다 — blur 이 한 번 더 하지 않게 표식을 세운다 */
   const commitNow = (): Block => {
     skipBlur.current = true;
     setEditing(false);
+    // ★사라질 때의 반영(`live`)이 **한 번 더 하지 않게** 여기서 바로 내린다 — 이미 담았다
+    live.current.editing = false;
     const out = toStore(text);
     const b = { ...block, tags: parseSegs(out), src: out };
     logTextEdit(block, b);
@@ -379,11 +454,14 @@ export function BlockBody({
                 live.current.dropped = true;
                 setEditing(false);
                 onCancel?.();
+                // ★칸을 다 쓰는 자리에서는 **펼침도 함께 접는다** (`commitText` 의 ★★주)
+                if (fill) onDone?.();
               }
             }}
             rows={1}
             style={{
               ...box,
+              ...(fill ? { flex: 1, minHeight: 0, resize: "none" as const } : {}),
               /* ★★줄 간격을 늘리면 **첫 줄이 반쪽 여백만큼 내려간다.** 그만큼 위 안여백을
                    덜어 첫 줄을 칩 줄과 같은 높이에 세운다 (아래 안여백으로 옮겨 붙인다).
                    ★상자 규격(`box`) 자체는 안 건드린다 — 폭은 두 모습이 같아야 한다. */
@@ -456,8 +534,10 @@ export function BlockBody({
             borderColor: "transparent",
             display: "flex",
             flexWrap: "wrap",
+            alignContent: "flex-start",
             gap: 4,
-            minHeight: "calc(1.5em + 8px)",
+            // ★`fill` 이면 품이 준 만큼 — 아니면 한 줄 높이 (위 `fill` 의 ★★주)
+            ...(fill ? { flex: 1, minHeight: 0 } : { minHeight: "calc(1.5em + 8px)" }),
             cursor: readOnly ? "inherit" : "text",
           }}
         >

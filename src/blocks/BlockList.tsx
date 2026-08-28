@@ -38,6 +38,8 @@ export function BlockList({
   onChange,
   libZone,
   single,
+  fill,
+  open,
   id,
   clamp,
   bg,
@@ -55,6 +57,10 @@ export function BlockList({
   libZone?: string;
   /** 블록이 **하나뿐인** 자리인가 (씬 칸). 위 머리 주석의 넷이 달라진다 */
   single?: boolean;
+  /** ★씬 머리처럼 **칸이 먼저 정해진 자리** — 그 칸을 채운다 (`BlockBody` 의 `fill`) */
+  fill?: boolean;
+  /** `fill` 인 자리에서 **펼쳐져 있나** — `false` 면 글 상자도 닫는다 (`BlockBody` 의 `open`) */
+  open?: boolean;
   /** `single` 일 때 이 자리를 가리키는 이름 — `data-slot-block` 으로 나간다 */
   id?: string;
   /** 자리가 좁아 **잘라 보여 주는** 상태인가. 넘치는 칩 수를 `+n` 으로 낸다 */
@@ -236,6 +242,8 @@ export function BlockList({
       style={{
         display: "flex",
         flexDirection: "column",
+        // ★`fill` 이면 품이 준 자리를 그대로 아래로 흘린다 (`BlockBody` 의 `fill` 주석)
+        ...(fill ? { flex: 1, minHeight: 0 } : {}),
         // 저장소에서 끄는 중에만 자리를 알린다 — 1단계 점선, 2단계(지금 떼면 여기) 실선
         ...(libZone && zone.active
           ? {
@@ -251,16 +259,28 @@ export function BlockList({
       }}
     >
       {blocks.map((b, i) => (
-        <div key={b.id}>
+        /* ★★**여기서도 자리를 흘려야 한다** (실측 2026-08-28). 이 층에 아무 규칙이 없어서
+           위(목록 뿌리)가 아무리 커도 아래(블록 줄·입력칸)로 그 크기가 안 내려갔다 —
+           입력칸만 한 줄로 남던 까닭이다. 표시를 넣어 보고서야 이 층이 보였다. */
+        <div
+          key={b.id}
+          style={fill ? { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" } : undefined}
+        >
           {!single && (
             <DropLine active={dragIdx != null && overIdx === i && i !== dragIdx && i !== dragIdx + 1} />
           )}
           {/* ★★표식이 곧 **놓을 자리의 목록**이다 — 칩 끌기가 화면 전체에서 이것을 훑어
               카드 너머의 줄까지 찾는다 (`useTagDrag` 의 ★주). */}
-          <div data-block-row ref={register(i)}>
+          <div
+            data-block-row
+            ref={register(i)}
+            style={fill ? { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" } : undefined}
+          >
             <BlockRow
               block={b}
               bare={single}
+              fill={fill}
+              open={open}
               zone={libZone}
               dup={dup}
               dragging={dragIdx === i}

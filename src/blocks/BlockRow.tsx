@@ -35,6 +35,8 @@ export function BlockRow({
   onSave,
   autoEdit,
   autoCaret,
+  fill,
+  open,
   gripProps,
   tagDrag,
   dragging,
@@ -69,6 +71,10 @@ export function BlockRow({
   autoEdit?: boolean;
   /** 그렇게 열 때 커서를 놓을 자리 (`BlockBody` 의 같은 이름) */
   autoCaret?: number;
+  /** 품이 준 자리를 다 쓴다 (`BlockBody` 의 `fill`) */
+  fill?: boolean;
+  /** 품이 아는 「펼쳐져 있나」 (`BlockBody` 의 `open`) */
+  open?: boolean;
   gripProps?: React.HTMLAttributes<HTMLSpanElement>;
   /** 칩 끌기 (`useTagDrag`) — 목록이 들고 있는 것을 이 블록 몫만 받는다 */
   tagDrag?: TagDrag;
@@ -98,6 +104,8 @@ export function BlockRow({
       onOpen={onOpen}
       onTab={onTab}
       zone={zone}
+      fill={fill}
+      open={open}
     />
   );
   // ★머리가 없는 자리는 **몸통 그대로**다 — 테두리도 접기도 없다 (칸이 곧 블록이다)

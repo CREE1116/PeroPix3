@@ -921,7 +921,14 @@ export function SceneLane() {
               // ★세로 모드에서는 카드가 **오른쪽으로** 늘어선다 (씬 기둥이 그 안에 선다)
               vert
                 ? { height: "max-content", minHeight: "100%", display: "flex", alignItems: "stretch" }
-                : { width: "max-content", minWidth: "100%" }
+                : {
+                    width: "max-content",
+                    minWidth: "100%",
+                    /* ★카드가 왼쪽 벽에 붙지 않게 한 뼘 (사용자 지시 2026-08-28).
+                       ★`box-sizing: border-box` 라 `minWidth: 100%` 와 겹쳐도 가로줄이
+                         새로 생기지 않는다 (`styles/globals.css` 의 전역 규칙). */
+                    paddingLeft: 8,
+                  }
             }
           >
             {/* ★눈금 줄(1·2·3…)을 걷었다 (사용자 지시 2026-08-19) — 몇 번째 장인지는
@@ -1640,7 +1647,6 @@ function SceneRow(
   /** 생성물을 카드 커버로 끄는 출발점 (`dir: "image"`). 덱·손패·프롬프트 배너가 받는다 */
   const startTakeDrag = useDragSource();
   const c = p.cell;
-  const on = p.focus.cell === c.id;
   const expanded = p.expandedId === c.id;
   /** ★★이 칸의 블록 — **하나뿐**이다 (`slotBlock`). 여럿이 든 옛 카드를 얹었으면
    *  켜진 것들을 이어 붙여 보여 준다. */
@@ -1703,10 +1709,15 @@ function SceneRow(
     >
       <div
         data-scene-head
-        // ★머리를 누르면 펴진다. 단추·입력칸은 비켜 간다 — 안 비키면 잠금·삭제가 죽는다
+        /* ★머리를 누르면 펴진다. 단추·입력칸은 비켜 간다 — 안 비키면 잠금·삭제가 죽는다.
+           ★★**머리 아무 데나 눌러도 곧장 칠 수 있다** (사용자 지적 2026-08-28: *"정확히
+             「클릭해서 입력」 글자를 눌러야만 편집이 뜨는데, 보기에는 윗부분 전체가 입력
+             공간이다"*). 예전에는 여기서 **펴기만** 했다 — 「머리를 눌러 편 것은 보려는
+             것」이라는 구분이었는데, 씬 머리는 그 자체가 입력칸처럼 보이므로 그 구분이
+             오히려 걸림돌이었다. 이제 글자든 빈 자리든 같은 자리다. */
         onClick={(e) => {
           if ((e.target as HTMLElement).closest("button, input, textarea, [data-head-action]")) return;
-          p.onExpand(expanded ? null : c.id);
+          p.onExpand(expanded ? null : c.id, true);
         }}
         style={{
           cursor: "pointer",
@@ -1717,7 +1728,12 @@ function SceneRow(
           ...(p.vert
             ? { top: 0, height: p.headw, borderBottom: "1px solid var(--line)" }
             : { left: 0, width: p.headw, borderRight: "1px solid var(--line)" }),
-          background: on ? "var(--accent-bg)" : "var(--surface)",
+          /* ★★**강조는 「고른 씬」이 아니라 「지금 치고 있는 칸」이다** (사용자 지시
+             2026-08-28: *"이미지만 선택했는데 머리가 선택된 것처럼 표시된다. 이미지를
+             고르면 이미지 테두리만 강조하고, 저기는 프롬프트 편집할 때만"*).
+             그림을 고르면 초점(`focus.cell`)이 그 씬으로 오는데, 그것까지 강조하면
+             「입력칸이 열렸다」와 「그 씬을 보고 있다」가 같은 모습이 된다. */
+          background: expanded ? "var(--accent-bg)" : "var(--surface)",
           display: "flex",
           flexDirection: "column",
           gap: 4,
@@ -1855,8 +1871,15 @@ function SceneRow(
           onClick={(e) => {
             e.stopPropagation();
             p.onFocus({ cell: c.id, file: p.focus.cell === c.id ? p.focus.file : null });
+            /* ★★**빈 자리를 눌러도 입력이 열린다** (사용자 지적 2026-08-28: *"정확히
+               「클릭해서 입력」 글자를 눌러야만 편집이 뜨는데, 보기에는 윗부분 전체가
+               입력 공간이다"*). 칩·글 상자를 누른 것은 그쪽이 알아서 처리하므로 비켜 간다. */
+            const t = e.target as HTMLElement;
+            if (!t.closest("[data-slot-block]")) p.onExpand(c.id, true);
           }}
-          style={{ display: "contents" }}
+          /* ★`display: contents` 였다 — 상자가 없으니 **빈 자리가 아예 없었다.**
+             자리를 차지해야 그 자리를 누를 수 있다 (`flex: 1` 로 머리의 남은 만큼). */
+          style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}
         >
           <BlockList
             /* ★★블록을 고치는 자리는 앱에 **이것 하나**다 (사용자 지적 2026-08-20:
@@ -1864,12 +1887,18 @@ function SceneRow(
                씬 칸은 그 목록의 `single` 모드일 뿐이라, 칩 끌기·서랍 드롭·중복 표시가
                프롬프트 쪽과 **같은 배선**을 지난다. */
             single
+            /* ★머리 칸을 다 쓴다 — 글자만이 아니라 **그 칸 아무 데나** 눌러 칠 수 있게
+               (사용자 지적 2026-08-28). `BlockBody` 의 `fill` 주석 참조. */
+            fill
+            /* ★접히면 글 상자도 닫힌다 — 초점이 안 빠지는 길이 있어서 필요하다
+               (`BlockBody` 의 `open` ★★주) */
+            open={expanded}
             id={c.id}
             blocks={[blk]}
             onChange={(b) => patchCell({ blocks: slotBlocksOf(b[0] ?? blk) })}
             libZone={`scene-${c.id}`}
             clamp={!expanded}
-            bg={on ? "var(--accent-bg)" : "var(--surface)"}
+            bg={expanded ? "var(--accent-bg)" : "var(--surface)"}
             autoEdit={p.typingId === c.id}
             /* 칩을 눌러 글 상자가 열렸다 — 그 자리를 내준다 (`clamp` 해제) */
             onOpen={() => p.onExpand(c.id)}

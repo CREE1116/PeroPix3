@@ -43,7 +43,15 @@ export function useTagSuggest(
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<TagEntry[]>([]);
   const [sel, setSel] = useState(0);
-  const [pos, setPos] = useState({ left: 0, top: 0, width: 300 });
+  const [pos, setPos] = useState<{
+    left: number;
+    width: number;
+    maxH: number;
+    /** 아래로 뜰 때 — 커서 줄의 바로 밑 */
+    top: number | null;
+    /** 위로 뒤집을 때 — **아래쪽 끝**을 커서 줄에 맞춘다 (`dropdownPos` 의 ★★주) */
+    bottom: number | null;
+  }>({ left: 0, width: 300, maxH: 300, top: 0, bottom: null });
   const list = useRef<HTMLDivElement>(null);
   const last = useRef(value);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -247,9 +255,10 @@ export function useTagSuggest(
           style={{
             position: "fixed",
             left: pos.left,
-            top: pos.top,
+            top: pos.top ?? undefined,
+            bottom: pos.bottom ?? undefined,
             width: pos.width,
-            maxHeight: 300,
+            maxHeight: pos.maxH,
             overflowY: "auto",
             zIndex: 950,
             background: "var(--panel)",
@@ -330,26 +339,54 @@ const TYPE_COLOR: Record<string, string> = {
   [WC_TYPE]: "var(--accent)",
 };
 
-/** 커서의 화면 위치 아래에 목록을 놓는다. 워드랩까지 맞추려면 같은 스타일의 거울이 필요하다 */
+/** 글 상자의 **모습을 그대로 베낀 거울** — 자동완성이 설 자리를 재는 데 쓴다.
+ *
+ *  ★★`font` 줄임 표기를 **베끼지 않는다** (사용자 지적 2026-08-28: *"원래는 편집 중인 곳
+ *    옆에 정확히 떴는데 지금은 다른 줄에 뜬다"*). `getComputedStyle(el).font` 는 줄임
+ *    표기라 브라우저가 **빈 글자를 돌려주는 경우가 있고**, 그러면 거울이 기본 글꼴로
+ *    떨어진다. 우리 글 상자는 `WideSep`(구분자 빈칸을 넓힌 글꼴)을 쓰므로, 기본 글꼴로
+ *    재면 **줄바꿈 자리가 통째로 달라져** 커서가 몇 줄 아래위로 어긋난다.
+ *    그래서 낱개 속성을 하나하나 베낀다 — 줄바꿈을 정하는 것은 전부 여기 있다. */
+const MIRROR_COPY = [
+  "white-space", "word-wrap", "overflow-wrap", "word-break", "line-break", "hyphens",
+  "font-family", "font-size", "font-weight", "font-style", "font-variant", "font-stretch",
+  "font-kerning", "font-feature-settings", "font-variation-settings", "font-size-adjust",
+  "letter-spacing", "word-spacing", "text-transform", "text-indent", "text-rendering",
+  "tab-size", "direction", "line-height",
+  "padding-top", "padding-right", "padding-bottom", "padding-left", "box-sizing",
+];
+
+/** 커서가 선 줄의 **화면 위치**를 재고, 목록을 그 바로 아래(또는 위)에 놓는다.
+ *
+ *  ★★위로 뒤집을 때는 **아래쪽 끝을 잡는다**(`bottom`) — 예전에는 「커서에서 304px 위」로
+ *    잡았는데, 그것은 목록이 언제나 300px 높이라고 친 값이다. 후보가 두셋이면 목록은
+ *    100px도 안 되므로 **커서에서 한참 떨어진 곳**에 떴다 (사용자 지적 2026-08-28:
+ *    *"위로 뜰 때는 아예 엄청 먼 곳에 뜬다"*). 아래쪽 끝을 커서 줄에 맞추면 목록이
+ *    몇 줄이든 언제나 커서 바로 위에 붙는다.
+ *  ★남은 자리에 맞춰 **높이도 줄인다** — 그래야 화면 밖으로 밀려나지 않는다. */
 function dropdownPos(ta: Field) {
   const cs = window.getComputedStyle(ta);
   const mirror = document.createElement("div");
   const s = mirror.style;
   s.position = "absolute";
   s.visibility = "hidden";
-  s.whiteSpace = cs.whiteSpace;
-  s.wordWrap = cs.wordWrap;
-  s.overflowWrap = cs.overflowWrap;
-  s.width = ta.clientWidth + "px";
-  s.font = cs.font;
-  s.lineHeight = cs.lineHeight;
-  s.letterSpacing = cs.letterSpacing;
-  s.padding = cs.padding;
+  s.top = "0";
+  s.left = "-9999px";
+  for (const k of MIRROR_COPY) s.setProperty(k, cs.getPropertyValue(k));
+  // ★테두리는 빼고 **안쪽 폭만** 맞춘다 (`clientWidth` 는 테두리를 뺀 값이다)
   s.border = "0";
-  s.boxSizing = cs.boxSizing;
+  s.width = ta.clientWidth + "px";
+  const line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
   mirror.textContent = ta.value.substring(0, ta.selectionStart ?? ta.value.length);
+  /* ★★표식은 **줄칸 높이만 한 빈 상자**다 (사용자 지적 2026-08-28: *"자동완성이 지금
+       입력 중인 거랑 한 칸 어긋남"*).
+     글자를 담은 표식으로 재면 그 상자의 윗변은 **글자 상자의 위**이지 줄칸의 위가 아니다.
+     줄 간격이 2.065 라 그 둘은 반줄 가까이 벌어지고(위아래로 나뉜 여백), 거기에 줄 높이를
+     한 번 더 더하니 목록이 반 칸 넘게 내려갔다.
+     `vertical-align: top` 인 빈 상자는 **윗변이 줄칸의 윗변에 붙으므로**, 재는 값이 곧
+     줄칸의 위아래가 된다. 폭이 0 이라 줄바꿈에는 영향이 없다. */
   const mark = document.createElement("span");
-  mark.textContent = "​";
+  mark.style.cssText = `display:inline-block;width:0;height:${line}px;vertical-align:top`;
   mirror.appendChild(mark);
   document.body.appendChild(mirror);
   const m = mark.getBoundingClientRect();
@@ -359,12 +396,24 @@ function dropdownPos(ta: Field) {
   document.body.removeChild(mirror);
 
   const r = ta.getBoundingClientRect();
-  const line = parseInt(cs.lineHeight) || parseInt(cs.fontSize) * 1.2;
+  // ★거울에는 테두리가 없으므로 글 상자의 테두리 두께만큼 더해 준다
+  const bt = parseFloat(cs.borderTopWidth) || 0;
+  const bl = parseFloat(cs.borderLeftWidth) || 0;
   const width = Math.min(340, Math.max(230, r.width));
-  let left = r.left + x - ta.scrollLeft;
-  let top = r.top + y - ta.scrollTop + line + 4;
+
+  let left = r.left + bl + x - ta.scrollLeft;
   if (left + width > window.innerWidth - 10) left = window.innerWidth - width - 10;
   if (left < 10) left = 10;
-  if (top + 300 > window.innerHeight - 10) top = Math.max(10, r.top + y - ta.scrollTop - 304);
-  return { left, top, width };
+
+  /** 커서가 선 줄의 위·아래 끝 (화면 좌표) */
+  const lineTop = r.top + bt + y - ta.scrollTop;
+  const lineBottom = lineTop + line;
+  const below = window.innerHeight - lineBottom - 10;
+  const above = lineTop - 10;
+  // ★아래가 너무 좁고 위가 더 넓을 때만 뒤집는다 — 어중간하면 아래가 눈에 자연스럽다
+  const flip = below < 160 && above > below;
+  const maxH = Math.max(80, Math.min(300, flip ? above : below));
+  return flip
+    ? { left, width, maxH, top: null, bottom: window.innerHeight - lineTop + 4 }
+    : { left, width, maxH, top: lineBottom + 4, bottom: null };
 }
