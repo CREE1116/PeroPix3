@@ -1657,7 +1657,11 @@ export const useWs = create<S>((set, get) => ({
     // ★그림 파일은 **부르는 쪽**(`CanvasTabs` 의 탭 닫기)이 먼저 휴지통으로 보낸다 —
     //   여기서 보내면 어느 그림이 그 탭 것이었는지 묶어 줄 화면 정보가 이미 없다
     const sceneGroups = spec.sceneGroups.filter((x) => !(x.kind === "sceneGroup" && x.tabId === id));
-    const nextTab = spec.activeTab === id ? left[0].id : spec.activeTab;
+    /* ★보던 탭을 지웠으면 **가장 가까운 탭**으로 (사용자 지시 2026-08-29: *"항상 첫 탭으로
+       가던데"*) — 지운 자리의 오른쪽 탭, 끝이었으면 왼쪽. `left` 는 지운 것만 뺀 같은 차례라
+       지운 인덱스 자리에 오른쪽 탭이 와 있다. */
+    const at = (spec.tabs ?? []).findIndex((c) => c.id === id);
+    const nextTab = spec.activeTab === id ? left[Math.min(at, left.length - 1)].id : spec.activeTab;
     const mine = sceneGroups.filter((x) => x.kind === "sceneGroup" && x.tabId === nextTab);
     const activeSceneGroup = sceneGroups.some((x) => x.id === spec.activeSceneGroup)
       ? spec.activeSceneGroup
