@@ -8,7 +8,7 @@ import { EditableName } from "../components/EditableName";
 import { api } from "../lib/backend";
 import { toast } from "../store/toast";
 import { useState } from "react";
-import { allCells, useWs, type SceneGroup } from "../store/workspace";
+import { useWs, type SceneGroup } from "../store/workspace";
 import { ask } from "../store/ask";
 import { useGen } from "../store/gen";
 import { Icon } from "../components/Icon";
@@ -160,15 +160,12 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sceneGrou
                 padding: "0 4px",
               }}
             />
-            {/* ★씬 수만 적는다. 예전엔 `결과가 있는 씬/전체` 를 `6/3` 처럼 적었는데
-                무슨 뜻인지 알 수 없었고(사용자 지적 2026-08-04), 옛 레코드를 잘못 물어
-                분자가 분모보다 큰 값까지 나왔다. 진행 상황은 생성 푸터의 큐 줄이 말한다. */}
-            <span
-              data-tip={tr("slots.count", { n: allCells(t).length })}
-              style={{ fontSize: "var(--text-3xs)", opacity: 0.7, fontVariantNumeric: "tabular-nums" }}
-            >
-              {allCells(t).length}
-            </span>
+            {/* ★★씬 수를 **안 적는다** (사용자 지시 2026-08-28: *"씬 그룹 뒤에 씬 갯수 적혀
+                있는 거 삭제해줘. 이름이랑 헷갈림"*). 이름 뒤에 붙은 숫자라 이름의 일부로 읽혔다 —
+                실제로 이름에도 번호가 붙는다 (`새 씬 그룹 2`). 씬이 몇인지는 씬 줄이 그대로 보여
+                주고, 진행 상황은 생성 푸터의 큐 줄이 말한다.
+                ★예전 자국: 한때 `결과가 있는 씬/전체` 를 `6/3` 처럼 적었다 (사용자 지적
+                2026-08-04). 그 자리를 되살리지 말 것. */}
             {/* ★**마지막 하나는 못 닫는다** — 닫으면 이 캐릭터에 탭이 없어진다 (`closeSet` 주석) */}
             {inGroup.length > 1 && (
               <button
