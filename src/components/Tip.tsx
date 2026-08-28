@@ -56,6 +56,12 @@ export function TipLayer() {
       });
     };
     const enter = (e: Event) => {
+      /* ★★**끌고 있는 동안에는 안 뜬다** (사용자 지적 2026-08-28: *"탭을 드래그하다가 잠깐
+         멈춰 있으면 툴팁이 뜸"*). 누르는 순간 한 번 감추지만(`pointerdown`), 끌고 가다
+         **다른 요소 위로 넘어가면** 거기서 다시 예약된다 — 자리를 잡느라 잠깐 멈추면 그것이
+         뜬다. 단추가 눌려 있으면 그것은 훑어보는 것이 아니라 **끌고 있는 것**이다.
+         ★`focusin` 에는 `buttons` 가 없다 (undefined → 그대로 예약된다). */
+      if ((e as PointerEvent).buttons) return;
       const el = (e.target as HTMLElement | null)?.closest?.("[data-tip]") as HTMLElement | null;
       if (!el || el === target.current) return;
       stop();

@@ -38,6 +38,10 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sceneGrou
   const tr = useI18n((s) => s.t);
   const [editing, setEditing] = useState<string | null>(null);
   const [editingChar, setEditingChar] = useState<string | null>(null);
+  /* ★탭을 **워크스페이스 탭 위**에 올려 두었나 (사용자 지적 2026-08-28: *"워크스페이스에
+     드롭하려고 할 때 탭 위치 이동 마커도 같이 뜸"*). 그때 놓으면 차례 바꾸기가 아니라
+     옮기기라, 이 줄의 삽입선은 **일어나지 않을 일**을 가리킨다 — 감춘다. */
+  const overWs = useTabDrop((s) => s.over) != null;
   /* ★★**두 줄 다 끌어서 차례를 바꾼다** (사용자 지시 2026-08-24). 탭 전체가 손잡이라
      `tapSafe` 로 잡는다 — 문턱(4px)을 넘기 전에는 아무 일도 안 하므로 **눌러서 전환**과
      **두 번 눌러 이름 고치기**가 그대로 살아 있다.
@@ -263,7 +267,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sceneGrou
             };
             return (
               <Fragment key={c.id}>
-              <DropLine on={tabOrd.dragIdx != null && tabOrd.overIdx === i} vert />
+              <DropLine on={tabOrd.dragIdx != null && tabOrd.overIdx === i && !overWs} vert />
               <div
                 ref={tabOrd.register(i)}
                 {...dragProps}
@@ -356,7 +360,7 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sceneGrou
               </Fragment>
             );
           })}
-          <DropLine on={tabOrd.dragIdx != null && tabOrd.overIdx === tabs.length} vert />
+          <DropLine on={tabOrd.dragIdx != null && tabOrd.overIdx === tabs.length && !overWs} vert />
           <button
             data-tab-add
             onClick={() => addTab()}
