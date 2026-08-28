@@ -5,6 +5,7 @@ import { Icon } from "../components/Icon";
 import { useReorder } from "../lib/useReorder";
 import { DragGhost } from "../cards/DragGhost";
 import { DropLine } from "../components/DropLine";
+import { useTabDrop } from "../lib/tabDrop";
 
 /** 열어 둔 워크스페이스 — **캐릭터 줄 위**에 선다 (사용자 지시 2026-08-08).
  *
@@ -27,6 +28,8 @@ export function WorkspaceTabs({ onAdd }: { onAdd: () => void }) {
   const t = useI18n((s) => s.t);
   const { openWs, current, open, closeWs, moveWs } = useWs();
   const ord = useReorder(openWs.length, moveWs, { axis: "x", tapSafe: true });
+  /** 탭을 끌어 올려 둔 워크스페이스 — 받을 자리라고 빛난다 (`lib/tabDrop`) */
+  const dropOver = useTabDrop((s) => s.over);
   if (!openWs.length) return null;
 
   return (
@@ -73,6 +76,10 @@ export function WorkspaceTabs({ onAdd }: { onAdd: () => void }) {
               ...hp.style,
               // ★평소 커서는 이 탭의 것이다 (`tapSafe` 라 `handleProps` 는 안 정한다)
               cursor: hp.style.cursor ?? (on ? "default" : "pointer"),
+              // ★탭을 끌어 올려 둔 자리 — 지금 워크스페이스는 받을 수 없으니 안 빛난다
+              ...(dropOver === name && !on
+                ? { outline: "2px solid var(--accent)", outlineOffset: -2, background: "var(--accent-bg)" }
+                : null),
             }}
           >
             <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>

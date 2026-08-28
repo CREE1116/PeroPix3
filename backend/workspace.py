@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import copy
 import json
 import re
 import uuid
@@ -641,6 +642,163 @@ class Store:
                 break
             cur = nxt
         return None
+
+    # ── 탭을 다른 워크스페이스로 ─────────────────────────────
+    def move_tab(self, src_ws: str, tab_id: str, dst_ws: str) -> dict:
+        """탭 하나를 **다른 워크스페이스로 옮긴다** — 씬 그룹·그림·레코드·썸네일 캐시가 함께 간다
+        (사용자 지시 2026-08-28: *"탭을 끌어다가 다른 워크스페이스에 두면 거기로 옮겨지게"*).
+
+        ★옮기는 것이지 복사가 아니다: 주는 쪽에서는 사라진다. 되돌리려면 도로 끌어오면 된다.
+        ★★마지막 탭은 못 옮긴다 — 씬 그룹이 설 자리가 없어진다 (`store/workspace.ts` 의
+          `removeTab` 과 같은 규칙).
+        ★★id 가 받는 쪽과 겹치면 **새 id 를 준다** — 탭·씬 그룹·카드·씬 전부. 워크스페이스마다
+          `ch_1`·`t_1` 처럼 같은 씨앗에서 번호를 매기므로 겹치는 일이 흔하다. 레코드의
+          `scene_group_id`·`cell_id` 도 같은 표로 바꾼다 — 안 바꾸면 그림이 받는 쪽 화면 어디에도
+          안 뜬다 (`lib/takes.ts` 는 id 로 묶는다).
+        ★파일은 받는 쪽의 `output/멀티/<탭>/<세트>/` 로 간다 (`out_dir` 하나가 자리를 정한다).
+          이름은 그대로 두되 이미 있으면 `next_name` 으로 번호를 새로 받는다.
+        ★색인·곁파일은 **줄 단위로 옮긴다** — 그 줄을 받는 쪽 끝에 붙이고(경로·id 만 고쳐서),
+          주는 쪽에서는 그 줄을 뺀 사본으로 바꿔치기한다 (`_rewrite_paths` 와 같은 방식).
+          지우는 연산은 없다 (`test_output_safety`).
+        ★같은 뿌리 아래의 폴더끼리라 `rename` 으로 옮긴다 — 바이트를 다시 쓰지 않는다.
+        """
+        if src_ws == dst_ws:
+            raise ValueError("같은 워크스페이스입니다")
+        src = self.load(src_ws)
+        dst = self.load(dst_ws)
+        if not src or not dst:
+            raise ValueError("워크스페이스를 찾지 못했습니다")
+        tabs = src.get("tabs") or []
+        tab = next((t for t in tabs if t.get("id") == tab_id), None)
+        if not tab:
+            raise ValueError("그 탭이 없습니다")
+        if len(tabs) <= 1:
+            raise ValueError("마지막 탭은 옮길 수 없습니다")
+        groups = [g for g in (src.get("sceneGroups") or []) if g.get("tabId") == tab_id]
+        gids = {g.get("id") for g in groups}
+        gnames = {g.get("name") for g in groups}
+
+        # ① 받는 쪽과 겹치는 id 는 새로 준다
+        used: set[str] = set()
+        for t in dst.get("tabs") or []:
+            used.add(t.get("id"))
+        for g in dst.get("sceneGroups") or []:
+            used.add(g.get("id"))
+            for c in g.get("cards") or []:
+                used.add(c.get("id"))
+                for cell in c.get("cells") or []:
+                    used.add(cell.get("id"))
+        remap: dict[str, str] = {}
+
+        def fresh(old: str | None) -> str | None:
+            if old is None:
+                return None
+            if old not in used:
+                used.add(old)
+                return old
+            n = 2
+            while f"{old}-{n}" in used:
+                n += 1
+            new = f"{old}-{n}"
+            used.add(new)
+            remap[old] = new
+            return new
+
+        tab = copy.deepcopy(tab)
+        groups = copy.deepcopy(groups)
+        tab["id"] = fresh(tab.get("id"))
+        for g in groups:
+            g["id"] = fresh(g.get("id"))
+            g["tabId"] = tab["id"]
+            for c in g.get("cards") or []:
+                c["id"] = fresh(c.get("id"))
+                for cell in c.get("cells") or []:
+                    cell["id"] = fresh(cell.get("id"))
+
+        # ② 그 탭의 그림 — id 로 묶고, id 가 없는 옛 줄은 세트 이름으로 (`takesOf` 의 폴백과 같다)
+        mine = [
+            r for r in self.records(src_ws)
+            if r.get("scene_group_id") in gids
+            or (not r.get("scene_group_id") and r.get("scene_group") in gnames)
+        ]
+        moves: dict[str, str] = {}
+        names: dict[Path, list[str]] = {}
+        for r in mine:
+            rel = str(r.get("file") or "")
+            p = self.file_path(src_ws, rel)
+            if not p or not p.is_file():
+                continue
+            d = self.out_dir(dst_ws, str(r.get("scene_group") or ""), str(tab.get("name") or ""))
+            target = d / p.name
+            if target.exists():
+                # ★이름이 겹치면 같은 접두로 다음 번호를 받는다 (생성과 같은 규칙)
+                lead = p.stem.rsplit("_", 1)[0] if "_" in p.stem else ""
+                got = names.get(d)
+                if got is None:
+                    got = names[d] = self._names_in(d, dst_ws)
+                target = self.next_name(d, lead, p.suffix.lstrip("."), dst_ws, got)
+                got.append(target.name)
+            p.rename(target)
+            moves[rel] = self.rel(dst_ws, target)
+
+        # ③ 썸네일 캐시도 따라간다 (없으면 다음 요청에 다시 구워진다 — 실패해도 그만이다)
+        st = self.dir_of(src_ws) / THUMB_DIR
+        dt = self.dir_of(dst_ws) / THUMB_DIR
+        if st.is_dir() and moves:
+            dt.mkdir(parents=True, exist_ok=True)
+            for old, new in moves.items():
+                a = st / thumbs.flat_name(old)
+                b = dt / thumbs.flat_name(new)
+                if a.is_file() and not b.exists():
+                    try:
+                        a.rename(b)
+                    except OSError:
+                        pass
+
+        # ④ 색인·곁파일 — 곁파일을 먼저 (`append_record` 와 같은 순서)
+        sd = self.dir_of(src_ws)
+        dd = self.dir_of(dst_ws)
+        dd.mkdir(parents=True, exist_ok=True)
+        for name in (ENV_NAME, RECORDS_NAME):
+            p = sd / name
+            if not p.is_file():
+                continue
+            tmp = p.with_suffix(p.suffix + ".tmp")
+            with p.open("r", encoding="utf-8") as fin, tmp.open("w", encoding="utf-8") as fout, \
+                 (dd / name).open("a", encoding="utf-8") as fdst:
+                for line in fin:
+                    if not line.strip():
+                        continue
+                    f = self._file_of(line)
+                    if f is not None and f in moves:
+                        try:
+                            row = json.loads(line)
+                            row["file"] = moves[f]
+                            for k in ("scene_group_id", "cell_id"):
+                                if row.get(k) in remap:
+                                    row[k] = remap[row[k]]
+                            fdst.write(json.dumps(row, ensure_ascii=False) + "\n")
+                            continue
+                        except Exception:
+                            pass          # ★못 읽는 줄은 주는 쪽에 **그대로 둔다**
+                    fout.write(line if line.endswith("\n") else line + "\n")
+            tmp.replace(p)
+
+        # ⑤ 두 spec — 받는 쪽에 붙이고, 주는 쪽에서 뺀다 (활성 탭·그룹은 `removeTab` 과 같은 규칙)
+        dst.setdefault("tabs", []).append(tab)
+        dst.setdefault("sceneGroups", []).extend(groups)
+        self.save(dst_ws, dst)
+        src["tabs"] = [t for t in tabs if t.get("id") != tab_id]
+        src["sceneGroups"] = [g for g in (src.get("sceneGroups") or []) if g.get("id") not in gids]
+        if src.get("activeTab") == tab_id:
+            src["activeTab"] = src["tabs"][0].get("id")
+        if src.get("activeSceneGroup") in gids:
+            own = [g for g in src["sceneGroups"] if g.get("tabId") == src.get("activeTab")]
+            pick = own[0] if own else (src["sceneGroups"][0] if src["sceneGroups"] else None)
+            src["activeSceneGroup"] = pick.get("id") if pick else ""
+        self.save(src_ws, src)
+        return {"ok": True, "moved": len(moves), "tab_id": tab["id"], "spec": src,
+                "records": self.records(src_ws)}
 
     # ── 새 탭으로 복제 ────────────────────────────────────────
     def copy_to_scene_group(

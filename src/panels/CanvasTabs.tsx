@@ -1,6 +1,7 @@
 import { Fragment } from "react";
 import { useI18n } from "../i18n";
 import { useReorder } from "../lib/useReorder";
+import { useTabDrop, wsTabAt } from "../lib/tabDrop";
 import { DragGhost } from "../cards/DragGhost";
 import { DropLine } from "../components/DropLine";
 import { EditableName } from "../components/EditableName";
@@ -32,7 +33,8 @@ import { Icon } from "../components/Icon";
  *    「탭」을 되살리지 말 것. 두 줄이 같은 이름이 되면 구별이 안 된다. */
 export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sceneGroups" }) {
   const { spec, setActiveSceneGroup, renameSceneGroup, addSceneGroup,
-    switchTab, addTab, renameTab, moveTab, moveSceneGroup, planRemove, removeAt } = useWs();
+    switchTab, addTab, renameTab, moveTab, moveSceneGroup, planRemove, removeAt,
+    current: wsName, moveTabToWs } = useWs();
   const tr = useI18n((s) => s.t);
   const [editing, setEditing] = useState<string | null>(null);
   const [editingChar, setEditingChar] = useState<string | null>(null);
@@ -231,12 +233,39 @@ export function CanvasTabs({ part = "all" }: { part?: "all" | "top" | "sceneGrou
           {tabs.map((c, i) => {
             const on = c.id === spec.activeTab;
             const hp = tabOrd.handleProps(i);
+            /* ★★**같은 끌기의 끝이 워크스페이스 탭이면 차례 대신 옮기기다** (사용자 지시
+                 2026-08-28: *"탭을 끌어다가 다른 워크스페이스에 두면 거기로 옮겨지게"*).
+               차례 바꾸기(`useReorder`)를 그대로 쓰고, 손을 뗀 자리만 하나 더 본다 — 끌기를
+               두 벌 두면 문턱·잔상·커서가 갈린다.
+               ★놓을 때는 차례 처리(`onPointerUp`)가 아니라 **취소**(`onPointerCancel`)로 끝낸다 —
+                 워크스페이스 줄 위의 x 좌표로 틈을 셈해 엉뚱한 차례로 밀리는 것을 막는다. */
+            const dragProps = {
+              ...hp,
+              onPointerMove: (e: React.PointerEvent) => {
+                hp.onPointerMove(e);
+                if (tabOrd.dragIdx != null) useTabDrop.getState().set(wsTabAt(e.clientX, e.clientY));
+              },
+              onPointerUp: (e: React.PointerEvent) => {
+                const to = useTabDrop.getState().over;
+                useTabDrop.getState().set(null);
+                if (to && to !== wsName && tabOrd.dragIdx != null) {
+                  hp.onPointerCancel();
+                  void moveTabToWs(c.id, to);
+                  return;
+                }
+                hp.onPointerUp(e);
+              },
+              onPointerCancel: () => {
+                useTabDrop.getState().set(null);
+                hp.onPointerCancel();
+              },
+            };
             return (
               <Fragment key={c.id}>
               <DropLine on={tabOrd.dragIdx != null && tabOrd.overIdx === i} vert />
               <div
                 ref={tabOrd.register(i)}
-                {...hp}
+                {...dragProps}
                 data-tab={c.id}
                 onClick={() => switchTab(c.id)}
                 onDoubleClick={() => setEditingChar(c.id)}

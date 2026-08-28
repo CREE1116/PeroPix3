@@ -447,6 +447,7 @@ export const en = {
     remove: "Delete tab (its scene groups and images go too)",
     removeConfirm: 'Delete the tab "{name}"? ({t} scene groups, {n} images)',
     lastOne: "The last tab cannot be deleted.",
+    movedTo: "Moved tab \"{name}\" to \"{ws}\" ({n} images)",
   },
 
   update: {

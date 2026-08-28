@@ -1182,6 +1182,19 @@ async def copy_to_tab(ws: str, body: CopyBody):
         raise HTTPException(404, str(e))
 
 
+class MoveTabBody(BaseModel):
+    to: str
+
+
+@app.post("/api/workspaces/{ws}/tabs/{tab_id}/move")
+async def move_tab(ws: str, tab_id: str, body: MoveTabBody):
+    """탭을 **다른 워크스페이스로** 옮긴다 (`Store.move_tab`). 파일을 옮기므로 스레드로 보낸다."""
+    try:
+        return await asyncio.to_thread(store.move_tab, ws, tab_id, body.to)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 class TrashBody(BaseModel):
     files: list[str] = []
     entries: list[dict] = []

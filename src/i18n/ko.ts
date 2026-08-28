@@ -461,6 +461,7 @@ export const ko: Dict = {
     remove: "탭 삭제 (씬 그룹과 그림도 함께 사라짐)",
     removeConfirm: "「{name}」 탭을 지웁니다 (씬 그룹 {t}개 · 그림 {n}장)",
     lastOne: "마지막 탭은 지울 수 없습니다.",
+    movedTo: "「{name}」 탭을 「{ws}」로 옮겼습니다 (그림 {n}장)",
   },
 
   update: {

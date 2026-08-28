@@ -445,6 +445,7 @@ export const ja: Dict = {
     remove: "タブを削除（シーングループも画像も消える）",
     removeConfirm: "「{name}」タブを削除します (シーングループ {t}件・画像 {n}枚)",
     lastOne: "最後のタブは削除できません。",
+    movedTo: "「{name}」タブを「{ws}」へ移動しました（画像 {n} 枚）",
   },
 
   update: {

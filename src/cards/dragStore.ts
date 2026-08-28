@@ -40,6 +40,10 @@ export type Dragging = {
   /** kind 가 blocklib · dir 가 save 일 때 — 프롬프트에서 저장소로 끌어온 블록.
    *  ★카드의 역드래그 저장(배너 → 핸드)과 **같은 방향**이라 같은 `dir` 를 쓴다 */
   block?: Block;
+  /** `block` 이 **어느 목록에서** 나왔나 (`BlockList` 의 `libZone`). 다른 목록에 놓이면 그쪽이
+   *  이 열쇠로 명부(`blockZones`)를 찾아 원본을 뺀다 — 카드에서 카드로 **옮기기**
+   *  (사용자 지시 2026-08-28). 서랍에 놓이면 사본만 들어가고 이 값은 안 쓴다. */
+  srcZone?: string;
   /** dir 가 save 일 때 — 섹션에 꽂혀 있던 그림. 카드는 **같은 tid 를 가리킬 뿐**이라
    *  바이트가 복사되지 않는다 */
   thumb?: SectionThumb | null;

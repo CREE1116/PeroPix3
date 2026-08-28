@@ -382,6 +382,9 @@ type S = {
   moveWs: (from: number, to: number) => void;
   moveTab: (from: number, to: number) => void;
   moveSceneGroup: (from: number, to: number) => void;
+  /** 탭을 **다른 워크스페이스로** 옮긴다 (사용자 지시 2026-08-28). 씬 그룹·그림·레코드·썸네일
+   *  캐시까지 서버가 함께 옮긴다 (`Store.move_tab`). 받는 쪽은 다음에 열 때 읽는다. */
+  moveTabToWs: (tabId: string, to: string) => Promise<void>;
 };
 
 /** 새 워크스페이스의 첫 모습.
@@ -1294,6 +1297,36 @@ export const useWs = create<S>((set, get) => ({
     if (next === (spec.tabs ?? [])) return;
     set({ spec: { ...spec, tabs: next } });
     queueSave(get);
+  },
+
+  async moveTabToWs(tabId, to) {
+    const cur = get().current;
+    const spec = get().spec;
+    if (!cur || !spec || to === cur) return;
+    const tab = (spec.tabs ?? []).find((c) => c.id === tabId);
+    if (!tab) return;
+    // ★마지막 탭은 못 옮긴다 — 씬 그룹이 설 자리가 없어진다 (`removeTab` 과 같은 규칙)
+    if ((spec.tabs?.length ?? 0) <= 1) {
+      toast(t("tab.lastOne"), "warn");
+      return;
+    }
+    // ★떠나는 탭의 생성 옵션을 담고, 밀린 편집을 **먼저** 쓴다 — 서버는 파일의 spec 을 읽는다
+    for (const fn of beforeWsSwitch) fn();
+    await flushSave(get);
+    try {
+      const r = await api<{ spec: Spec; records: Rec[]; moved: number }>(
+        `/api/workspaces/${encodeURIComponent(cur)}/tabs/${encodeURIComponent(tabId)}/move`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to }) },
+      );
+      const next = migrate(r.spec);
+      clearUndo();   // ★옮겨 간 블록·그림을 되살리면 안 된다
+      set({ spec: next, records: dedupeByFile(r.records ?? []) });
+      const g = next.sceneGroups.find((x) => x.id === next.activeSceneGroup) ?? next.sceneGroups[0];
+      usePrompt.getState().load(promptOf(next, g));
+      toast(t("tab.movedTo", { name: tab.name, ws: to, n: r.moved }));
+    } catch (e) {
+      toast(String(e), "warn");
+    }
   },
 
   moveSceneGroup(from, to) {

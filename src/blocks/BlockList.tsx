@@ -7,9 +7,9 @@ import { useTagDrag, type Spot } from "./useTagDrag";
 import { getZone, registerZone, type BlockZone } from "./blockZones";
 import { TagDragLayer } from "./TagDragLayer";
 import { BlockRow } from "./BlockRow";
-import { itemToBlock, useBlockLib } from "../store/blockLib";
+import { itemToBlock } from "../store/blockLib";
 import { dropUndo, pushUndo } from "../lib/undo";
-import { useDragSource, useDropZone } from "../cards/dragStore";
+import { useDrag, useDragSource, useDropZone } from "../cards/dragStore";
 import { DragGhost } from "../cards/DragGhost";
 
 /** 블록 시퀀스 — **블록의 위치가 곧 프롬프트의 위치**다.
@@ -82,7 +82,6 @@ export function BlockList({
 }) {
   const t = useI18n((s) => s.t);
   const startDrag = useDragSource();
-  const libOpen = useBlockLib((s) => s.open);
   // ★존은 **언제나 등록한다** — 조건부 훅은 규칙 위반이고, 끄는 중이 아니면 판정도 안 돈다
   const zone = useDropZone({
     id: `blocklib-${libZone ?? "none"}`,
@@ -99,6 +98,32 @@ export function BlockList({
       if (b) onChange([{ ...b, tags: [...b.tags, ...got.tags] }]);
     },
   });
+  /* ★★블록을 **다른 카드로 옮긴다** (사용자 지시 2026-08-28: *"프롬프트 블록도 카드에서
+       카드로 옮겨지게"*). 끄는 동작은 서랍에 넣는 것과 같은 것(`dir: "save"`)이고 **어디에
+       놓느냐**만 다르다 — 서랍이면 사본이 들어가고 원본은 그대로, 다른 목록이면 옮겨진다.
+     ★출발한 목록에서 빼는 것은 명부(`blockZones`)를 거친다 — 칩을 카드 너머로 옮길 때와
+       같은 길이다 (`moveTag` 의 ★★주). 빼는 것을 **먼저** 한다.
+     ★씬 칸(`single`)에 놓으면 그 하나에 태그가 붙는다 — 서랍에서 받을 때와 같은 규칙. */
+  const moveIn = useDropZone({
+    id: `blockmove-${libZone ?? "none"}`,
+    kind: "blocklib",
+    dir: "save",
+    onDrop: (d) => {
+      const b = d.block;
+      if (!libZone || !b || !d.srcZone || d.srcZone === libZone) return;
+      const from = getZone(d.srcZone);
+      if (!from) return;
+      from.onChange(from.blocks.filter((x) => x.id !== b.id));
+      if (single) {
+        const me = blocks[0];
+        if (me) onChange([{ ...me, tags: [...me.tags, ...b.tags] }]);
+        return;
+      }
+      onChange([...blocks, b]);
+    },
+  });
+  /** 지금 끌리는 블록이 **이 목록에서** 나왔나 — 제 자리는 받을 자리로 안 빛난다 */
+  const fromMe = useDrag((s) => s.drag?.srcZone === libZone);
   const dup = dupSet(blocks);
   /** 갓 만들어진 블록 — 뜨자마자 편집 상태가 된다 */
   const [editId, setEditId] = useState<string | null>(null);
@@ -236,6 +261,7 @@ export function BlockList({
       ref={(el) => {
         box.current = el;
         (zone.ref as React.MutableRefObject<HTMLDivElement | null>).current = el;
+        (moveIn.ref as React.MutableRefObject<HTMLDivElement | null>).current = el;
       }}
       data-block-list={libZone}
       data-slot-block={single ? id : undefined}
@@ -245,12 +271,13 @@ export function BlockList({
         // ★`fill` 이면 품이 준 자리를 그대로 아래로 흘린다 (`BlockBody` 의 `fill` 주석)
         ...(fill ? { flex: 1, minHeight: 0 } : {}),
         // 저장소에서 끄는 중에만 자리를 알린다 — 1단계 점선, 2단계(지금 떼면 여기) 실선
-        ...(libZone && zone.active
+        // ★서랍에서 오는 것도, 다른 카드에서 오는 블록도 같은 표시다 (제 것은 빼고)
+        ...(libZone && (zone.active || (moveIn.active && !fromMe))
           ? {
               borderRadius: "var(--r-3)",
-              outline: `1px ${zone.over ? "solid" : "dashed"} var(--accent)`,
+              outline: `1px ${zone.over || moveIn.over ? "solid" : "dashed"} var(--accent)`,
               outlineOffset: 3,
-              background: zone.over ? "var(--accent-bg)" : "transparent",
+              background: zone.over || moveIn.over ? "var(--accent-bg)" : "transparent",
             }
           : null),
         /* ★자리가 좁으면 **자른다** — 줄 높이는 오른쪽 썸네일이 정하는 것이라 늘릴 수 없다.
@@ -307,14 +334,12 @@ export function BlockList({
               onDone={onDone}
               onOpen={onOpen}
               onTab={onTab}
-              // ★서랍이 닫혀 있으면 끌 곳이 없다 — 그때는 머리 클릭이 접기 그대로다
-              onSave={
-                libOpen
-                  ? (e) =>
-                      startDrag(e, { dir: "save", kind: "blocklib", block: b }, undefined, () =>
-                        replace(i, { ...b, open: !b.open }),
-                      )
-                  : undefined
+              /* ★머리를 끌면 **서랍에 넣거나 다른 카드로 옮긴다** — 서랍이 닫혀 있어도 다른
+                 카드가 받으므로 언제나 끌 수 있다. 문턱을 안 넘기면 `onTap` 이 접기를 한다. */
+              onSave={(e) =>
+                startDrag(e, { dir: "save", kind: "blocklib", block: b, srcZone: libZone }, undefined, () =>
+                  replace(i, { ...b, open: !b.open }),
+                )
               }
               gripProps={handleProps(i)}
               tagDrag={{
