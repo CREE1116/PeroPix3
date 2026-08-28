@@ -51,7 +51,21 @@ export function WindowFrame({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <div style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}>
+    /* ★★창 둘레 1px 경계선 (사용자 지시 2026-08-29: *"테두리 없으니까 다른 화면이랑 경계선
+         구분이 안 되어서 불편해"*). `decorations: false` 라 OS 가 아무 선도 안 그려 주는데,
+         바탕색이 비슷한 창과 겹치면 어디까지가 이 앱인지 안 보였다.
+       ★최대화에서는 안 그린다 — 모니터 경계가 곧 창 경계라 선이 소음이다.
+       ★`border-box` 로 안쪽에 그린다 — 밖에 그리면 창 크기를 1px 넘어 잘린다. */
+    <div
+      style={{
+        position: "relative",
+        width: "100%",
+        height: "100%",
+        overflow: "hidden",
+        boxSizing: "border-box",
+        border: maxed ? undefined : "1px solid var(--line-strong)",
+      }}
+    >
       {children}
       {!maxed && <ResizeHandles />}
     </div>
