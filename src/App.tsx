@@ -41,6 +41,7 @@ import { useSub } from "./store/sub";
 import { BlockDrawer } from "./blocks/BlockDrawer";
 import { WildcardModal } from "./panels/WildcardModal";
 import { DropImport } from "./app/DropImport";
+import { TranslatePanel } from "./panels/TranslatePanel";
 import { useWildcards } from "./store/wildcards";
 import { ThumbDialog } from "./cards/ThumbDialog";
 import { saveCardWithThumb } from "./cards/saveCard";
@@ -464,6 +465,8 @@ export function App() {
           (`ExifTool` 의 `wide`), 여기까지 두면 한 번 떨군 것을 둘이 잡는다
           (v2 도 같은 자리에서 갈랐다: `!isInCensorMode() && !isInUtilityMode()`). */}
       {(mode === "generate" || mode === "gallery") && <DropImport />}
+      {/* ★번역 창은 **생성 모드에서만** (사용자 지시 2026-08-29). 열림은 스토어에 남는다 */}
+      {mode === "generate" && <TranslatePanel />}
       <AskDialog />
       <Toasts />
       {/* 툴팁 층 — 화면 아무 데나 `data-tip` 을 달면 여기서 뜬다 (`components/Tip`) */}

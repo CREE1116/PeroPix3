@@ -272,10 +272,12 @@ export const en = {
   },
 
   translate: {
-    hint: "Translate mode (hover a chip to translate, click to replace)",
-    on: "Translate mode is on. Hover a chip to see the translation, click to replace it. Esc turns it off.",
+    title: "Translate",
+    hint: "Translate panel (Korean / English / Japanese)",
+    placeholder: "Type text to translate",
+    empty: "The translation appears here",
     busy: "Translating…",
-    replaced: "{a} → {b}",
+    lang: { en: "English", ko: "Korean", ja: "Japanese" },
   },
 
   gen: {
@@ -810,7 +812,6 @@ export const en = {
     undone: "Undone: {what}",
     undoTag: "chip removal",
     undoWeight: "weight change",
-    undoTranslate: "translation",
     undoBlockAdd: "adding a block",
     undoBlockRemove: "removing a block",
     undoBlockOn: "toggling a block",

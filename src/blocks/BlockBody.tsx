@@ -4,8 +4,6 @@ import { useI18n } from "../i18n";
 import { caretAfterTag, parseSegs, serializeBlock, type Block } from "../lib/blocks";
 import { Chip } from "./Chip";
 import { pushUndo } from "../lib/undo";
-import { toast } from "../store/toast";
-import { peekTranslation, translateTag, useTranslate } from "../store/translate";
 import { toEdit, toStore } from "../lib/softWrap";
 import { t as tr } from "../i18n";
 import { useTagSuggest } from "./TagSuggest";
@@ -536,29 +534,6 @@ export function BlockBody({
           onClick={(e) => {
             // 칩을 끌고 난 직후의 클릭은 편집을 열지 않는다
             if (tagDrag?.justDragged()) return;
-            /* ★번역 모드에서는 칩 클릭이 편집이 아니라 **그 말로 치환**이다 (v2 의
-               `handleTagClick`, 사용자 지시 2026-08-29). 칩 단위라 v2 의 정규식 경계 처리는
-               통째로 필요 없다 — 그 칩의 `t` 만 바꾼다. ★되돌리기는 전역 로그 한 칸이다. */
-            if (useTranslate.getState().on) {
-              const chipEl = (e.target as HTMLElement).closest("[data-chip]");
-              if (!chipEl) return;
-              const i = [...e.currentTarget.querySelectorAll("[data-chip]")].indexOf(chipEl);
-              const tag = block.tags[i];
-              if (!tag) return;
-              const before = block;
-              const got = peekTranslation(tag.t);
-              void (got !== undefined ? Promise.resolve(got) : translateTag(tag.t))
-                .then((to) => {
-                  if (!to || to === tag.t) return;
-                  pushUndo(tr("common.undoTranslate"), () => onChange(before), zone);
-                  const tags = block.tags.slice();
-                  tags[i] = { ...tag, t: to };
-                  onChange({ ...block, tags });
-                  toast(tr("translate.replaced", { a: tag.t, b: to }));
-                })
-                .catch((err) => toast(String(err), "warn"));
-              return;
-            }
             // ★누른 칩이 있으면 커서를 **그 태그의 쉼표 뒤**에 놓는다 (사용자 지시 2026-08-19).
             //   칩과 글 상자는 배치가 달라 클릭 좌표를 글자 자리로 옮기는 것은 어긋나므로,
             //   "몇 번째 태그를 눌렀나"로 잡는다 — 그 편이 어긋날 일이 없다.

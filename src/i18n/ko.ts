@@ -278,10 +278,12 @@ export const ko: Dict = {
 
   /** 번역 모드 (v2 이식, 2026-08-29) */
   translate: {
-    hint: "번역 모드 (칩에 마우스를 올리면 번역, 클릭하면 그 말로 치환)",
-    on: "번역 모드를 켰습니다. 칩에 마우스를 올리면 번역이 뜨고, 클릭하면 그 말로 바뀝니다. Esc 로 끕니다.",
+    title: "번역",
+    hint: "번역 창 (한국어·영어·일본어)",
+    placeholder: "번역할 글을 적으세요",
+    empty: "결과가 여기에 뜹니다",
     busy: "번역 중…",
-    replaced: "{a} → {b}",
+    lang: { en: "영어", ko: "한국어", ja: "일본어" },
   },
 
   gen: {
@@ -840,7 +842,6 @@ export const ko: Dict = {
     undone: "되돌렸습니다: {what}",
     undoTag: "칩 지우기",
     undoWeight: "가중치",
-    undoTranslate: "번역 치환",
     undoBlockAdd: "블록 추가",
     undoBlockRemove: "블록 삭제",
     undoBlockOn: "블록 켜고끄기",

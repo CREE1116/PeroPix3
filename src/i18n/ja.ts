@@ -271,10 +271,12 @@ export const ja: Dict = {
   },
 
   translate: {
-    hint: "翻訳モード（チップにホバーで翻訳、クリックで置き換え）",
-    on: "翻訳モードをオンにしました。チップにホバーすると翻訳が表示され、クリックで置き換わります。Esc でオフ。",
+    title: "翻訳",
+    hint: "翻訳パネル（韓国語・英語・日本語）",
+    placeholder: "翻訳する文を入力",
+    empty: "結果がここに表示されます",
     busy: "翻訳中…",
-    replaced: "{a} → {b}",
+    lang: { en: "英語", ko: "韓国語", ja: "日本語" },
   },
 
   gen: {
@@ -808,7 +810,6 @@ export const ja: Dict = {
     undone: "元に戻しました: {what}",
     undoTag: "チップ削除",
     undoWeight: "重み変更",
-    undoTranslate: "翻訳置き換え",
     undoBlockAdd: "ブロック追加",
     undoBlockRemove: "ブロック削除",
     undoBlockOn: "ブロックの切り替え",
