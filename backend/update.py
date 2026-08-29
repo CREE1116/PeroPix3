@@ -56,6 +56,13 @@ async def check(current: str) -> dict[str, Any]:
     ★실패를 예외로 올리지 않는다. 업데이트 확인은 **부팅 때 한 번 조용히** 도는 것이라,
       인터넷이 없다고 앱이 시끄러워지면 안 된다 (v2 도 시작 시 오류를 무시했다).
     """
+    # ★★**개발판은 확인하지 않는다** (사용자 지시 2026-08-29: *"개발버전에도 계속 업데이트가
+    #   뜨는데, dev 버전은 예외로"*). `parse_version("3.0.0-dev")` 는 3.0.0 보다 작아서, 배포판이
+    #   3.0.1 이 되자 저장소에서 돌리는 개발판마다 「새 버전」 토스트가 떴다. 저장소 작업본에
+    #   배포 zip 을 덮어쓰는 것은 애초에 말이 안 된다.
+    if "dev" in current:
+        return {"ok": True, "has_update": False, "building": False, "dev": True,
+                "current": current, "latest": ""}
     try:
         async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as c:
             r = await c.get(API, headers=UA)

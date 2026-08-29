@@ -22,6 +22,8 @@ import { t } from "../i18n";
 export type UpdateInfo = {
   has_update: boolean;
   building?: boolean;
+  /** 개발판이라 확인을 건너뛰었다 (`backend/update.py check` 첫머리) */
+  dev?: boolean;
   current: string;
   latest: string;
   kind?: "patch" | "full";
@@ -38,7 +40,8 @@ export type UpdateInfo = {
  *    멈춰 있다가 완료됨"*). 전체 판은 132MB 를 풀어 350MB 를 쓰는데, 그 구간에 이름이
  *    없어서 화면이 「받는 중 100%」에 그대로 서 있었다. 백엔드가 풀기 직전에 알린다
  *    (`update_unpack`). */
-export type Phase = "idle" | "downloading" | "unpacking" | "staged" | "applying";
+export type Phase =
+  "idle" | "downloading" | "unpacking" | "staged" | "applying";
 
 type S = {
   info: UpdateInfo | null;
@@ -100,7 +103,9 @@ export const useUpdate = create<S>((set, get) => ({
       toast(why ? t("update.failedWhy", { why }) : t("update.failed"), "warn");
     };
     try {
-      const r = await api<UpdateInfo & { ok: boolean; error?: string }>("/api/update/check");
+      const r = await api<UpdateInfo & { ok: boolean; error?: string }>(
+        "/api/update/check",
+      );
       if (!r.ok) {
         fail(r.error);
         return;
@@ -115,7 +120,8 @@ export const useUpdate = create<S>((set, get) => ({
           label: t("update.now"),
           run: () => void get().start(),
         });
-      if (!quiet && !r.has_update) toast(t("update.latest"));
+      if (!quiet && !r.has_update)
+        toast(r.dev ? t("update.devSkip") : t("update.latest"));
     } catch (e) {
       fail(String(e));
     } finally {
@@ -133,7 +139,10 @@ export const useUpdate = create<S>((set, get) => ({
     useUi.getState().openSettings("general");
     set({ phase: "downloading", done: 0, total: get().info?.size ?? 0 });
     try {
-      const r = await api<{ ok: boolean; error?: string }>("/api/update/stage", { method: "POST" });
+      const r = await api<{ ok: boolean; error?: string }>(
+        "/api/update/stage",
+        { method: "POST" },
+      );
       /* 끝났다는 소식은 소켓이 물어 온다 (`update_staged`). 다만 **답이 곧 그 소식이기도 하다** —
          이 요청은 다 받을 때까지 기다렸다가 돌아오기 때문이다.
          ★★소켓이 못 오면(끊겼거나 놓쳤거나) 화면이 「받는 중」에서 영영 멈춘다

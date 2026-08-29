@@ -59,18 +59,47 @@ export function TaggerTool() {
     kept = { name, result };
   }, [name, result]);
 
+  /** 모델 상태 — 탭에 들어올 때 한 번 묻고, 받는 중이면 끝날 때까지 몇 초마다 다시 묻는다
+   *  (사용자 승인 2026-08-29: 모델 없이 들어오면 무엇을 해야 하는지 보여야 한다).
+   *  `null` 은 아직 못 물어봤다는 뜻이다. */
+  const [st, setSt] = useState<TaggerStatus | null>(null);
+  const refresh = async () => {
+    try {
+      setSt(await api<TaggerStatus>("/api/tagger/status"));
+    } catch (e) {
+      toast(String(e), "warn");
+    }
+  };
+  useEffect(() => {
+    void refresh();
+  }, []);
+  useEffect(() => {
+    if (!st?.downloading) return;
+    const id = window.setInterval(() => void refresh(), 2000);
+    return () => window.clearInterval(id);
+  }, [st?.downloading]);
+
+  /** 내려받기 시작 — 상자의 단추와, 모델 없이 떨궜을 때의 확인창이 같이 쓴다.
+   *  ★붙들지 않는다: 시작만 알리고 놓아 준다. 진행률은 위의 폴링이 상자에 그린다. */
+  const startDownload = async () => {
+    await api("/api/tagger/download", { method: "POST" });
+    toast(t("tagger.dlStarted"));
+    await refresh();
+  };
+
   const run = async (items: Dropped[]) => {
     const it = items[0];
     if (!it || busy) return;
     setBusy(true);
     try {
-      const st = await api<TaggerStatus>("/api/tagger/status");
-      if (st.error) return void toast(st.error, "warn");
-      if (!st.ready) {
-        if (st.downloading)
+      const cur = await api<TaggerStatus>("/api/tagger/status");
+      setSt(cur);
+      if (cur.error) return void toast(cur.error, "warn");
+      if (!cur.ready) {
+        if (cur.downloading)
           return void toast(
             t("tagger.downloading", {
-              pct: Math.round((st.got / st.total) * 100),
+              pct: Math.round((cur.got / cur.total) * 100),
             }),
           );
         if (
@@ -80,10 +109,8 @@ export function TaggerTool() {
             ok: t("tagger.dlOk"),
             cancel: t("common.cancel"),
           })
-        ) {
-          await api("/api/tagger/download", { method: "POST" });
-          toast(t("tagger.dlStarted"));
-        }
+        )
+          await startDownload();
         return;
       }
       const r = await api<TagResult>("/api/tagger/run", {
@@ -191,23 +218,63 @@ export function TaggerTool() {
             >
               {Icon.tag}
             </span>
-            <span
-              style={{
-                fontSize: "var(--text-sm)",
-                color: over ? "var(--accent)" : "var(--ink-soft)",
-              }}
-            >
-              {busy ? t("tagger.running") : t("tools.taggerDrop")}
-            </span>
-            {!busy && (
-              <span
-                style={{
-                  fontSize: "var(--text-2xs)",
-                  color: "var(--ink-faint)",
-                }}
-              >
-                {t("tools.dropHint")}
-              </span>
+            {st && !st.ready && !st.error ? (
+              /* 모델이 없다 — 떨구기 전에 무엇을 해야 하는지 상자 안에서 보여 준다 */
+              st.downloading ? (
+                <span
+                  data-tagger-dl-progress
+                  style={{
+                    fontSize: "var(--text-sm)",
+                    color: "var(--ink-soft)",
+                  }}
+                >
+                  {t("tagger.dlProgress", {
+                    pct: st.total ? Math.round((st.got / st.total) * 100) : 0,
+                  })}
+                </span>
+              ) : (
+                <button
+                  data-tagger-dl
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void startDownload().catch((err) =>
+                      toast(String(err), "warn"),
+                    );
+                  }}
+                  style={{ ...hbtn, marginTop: 4 }}
+                >
+                  {t("tagger.dlButton")}
+                </button>
+              )
+            ) : (
+              <>
+                <span
+                  style={{
+                    fontSize: "var(--text-sm)",
+                    color: st?.error
+                      ? "var(--warn)"
+                      : over
+                        ? "var(--accent)"
+                        : "var(--ink-soft)",
+                  }}
+                >
+                  {busy
+                    ? t("tagger.running")
+                    : st?.error
+                      ? st.error
+                      : t("tools.taggerDrop")}
+                </span>
+                {!busy && !st?.error && (
+                  <span
+                    style={{
+                      fontSize: "var(--text-2xs)",
+                      color: "var(--ink-faint)",
+                    }}
+                  >
+                    {t("tools.dropHint")}
+                  </span>
+                )}
+              </>
             )}
           </span>
         </div>
