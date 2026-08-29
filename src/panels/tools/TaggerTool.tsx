@@ -15,9 +15,11 @@ import { useUi } from "../../store/ui";
  *  그 그림을 여기로 싣고 온다 (`sendToTagger`).
  *
  *  ★읽기만 한다. 저장하지도, 프롬프트에 넣지도 않는다 — 복사해 가는 것이 전부다.
- *  ★모델(1.26GB)은 동봉하지 않는다 — **처음 돌릴 때** 내려받을지 묻는다. 내려받는 동안
- *    붙들지 않는다: 시작만 알리고 놓아 준다. 다시 떨구면 진행률을 알려 주고, 다 받아졌으면
- *    그때부터 돌아간다.
+ *  ★★**결과는 블록으로 아래에 쌓인다** (사용자 지시 2026-08-29: *"여러 이미지에도 대응하게,
+ *    연속으로 여러 개 넣어도 되고, 개별로 지울 수 있게"*). 한 번에 여러 장을 떨구면 차례로
+ *    돌려 하나씩 붙는다 (서버 추론은 한 번에 하나다 — `tagger._lock`).
+ *  ★모델(1.26GB)은 동봉하지 않는다 — 탭에 들어오면 상태를 보여 주고, 없으면 내려받기 단추를
+ *    상자 안에 둔다. 내려받는 동안 붙들지 않는다: 시작만 알리고 놓아 준다.
  */
 type TaggerStatus = {
   ready: boolean;
@@ -31,13 +33,12 @@ type TagResult = {
   caption: string;
   preview: string;
 };
+type Block = { id: number; name: string; result: TagResult };
 
 /** ★★**결과는 탭을 옮겨도 남는다** — `Tools` 는 안 보이는 탭을 언마운트하므로 (EXIF 리더와
  *  같은 까닭) 모듈에 든다. 앱을 껐다 켜면 비는 것이 맞다. */
-let kept: { name: string; result: TagResult | null } = {
-  name: "",
-  result: null,
-};
+let kept: Block[] = [];
+let seq = 0;
 
 /** 다른 화면에서 **실어 보낸 그림** — 마운트되면 곧장 돌린다.
  *  ★보내는 자리(생성·갤러리)에서는 이 탭이 언마운트 상태라, 값을 두고 모드를 옮기면
@@ -52,12 +53,12 @@ export function sendToTagger(item: Dropped) {
 
 export function TaggerTool() {
   const t = useI18n((s) => s.t);
-  const [name, setName] = useState(kept.name);
-  const [result, setResult] = useState<TagResult | null>(kept.result);
-  const [busy, setBusy] = useState(false);
+  const [blocks, setBlocks] = useState<Block[]>(kept);
+  /** 아직 돌릴 장 수 — 0 이면 놀고 있다 */
+  const [left, setLeft] = useState(0);
   useEffect(() => {
-    kept = { name, result };
-  }, [name, result]);
+    kept = blocks;
+  }, [blocks]);
 
   /** 모델 상태 — 탭에 들어올 때 한 번 묻고, 받는 중이면 끝날 때까지 몇 초마다 다시 묻는다
    *  (사용자 승인 2026-08-29: 모델 없이 들어오면 무엇을 해야 하는지 보여야 한다).
@@ -65,9 +66,12 @@ export function TaggerTool() {
   const [st, setSt] = useState<TaggerStatus | null>(null);
   const refresh = async () => {
     try {
-      setSt(await api<TaggerStatus>("/api/tagger/status"));
+      const cur = await api<TaggerStatus>("/api/tagger/status");
+      setSt(cur);
+      return cur;
     } catch (e) {
       toast(String(e), "warn");
+      return null;
     }
   };
   useEffect(() => {
@@ -87,43 +91,44 @@ export function TaggerTool() {
     await refresh();
   };
 
+  /** 떨군 그림들을 **차례로** 돌려 블록으로 붙인다. 돌고 있는 중에 더 떨구면 뒤에 잇는다. */
   const run = async (items: Dropped[]) => {
-    const it = items[0];
-    if (!it || busy) return;
-    setBusy(true);
-    try {
-      const cur = await api<TaggerStatus>("/api/tagger/status");
-      setSt(cur);
-      if (cur.error) return void toast(cur.error, "warn");
-      if (!cur.ready) {
-        if (cur.downloading)
-          return void toast(
-            t("tagger.downloading", {
-              pct: Math.round((cur.got / cur.total) * 100),
-            }),
-          );
-        if (
-          await ask({
-            title: t("tagger.dlTitle"),
-            body: t("tagger.dlBody"),
-            ok: t("tagger.dlOk"),
-            cancel: t("common.cancel"),
-          })
-        )
-          await startDownload();
-        return;
+    if (!items.length) return;
+    const cur = await refresh();
+    if (!cur) return;
+    if (cur.error) return void toast(cur.error, "warn");
+    if (!cur.ready) {
+      if (cur.downloading)
+        return void toast(
+          t("tagger.downloading", {
+            pct: Math.round((cur.got / cur.total) * 100),
+          }),
+        );
+      if (
+        await ask({
+          title: t("tagger.dlTitle"),
+          body: t("tagger.dlBody"),
+          ok: t("tagger.dlOk"),
+          cancel: t("common.cancel"),
+        })
+      )
+        await startDownload().catch((e) => toast(String(e), "warn"));
+      return;
+    }
+    setLeft((n) => n + items.length);
+    for (const it of items) {
+      try {
+        const r = await api<TagResult>("/api/tagger/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(it),
+        });
+        setBlocks((b) => [...b, { id: ++seq, name: it.name, result: r }]);
+      } catch (e) {
+        toast(`${it.name}: ${String(e)}`, "warn");
+      } finally {
+        setLeft((n) => n - 1);
       }
-      const r = await api<TagResult>("/api/tagger/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(it),
-      });
-      setName(it.name);
-      setResult(r);
-    } catch (e) {
-      toast(String(e), "warn");
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -138,32 +143,9 @@ export function TaggerTool() {
 
   /** 창 어디에 떨궈도 받는다 (EXIF 리더와 같다). */
   const { zone, over, pick } = useImageDrop(run, true);
-  const clear = () => {
-    setResult(null);
-    setName("");
-  };
-
-  const chars = result?.tags.filter((x) => x.character).map((x) => x.tag) ?? [];
-  const rows: { label: string; text: string; accent?: string }[] = result
-    ? [
-        ...(chars.length
-          ? [
-              {
-                label: t("tagger.charTags"),
-                text: chars.join(", "),
-                accent: "var(--accent)",
-              },
-            ]
-          : []),
-        {
-          label: t("tagger.generalTags"),
-          text: result.tags
-            .filter((x) => !x.character)
-            .map((x) => x.tag)
-            .join(", "),
-        },
-      ]
-    : [];
+  const remove = (id: number) => setBlocks((b) => b.filter((x) => x.id !== id));
+  const busy = left > 0;
+  const empty = blocks.length === 0;
 
   return (
     /* ★★**가운데 기둥**으로 모은다 (사용자 지시 2026-08-29: *"필요한 UI 는 적은데 화면 전체를
@@ -179,37 +161,39 @@ export function TaggerTool() {
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        justifyContent: result ? "flex-start" : "center",
-        paddingTop: result ? "var(--sp-6)" : 0,
+        justifyContent: empty ? "center" : "flex-start",
+        paddingTop: empty ? 0 : "var(--sp-4)",
+        paddingBottom: "var(--sp-6)",
+        gap: "var(--sp-4)",
       }}
     >
-      {!result ? (
-        /* 그림이 없으면 가운데의 점선 상자 하나 */
-        <div
-          {...zone}
-          data-tagger-drop
-          onClick={() => void pick()}
+      {/* 받는 상자 — 비었을 때는 가운데에 크게, 블록이 있으면 위에 낮게 (그 아래로 쌓인다) */}
+      <div
+        {...zone}
+        data-tagger-drop
+        onClick={() => void pick()}
+        style={{
+          width: COL,
+          maxWidth: "100%",
+          height: empty ? 220 : 88,
+          flexShrink: 0,
+          border: `1px dashed ${over ? "var(--accent)" : "var(--line)"}`,
+          background: over ? "var(--accent-bg)" : "var(--bg)",
+          borderRadius: "var(--r-3)",
+          display: "grid",
+          placeItems: "center",
+          cursor: "pointer",
+        }}
+      >
+        <span
           style={{
-            width: COL,
-            maxWidth: "100%",
-            height: 220,
-            border: `1px dashed ${over ? "var(--accent)" : "var(--line)"}`,
-            background: over ? "var(--accent-bg)" : "var(--bg)",
-            borderRadius: "var(--r-3)",
-            display: "grid",
-            placeItems: "center",
-            gap: 2,
-            cursor: "pointer",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 4,
           }}
         >
-          <span
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 4,
-            }}
-          >
+          {empty && (
             <span
               style={{
                 color: over ? "var(--accent)" : "var(--ink-ghost)",
@@ -218,190 +202,206 @@ export function TaggerTool() {
             >
               {Icon.tag}
             </span>
-            {st && !st.ready && !st.error ? (
-              /* 모델이 없다 — 떨구기 전에 무엇을 해야 하는지 상자 안에서 보여 준다 */
-              st.downloading ? (
-                <span
-                  data-tagger-dl-progress
-                  style={{
-                    fontSize: "var(--text-sm)",
-                    color: "var(--ink-soft)",
-                  }}
-                >
-                  {t("tagger.dlProgress", {
-                    pct: st.total ? Math.round((st.got / st.total) * 100) : 0,
-                  })}
-                </span>
-              ) : (
-                <button
-                  data-tagger-dl
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void startDownload().catch((err) =>
-                      toast(String(err), "warn"),
-                    );
-                  }}
-                  style={{ ...hbtn, marginTop: 4 }}
-                >
-                  {t("tagger.dlButton")}
-                </button>
-              )
-            ) : (
-              <>
-                <span
-                  style={{
-                    fontSize: "var(--text-sm)",
-                    color: st?.error
-                      ? "var(--warn)"
-                      : over
-                        ? "var(--accent)"
-                        : "var(--ink-soft)",
-                  }}
-                >
-                  {busy
-                    ? t("tagger.running")
-                    : st?.error
-                      ? st.error
-                      : t("tools.taggerDrop")}
-                </span>
-                {!busy && !st?.error && (
-                  <span
-                    style={{
-                      fontSize: "var(--text-2xs)",
-                      color: "var(--ink-faint)",
-                    }}
-                  >
-                    {t("tools.dropHint")}
-                  </span>
-                )}
-              </>
-            )}
-          </span>
-        </div>
-      ) : (
-        <div
-          style={{
-            width: COL,
-            maxWidth: "100%",
-            display: "flex",
-            flexDirection: "column",
-            gap: "var(--sp-3)",
-          }}
-        >
-          {/* 머리 — 미리보기 + 이름 + 부제, 복사·교체·닫기. 여기에 떨구면 다른 그림으로 바꾼다.
-              ★복사는 **여기 하나**다 (사용자 지적 2026-08-29: 줄마다 있던 것과 겹쳤다). 캐릭터·일반을
-              합친 전체(`caption`)를 복사한다 — 용도가 "그 모습을 재현할 태그"라 전부가 필요하다. */}
-          <div
-            {...zone}
-            data-tagger-drop
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "var(--sp-3)",
-              border: `1px solid ${over ? "var(--accent)" : "var(--line)"}`,
-              background: over ? "var(--accent-bg)" : "var(--panel)",
-              borderRadius: "var(--r-3)",
-              padding: "var(--sp-3)",
-              flexShrink: 0,
-            }}
-          >
-            {result.preview && (
-              <img
-                data-tagger-preview
-                src={result.preview}
-                alt=""
-                style={{
-                  height: 72,
-                  borderRadius: "var(--r-2)",
-                  background: "var(--bg)",
-                }}
-              />
-            )}
-            <div
-              style={{
-                flex: 1,
-                minWidth: 0,
-                display: "flex",
-                flexDirection: "column",
-                gap: 3,
-              }}
-            >
+          )}
+          {st && !st.ready && !st.error ? (
+            /* 모델이 없다 — 떨구기 전에 무엇을 해야 하는지 상자 안에서 보여 준다 */
+            st.downloading ? (
               <span
+                data-tagger-dl-progress
                 style={{
-                  fontSize: "var(--text-xs)",
-                  color: "var(--ink)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {name}
-              </span>
-              {/* ★무엇인지 한 줄로 밝힌다 (사용자 지시 2026-08-29: "이미지에서 자동 추출했다고") */}
-              <span
-                style={{ fontSize: "var(--text-2xs)", color: "var(--ink-dim)" }}
-              >
-                {busy ? t("tagger.running") : t("tagger.subtitle")}
-              </span>
-            </div>
-            <button
-              data-tagger-copy
-              disabled={!result.caption}
-              onClick={() =>
-                void navigator.clipboard
-                  ?.writeText(result.caption)
-                  .then(() => toast(t("act.copied")))
-              }
-              style={hbtn}
-            >
-              {Icon.copy}
-              {t("act.copy")}
-            </button>
-            <button
-              data-tagger-pick
-              onClick={() => void pick()}
-              disabled={busy}
-              style={hbtn}
-            >
-              {Icon.refresh}
-              {t("tools.exifReplace")}
-            </button>
-            <button data-tagger-clear onClick={clear} style={hbtn}>
-              {Icon.close12}
-              {t("common.close")}
-            </button>
-          </div>
-
-          {rows.map((r, i) => (
-            <div key={i}>
-              <div
-                style={{
-                  fontSize: "var(--text-2xs)",
-                  color: r.accent ?? "var(--ink-dim)",
-                }}
-              >
-                {r.label}
-              </div>
-              <pre
-                style={{
-                  margin: "2px 0 0",
-                  padding: "var(--sp-2)",
-                  background: "var(--code-bg)",
-                  borderRadius: "var(--r-1)",
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "var(--text-2xs)",
-                  lineHeight: 1.5,
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-all",
+                  fontSize: "var(--text-sm)",
                   color: "var(--ink-soft)",
                 }}
               >
-                {r.text || t("prompt.empty")}
-              </pre>
-            </div>
-          ))}
+                {t("tagger.dlProgress", {
+                  pct: st.total ? Math.round((st.got / st.total) * 100) : 0,
+                })}
+              </span>
+            ) : (
+              <button
+                data-tagger-dl
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void startDownload().catch((err) =>
+                    toast(String(err), "warn"),
+                  );
+                }}
+                style={{ ...hbtn, marginTop: 4 }}
+              >
+                {t("tagger.dlButton")}
+              </button>
+            )
+          ) : (
+            <>
+              <span
+                style={{
+                  fontSize: "var(--text-sm)",
+                  color: st?.error
+                    ? "var(--warn)"
+                    : over
+                      ? "var(--accent)"
+                      : "var(--ink-soft)",
+                }}
+              >
+                {busy
+                  ? t("tagger.running")
+                  : st?.error
+                    ? st.error
+                    : t("tools.taggerDrop")}
+              </span>
+              {!busy && !st?.error && (
+                <span
+                  style={{
+                    fontSize: "var(--text-2xs)",
+                    color: "var(--ink-faint)",
+                  }}
+                >
+                  {t("tools.dropHint")}
+                </span>
+              )}
+            </>
+          )}
+        </span>
+      </div>
+
+      {blocks.map((b) => (
+        <TagBlock key={b.id} block={b} onRemove={() => remove(b.id)} />
+      ))}
+    </div>
+  );
+}
+
+/** 그림 한 장의 결과 — 머리(미리보기·이름·부제·복사·삭제) + 태그 두 절.
+ *  ★복사는 **여기 하나**다 (사용자 지적 2026-08-29: 줄마다 있던 것과 겹쳤다). 캐릭터·일반을
+ *    합친 전체(`caption`)를 복사한다 — 용도가 "그 모습을 재현할 태그"라 전부가 필요하다. */
+function TagBlock({ block, onRemove }: { block: Block; onRemove: () => void }) {
+  const t = useI18n((s) => s.t);
+  const { name, result } = block;
+  const chars = result.tags.filter((x) => x.character).map((x) => x.tag);
+  const rows: { label: string; text: string; accent?: string }[] = [
+    ...(chars.length
+      ? [
+          {
+            label: t("tagger.charTags"),
+            text: chars.join(", "),
+            accent: "var(--accent)",
+          },
+        ]
+      : []),
+    {
+      label: t("tagger.generalTags"),
+      text: result.tags
+        .filter((x) => !x.character)
+        .map((x) => x.tag)
+        .join(", "),
+    },
+  ];
+
+  return (
+    <div
+      data-tagger-block
+      style={{
+        width: COL,
+        maxWidth: "100%",
+        flexShrink: 0,
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--sp-3)",
+        border: "1px solid var(--line)",
+        background: "var(--panel)",
+        borderRadius: "var(--r-3)",
+        padding: "var(--sp-3)",
+      }}
+    >
+      <div
+        style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)" }}
+      >
+        {result.preview && (
+          <img
+            data-tagger-preview
+            src={result.preview}
+            alt=""
+            style={{
+              height: 72,
+              borderRadius: "var(--r-2)",
+              background: "var(--bg)",
+            }}
+          />
+        )}
+        <div
+          style={{
+            flex: 1,
+            minWidth: 0,
+            display: "flex",
+            flexDirection: "column",
+            gap: 3,
+          }}
+        >
+          <span
+            style={{
+              fontSize: "var(--text-xs)",
+              color: "var(--ink)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {name}
+          </span>
+          {/* ★무엇인지 한 줄로 밝힌다 (사용자 지시 2026-08-29: "이미지에서 자동 추출했다고") */}
+          <span
+            style={{ fontSize: "var(--text-2xs)", color: "var(--ink-dim)" }}
+          >
+            {t("tagger.subtitle")}
+          </span>
         </div>
-      )}
+        <button
+          data-tagger-copy
+          disabled={!result.caption}
+          onClick={() =>
+            void navigator.clipboard
+              ?.writeText(result.caption)
+              .then(() => toast(t("act.copied")))
+          }
+          style={hbtn}
+        >
+          {Icon.copy}
+          {t("act.copy")}
+        </button>
+        <button data-tagger-remove onClick={onRemove} style={hbtn}>
+          {Icon.close12}
+          {t("common.delete")}
+        </button>
+      </div>
+
+      {rows.map((r, i) => (
+        <div key={i}>
+          <div
+            style={{
+              fontSize: "var(--text-2xs)",
+              color: r.accent ?? "var(--ink-dim)",
+            }}
+          >
+            {r.label}
+          </div>
+          <pre
+            style={{
+              margin: "2px 0 0",
+              padding: "var(--sp-2)",
+              background: "var(--code-bg)",
+              borderRadius: "var(--r-1)",
+              fontFamily: "var(--font-mono)",
+              fontSize: "var(--text-2xs)",
+              lineHeight: 1.5,
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-all",
+              color: "var(--ink-soft)",
+            }}
+          >
+            {r.text || t("prompt.empty")}
+          </pre>
+        </div>
+      ))}
     </div>
   );
 }
