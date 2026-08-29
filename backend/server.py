@@ -2643,9 +2643,9 @@ def _censor_open(b: CensorSource):
 
 
 # ── 태거 (WD eva02) — 그림에서 재현 태그를 뽑는다 (사용자 승인 2026-08-29) ──
-class TaggerRun(BaseModel):
-    workspace: str
-    file: str
+class TaggerRun(CensorSource):
+    """★검열과 같은 세 갈래다 — 보조도구의 Tagger 탭은 **밖에서 떨군 그림**도 받는다
+    (사용자 지시 2026-08-29: *"아무 이미지나 태거 돌리게"*)."""
 
 
 @app.get("/api/tagger/status")
@@ -2662,14 +2662,16 @@ async def tagger_download():
 
 @app.post("/api/tagger/run")
 def tagger_run(body: TaggerRun):
-    """태그 뽑기. ★`def` 다 — ONNX 추론이 수 초를 쥔다 (censor 와 같은 규칙)."""
-    p = store.file_path(body.workspace, body.file)
-    if not p:
-        raise HTTPException(404, "그림을 찾지 못했습니다.")
+    """태그 뽑기. ★`def` 다 — ONNX 추론이 수 초를 쥔다 (censor 와 같은 규칙).
+
+    `preview` 도 함께 준다 — 밖에서 떨군 그림은 화면에 가리킬 주소가 없다 (EXIF 리더와 같다)."""
+    img, _ = _censor_open(body)
     try:
-        return tagger.run(p)
+        out = tagger.run(img)
     except RuntimeError as e:
         raise HTTPException(409, str(e))
+    out["preview"] = tools_mod.thumb_image(img, tools_mod.PREVIEW_MAX)
+    return out
 
 
 @app.get("/api/censor/models")

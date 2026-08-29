@@ -69,13 +69,18 @@ def _thumb(data: bytes, max_side: int) -> str:
     """줄인 그림을 data URL 로. 못 읽으면 빈 문자열 (그림이 아니어도 예외로 만들지 않는다)."""
     try:
         with Image.open(io.BytesIO(data)) as im:
-            small = im.convert("RGB")
-            small.thumbnail((max_side, max_side), Image.LANCZOS)
-            buf = io.BytesIO()
-            small.save(buf, format="JPEG", quality=80)
-        return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+            return thumb_image(im, max_side)
     except Exception:
         return ""
+
+
+def thumb_image(im: Image.Image, max_side: int) -> str:
+    """이미 연 그림을 줄여 data URL 로. 태거처럼 그림을 이미 들고 있는 자리가 쓴다."""
+    small = im.convert("RGB")
+    small.thumbnail((max_side, max_side), Image.LANCZOS)
+    buf = io.BytesIO()
+    small.save(buf, format="JPEG", quality=80)
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
 
 
 def probe(root: Path, items: list[Item]) -> dict:

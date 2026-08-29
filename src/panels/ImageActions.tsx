@@ -14,6 +14,7 @@ import { upscaleCost } from "../lib/anlas";
 import { useSub } from "../store/sub";
 import { useWs, type Rec } from "../store/workspace";
 import type { ImageMeta } from "../store/gallery";
+import { sendToTagger } from "./tools/TaggerTool";
 
 /** 크게 본 그림 **아래에 붙는 한 줄** — "이 장으로 무엇을 할까" (페로픽스파이 `result-meta` 이식).
  *
@@ -100,8 +101,6 @@ export function ImageActions({
   const [seedHot, setSeedHot] = useState(false);
   const opus = useSub((s) => (s.sub?.tier ?? 0) >= 3);
   const [seen, setSeen] = useState<ImageMeta | null>(null);
-  /** 태거 결과 (사용자 승인 2026-08-29) — 모달 하나로 보여 주고 복사해 간다 */
-  const [tagged, setTagged] = useState<TagResult | null>(null);
 
   /** ★쿼리를 하나 붙여 받는다 — 같은 주소를 `<img>` 가 no-cors 로 먼저 캐시해 두면
    *  그 뒤의 `fetch` 가 CORS 로 막힌다 (실측으로 밟았다, 2026-08-04). */
@@ -260,43 +259,16 @@ export function ImageActions({
     }
   };
 
-  /** 태그 뽑기 (사용자 승인 2026-08-29) — *"1girl 만 넣고 나온 캐릭터를 재현할 태그"*.
-   *
-   *  ★모델(1.26GB)은 동봉하지 않는다 — **처음 눌렀을 때** 내려받을지 묻는다 (사용자 설계).
-   *    내려받는 동안 이 단추를 잡아 두지 않는다: 시작만 알리고 놓아 준다. 다시 누르면
-   *    진행률을 알려 주고, 다 받아졌으면 그때부터 돌아간다. */
-  const runTagger = async () => {
+  /** Tagger로 보내기 (사용자 지시 2026-08-29: *"보조도구에 넣고 아무 이미지나 태거 돌리게.
+   *  지금의 태거 버튼을 태거로 보내기로"*) — 결과 창구는 보조도구 › Tagger 하나다.
+   *  일괄 변환으로 보내기와 같은 몸짓(`rel`)으로 싣는다. */
+  const toTagger = async () => {
     if (!upscale || busy) return;
     setBusy(true);
     try {
-      const st = await api<TaggerStatus>("/api/tagger/status");
-      if (st.error) return void toast(st.error, "warn");
-      if (!st.ready) {
-        if (st.downloading)
-          return void toast(t("tagger.downloading", { pct: Math.round((st.got / st.total) * 100) }));
-        if (
-          await ask({
-            title: t("tagger.dlTitle"),
-            body: t("tagger.dlBody"),
-            ok: t("tagger.dlOk"),
-            cancel: t("common.cancel"),
-          })
-        ) {
-          await api("/api/tagger/download", { method: "POST" });
-          toast(t("tagger.dlStarted"));
-        }
-        return;
-      }
       const target = ensureFile ? await ensureFile() : upscale.file;
       if (!target) return;
-      const r = await api<TagResult>("/api/tagger/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workspace: upscale.ws, file: target }),
-      });
-      setTagged(r);
-    } catch (e) {
-      toast(String(e), "warn");
+      sendToTagger({ name: target.split("/").pop() ?? target, rel: `${upscale.ws}/${target}` });
     } finally {
       setBusy(false);
     }
@@ -322,12 +294,12 @@ export function ImageActions({
             <button data-act-prompt onClick={() => void showPrompt()} disabled={busy} style={btn}>
               {t("act.showPrompt")}
             </button>
-            {/* ★태그 뽑기 — 「프롬프트 보기」 바로 오른쪽, 아이콘으로 (사용자 지시 2026-08-29).
+            {/* ★Tagger로 보내기 — 「프롬프트 보기」 바로 오른쪽, 아이콘으로 (사용자 지시 2026-08-29).
                 워크스페이스 파일에만 뜻이 있다 (`upscale` 과 같은 조건). 아이콘 단추라 툴팁이 이름이다. */}
             {upscale && (
               <button
                 data-act-tagger
-                onClick={() => void runTagger()}
+                onClick={() => void toTagger()}
                 disabled={busy}
                 data-tip={t("act.tagger")}
                 style={iconBtn}
@@ -528,113 +500,7 @@ export function ImageActions({
       </div>
 
       {seen && <PromptView meta={seen} onClose={() => setSeen(null)} />}
-      {tagged && <TagView result={tagged} onClose={() => setTagged(null)} />}
     </>
-  );
-}
-
-type TaggerStatus = { ready: boolean; downloading: boolean; got: number; total: number; error: string };
-type TagResult = { tags: { tag: string; score: number; character: boolean }[]; caption: string };
-
-/** 태거 결과 — **`PromptView` 와 같은 골격**이다 (사용자 지시 2026-08-29: 스타일 통일).
- *  캐릭터·판권 태그와 일반 태그를 두 절로 나눠, 프롬프트 보기의 줄(라벨·줄 복사·코드 상자)
- *  그대로 보여 준다. ★적용 버튼을 달지 않는다 — `PromptView` 와 같은 이유다. */
-function TagView({ result, onClose }: { result: TagResult; onClose: () => void }) {
-  const t = useI18n((s) => s.t);
-  const chars = result.tags.filter((x) => x.character).map((x) => x.tag);
-  const rows: { label: string; text: string; accent?: string }[] = [
-    ...(chars.length ? [{ label: t("tagger.charTags"), text: chars.join(", "), accent: "var(--accent)" }] : []),
-    { label: t("tagger.generalTags"), text: result.tags.filter((x) => !x.character).map((x) => x.tag).join(", ") },
-  ];
-
-  return (
-    <div
-      data-tag-view
-      onPointerDown={(e) => e.target === e.currentTarget && onClose()}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 88,
-        background: "rgba(6,8,12,0.62)",
-        display: "grid",
-        placeItems: "center",
-        padding: "var(--sp-6)",
-      }}
-    >
-      <div
-        style={{
-          background: "var(--bg)",
-          border: "1px solid var(--line)",
-          borderRadius: "var(--r-4)",
-          padding: "var(--sp-5)",
-          width: "min(560px, 92vw)",
-          maxHeight: "80vh",
-          overflowY: "auto",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--sp-3)",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)" }}>
-          <b style={{ fontSize: "var(--text-md)" }}>{t("tagger.title")}</b>
-          {/* ★무엇인지 한 줄로 밝힌다 (사용자 지시 2026-08-29: "이미지에서 자동 추출했다고") */}
-          <span style={{ fontSize: "var(--text-2xs)", color: "var(--ink-dim)" }}>{t("tagger.subtitle")}</span>
-          <span style={{ flex: 1 }} />
-          <button
-            data-tag-copy
-            onClick={() => void navigator.clipboard?.writeText(result.caption).then(() => toast(t("act.copied")))}
-            style={btn}
-          >
-            {t("act.copy")}
-          </button>
-          <button data-tag-close onClick={onClose} style={btn}>
-            {t("act.close")}
-          </button>
-        </div>
-        {rows.map((r, i) => (
-          <div key={i}>
-            <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
-              <div style={{ flex: 1, fontSize: "var(--text-2xs)", color: r.accent ?? "var(--ink-dim)" }}>
-                {r.label}
-              </div>
-              <button
-                data-tag-copy-one={i}
-                disabled={!r.text}
-                onClick={() =>
-                  void navigator.clipboard?.writeText(r.text).then(() => toast(t("act.copied")))
-                }
-                style={{
-                  display: "grid",
-                  placeItems: "center",
-                  padding: 2,
-                  borderRadius: "var(--r-1)",
-                  color: r.text ? "var(--ink-faint)" : "var(--ink-ghost)",
-                }}
-                data-tip={t("act.copy")}
-              >
-                {Icon.copy}
-              </button>
-            </div>
-            <pre
-              style={{
-                margin: "2px 0 0",
-                padding: "var(--sp-2)",
-                background: "var(--code-bg)",
-                borderRadius: "var(--r-1)",
-                fontFamily: "var(--font-mono)",
-                fontSize: "var(--text-2xs)",
-                lineHeight: 1.5,
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-all",
-                color: "var(--ink-soft)",
-              }}
-            >
-              {r.text || t("prompt.empty")}
-            </pre>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 

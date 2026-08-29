@@ -266,8 +266,9 @@ export const ko: Dict = {
     dlTitle: "태거 모델을 내려받을까요?",
     dlBody: "약 1.26GB 를 한 번만 내려받습니다. 받는 동안에도 앱은 그대로 쓸 수 있습니다.",
     dlOk: "내려받기",
-    dlStarted: "내려받기 시작. 끝나면 다시 눌러 주세요.",
-    downloading: "내려받는 중 {pct}%. 끝나면 다시 눌러 주세요.",
+    dlStarted: "내려받기 시작. 끝나면 다시 시도해 주세요.",
+    downloading: "내려받는 중 {pct}%. 끝나면 다시 시도해 주세요.",
+    running: "태그를 뽑는 중…",
     charTags: "캐릭터·작품 태그",
     generalTags: "일반 태그",
   },
@@ -607,6 +608,8 @@ export const ko: Dict = {
     clearList: "목록 비우기",
     rowFailed: "실패",
     exif: "EXIF 리더",
+    tagger: "Tagger",
+    taggerDrop: "그림을 여기에 놓으면 태그를 뽑습니다. 밖에서 가져온 것도 됩니다",
     rename: "일괄 변환",
     sendConvert: "일괄 변환으로 보내기",
     files: "파일 관리",
@@ -741,7 +744,7 @@ export const ko: Dict = {
     showPrompt: "프롬프트 보기",
     /* ★도구 이름을 그대로 쓴다 (사용자 지시 2026-08-29: *"태그뽑기라고 하면 뭔지 모를 것
        같은데. Tagger 라고 명시"*) — 커뮤니티에서 통하는 이름이라 번역하지 않는다 */
-    tagger: "Tagger (이미지에서 태그 자동 추출)",
+    tagger: "Tagger로 보내기 (이미지에서 태그 자동 추출)",
     /** ★글자로 남는 **유일한** 단추다 — 이름 자체가 짧은 낱말이라 아이콘이 오히려 흐리다.
      *  ★군더더기를 붙이지 않는다 (사용자 지적 2026-08-19: 「이 그림으로 (i2i)」였다) */
     i2i: "i2i",

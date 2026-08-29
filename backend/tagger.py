@@ -139,14 +139,17 @@ def _load():
     _tags = rows
 
 
-def run(image_path: Path) -> dict:
-    """태그를 뽑는다. 점수 내림차순 목록과 캐릭터/일반 구분을 돌려준다."""
+def run(src) -> dict:
+    """태그를 뽑는다. 점수 내림차순 목록과 캐릭터/일반 구분을 돌려준다.
+
+    `src` 는 경로이거나 이미 연 PIL 그림이다 — 보조도구의 Tagger 탭은 밖에서 떨군 그림
+    (base64) 도 받으므로 경로만으로는 모자란다 (사용자 지시 2026-08-29)."""
     import numpy as np
     from PIL import Image
 
     with _lock:
         _load()
-        img = Image.open(image_path).convert("RGB")
+        img = (src if isinstance(src, Image.Image) else Image.open(src)).convert("RGB")
         w, h = img.size
         side = max(w, h)
         padded = Image.new("RGB", (side, side), (255, 255, 255))
