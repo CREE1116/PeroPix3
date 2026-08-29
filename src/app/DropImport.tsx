@@ -49,20 +49,37 @@ export function DropImport() {
            나중에 그 그림에서 되돌릴 것이 없으므로, 그것을 알고 넣는 편이 낫다.
          ★바이브 파일은 그림이 아니다 — 갤러리에 넣을 것이 없으니 지금까지대로 시트로 간다. */
       if (useUi.getState().mode === "gallery" && read.kind === "image") {
-        const m = read.meta;
-        if (!m?.data) return void toast(t("drop.noBytes"), "warn");
-        if (
-          !hasMeta(m) &&
-          !(await ask({
+        /* ★★**여러 장을 한 번에 받는다** (사용자 지시 2026-08-29: *"갤러리 다중 드롭"*).
+           첫 장은 이미 읽었고 나머지는 여기서 읽는다 — 하나가 깨졌다고 전부 버리지 않는다.
+           ★설정이 없는 장이 섞여 있으면 **한 번만** 묻는다: 그래도 넣겠다고 하면 그것까지,
+             아니면 설정 있는 장만 넣는다. 장마다 물으면 열 장 떨구고 열 번 답해야 한다. */
+        type Img = Extract<DropRead, { kind: "image" }>;
+        const reads: Img[] = [read];
+        for (const other of items.slice(1)) {
+          try {
+            const r = await readDrop(other);
+            if (r.kind === "image") reads.push(r);
+          } catch (e) {
+            toast(`${other.name}: ${String(e)}`, "warn");
+          }
+        }
+        const withBytes = reads.filter((r) => r.meta?.data);
+        if (!withBytes.length) return void toast(t("drop.noBytes"), "warn");
+        const withMeta = withBytes.filter((r) => hasMeta(r.meta));
+        const noMeta = withBytes.filter((r) => !hasMeta(r.meta));
+        const list =
+          noMeta.length &&
+          (await ask({
             title: t("drop.noMetaAsk"),
             ok: t("drop.toGallery"),
             cancel: t("common.cancel"),
           }))
-        )
-          return;
-        await useGallery.getState().importImage(useWs.getState().current, m.data, read.name);
-        toast(t("drop.added"));
-        if (items.length > 1) toast(t("drop.onlyOne"), "warn");
+            ? withBytes
+            : withMeta;
+        if (!list.length) return;
+        const ws = useWs.getState().current;
+        for (const r of list) await useGallery.getState().importImage(ws, r.meta!.data!, r.name);
+        toast(list.length > 1 ? t("drop.addedMany", { n: list.length }) : t("drop.added"));
         return;
       }
       setSheet(read);

@@ -441,6 +441,7 @@ function Big({
 }) {
   const t = useI18n((s) => s.t);
   const box = useRef<HTMLDivElement>(null);
+  const img = useRef<HTMLImageElement>(null);
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
   /** 보관함 그림의 메타데이터 — 「프롬프트 보기」와 「새 탭으로 복제」가 같은 것을 쓴다 */
   const loadMeta = async () =>
@@ -497,7 +498,23 @@ function Big({
     <div
       ref={box}
       data-gallery-big
-      onClick={(e) => e.target === box.current && onClose()}
+      /* ★★그림 **옆의 빈 자리**를 눌러도 닫힌다 (사용자 지시 2026-08-29). 그림은 `object-fit:
+         contain` 이라 요소 상자가 그려진 그림보다 크다 — 상자 안이지만 그림 밖인 자리를
+         눌렀을 때 닫히지 않았다 (예전에는 뿌리를 직접 눌렀을 때만 닫혔다). 그려진 영역을
+         계산해 그 밖이면 닫는다. 단추 줄은 전파를 끊으므로 여기까지 안 온다. */
+      onClick={(e) => {
+        const im = img.current;
+        if (im && e.target === im && dims) {
+          const r = im.getBoundingClientRect();
+          const k = Math.min(r.width / dims.w, r.height / dims.h);
+          const w = dims.w * k;
+          const h = dims.h * k;
+          const x0 = r.left + (r.width - w) / 2;
+          const y0 = r.top + (r.height - h) / 2;
+          if (e.clientX >= x0 && e.clientX <= x0 + w && e.clientY >= y0 && e.clientY <= y0 + h) return;
+        }
+        onClose();
+      }}
       // ★휠로 앞뒤 그림 (v2 갤러리의 휠 네비게이션)
       onWheel={(e) => (e.deltaY > 0 ? onNext?.() : onPrev?.())}
       style={{
@@ -523,6 +540,7 @@ function Big({
         }}
       >
         <img
+          ref={img}
           src={url}
           alt=""
           onLoad={(e) => setDims({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
