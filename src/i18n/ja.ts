@@ -255,7 +255,7 @@ export const ja: Dict = {
   },
 
   tagger: {
-    title: "Tagger",
+    title: "タガー",
     subtitle: "この画像から自動抽出したタグです。",
     dlTitle: "タガーモデルをダウンロードしますか？",
     dlBody: "約 1.26GB を一度だけダウンロードします。ダウンロード中もアプリはそのまま使えます。",
@@ -606,7 +606,7 @@ export const ja: Dict = {
     clearList: "リストを空にする",
     rowFailed: "失敗",
     exif: "EXIF リーダー",
-    tagger: "Tagger",
+    tagger: "タガー",
     taggerDrop: "画像をここにドロップするとタグを抽出します。外部の画像も使えます",
     rename: "一括変換",
     sendConvert: "一括変換に送る",
@@ -739,7 +739,7 @@ export const ja: Dict = {
     clone: "新しいタブに複製",
     cloned: "新しいタブに複製しました",
     showPrompt: "プロンプトを見る",
-    tagger: "Tagger に送る（画像からタグを自動抽出）",
+    tagger: "タガーに送る（画像からタグを自動抽出）",
     /** ★글자로 남는 **유일한** 단추다 — 이름 자체가 짧은 낱말이라 아이콘이 오히려 흐리다.
      *  ★군더더기를 붙이지 않는다 (사용자 지적 2026-08-19: 「이 그림으로 (i2i)」였다) */
     i2i: "i2i",
