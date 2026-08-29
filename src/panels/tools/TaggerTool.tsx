@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useI18n } from "../../i18n";
 import { api } from "../../lib/backend";
 import { useImageDrop, type Dropped } from "../../lib/dropImages";
@@ -6,6 +6,7 @@ import { ask } from "../../store/ask";
 import { toast } from "../../store/toast";
 import { Icon } from "../../components/Icon";
 import { useUi } from "../../store/ui";
+import { taggerPct, useTagger } from "../../store/tagger";
 
 /** Tagger — **아무 그림에서나 재현 태그를 뽑는다** (WD eva02, 사용자 지시 2026-08-29:
  *  *"보조도구에 넣고 아무 이미지나 태거 돌리게"*).
@@ -24,13 +25,6 @@ import { useUi } from "../../store/ui";
  *  ★모델(1.26GB)은 동봉하지 않는다 — 탭에 들어오면 상태를 보여 주고, 없으면 내려받기 단추를
  *    상자 안에 둔다. 내려받는 동안 붙들지 않는다: 시작만 알리고 놓아 준다.
  */
-type TaggerStatus = {
-  ready: boolean;
-  downloading: boolean;
-  got: number;
-  total: number;
-  error: string;
-};
 type TagResult = {
   tags: { tag: string; score: number; character: boolean }[];
   caption: string;
@@ -65,44 +59,16 @@ export function TaggerTool() {
     kept = blocks;
   }, [blocks]);
 
-  /** 모델 상태 — 탭에 들어올 때 한 번 묻고, 받는 중이면 끝날 때까지 몇 초마다 다시 묻는다
-   *  (사용자 승인 2026-08-29: 모델 없이 들어오면 무엇을 해야 하는지 보여야 한다).
-   *  `null` 은 아직 못 물어봤다는 뜻이다. */
-  const [st, setSt] = useState<TaggerStatus | null>(null);
-  const refresh = async () => {
-    try {
-      const cur = await api<TaggerStatus>("/api/tagger/status");
-      setSt(cur);
-      return cur;
-    } catch (e) {
-      toast(String(e), "warn");
-      return null;
-    }
-  };
+  /** 모델 상태 — **앱 전역**(`store/tagger`)이다. 여기서는 읽고, 시작·취소를 부를 뿐이다.
+   *  ★폴링·완료 토스트는 스토어가 한다 — 이 탭을 떠나 있어도 알림이 온다 (사용자 지적
+   *    2026-08-29: 다 받았는데 토스트가 안 떴다 — 컴포넌트가 들고 있어서 탭을 떠나면 죽었다). */
+  const st = useTagger((s) => s.st);
+  const { refresh, start: startDownload, cancel: cancelDownload } = useTagger.getState();
   useEffect(() => {
     void refresh();
-  }, []);
-  useEffect(() => {
-    if (!st?.downloading) return;
-    const id = window.setInterval(() => void refresh(), 2000);
-    return () => window.clearInterval(id);
-  }, [st?.downloading]);
-  /** 받는 중 → 준비됨으로 넘어가는 순간 한 번 알린다 (사용자 지시 2026-08-29) */
-  const wasDl = useRef(false);
-  useEffect(() => {
-    if (wasDl.current && st?.ready) toast(t("tagger.dlDone"), "ok");
-    wasDl.current = !!st?.downloading;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [st?.downloading, st?.ready]);
+  }, []);
   const downloading = !!st?.downloading;
-
-  /** 내려받기 시작 — 상자의 단추와, 모델 없이 떨궜을 때의 확인창이 같이 쓴다.
-   *  ★붙들지 않는다: 시작만 알리고 놓아 준다. 진행률은 위의 폴링이 상자에 그린다. */
-  const startDownload = async () => {
-    await api("/api/tagger/download", { method: "POST" });
-    toast(t("tagger.dlStarted"));
-    await refresh();
-  };
 
   /** 떨군 그림들을 **차례로** 돌려 블록으로 붙인다. 돌고 있는 중에 더 떨구면 뒤에 잇는다. */
   const run = async (items: Dropped[]) => {
@@ -247,15 +213,39 @@ export function TaggerTool() {
               /* 모델이 없다 — 떨구기 전에 무엇을 해야 하는지 상자 안에서 보여 준다 */
               st.downloading ? (
                 <span
-                  data-tagger-dl-progress
                   style={{
-                    fontSize: "var(--text-2xs)",
-                    color: "var(--ink-dim)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "var(--sp-3)",
+                    marginTop: 4,
                   }}
                 >
-                  {t("tagger.dlProgress", {
-                    pct: st.total ? Math.round((st.got / st.total) * 100) : 0,
-                  })}
+                  {/* % 와 막대 (사용자 지시 2026-08-29) — 타이틀바 띠와 같은 값을 그린다 */}
+                  <span style={{ width: 160, height: 4, borderRadius: 2, background: "var(--line)", overflow: "hidden" }}>
+                    <span
+                      data-tagger-dl-bar
+                      style={{ display: "block", width: `${taggerPct(st)}%`, height: "100%", background: "var(--accent)", transition: "width 0.2s" }}
+                    />
+                  </span>
+                  <span
+                    data-tagger-dl-progress
+                    style={{
+                      fontSize: "var(--text-2xs)",
+                      color: "var(--ink-dim)",
+                    }}
+                  >
+                    {t("tagger.dlProgress", { pct: taggerPct(st) })}
+                  </span>
+                  <button
+                    data-tagger-dl-cancel
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void cancelDownload().catch((err) => toast(String(err), "warn"));
+                    }}
+                    style={hbtn}
+                  >
+                    {t("tagger.dlCancel")}
+                  </button>
                 </span>
               ) : (
                 <button

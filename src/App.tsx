@@ -20,6 +20,7 @@ import { LeftPanel } from "./panels/LeftPanel";
 import { GenerateFooter } from "./panels/GenerateFooter";
 import { Settings } from "./app/Settings";
 import { UpdateStrip } from "./app/UpdateStrip";
+import { TaggerStrip } from "./app/TaggerStrip";
 import { useHealth, type Health } from "./store/health";
 import { sameApp } from "./lib/sameApp";
 import { Toasts } from "./app/Toasts";
@@ -246,6 +247,8 @@ export function App() {
                 설정을 열어 두지 않아도 어디까지 왔는지 보이고, 거기서 그만둘 수도 있다.
                 아무 일도 없으면 아무것도 안 그린다. */}
             <UpdateStrip />
+            {/* ★태거 모델을 받는 동안 — 업데이트 띠와 같은 모양·같은 자리 (사용자 지시 2026-08-29) */}
+            <TaggerStrip />
             <Status />
             {/* ★★해/달 단추는 **되살렸다** (사용자 지시 2026-08-20). 한 번 걷었다가
                 되돌린 자리다 — 밝게/어둡게를 오가는 것은 자주 하는 일이라 타이틀바에

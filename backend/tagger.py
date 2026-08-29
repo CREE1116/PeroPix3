@@ -37,7 +37,11 @@ _sess = None
 _tags: list[tuple[str, int]] | None = None
 
 #: 다운로드 상태 — 백그라운드 스레드가 갱신한다
-_dl = {"running": False, "got": 0, "total": 0, "error": ""}
+_dl = {"running": False, "got": 0, "total": 0, "error": "", "cancel": False}
+
+
+class _Cancelled(Exception):
+    """사용자가 그만뒀다 — 오류가 아니다."""
 _dl_lock = threading.Lock()
 
 
@@ -65,8 +69,17 @@ def start_download() -> dict:
     with _dl_lock:
         if _dl["running"]:
             return status()
-        _dl.update(running=True, got=0, total=0, error="")
+        _dl.update(running=True, got=0, total=0, error="", cancel=False)
     threading.Thread(target=_download, daemon=True).start()
+    return status()
+
+
+def cancel_download() -> dict:
+    """받던 것을 그만둔다 (사용자 지시 2026-08-29). 스레드가 다음 조각에서 보고 멈추며,
+    받다 만 `.part` 는 지운다. ★오류로 남기지 않는다 — 화면은 다시 「내려받기」 단추로 돌아간다."""
+    with _dl_lock:
+        if _dl["running"]:
+            _dl["cancel"] = True
     return status()
 
 
@@ -85,17 +98,30 @@ def _download() -> None:
                         _dl["total"] = int(r.headers.get("content-length") or APPROX_TOTAL)
                 with tmp.open("wb") as f:
                     for chunk in r.iter_bytes(1 << 20):
+                        with _dl_lock:
+                            if _dl["cancel"]:
+                                raise _Cancelled()
                         f.write(chunk)
                         if name == "model.onnx":
                             with _dl_lock:
                                 _dl["got"] += len(chunk)
             tmp.replace(MODEL_DIR / name)   # ★다 받은 뒤에 이름을 준다 — 반쪽 파일이 안 남게
+    except _Cancelled:
+        pass                                 # 그만둔 것은 오류가 아니다 — 아래 finally 가 치운다
     except Exception as e:                   # noqa: BLE001 — 사유를 화면까지 전한다
         with _dl_lock:
             _dl["error"] = str(e)
     finally:
+        for name in FILES:                   # ★받다 만 조각은 남기지 않는다 (그만뒀든 깨졌든)
+            part = MODEL_DIR / (name + ".part")
+            if part.exists():
+                try:
+                    part.unlink()
+                except OSError:
+                    pass
         with _dl_lock:
             _dl["running"] = False
+            _dl["cancel"] = False
 
 
 def _load():

@@ -2655,6 +2655,12 @@ async def tagger_status():
     return tagger.status()
 
 
+@app.post("/api/tagger/cancel")
+async def tagger_cancel():
+    """받던 것을 그만둔다 (사용자 지시 2026-08-29)."""
+    return tagger.cancel_download()
+
+
 @app.post("/api/tagger/download")
 async def tagger_download():
     """모델 내려받기 시작 (백그라운드) — 진행은 status 를 폴링한다."""

@@ -263,6 +263,8 @@ export const en = {
     dlOk: "Download",
     dlButton: "Download model (about 1.26GB)",
     dlProgress: "Downloading model {pct}%",
+    dlCancel: "Stop",
+    strip: "Tagger model {done} / {total}",
     dlDone: "Tagger model downloaded. Drop an image to extract tags.",
     about: "Analyzes an image and infers the tags it contains.",
     dlStarted: "Download started. Try again when it finishes.",

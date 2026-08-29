@@ -262,6 +262,8 @@ export const ja: Dict = {
     dlOk: "ダウンロード",
     dlButton: "モデルをダウンロード（約 1.26GB）",
     dlProgress: "モデルをダウンロード中 {pct}%",
+    dlCancel: "中止",
+    strip: "タガーモデル {done} / {total}",
     dlDone: "タガーモデルのダウンロードが完了しました。画像をドロップするとタグを抽出します。",
     about: "画像を解析して、含まれているタグを推定します。",
     dlStarted: "ダウンロードを開始しました。終わったらもう一度お試しください。",
