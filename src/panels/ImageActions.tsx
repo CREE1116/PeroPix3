@@ -304,7 +304,7 @@ export function ImageActions({
         {/* ★★왼쪽 셋(프롬프트 보기·설정 불러오기·복제)도 **아이콘**이다 (사용자 지시 2026-08-29).
             2026-08-19 에는 「무엇을 어디로」가 걸린 일이라 글자로 뒀었는데, Tagger 가 아이콘으로
             끼면서 줄이 길어져 셋도 아이콘으로 바꿨다. 아이콘 단추는 **툴팁이 이름**이다.
-            · 프롬프트 보기 = 태그 · Tagger = 태그+반짝(추출) · 설정 = 슬라이더 · 복제 = 겹친 판 */}
+            · 프롬프트 보기 = 태그 · Tagger = 태그+반짝(추출) · 설정 = 왼쪽으로 밀어 넣는 화살표 · 복제 = 겹친 판 */}
         {loadMeta && !isMulti && (
           <button
             data-act-prompt
@@ -337,7 +337,7 @@ export function ImageActions({
             data-tip={t("act.settings")}
             style={iconBtn}
           >
-            {Icon.sliders}
+            {Icon.toLeft}
           </button>
         )}
         {/* ★「설정을 가져다 쓰는 것」 무리에 둔다 — 이 단추가 옮기는 것도 그림 한 장과
