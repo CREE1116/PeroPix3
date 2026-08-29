@@ -170,7 +170,15 @@ export function TaggerTool() {
           {...(downloading ? {} : zone)}
           data-tagger-drop
           data-disabled={downloading || undefined}
-          onClick={downloading ? undefined : () => void pick()}
+          /* ★모델이 없으면 상자 클릭이 곧 **내려받기**다 (사용자 지시 2026-08-29) — 파일 선택창을
+             띄워 봐야 받을 수 없으니, 단추가 아니라 상자 어디를 눌러도 내려받기로 간다 */
+          onClick={
+            downloading
+              ? undefined
+              : st && !st.ready && !st.error
+                ? () => void startDownload().catch((err) => toast(String(err), "warn"))
+                : () => void pick()
+          }
           style={{
             height: empty ? 220 : 88,
             flexShrink: 0,
