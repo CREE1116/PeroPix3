@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../i18n";
 import { api } from "../../lib/backend";
 import { useImageDrop, type Dropped } from "../../lib/dropImages";
@@ -87,6 +87,14 @@ export function TaggerTool() {
     const id = window.setInterval(() => void refresh(), 2000);
     return () => window.clearInterval(id);
   }, [st?.downloading]);
+  /** 받는 중 → 준비됨으로 넘어가는 순간 한 번 알린다 (사용자 지시 2026-08-29) */
+  const wasDl = useRef(false);
+  useEffect(() => {
+    if (wasDl.current && st?.ready) toast(t("tagger.dlDone"), "ok");
+    wasDl.current = !!st?.downloading;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [st?.downloading, st?.ready]);
+  const downloading = !!st?.downloading;
 
   /** 내려받기 시작 — 상자의 단추와, 모델 없이 떨궜을 때의 확인창이 같이 쓴다.
    *  ★붙들지 않는다: 시작만 알리고 놓아 준다. 진행률은 위의 폴링이 상자에 그린다. */
@@ -98,7 +106,8 @@ export function TaggerTool() {
 
   /** 떨군 그림들을 **차례로** 돌려 블록으로 붙인다. 돌고 있는 중에 더 떨구면 뒤에 잇는다. */
   const run = async (items: Dropped[]) => {
-    if (!items.length) return;
+    // ★받는 중에는 **아무것도 안 받는다** (사용자 지시 2026-08-29) — 상자도 창 전체도
+    if (!items.length || downloading) return;
     const cur = await refresh();
     if (!cur) return;
     if (cur.error) return void toast(cur.error, "warn");
@@ -163,14 +172,16 @@ export function TaggerTool() {
        필요하지만, 여기는 태그 두 절이 전부다 — 넓게 펴면 한 줄이 길어져 오히려 읽기 힘들다.
        ★그래도 **창 어디에 떨궈도 받는다** (`useImageDrop(run, true)`) — 기둥은 보이는 폭이지
        받는 폭이 아니다.
-       ★옆판이 열리면 기둥+옆판을 함께 가운데 맞추므로 기둥이 왼쪽으로 반만큼 밀린다. */
+       ★옆판이 열려도 **기둥은 제자리**다 (사용자 지시 2026-08-29: 가운데는 고정, 우측에 열기).
+         옆판은 기둥의 오른쪽 옆에 절대 배치한다 — 처음에는 둘을 함께 가운데 맞춰 기둥이
+         왼쪽으로 밀렸는데, 단추를 누를 때마다 읽던 자리가 움직였다. */
     <div
       style={{
         flex: 1,
         minHeight: 0,
         display: "flex",
         justifyContent: "center",
-        gap: "var(--sp-4)",
+        position: "relative",
       }}
     >
       <div
@@ -190,18 +201,19 @@ export function TaggerTool() {
       >
         {/* 받는 상자 — 비었을 때는 가운데에 크게, 블록이 있으면 위에 낮게 (그 아래로 쌓인다) */}
         <div
-          {...zone}
+          {...(downloading ? {} : zone)}
           data-tagger-drop
-          onClick={() => void pick()}
+          data-disabled={downloading || undefined}
+          onClick={downloading ? undefined : () => void pick()}
           style={{
             height: empty ? 220 : 88,
             flexShrink: 0,
-            border: `1px dashed ${over ? "var(--accent)" : "var(--line)"}`,
-            background: over ? "var(--accent-bg)" : "var(--bg)",
+            border: `1px dashed ${over && !downloading ? "var(--accent)" : "var(--line)"}`,
+            background: over && !downloading ? "var(--accent-bg)" : "var(--bg)",
             borderRadius: "var(--r-3)",
             display: "grid",
             placeItems: "center",
-            cursor: "pointer",
+            cursor: downloading ? "default" : "pointer",
           }}
         >
           <span
@@ -222,14 +234,23 @@ export function TaggerTool() {
                 {Icon.tagger}
               </span>
             )}
+            {st && !st.ready && !st.error && (
+              /* ★무엇을 하는 기능인지 한 줄 (사용자 지시 2026-08-29: 내려받기 전에 설명) */
+              <span
+                data-tagger-about
+                style={{ fontSize: "var(--text-sm)", color: "var(--ink-soft)", textAlign: "center" }}
+              >
+                {t("tagger.about")}
+              </span>
+            )}
             {st && !st.ready && !st.error ? (
               /* 모델이 없다 — 떨구기 전에 무엇을 해야 하는지 상자 안에서 보여 준다 */
               st.downloading ? (
                 <span
                   data-tagger-dl-progress
                   style={{
-                    fontSize: "var(--text-sm)",
-                    color: "var(--ink-soft)",
+                    fontSize: "var(--text-2xs)",
+                    color: "var(--ink-dim)",
                   }}
                 >
                   {t("tagger.dlProgress", {
@@ -463,11 +484,11 @@ function ScorePane({ block, onClose }: { block: Block; onClose: () => void }) {
     <div
       data-tagger-scores-pane
       style={{
+        position: "absolute",
+        left: `calc(50% + ${COL / 2}px + var(--sp-4))`,
+        top: "var(--sp-4)",
+        bottom: "var(--sp-6)",
         width: PANE,
-        flexShrink: 0,
-        minHeight: 0,
-        marginTop: "var(--sp-4)",
-        marginBottom: "var(--sp-6)",
         display: "flex",
         flexDirection: "column",
         border: "1px solid var(--line)",

@@ -268,6 +268,8 @@ export const ko: Dict = {
     dlOk: "내려받기",
     dlButton: "모델 내려받기 (약 1.26GB)",
     dlProgress: "모델을 내려받는 중 {pct}%",
+    dlDone: "태거 모델을 다 받았습니다. 이제 그림을 놓으면 태그를 뽑습니다.",
+    about: "이미지를 분석해서 그 안에 든 태그를 유추합니다.",
     dlStarted: "내려받기 시작. 끝나면 다시 시도해 주세요.",
     downloading: "내려받는 중 {pct}%. 끝나면 다시 시도해 주세요.",
     running: "태그를 뽑는 중…",
