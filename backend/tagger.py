@@ -6,8 +6,9 @@
 ★모델은 **로라메이커와 같은 것**이다 (`SmilingWolf/wd-eva02-large-tagger-v3` ONNX, 1.26GB) —
   작은 모델(vit 378MB)은 사용자가 품질로 반려했다 (*"로라메이커급 아니면 좀 구리던데"*).
 ★★**동봉하지 않는다** — 첫 사용 때 내려받는다 (배포본이 1.26GB 커지는 것을 피한다).
-  받기 전에 **허깅페이스 로컬 캐시를 먼저 뒤진다** — 로라메이커가 받아 둔 기계에서는
-  다시 받을 것이 없다.
+  ★모델 자리는 `models/tagger` **하나**다. 처음에는 허깅페이스 로컬 캐시(로라메이커가 받아 둔
+    것)도 2순위로 뒤졌는데 걷어냈다 (사용자 지적 2026-08-29: 그 캐시는 개발 기계에만 있는
+    사정이라 제품에는 뜻이 없고, 내려받기 흐름이 한 번도 안 돈 것을 가렸다).
 ★전처리·후처리는 로라메이커 `modules/captioning.py` 를 그대로 옮겼다 (검증된 구현):
   흰 배경 정사각 패딩 → BICUBIC 448² → RGB→BGR → float32 NHWC. 문턱값 0.35,
   캐릭터·판권(카테고리 3·4)은 0.75. 등급 태그(카테고리 9)는 뺀다.
@@ -40,23 +41,11 @@ _dl = {"running": False, "got": 0, "total": 0, "error": ""}
 _dl_lock = threading.Lock()
 
 
-def _hf_cache_dir() -> Path | None:
-    """허깅페이스 캐시에 이미 있으면 그 스냅샷 폴더를 준다 (로라메이커가 받아 둔 것)."""
-    hub = Path.home() / ".cache" / "huggingface" / "hub" / ("models--" + REPO.replace("/", "--"))
-    snaps = hub / "snapshots"
-    if not snaps.is_dir():
-        return None
-    for d in sorted(snaps.iterdir(), reverse=True):
-        if all((d / f).is_file() for f in FILES):
-            return d
-    return None
-
-
 def model_dir() -> Path | None:
-    """모델이 있는 폴더 — 우리 폴더가 먼저, 없으면 허깅페이스 캐시."""
+    """모델이 있는 폴더 — `models/tagger` 에 두 파일이 다 있을 때만."""
     if all((MODEL_DIR / f).is_file() for f in FILES):
         return MODEL_DIR
-    return _hf_cache_dir()
+    return None
 
 
 def status() -> dict:
