@@ -2,17 +2,18 @@ import { useEffect, useState } from "react";
 import { Icon } from "../components/Icon";
 import { useI18n } from "../i18n";
 import { toast } from "../store/toast";
-import { LANGS, resolveTarget, translateText, useTranslate, type Lang } from "../store/translate";
+import { LANGS, translateText, useTranslate, type Lang } from "../store/translate";
 
 /** 번역 창 — **작고, 떠 있고, 닫을 때까지 남는다** (사용자 지시 2026-08-29).
  *
- *  · 위에 목적지 말 셋(영어·한국어·일본어). 원어는 서버가 알아본다. 고른 말과 같은 말을
- *    치면 뒤집어 번역한다 (`resolveTarget`) — 영어 창에 한국어를 치는 것이 주된 쓰임이다.
+ *  · 위에 목적지 말 셋(「→ 영어」「→ 한국어」「→ 일본어」). 원어는 서버가 알아본다. 고른 말과
+ *    같은 말을 치면 **그대로** 나온다 — 뒤집지 않는다 (사용자 지적 2026-08-29).
  *  · 치는 대로 번역한다 (0.4초 뜸). 결과는 복사 단추로 가져간다 — 프롬프트에 **넣어 주지
  *    않는다**: 어느 블록의 어느 자리인지 이 창은 모른다.
  *  · `App` 이 **생성 모드일 때만** 그린다. 열림 상태는 스토어에 남는다 (`useTranslate`).
- *  ★모달이 아니다 — 뒤를 가리지 않고, 프롬프트를 고치면서 옆에 두고 본다. 그래서 캔버스의
- *    오른쪽 아래에 띄운다 (생성 푸터·씬 줄과 겹치지 않는 자리). */
+ *  ★모달이 아니다 — 뒤를 가리지 않고, 프롬프트를 고치면서 옆에 두고 본다. 그래서 **왼쪽
+ *    패널 바로 오른쪽**(가운데 칸의 왼쪽 위)에 띄운다 (사용자 지시 2026-08-29: 오른쪽 아래는
+ *    너무 멀었다). */
 export function TranslatePanel() {
   const t = useI18n((s) => s.t);
   const open = useTranslate((s) => s.open);
@@ -31,10 +32,9 @@ export function TranslatePanel() {
       setErr("");
       return;
     }
-    const to = resolveTarget(q, target);
     setBusy(true);
     const id = window.setTimeout(() => {
-      translateText(q, to)
+      translateText(q, target)
         .then((s) => {
           setOut(s);
           setErr("");
@@ -46,15 +46,14 @@ export function TranslatePanel() {
   }, [open, text, target]);
 
   if (!open) return null;
-  const effective = text.trim() ? resolveTarget(text.trim(), target) : target;
 
   return (
     <div
       data-translate-panel
       style={{
         position: "absolute",
-        right: "var(--sp-4)",
-        bottom: "var(--sp-4)",
+        left: "var(--sp-3)",
+        top: "var(--sp-3)",
         zIndex: 45,
         width: 320,
         maxWidth: "calc(100% - 2 * var(--sp-4))",
@@ -72,10 +71,9 @@ export function TranslatePanel() {
         <span style={{ color: "var(--accent)", display: "grid" }}>{Icon.globe}</span>
         <b style={{ fontSize: "var(--text-xs)" }}>{t("translate.title")}</b>
         <span style={{ flex: 1 }} />
-        {/* 목적지 말 — 같은 말을 치면 뒤집힌다 (그때는 실제 목적지를 강조한다) */}
+        {/* 목적지 말 — 「→ 한국어」 꼴로, 그 말로 바꾼다는 뜻을 화살표가 말한다 */}
         {LANGS.map((l: Lang) => {
           const on = target === l;
-          const real = effective === l;
           return (
             <button
               key={l}
@@ -87,11 +85,11 @@ export function TranslatePanel() {
                 borderRadius: "var(--r-1)",
                 fontSize: "var(--text-2xs)",
                 border: `1px solid ${on ? "var(--accent)" : "var(--line)"}`,
-                color: real ? "var(--accent)" : "var(--ink-faint)",
+                color: on ? "var(--accent)" : "var(--ink-faint)",
                 background: on ? "var(--accent-bg)" : "transparent",
               }}
             >
-              {t(`translate.lang.${l}`)}
+              {"→ " + t(`translate.lang.${l}`)}
             </button>
           );
         })}

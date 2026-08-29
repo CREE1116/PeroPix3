@@ -330,7 +330,12 @@ export function App() {
         }
         center={
           mode === "generate" ? (
-            <Canvas />
+            <>
+              <Canvas />
+              {/* ★번역 창은 **생성 모드에서만**, 왼쪽 패널 바로 오른쪽에 (사용자 지시 2026-08-29).
+                  가운데 칸이 `position: relative` 라 그 왼쪽 위에 붙는다 (`Shell`). */}
+              {mode === "generate" && <TranslatePanel />}
+            </>
           ) : mode === "gallery" ? (
             <Gallery />
           ) : mode === "censor" ? (
@@ -465,8 +470,6 @@ export function App() {
           (`ExifTool` 의 `wide`), 여기까지 두면 한 번 떨군 것을 둘이 잡는다
           (v2 도 같은 자리에서 갈랐다: `!isInCensorMode() && !isInUtilityMode()`). */}
       {(mode === "generate" || mode === "gallery") && <DropImport />}
-      {/* ★번역 창은 **생성 모드에서만** (사용자 지시 2026-08-29). 열림은 스토어에 남는다 */}
-      {mode === "generate" && <TranslatePanel />}
       <AskDialog />
       <Toasts />
       {/* 툴팁 층 — 화면 아무 데나 `data-tip` 을 달면 여기서 뜬다 (`components/Tip`) */}

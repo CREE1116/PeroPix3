@@ -189,7 +189,9 @@ export function Shell({
           </>
         )}
 
-        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+        {/* ★`position: relative` — 번역 창(`TranslatePanel`)이 이 칸의 왼쪽 위, 곧 왼쪽 패널
+            바로 오른쪽에 붙는다 (사용자 지시 2026-08-29) */}
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", position: "relative" }}>
           {center}
         </div>
 
