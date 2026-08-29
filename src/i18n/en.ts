@@ -266,6 +266,7 @@ export const en = {
     dlStarted: "Download started. Try again when it finishes.",
     downloading: "Downloading {pct}%. Try again when it finishes.",
     running: "Extracting tags…",
+    scores: "Confidence",
     charTags: "Character / series tags",
     generalTags: "General tags",
   },

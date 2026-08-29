@@ -6,7 +6,12 @@ import { useImageInput } from "../store/imageInput";
 import { useUi } from "../store/ui";
 import { ask } from "../store/ask";
 import { toast } from "../store/toast";
-import { applyMeta, applyMetaParams, applyMetaVibes, applyRecordedBase } from "./GalleryMeta";
+import {
+  applyMeta,
+  applyMetaParams,
+  applyMetaVibes,
+  applyRecordedBase,
+} from "./GalleryMeta";
 import { usePrompt } from "../store/prompt";
 import type { ShotEnv } from "../store/workspace";
 import { api } from "../lib/backend";
@@ -179,7 +184,8 @@ export function ImageActions({
       } else applyMeta(m, "all");
       // ★베이스 이미지는 **그림에 안 남는다** — 기록에서 가져온다 (`applyRecordedBase` 의 ★주).
       //   ★구조를 못 찾은 옛 그림에도 건다: 베이스가 기록에 남는 것과 구조가 남는 것은 별개다
-      if (loadBase) await applyRecordedBase(await loadBase().catch(() => null), name);
+      if (loadBase)
+        await applyRecordedBase(await loadBase().catch(() => null), name);
       toast(t("act.applied"));
     } catch (e) {
       toast(String(e), "warn");
@@ -266,9 +272,18 @@ export function ImageActions({
     if (!upscale || busy) return;
     setBusy(true);
     try {
-      const target = ensureFile ? await ensureFile() : upscale.file;
-      if (!target) return;
-      sendToTagger({ name: target.split("/").pop() ?? target, rel: `${upscale.ws}/${target}` });
+      // ★여러 장 골랐으면 전부 싣는다 (사용자 지시 2026-08-29: "다중 선택도 대응")
+      const files =
+        isMulti && upscale.files?.length
+          ? upscale.files
+          : [ensureFile ? await ensureFile() : upscale.file];
+      const items = files
+        .filter((f): f is string => !!f)
+        .map((f) => ({
+          name: f.split("/").pop() ?? f,
+          rel: `${upscale.ws}/${f}`,
+        }));
+      if (items.length) sendToTagger(items);
     } finally {
       setBusy(false);
     }
@@ -286,67 +301,80 @@ export function ImageActions({
           flexWrap: "wrap",
         }}
       >
+        {/* ★★왼쪽 셋(프롬프트 보기·설정 불러오기·복제)도 **아이콘**이다 (사용자 지시 2026-08-29).
+            2026-08-19 에는 「무엇을 어디로」가 걸린 일이라 글자로 뒀었는데, Tagger 가 아이콘으로
+            끼면서 줄이 길어져 셋도 아이콘으로 바꿨다. 아이콘 단추는 **툴팁이 이름**이다.
+            · 프롬프트 보기 = 태그 · Tagger = 태그+반짝(추출) · 설정 = 슬라이더 · 복제 = 겹친 판 */}
         {loadMeta && !isMulti && (
-          <>
-            {/* ★★맨 왼쪽 셋(보기·설정·복제)은 **글자**다 (사용자 지시 2026-08-19).
-                셋 다 「무엇을 어디로」가 걸린 일이라 그림 하나로는 뜻이 안 잡힌다.
-                오른쪽 무리(인페인트·강화·업스케일·탐색기·보관)는 아이콘이다. */}
-            <button data-act-prompt onClick={() => void showPrompt()} disabled={busy} style={btn}>
-              {t("act.showPrompt")}
-            </button>
-            {/* ★Tagger로 보내기 — 「프롬프트 보기」 바로 오른쪽, 아이콘으로 (사용자 지시 2026-08-29).
-                워크스페이스 파일에만 뜻이 있다 (`upscale` 과 같은 조건). 아이콘 단추라 툴팁이 이름이다. */}
-            {upscale && (
-              <button
-                data-act-tagger
-                onClick={() => void toTagger()}
-                disabled={busy}
-                data-tip={t("act.tagger")}
-                style={iconBtn}
-              >
-                {Icon.tag}
-              </button>
-            )}
-            {!hideSettings && (
-              <button
-                data-act-settings
-                onClick={() => void useSettings()}
-                disabled={busy}
-                /* ★★**글자가 보이는 단추에는 툴팁을 안 단다** (사용자 지시 2026-08-26:
-                     *"불필요한 힌트들은 걷어내"*). 「설정 불러오기」라는 이름이 이미 있는데
-                     무엇이 딸려 오는지까지 늘어놓으면, 커서를 댈 때마다 아는 이야기가 뜬다.
-                   ★툴팁이 **이름을 대신하는 자리**(아이콘만 있는 단추)는 그대로 둔다. */
-                style={btn}
-              >
-                {t("act.settings")}
-              </button>
-            )}
-          </>
+          <button
+            data-act-prompt
+            onClick={() => void showPrompt()}
+            disabled={busy}
+            data-tip={t("act.showPrompt")}
+            style={iconBtn}
+          >
+            {Icon.tag}
+          </button>
+        )}
+        {/* ★Tagger로 보내기 — 「프롬프트 보기」 바로 오른쪽. 워크스페이스 파일에만 뜻이 있다
+            (`upscale` 과 같은 조건). ★여러 장 골랐을 때도 남는다 — 전부 싣는다. */}
+        {upscale && (
+          <button
+            data-act-tagger
+            onClick={() => void toTagger()}
+            disabled={busy}
+            data-tip={t("act.tagger")}
+            style={iconBtn}
+          >
+            {Icon.tagger}
+          </button>
+        )}
+        {loadMeta && !isMulti && !hideSettings && (
+          <button
+            data-act-settings
+            onClick={() => void useSettings()}
+            disabled={busy}
+            data-tip={t("act.settings")}
+            style={iconBtn}
+          >
+            {Icon.sliders}
+          </button>
         )}
         {/* ★「설정을 가져다 쓰는 것」 무리에 둔다 — 이 단추가 옮기는 것도 그림 한 장과
             **그 그림의 설정**이다 (페로픽스파이도 `.result-meta` 에서 「설정 불러오기」
             바로 옆에 「다른 워크스페이스로 복제」를 뒀다). 아래 줄은 이 그림을 **재료로**
             쓰는 무리라 성격이 다르다. */}
-        {/* ★아이콘만 쓰는 자리는 **이름을 툴팁이 말한다** (사용자 지시 2026-08-19:
-            아이콘화하되 비직관적인 것만 글자로). 글자로 남긴 것: 프롬프트 보기 · 설정 ·
-            i2i · 인페인트 · 업스케일(값이 붙는다) — 그림만으로는 뜻이 안 잡히는 것들이다. */}
+        {/* ★아이콘만 쓰는 자리는 **이름을 툴팁이 말한다** (사용자 지시 2026-08-19).
+            글자로 남긴 것: i2i · 인페인트 · 업스케일(값이 붙는다) — 그림만으로는 뜻이 안 잡히는
+            것들이다. 프롬프트 보기·설정·복제는 2026-08-29 에 아이콘으로 옮겼다 (위 ★★주). */}
         {onClone && (
           <button
             data-act-clone
             onClick={() => void runClone()}
             disabled={busy}
-            /* ★이름(「새 탭으로 복제」)이 보이므로 툴팁을 안 단다 — 위 ★★주와 같은 이유다 */
-            style={btn}
+            data-tip={t("act.clone")}
+            style={iconBtn}
           >
-            {t("act.clone")}
+            {Icon.duplicate}
           </button>
         )}
 
         {!isMulti && (
           <>
-            <span style={{ width: 1, alignSelf: "stretch", background: "var(--line)" }} />
+            <span
+              style={{
+                width: 1,
+                alignSelf: "stretch",
+                background: "var(--line)",
+              }}
+            />
 
-            <button data-act-i2i onClick={() => void toBase("img2img")} disabled={busy} style={btn}>
+            <button
+              data-act-i2i
+              onClick={() => void toBase("img2img")}
+              disabled={busy}
+              style={btn}
+            >
               {t("act.i2i")}
             </button>
             <button
@@ -361,7 +389,12 @@ export function ImageActions({
           </>
         )}
         {onEnhance && (
-          <button data-act-enhance onClick={onEnhance} data-tip={t("enhance.button")} style={iconBtn}>
+          <button
+            data-act-enhance
+            onClick={onEnhance}
+            data-tip={t("enhance.button")}
+            style={iconBtn}
+          >
             {Icon.spark}
           </button>
         )}
@@ -376,11 +409,18 @@ export function ImageActions({
                  (아래 `{cost} Anlas`), 「다시 그리지 않는다」는 이름으로 짐작되는 성질이다.
                ★못 하는 경우만 사유를 띄운다 — 그것은 눌러 보기 전에는 알 수 없다. */
             data-tip={cost < 0 ? t("upscale.tooLarge") : t("upscale.button")}
-            style={{ ...btn, display: "inline-flex", alignItems: "center", opacity: cost < 0 ? 0.45 : 1 }}
+            style={{
+              ...btn,
+              display: "inline-flex",
+              alignItems: "center",
+              opacity: cost < 0 ? 0.45 : 1,
+            }}
           >
             {/* ★이름은 아이콘이 말하고(툴팁도 있다), **값은 글자로 남긴다** —
                 누르면 얼마가 나가는지가 안전장치다 (v2 의 분해 표기와 같은 뜻) */}
-            <span style={{ display: "grid", placeItems: "center" }}>{Icon.scaling}</span>
+            <span style={{ display: "grid", placeItems: "center" }}>
+              {Icon.scaling}
+            </span>
             <span style={{ marginLeft: 5, color: "var(--ink-faint)" }}>
               {cost < 0 ? "-" : `${cost} Anlas`}
             </span>
@@ -391,7 +431,10 @@ export function ImageActions({
             data-act-reveal
             onClick={() =>
               void (async () => {
-                const path = typeof revealPath === "function" ? await revealPath() : revealPath;
+                const path =
+                  typeof revealPath === "function"
+                    ? await revealPath()
+                    : revealPath;
                 if (!path) return;
                 await api(revealApi, {
                   method: "POST",
@@ -436,66 +479,74 @@ export function ImageActions({
             styles.css:380 "길이가 바뀌어도 앞 버튼들이 안 밀린다").
             ★시드와 해상도는 **한 덩어리**로 — 따로 두면 줄이 넘칠 때 해상도만 다음 줄로
               떨어진다 (실측 2026-08-05) */}
-        <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "var(--sp-2)", flexShrink: 0 }}>
-        {seed !== undefined && !isMulti && (
-          <button
-            data-act-seed
-            /* ★★누르면 **복사하고 지금 시드로 넣는다** (사용자 지시 2026-08-21).
+        <span
+          style={{
+            marginLeft: "auto",
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--sp-2)",
+            flexShrink: 0,
+          }}
+        >
+          {seed !== undefined && !isMulti && (
+            <button
+              data-act-seed
+              /* ★★누르면 **복사하고 지금 시드로 넣는다** (사용자 지시 2026-08-21).
                  ★한때 「그 시드로 고정」이었다가 복사로 바뀐 적이 있는데, 그때 문제는
                    *동작*이 아니라 **강조가 계속 남는 것**이었다 (지금 시드와 같아지면 눌린
                    상태처럼 보였다). 강조를 커서 올린 동안만으로 고친 뒤라 둘 다 해도 된다.
                  ★**시드 규칙(고정/랜덤)은 건드리지 않는다** — 사용자가 고른 것이다. */
-            onClick={() => {
-              useGen.getState().set("seed", Number(seed));
-              void navigator.clipboard?.writeText(String(seed));
-              toast(t("act.seedApplied", { n: seed }));
-            }}
-            onPointerEnter={() => setSeedHot(true)}
-            onPointerLeave={() => setSeedHot(false)}
-            style={{
-              border: "none",
-              background: "none",
-              padding: "0 2px",
-              fontSize: "var(--text-2xs)",
-              fontFamily: "var(--font-mono)",
-              fontVariantNumeric: "tabular-nums",
-              /* ★★**자리를 미리 잡아 둔다** (사용자 지시 2026-08-25: *"고정폭으로. 시드랑
+              onClick={() => {
+                useGen.getState().set("seed", Number(seed));
+                void navigator.clipboard?.writeText(String(seed));
+                toast(t("act.seedApplied", { n: seed }));
+              }}
+              onPointerEnter={() => setSeedHot(true)}
+              onPointerLeave={() => setSeedHot(false)}
+              style={{
+                border: "none",
+                background: "none",
+                padding: "0 2px",
+                fontSize: "var(--text-2xs)",
+                fontFamily: "var(--font-mono)",
+                fontVariantNumeric: "tabular-nums",
+                /* ★★**자리를 미리 잡아 둔다** (사용자 지시 2026-08-25: *"고정폭으로. 시드랑
                    해상도 텍스트 길이 변해도 UI 막 이동 안 하게"*). 시드는 한 자리에서
                    열 자리까지 오가는데, 장을 넘길 때마다 옆 표시가 따라 밀리면 눈이 쫓아간다.
                  ★`ch` 는 고정폭 글꼴의 **글자 한 칸**이라 자릿수와 정확히 맞는다
                    (`seed ` 다섯 칸 + 열 자리). */
-              minWidth: "15ch",
-              textAlign: "right",
-              cursor: "pointer",
-              textDecoration: seedHot ? "underline" : undefined,
-              color: seedHot ? "var(--accent)" : "var(--ink-faint)",
-            }}
-          >
-            seed {seed}
-          </button>
-        )}
-        {dims && !isMulti && (
-          <span
-            data-act-res
-            style={{
-              flexShrink: 0,
-              fontSize: "var(--text-2xs)",
-              /* ★시드와 **같은 글꼴·같은 요령**이다 — 한 덩어리로 읽히고 폭도 안 흔들린다 */
-              fontFamily: "var(--font-mono)",
-              fontVariantNumeric: "tabular-nums",
-              minWidth: "11ch",
-              textAlign: "right",
-              color: "var(--ink-faint)",
-            }}
-          >
-            {dims.w}×{dims.h}
-          </span>
-        )}
-        {/* ★★**맨 오른쪽 끝**이다 (사용자 지시 2026-08-25: *"확대축소는 최우측에. 현재
+                minWidth: "15ch",
+                textAlign: "right",
+                cursor: "pointer",
+                textDecoration: seedHot ? "underline" : undefined,
+                color: seedHot ? "var(--accent)" : "var(--ink-faint)",
+              }}
+            >
+              seed {seed}
+            </button>
+          )}
+          {dims && !isMulti && (
+            <span
+              data-act-res
+              style={{
+                flexShrink: 0,
+                fontSize: "var(--text-2xs)",
+                /* ★시드와 **같은 글꼴·같은 요령**이다 — 한 덩어리로 읽히고 폭도 안 흔들린다 */
+                fontFamily: "var(--font-mono)",
+                fontVariantNumeric: "tabular-nums",
+                minWidth: "11ch",
+                textAlign: "right",
+                color: "var(--ink-faint)",
+              }}
+            >
+              {dims.w}×{dims.h}
+            </span>
+          )}
+          {/* ★★**맨 오른쪽 끝**이다 (사용자 지시 2026-08-25: *"확대축소는 최우측에. 현재
             위치는 시드 때문에 자꾸 위치가 바뀜"*). 시드·해상도는 **있을 때만** 뜨는 값이라
             (미저장 그림에는 없다) 그 앞에 두면 그림을 넘길 때마다 좌우로 밀린다.
             줄의 끝에 붙여 두면 무엇이 있든 자리가 하나다. */}
-        {right}
+          {right}
         </span>
       </div>
 
@@ -508,11 +559,21 @@ export function ImageActions({
  *
  *  ★적용 버튼을 달지 않는다 — 적용은 옆의 「설정 불러오기」 하나뿐이다.
  *    같은 일을 두 곳에서 하게 두면 "어느 쪽이 뭘 바꾸나"가 흐려진다. */
-function PromptView({ meta, onClose }: { meta: ImageMeta; onClose: () => void }) {
+function PromptView({
+  meta,
+  onClose,
+}: {
+  meta: ImageMeta;
+  onClose: () => void;
+}) {
   const t = useI18n((s) => s.t);
   const rows: { label: string; text: string; accent?: string }[] = [
     { label: t("prompt.tabPrompt"), text: meta.prompt ?? "" },
-    { label: t("prompt.tabUc"), text: meta.negative ?? "", accent: "var(--uc-c)" },
+    {
+      label: t("prompt.tabUc"),
+      text: meta.negative ?? "",
+      accent: "var(--uc-c)",
+    },
     ...(meta.characters ?? []).map((c, i) => ({
       label: t("cards.charN", { n: i + 1 }),
       text: c.prompt,
@@ -548,12 +609,18 @@ function PromptView({ meta, onClose }: { meta: ImageMeta; onClose: () => void })
           gap: "var(--sp-3)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)" }}>
+        <div
+          style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)" }}
+        >
           <b style={{ fontSize: "var(--text-md)" }}>{t("act.promptOf")}</b>
           <span style={{ flex: 1 }} />
           <button
             data-prompt-copy
-            onClick={() => void navigator.clipboard?.writeText(all).then(() => toast(t("act.copied")))}
+            onClick={() =>
+              void navigator.clipboard
+                ?.writeText(all)
+                .then(() => toast(t("act.copied")))
+            }
             style={btn}
           >
             {t("act.copy")}
@@ -566,15 +633,29 @@ function PromptView({ meta, onClose }: { meta: ImageMeta; onClose: () => void })
           <div key={i}>
             {/* ★줄마다 복사 단추 (사용자 지시 2026-08-19) — 위의 것은 **전부**를 복사하는데,
                 캐릭터 하나만 다른 데 옮겨 쓰는 일이 더 잦다 */}
-            <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
-              <div style={{ flex: 1, fontSize: "var(--text-2xs)", color: r.accent ?? "var(--ink-dim)" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--sp-2)",
+              }}
+            >
+              <div
+                style={{
+                  flex: 1,
+                  fontSize: "var(--text-2xs)",
+                  color: r.accent ?? "var(--ink-dim)",
+                }}
+              >
                 {r.label}
               </div>
               <button
                 data-prompt-copy-one={i}
                 disabled={!r.text}
                 onClick={() =>
-                  void navigator.clipboard?.writeText(r.text).then(() => toast(t("act.copied")))
+                  void navigator.clipboard
+                    ?.writeText(r.text)
+                    .then(() => toast(t("act.copied")))
                 }
                 style={{
                   display: "grid",

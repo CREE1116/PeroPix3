@@ -1,7 +1,11 @@
 /** SVG 아이콘 — 이모지·기호 문자를 쓰지 않는다 (CLAUDE.md ★절).
  *  전부 currentColor 를 따르므로 주변 글자색을 상속한다. */
 
-const s = (d: React.ReactNode, size = 16, extra?: React.SVGProps<SVGSVGElement>) => (
+const s = (
+  d: React.ReactNode,
+  size = 16,
+  extra?: React.SVGProps<SVGSVGElement>,
+) => (
   <svg
     viewBox="0 0 24 24"
     width={size}
@@ -19,7 +23,13 @@ const s = (d: React.ReactNode, size = 16, extra?: React.SVGProps<SVGSVGElement>)
 
 /** 채워진 아이콘 (별표처럼 켜짐/꺼짐이 있는 것) */
 const f = (d: React.ReactNode, size = 16) => (
-  <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" stroke="none">
+  <svg
+    viewBox="0 0 24 24"
+    width={size}
+    height={size}
+    fill="currentColor"
+    stroke="none"
+  >
     {d}
   </svg>
 );
@@ -27,7 +37,13 @@ const f = (d: React.ReactNode, size = 16) => (
 /** 밖에서 가져온 **채워진** 아이콘 — 원본 좌표계를 그대로 둔다.
  *  ★24 판으로 다시 그리지 않는다: 같은 그림인데 자리마다 두께가 달라진다. */
 const fv = (d: string, box: string, size = 16) => (
-  <svg viewBox={box} width={size} height={size} fill="currentColor" stroke="none">
+  <svg
+    viewBox={box}
+    width={size}
+    height={size}
+    fill="currentColor"
+    stroke="none"
+  >
     <path d={d} />
   </svg>
 );
@@ -44,12 +60,20 @@ const PAW_D =
 const BLOSSOM = (
   <>
     {[0, 72, 144, 216, 288].map((a) => (
-      <ellipse key={a} cx="12" cy="6.9" rx="2.9" ry="4.2" transform={`rotate(${a} 12 12)`} />
+      <ellipse
+        key={a}
+        cx="12"
+        cy="6.9"
+        rx="2.9"
+        ry="4.2"
+        transform={`rotate(${a} 12 12)`}
+      />
     ))}
   </>
 );
 
-const STAR_D = "M12 3.6l2.5 5.2 5.7.8-4.1 4 1 5.7-5.1-2.7-5.1 2.7 1-5.7-4.1-4 5.7-.8z";
+const STAR_D =
+  "M12 3.6l2.5 5.2 5.7.8-4.1 4 1 5.7-5.1-2.7-5.1 2.7 1-5.7-4.1-4 5.7-.8z";
 
 export const Icon = {
   /** 잠금 — 슬롯을 생성에서 뺀다 */
@@ -83,7 +107,10 @@ export const Icon = {
   ),
   plus: s(<path d="M12 5v14M5 12h14" />),
   /** 태그를 그 자리에서 고칠 수 있다는 표시 (목차 행) */
-  pencil: s(<path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8.5 17.5 4 19l1.5-4.5z" />, 12),
+  pencil: s(
+    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8.5 17.5 4 19l1.5-4.5z" />,
+    12,
+  ),
   check: s(<path d="M4.5 12.5 9 17l10.5-10" />, 11),
   star: s(<path d={STAR_D} />),
   starOn: f(<path d={STAR_D} />),
@@ -104,6 +131,17 @@ export const Icon = {
     <>
       <path d="M12.6 2.9H4.4a1.5 1.5 0 0 0-1.5 1.5v8.2a1.5 1.5 0 0 0 .44 1.06l8.4 8.4a1.5 1.5 0 0 0 2.12 0l8.2-8.2a1.5 1.5 0 0 0 0-2.12l-8.4-8.4a1.5 1.5 0 0 0-1.06-.44z" />
       <circle cx="7.6" cy="7.6" r="1.4" />
+    </>,
+    14,
+  ),
+  /** Tagger로 보내기 — 태그 + 반짝. ★같은 태그 모양에 **추출한다는 표시**를 얹었다 (사용자 지시
+   *  2026-08-29: 태그 하나만 있으면 「프롬프트 보기」처럼 보인다. 그래서 태그 하나는 프롬프트
+   *  보기가 쓰고, 여기는 무언가 돌아간다는 마크를 붙인다). 반짝은 `spark` 의 작은 것과 같은 꼴. */
+  tagger: s(
+    <>
+      <path d="M11.2 4.4H4.4a1.5 1.5 0 0 0-1.5 1.5v6.8a1.5 1.5 0 0 0 .44 1.06l7.3 7.3a1.5 1.5 0 0 0 2.12 0l6.8-6.8a1.5 1.5 0 0 0 0-2.12l-7.3-7.3a1.5 1.5 0 0 0-1.06-.44z" />
+      <circle cx="7.4" cy="8.4" r="1.3" />
+      <path d="M18.6 2.2l.9 2.3 2.3.9-2.3.9-.9 2.3-.9-2.3-2.3-.9 2.3-.9z" />
     </>,
     14,
   ),
@@ -166,7 +204,10 @@ export const Icon = {
   /** 블록 저장소 — 갈피(북마크). 저장소 열기 단추와 「저장소에 넣기」가 같은 모양을 쓴다 */
   bookmark: s(<path d="M6 4h12v16l-6-4.5L6 20z" />, 13),
   /** 생성 — 예전엔 ✦ 글자를 썼다 */
-  spark12: s(<path d="M12 3l2.1 5.6L20 11l-5.9 2.4L12 19l-2.1-5.6L4 11l5.9-2.4z" />, 11),
+  spark12: s(
+    <path d="M12 3l2.1 5.6L20 11l-5.9 2.4L12 19l-2.1-5.6L4 11l5.9-2.4z" />,
+    11,
+  ),
   /** 주사위 — 시드를 그 자리에서 새로 뽑는다.
    *  ★눈이 **다섯**이다 (사용자 지적 2026-08-19: 네 귀퉁이만 찍으면 주사위로 안 읽힌다). */
   dice: s(
@@ -195,7 +236,10 @@ export const Icon = {
     </>,
   ),
   /** 폴더 — 파일 관리의 트리 */
-  folder: s(<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />, 14),
+  folder: s(
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />,
+    14,
+  ),
   folderOpen: s(
     <>
       <path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V10" />
@@ -261,7 +305,12 @@ export const Icon = {
   chevronRight: s(<path d="M9 6l6 6-6 6" />),
   chevronLeft: s(<path d="M15 6l-6 6 6 6" />),
   /** 접기/펼치기 전체 */
-  collapseAll: s(<><path d="M7 9l5-5 5 5" /><path d="M7 15l5 5 5-5" /></>),
+  collapseAll: s(
+    <>
+      <path d="M7 9l5-5 5 5" />
+      <path d="M7 15l5 5 5-5" />
+    </>,
+  ),
   /** **꽉차게** — 네 귀에서 안쪽으로 모이는 화살표 (그림을 상자에 맞춘다).
    *  ★사용자 지시 2026-08-25: 배율 조절의 두 단추를 글자 대신 아이콘으로. */
   fitBox: s(

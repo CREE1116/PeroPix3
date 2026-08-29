@@ -265,6 +265,7 @@ export const ja: Dict = {
     dlStarted: "ダウンロードを開始しました。終わったらもう一度お試しください。",
     downloading: "ダウンロード中 {pct}%。終わったらもう一度お試しください。",
     running: "タグを抽出中…",
+    scores: "一致率",
     charTags: "キャラクター・作品タグ",
     generalTags: "一般タグ",
   },

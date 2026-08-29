@@ -271,6 +271,7 @@ export const ko: Dict = {
     dlStarted: "내려받기 시작. 끝나면 다시 시도해 주세요.",
     downloading: "내려받는 중 {pct}%. 끝나면 다시 시도해 주세요.",
     running: "태그를 뽑는 중…",
+    scores: "일치율",
     charTags: "캐릭터·작품 태그",
     generalTags: "일반 태그",
   },
