@@ -6,6 +6,7 @@ import { canEnableChar } from "../store/gen";
 import { StyleSection, CharSection, JoinZone, type SectionProps } from "./PromptSections";
 import { BlockLibButton } from "../blocks/BlockDrawer";
 import { WildcardButton } from "./WildcardModal";
+import { TranslateButton } from "./TranslateButton";
 import { OptionsPanel } from "./OptionsPanel";
 import { Category } from "./Category";
 import { CharPositionToggle, CharStackedWarning } from "./CharPositioner";
@@ -44,6 +45,7 @@ export function PromptPanel({ onThumb }: SectionProps) {
           label={t("prompt.baseBox")}
           right={
             <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+              <TranslateButton />
               <WildcardButton />
               <BlockLibButton />
             </span>

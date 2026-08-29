@@ -271,6 +271,13 @@ export const en = {
     generalTags: "General tags",
   },
 
+  translate: {
+    hint: "Translate mode (hover a chip to translate, click to replace)",
+    on: "Translate mode is on. Hover a chip to see the translation, click to replace it. Esc turns it off.",
+    busy: "Translating…",
+    replaced: "{a} → {b}",
+  },
+
   gen: {
     needToken: "Enter your NAI token in Settings to generate.",
     perSlot: "Per scene",
@@ -364,6 +371,7 @@ export const en = {
     toGallery: "Add to gallery",
     toGalleryHint: "Keep as-is, without generating",
     added: "Added to the gallery",
+    addedMany: "Added {n} images to the gallery",
     noMetaAsk: "This image carries no generation settings. Add it to the gallery anyway?",
     noBytes: "Could not read the image data.",
     reproNo: "This image was generated using {why} and cannot be reproduced from its metadata",
@@ -802,6 +810,7 @@ export const en = {
     undone: "Undone: {what}",
     undoTag: "chip removal",
     undoWeight: "weight change",
+    undoTranslate: "translation",
     undoBlockAdd: "adding a block",
     undoBlockRemove: "removing a block",
     undoBlockOn: "toggling a block",

@@ -26,6 +26,9 @@ export function TipLayer() {
   const box = useRef<HTMLDivElement>(null);
   const timer = useRef<number | null>(null);
   const target = useRef<HTMLElement | null>(null);
+  /** ★뜬 뒤에 `data-tip` 이 바뀌면 글을 갈아 끼운다 — 번역 모드의 칩은 툴팁이 먼저 뜨고
+   *  번역이 나중에 온다 (`Chip`). 이것이 없으면 「번역 중…」에서 멈춘다. */
+  const watch = useRef<MutationObserver | null>(null);
 
   useEffect(() => {
     const stop = () => {
@@ -34,6 +37,8 @@ export function TipLayer() {
     };
     const hide = () => {
       stop();
+      watch.current?.disconnect();
+      watch.current = null;
       target.current = null;
       setTip(null);
     };
@@ -54,6 +59,12 @@ export function TipLayer() {
         y: below ? r.bottom + 8 : r.top - 8,
         below,
       });
+      watch.current?.disconnect();
+      watch.current = new MutationObserver(() => {
+        const now = el.getAttribute("data-tip");
+        if (now) setTip((p) => (p ? { ...p, text: now } : p));
+      });
+      watch.current.observe(el, { attributes: true, attributeFilter: ["data-tip"] });
     };
     const enter = (e: Event) => {
       /* ★★**끌고 있는 동안에는 안 뜬다** (사용자 지적 2026-08-28: *"탭을 드래그하다가 잠깐

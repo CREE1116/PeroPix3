@@ -270,6 +270,13 @@ export const ja: Dict = {
     generalTags: "一般タグ",
   },
 
+  translate: {
+    hint: "翻訳モード（チップにホバーで翻訳、クリックで置き換え）",
+    on: "翻訳モードをオンにしました。チップにホバーすると翻訳が表示され、クリックで置き換わります。Esc でオフ。",
+    busy: "翻訳中…",
+    replaced: "{a} → {b}",
+  },
+
   gen: {
     needToken: "設定で NAI トークンを入れると生成できます。",
     perSlot: "スロットごと",
@@ -362,6 +369,7 @@ export const ja: Dict = {
     toGallery: "ギャラリーに追加",
     toGalleryHint: "生成せずそのまま保存",
     added: "ギャラリーに入れました",
+    addedMany: "ギャラリーに {n} 枚入れました",
     noMetaAsk: "生成設定が残っていない画像です。それでもギャラリーに入れますか？",
     noBytes: "画像データを読めませんでした。",
     reproNo: "この画像は {why} 使って作ったため、メタデータだけでは同じものが出ません",
@@ -800,6 +808,7 @@ export const ja: Dict = {
     undone: "元に戻しました: {what}",
     undoTag: "チップ削除",
     undoWeight: "重み変更",
+    undoTranslate: "翻訳置き換え",
     undoBlockAdd: "ブロック追加",
     undoBlockRemove: "ブロック削除",
     undoBlockOn: "ブロックの切り替え",

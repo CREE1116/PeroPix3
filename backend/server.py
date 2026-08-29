@@ -51,6 +51,7 @@ from chats import Chats
 import meta
 import guide as guide_mod
 import tools as tools_mod  # ★별칭 필수 — 아래에서 `tools` 라는 이름을 Tools 인스턴스가 가져간다
+import translate as translate_mod
 import trash
 import agentlog
 import migrate_terms
@@ -2672,6 +2673,22 @@ def tagger_run(body: TaggerRun):
         raise HTTPException(409, str(e))
     out["preview"] = tools_mod.thumb_image(img, tools_mod.PREVIEW_MAX)
     return out
+
+
+# ── 번역 (v2 번역 모드 이식, 사용자 지시 2026-08-29) — 화면이 못 나가니 여기서 대신 부른다 ──
+class TranslateReq(BaseModel):
+    text: str
+    sl: str = "en"
+    tl: str = "ko"
+
+
+@app.post("/api/translate")
+async def translate_text(body: TranslateReq):
+    """태그 하나를 번역한다. ★실패는 502 로 말한다 — 원문을 돌려주면 「안 되는데 조용하다」가 된다."""
+    try:
+        return {"text": await translate_mod.translate(body.text, body.sl, body.tl)}
+    except Exception as e:  # noqa: BLE001 — 바깥 서비스라 무엇이 올지 모른다
+        raise HTTPException(502, f"번역 실패: {e}")
 
 
 @app.get("/api/censor/models")

@@ -276,6 +276,14 @@ export const ko: Dict = {
     generalTags: "일반 태그",
   },
 
+  /** 번역 모드 (v2 이식, 2026-08-29) */
+  translate: {
+    hint: "번역 모드 (칩에 마우스를 올리면 번역, 클릭하면 그 말로 치환)",
+    on: "번역 모드를 켰습니다. 칩에 마우스를 올리면 번역이 뜨고, 클릭하면 그 말로 바뀝니다. Esc 로 끕니다.",
+    busy: "번역 중…",
+    replaced: "{a} → {b}",
+  },
+
   gen: {
     needToken: "설정에서 NAI 토큰을 넣어야 생성됩니다.",
     perSlot: "씬당",
@@ -373,6 +381,7 @@ export const ko: Dict = {
     toGallery: "갤러리에 추가",
     toGalleryHint: "생성하지 않고 보관함에 그대로 넣기",
     added: "갤러리에 넣었습니다",
+    addedMany: "갤러리에 {n}장을 넣었습니다",
     noMetaAsk: "생성 설정이 남아 있지 않은 그림입니다. 그래도 갤러리에 넣을까요?",
     noBytes: "그림 데이터를 읽지 못했습니다.",
     reproNo: "이 그림은 {why} 쓰고 만든 것이라 메타데이터만으로는 그대로 다시 나오지 않습니다",
@@ -831,6 +840,7 @@ export const ko: Dict = {
     undone: "되돌렸습니다: {what}",
     undoTag: "칩 지우기",
     undoWeight: "가중치",
+    undoTranslate: "번역 치환",
     undoBlockAdd: "블록 추가",
     undoBlockRemove: "블록 삭제",
     undoBlockOn: "블록 켜고끄기",

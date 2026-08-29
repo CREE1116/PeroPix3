@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { wheelIsOver } from "../lib/wheelAt";
 import { COLOR_HEX, fmtW, weightLevel, type Tag } from "../lib/blocks";
 import { useUi } from "../store/ui";
+import { peekTranslation, translateTag, useTranslate } from "../store/translate";
+import { t as tr } from "../i18n";
 
 /** 돌리는 동안 얼려 둘 칩 폭 — **바꾸기 전에** 계산한다.
  *
@@ -78,6 +80,21 @@ export function Chip({
   /** 가중치 강조를 켜 두나 (설정) — 끄면 **평범한 칩**으로 보인다 (겹침 표시는 남는다) */
   const hl = useUi((u) => u.weightHl);
   const lv = hl ? weightLevel(tag.w) : 0;
+
+  /** 번역 모드 (v2 이식, 사용자 지시 2026-08-29) — 켜져 있으면 **툴팁이 번역**이다.
+   *  마우스를 올리는 순간 받아 오고, 툴팁 층은 뜬 뒤에 바뀐 글도 따라간다 (`Tip` 의 관찰자).
+   *  ★받아 둔 것은 곧바로 낸다 — 같은 태그를 두 번 묻지 않는다 (`peekTranslation`). */
+  const trOn = useTranslate((s) => s.on);
+  const [trText, setTrText] = useState<string | null>(() => peekTranslation(tag.t) ?? null);
+  useEffect(() => {
+    setTrText(peekTranslation(tag.t) ?? null);
+  }, [tag.t]);
+  const onTrEnter = () => {
+    if (!trOn || trText != null) return;
+    translateTag(tag.t)
+      .then((s) => setTrText(s))
+      .catch((e) => setTrText(String(e)));
+  };
 
   /** ★★가중치는 **Alt + 휠**이다 (사용자 지시 2026-08-21).
    *
@@ -202,7 +219,8 @@ export function Chip({
         e.preventDefault();
         onRemove();
       }}
-      data-tip={readOnly ? tag.t : undefined}
+      onPointerEnter={trOn ? onTrEnter : undefined}
+      data-tip={trOn ? (trText ?? tr("translate.busy")) : readOnly ? tag.t : undefined}
       style={{
         display: "inline-flex",
         alignItems: "center",
