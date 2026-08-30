@@ -70,15 +70,17 @@ from workspace import SpecMismatch, Store, safe_name
 # ★리로드 모드에서는 워커가 `main()` 을 안 거치고 모듈만 다시 읽는다 — 포트를 환경에서 받는다
 CURRENT_PORT = int(os.environ.get("PEROPIX_BACKEND_PORT") or 8770)
 def _app_dir() -> Path:
-    """앱의 **뿌리** — 사용자 것(`workspaces`·`gallery`·`logs`·`data`)이 사는 자리.
-
-    ★★배포판은 앱 것을 `app/` 안에 모아 둔다 (사용자 지시 2026-08-27: *"유저가 접근하는
-      폴더는 한정적인데 너무 다 나와 있는 느낌"*). 그래서 이 파일은 `app/backend/server.py`
-      에 있고, 뿌리는 **한 단계 더 위**다. 저장소에서 돌릴 때는 `backend/server.py` 라
-      두 단계면 된다 — 폴더 이름으로 가른다.
-    ★껍데기도 같은 규칙을 쓴다 (`src-tauri/src/backend.rs` 의 `inner`). 두 곳이 어긋나면
-      앱과 백엔드가 서로 다른 창고를 본다."""
+    """앱의 **뿌리** — 사용자 것(`workspaces`·`gallery`·`logs`·`data`)이 사는 자리."""
+    if os.environ.get("PEROPIX_APP_DIR"):
+        return Path(os.environ["PEROPIX_APP_DIR"])
     here = Path(__file__).resolve().parent.parent
+    if "Contents/Resources/app" in str(here):
+        bundle_parent = here.parents[3]
+        if str(bundle_parent).startswith("/Applications") or str(bundle_parent).startswith("/System"):
+            docs = Path.home() / "Documents" / "PeroPix"
+            docs.mkdir(parents=True, exist_ok=True)
+            return docs
+        return bundle_parent
     return here.parent if here.name == "app" else here
 
 

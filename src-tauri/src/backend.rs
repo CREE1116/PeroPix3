@@ -93,7 +93,39 @@ pub fn backend_port() -> u16 {
 ///   그래서 이 값이 곧 **인스턴스의 신원**이다 — 웹뷰 저장소를 가르는 것도, 같은 폴더를
 ///   두 번 열지 못하게 막는 것도, 화면이 「내 백엔드가 맞나」를 묻는 것도 이 값으로 한다.
 pub fn root() -> PathBuf {
-    find_repo_root().unwrap_or_else(app_dir)
+    if let Ok(p) = std::env::var("PEROPIX_APP_DIR").map(PathBuf::from) {
+        return p;
+    }
+    if let Some(r) = find_repo_root() {
+        return r;
+    }
+    let exe_dir = app_dir();
+    #[cfg(target_os = "macos")]
+    {
+        // .app 번들 내부인지 확인 (예: PeroPix.app/Contents/MacOS)
+        if exe_dir.ends_with("Contents/MacOS") {
+            if let Some(bundle_parent) = exe_dir
+                .parent()
+                .and_then(|p| p.parent())
+                .and_then(|p| p.parent())
+            {
+                // 포터블 폴더 (.app 옆에 workspaces 또는 data 가 있거나 쓰기 가능)
+                if bundle_parent.join("workspaces").is_dir() || bundle_parent.join("data").is_dir() {
+                    return bundle_parent.to_path_buf();
+                }
+                // /Applications 또는 /System 등 읽기 전용/시스템 폴더인 경우 ~/Documents/PeroPix 사용
+                if bundle_parent.starts_with("/Applications") || bundle_parent.starts_with("/System") {
+                    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+                        let docs = home.join("Documents").join("PeroPix");
+                        let _ = std::fs::create_dir_all(&docs);
+                        return docs;
+                    }
+                }
+                return bundle_parent.to_path_buf();
+            }
+        }
+    }
+    exe_dir
 }
 
 /// 자식을 **Job Object 에 매단다** — 부모가 어떻게 죽든 함께 내려간다.
@@ -189,6 +221,17 @@ fn app_dir() -> PathBuf {
 /// ★저장소에서 개발할 때는 `app/` 이 없다. 그때는 뿌리가 곧 그 자리다 — 두 배치를
 ///   **한 함수가** 가른다. 자리를 아는 곳이 여럿이면 한쪽만 고쳐진다.
 pub fn inner(root: &Path) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        let res_app = app_dir()
+            .parent()
+            .unwrap_or(Path::new(""))
+            .join("Resources")
+            .join("app");
+        if res_app.join("backend").join("server.py").exists() {
+            return res_app;
+        }
+    }
     let nested = root.join("app");
     if nested.join("backend").join("server.py").exists() {
         nested
@@ -442,6 +485,7 @@ pub fn spawn() -> std::io::Result<Child> {
         .arg(backend_port().to_string())
         // ★열쇠는 **환경변수로만** 넘긴다 — 명령줄에 실으면 작업 관리자에서 그대로 보인다
         .env("PEROPIX_KEY", backend_key())
+        .env("PEROPIX_APP_DIR", root.to_string_lossy().to_string())
         .current_dir(&root)
         .stdout(out.map(Stdio::from).unwrap_or_else(Stdio::null))
         .stderr(err.map(Stdio::from).unwrap_or_else(Stdio::null));
