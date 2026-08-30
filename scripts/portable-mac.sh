@@ -43,15 +43,9 @@ if [ "$SKIP_BUILD" = false ]; then
     npm run tauri build
 fi
 
-TAURI_APP="$ROOT_DIR/src-tauri/target/release/bundle/macos/PeroPix.app"
-if [ ! -d "$TAURI_APP" ]; then
-    echo "[오류] Tauri .app 번들이 없습니다: $TAURI_APP"
-    exit 1
-fi
-
 mkdir -p "$DIST_DIR" "$CACHE_DIR"
 
-# 2. .app 번들 복사 및 Resources/app 구조 준비
+# 2. .app 번들 준비
 echo "[2/4] PeroPix.app 번들 리소스 구성"
 KEEP_PY=false
 if [ "$SKIP_PYTHON" = true ] && [ -d "$INNER_DIR/python" ]; then
@@ -61,7 +55,50 @@ if [ "$SKIP_PYTHON" = true ] && [ -d "$INNER_DIR/python" ]; then
 fi
 
 rm -rf "$APP_BUNDLE"
-cp -R "$TAURI_APP" "$APP_BUNDLE"
+
+if [ -d "$TAURI_APP" ]; then
+    cp -R "$TAURI_APP" "$APP_BUNDLE"
+else
+    EXE="$ROOT_DIR/src-tauri/target/release/peropix"
+    if [ ! -f "$EXE" ]; then
+        echo "[오류] 실행 파일이 없습니다: $EXE (먼저 npm run tauri build)"
+        exit 1
+    fi
+    echo "[안내] 컴파일된 바이너리로 PeroPix.app 번들 구조를 생성합니다."
+    mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
+    cp "$EXE" "$APP_BUNDLE/Contents/MacOS/peropix"
+    chmod +x "$APP_BUNDLE/Contents/MacOS/peropix"
+    if [ -f "$ROOT_DIR/src-tauri/icons/icon.icns" ]; then
+        cp "$ROOT_DIR/src-tauri/icons/icon.icns" "$APP_BUNDLE/Contents/Resources/icon.icns"
+    fi
+    cat <<PLIST > "$APP_BUNDLE/Contents/Info.plist"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key>
+  <string>peropix</string>
+  <key>CFBundleIconFile</key>
+  <string>icon</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.mrm987.peropix</string>
+  <key>CFBundleName</key>
+  <string>PeroPix</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$VERSION</string>
+  <key>CFBundleVersion</key>
+  <string>$VERSION</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>10.13</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+</dict>
+</plist>
+PLIST
+fi
+
 mkdir -p "$INNER_DIR"
 
 # 3. 파이썬 런타임 환경 구성 (Contents/Resources/app/python)

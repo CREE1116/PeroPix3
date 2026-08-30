@@ -10,7 +10,7 @@ Lay scenes out on a lane, queue them once, and get the whole set.
 [![Release](https://img.shields.io/github/v/release/mrm987/PeroPix3?label=download&color=5865F2)](https://github.com/mrm987/PeroPix3/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/mrm987/PeroPix3/total?color=5865F2)](https://github.com/mrm987/PeroPix3/releases)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-informational)](LICENSE)
-![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-5865F2)
+![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 [![Website](https://img.shields.io/badge/website-peropix.mori--mo.com-5865F2)](https://peropix.mori-mo.com/)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-support-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/morimo_)
 
@@ -39,7 +39,7 @@ to a queue.
   upscaling run on the scene you already have, with its prompt and settings carried over.
   No round trip to the website and back.
 - **Censoring** — an on-device model finds the regions and covers them. Nothing leaves
-  your machine; you choose the method and the strength. Uses CoreML acceleration on Apple Silicon.
+  your machine; you choose the method and the strength.
 - **AI assistant** — hand it a workspace and describe what you want in words; it edits
   the prompts and queues the work. It asks before anything it cannot undo.
 
@@ -50,13 +50,14 @@ to a queue.
   settings — it starts with `pst-`.
 - **Generating costs Anlas.** Sizes and step counts within your plan's free limits cost
   nothing, and the generate button always shows the current price before you press it.
-- **Windows 10/11 or macOS (Apple Silicon / Intel).**
+- **Windows 10 or 11.** The WebView2 runtime is required and is usually already there.
 
 ## Install
 
-1. Download `PeroPix-<version>-win64.zip` (Windows) or `PeroPix-<version>-macos-<arch>.zip` (macOS) from the [latest release](https://github.com/mrm987/PeroPix3/releases/latest).
-2. Unzip it **somewhere you can write to** — your Documents or Home folder.
-3. Run `PeroPix.exe` (Windows) or `PeroPix` (macOS), open **Settings ▸ General**, and paste your token.
+1. Download `PeroPix-<version>-win64.zip` from the [latest release](https://github.com/mrm987/PeroPix3/releases/latest).
+2. Unzip it **somewhere you can write to** — your Documents folder, another drive.
+   Not inside `Program Files`.
+3. Run `PeroPix.exe`, open **Settings ▸ General**, and paste your token.
 
 That's it. Python ships inside the package; there is nothing else to install, and nothing
 is written to the registry. To move or remove PeroPix, move or delete the folder.

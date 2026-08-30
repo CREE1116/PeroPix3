@@ -10,7 +10,7 @@
 [![Release](https://img.shields.io/github/v/release/mrm987/PeroPix3?label=download&color=5865F2)](https://github.com/mrm987/PeroPix3/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/mrm987/PeroPix3/total?color=5865F2)](https://github.com/mrm987/PeroPix3/releases)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-informational)](LICENSE)
-![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-5865F2)
+![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 [![Website](https://img.shields.io/badge/website-peropix.mori--mo.com-5865F2)](https://peropix.mori-mo.com/ja/)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-support-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/morimo_)
 
@@ -24,7 +24,7 @@
 
 画像を作るのは NovelAI です。PeroPix はその手前に置く作業台です — 一枚ずつ出すのは難しく
 ありませんが、同じキャラクターをシーンだけ変えて二十枚となると話は別です。**変わらない
-部分は一度だけ書き、変わる部分だけを並べて、まとめてキューに積めます。**
+部分は一度だけ書き、変わる部分だけを並べて、まとめてキューに積みます。**
 
 - **シーンレーンとキュー** — シーン一つがカード一枚。違うところだけ埋めてレーンごとキュー
   に積めば、回っている間に次の準備を進められます。結果はそれを生んだシーンに紐づいたまま
@@ -38,7 +38,7 @@
   見ているシーンにそのままかけられます。プロンプトも設定も入ったままなので、公式サイトと
   行き来する必要がありません。
 - **検閲** — 端末内のモデルが隠す場所を見つけて覆います。外に出るものはなく、方式と強さは
-  自分で選べます。Apple Silicon では CoreML による高速推論に対応しています。
+  自分で選べます。
 - **AI アシスタント** — ワークスペースを預けて言葉で頼めば、プロンプトを直して処理を積んで
   くれます。取り消せないことは必ず先に尋ねます。
 
@@ -49,14 +49,15 @@
   `pst-` で始まります。
 - **生成には Anlas がかかります。** プランの無料範囲（サイズ・ステップ数）内なら無料で、
   生成ボタンは押す前に必ず現在の値を表示します。
-- **Windows 10/11 または macOS (Apple Silicon / Intel)。**
+- **Windows 10 または 11。** WebView2 ランタイムが必要で、通常はすでに入っています。
 
 ## インストール
 
 1. [最新リリース](https://github.com/mrm987/PeroPix3/releases/latest)から
-   `PeroPix-<バージョン>-win64.zip` (Windows) または `PeroPix-<バージョン>-macos-<arch>.zip` (macOS)をダウンロードします。
-2. **書き込みできる場所**に展開します — ドキュメントフォルダやホームディレクトリ。
-3. 実行ファイル（`PeroPix.exe` または `PeroPix`）を起動し、**設定 ▸ 一般**でトークンを貼り付けます。
+   `PeroPix-<バージョン>-win64.zip` をダウンロードします。
+2. **書き込みできる場所**に展開します — ドキュメントフォルダや別のドライブ。
+   `Program Files` の中は不可です。
+3. `PeroPix.exe` を起動し、**設定 ▸ 一般**でトークンを貼り付けます。
 
 以上です。Python はパッケージに同梱されているので別途インストールは不要で、レジストリにも
 何も書きません。移動や削除はフォルダごとで済みます。

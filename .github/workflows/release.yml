@@ -223,13 +223,17 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: PeroPix-macOS
-          path: _dist/PeroPix-*-macos-*.zip
+          path: |
+            _dist/PeroPix-*-macos-*.zip
+            _dist/PeroPix-*-macos-*.dmg
 
       - name: 릴리즈에 올린다
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: _dist/PeroPix-*-macos-*.zip
+          files: |
+            _dist/PeroPix-*-macos-*.zip
+            _dist/PeroPix-*-macos-*.dmg
           draft: true
           generate_release_notes: false
         env:
