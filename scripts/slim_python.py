@@ -102,12 +102,25 @@ def bundle(sp: Path, zpath: Path) -> tuple[list[Path], int]:
     return picked, files
 
 
+def find_site_packages(py: Path) -> Path | None:
+    for cand in [py / "Lib" / "site-packages", py / "lib" / "site-packages"]:
+        if cand.is_dir():
+            return cand
+    lib = py / "lib"
+    if lib.is_dir():
+        for sub in lib.glob("python3*"):
+            sp = sub / "site-packages"
+            if sp.is_dir():
+                return sp
+    return None
+
+
 def main() -> int:
     _utf8_out()
     py = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(sys.executable).parent
-    sp = py / "Lib" / "site-packages"
-    if not sp.is_dir():
-        print(f"[줄이기] site-packages 가 없다: {sp}")
+    sp = find_site_packages(py)
+    if not sp or not sp.is_dir():
+        print(f"[줄이기] site-packages 가 없다 (탐색 대상: {py})")
         return 1
 
     # ── 1. 곁가지 빼기 ────────────────────────────────────────────

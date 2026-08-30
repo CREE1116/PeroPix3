@@ -83,13 +83,11 @@ def models() -> list[dict]:
     return out
 
 
-#: ★쓸 수 있으면 **GPU 부터** (사용자 지적 2026-08-21: *"장당 5초씩 걸리면"*).
-#  그때까지 `CPUExecutionProvider` 를 박아 두고 있어서, RTX 4080 이 있는 기계에서도
-#  XL(251MB·1280px)이 **4.8초/장**이었다. v2 가 훨씬 빨랐던 것도 같은 까닭이다 —
-#  그쪽은 torch 로 돌아 GPU 를 썼다.
+#: ★쓸 수 있으면 **GPU / NPU 부터** (사용자 지적 2026-08-21: *"장당 5초씩 걸리면"*).
+#  CUDA(NVIDIA) · CoreML(macOS Apple Silicon) · DirectML(Windows DX12) · CPU 순.
 #  ★차례가 곧 우선순위다. 없는 것은 조용히 건너뛴다 (설치된 실행기만 남긴다).
-#  ★CPU 는 **언제나 마지막에 남긴다** — GPU 가 없는 기계에서도 돌아야 한다.
-PREFER = ("CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider")
+#  ★CPU 는 **언제나 마지막에 남긴다** — 가속기가 없는 기계에서도 돌아야 한다.
+PREFER = ("CUDAExecutionProvider", "CoreMLExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider")
 
 
 def _providers(ort) -> list[str]:

@@ -219,43 +219,66 @@ def send_os(paths: list[Path]) -> list[Path]:
       그런데 일괄 변환은 탐색기에서 끌어다 놓은 **아무 자리의 파일**도 받는다 —
       그것을 덮어쓸 때 원본을 앱 안으로 끌고 들어오면 사용자는 자기 폴더에서 파일이
       사라진 것으로만 보이고, 앱을 지우면 함께 사라진다. **사용자가 아는 자리**로 보낸다.
-    ★win32 밖에서는 아무것도 안 한다 (빈 목록) — 부르는 쪽이 그때는 덮어쓰지 않는다.
+    ★지원하지 않는 OS 에서는 아무것도 안 한다 (빈 목록) — 부르는 쪽이 그때는 덮어쓰지 않는다.
       조용히 지우는 길을 만들지 말 것: 되돌릴 수 없는 삭제가 된다.
-    ★`SHFileOperationW` 의 `FOF_ALLOWUNDO` 가 「휴지통으로」다. 목록은 NUL 로 잇고
-      **끝을 하나 더** 둔다 (그 API 의 규약)."""
-    if sys.platform != "win32" or not paths:
+    ★Windows: `SHFileOperationW` 의 `FOF_ALLOWUNDO`
+    ★macOS: AppleScript (`tell application "Finder" to delete ...`)"""
+    if not paths:
         return []
-    import ctypes
-    from ctypes import wintypes
 
-    class SHFILEOPSTRUCTW(ctypes.Structure):
-        _fields_ = [
-            ("hwnd", wintypes.HWND),
-            ("wFunc", wintypes.UINT),
-            ("pFrom", wintypes.LPCWSTR),
-            ("pTo", wintypes.LPCWSTR),
-            ("fFlags", ctypes.c_uint16),
-            ("fAnyOperationsAborted", wintypes.BOOL),
-            ("hNameMappings", ctypes.c_void_p),
-            ("lpszProgressTitle", wintypes.LPCWSTR),
-        ]
+    if sys.platform == "darwin":
+        import subprocess
+        existing = [p for p in paths if p.exists()]
+        if not existing:
+            return []
+        files_spec = ", ".join(
+            f'POSIX file "{str(p).replace(chr(92), chr(92)+chr(92)).replace(chr(34), chr(92)+chr(34))}"'
+            for p in existing
+        )
+        script = f'tell application "Finder" to delete {{{files_spec}}}'
+        try:
+            r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=30)
+            if r.returncode != 0:
+                print(f"[trash] macOS Finder 휴지통 전송 실패: {r.stderr}")
+        except Exception as e:
+            print(f"[trash] OS 휴지통으로 못 보냈습니다 ({e})")
+            return []
+        return [p for p in existing if not p.exists()]
 
-    NUL = chr(0)  # ★목록 구분자 — 소스에 날바이트를 넣지 않는다
-    FO_DELETE, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_SILENT, FOF_NOERRORUI = 3, 0x40, 0x10, 0x4, 0x400
-    joined = NUL.join(str(p) for p in paths) + NUL + NUL
-    op = SHFILEOPSTRUCTW(
-        None, FO_DELETE, joined, None,
-        FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI, False, None, None,
-    )
-    try:
-        rc = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op))
-    except Exception as e:
-        print(f"[trash] OS 휴지통으로 못 보냈습니다 ({e})")
-        return []
-    if rc != 0:
-        print(f"[trash] OS 휴지통이 거절했습니다 (코드 {rc})")
-        return []
-    return [p for p in paths if not p.exists()]
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+
+        class SHFILEOPSTRUCTW(ctypes.Structure):
+            _fields_ = [
+                ("hwnd", wintypes.HWND),
+                ("wFunc", wintypes.UINT),
+                ("pFrom", wintypes.LPCWSTR),
+                ("pTo", wintypes.LPCWSTR),
+                ("fFlags", ctypes.c_uint16),
+                ("fAnyOperationsAborted", wintypes.BOOL),
+                ("hNameMappings", ctypes.c_void_p),
+                ("lpszProgressTitle", wintypes.LPCWSTR),
+            ]
+
+        NUL = chr(0)  # ★목록 구분자 — 소스에 날바이트를 넣지 않는다
+        FO_DELETE, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_SILENT, FOF_NOERRORUI = 3, 0x40, 0x10, 0x4, 0x400
+        joined = NUL.join(str(p) for p in paths) + NUL + NUL
+        op = SHFILEOPSTRUCTW(
+            None, FO_DELETE, joined, None,
+            FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI, False, None, None,
+        )
+        try:
+            rc = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op))
+        except Exception as e:
+            print(f"[trash] OS 휴지통으로 못 보냈습니다 ({e})")
+            return []
+        if rc != 0:
+            print(f"[trash] OS 휴지통이 거절했습니다 (코드 {rc})")
+            return []
+        return [p for p in paths if not p.exists()]
+
+    return []
 
 
 # ── 워크스페이스 껍데기 ───────────────────────────────────────────

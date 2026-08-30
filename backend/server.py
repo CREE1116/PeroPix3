@@ -2910,6 +2910,29 @@ def files_thumb(rel: str):
     return FileResponse(t or p)
 
 
+def _start_parent_watchdog():
+    """부모 프로세스(Tauri 껍데기)가 비정상 종료되었을 때 고아 프로세스로 남지 않게 감시한다 (Unix/macOS)."""
+    if os.name == "nt" or os.environ.get("PEROPIX_DEV_RELOAD"):
+        return
+    parent_pid = os.getppid()
+    if parent_pid <= 1:
+        return
+
+    def watch():
+        while True:
+            time.sleep(2)
+            try:
+                # Unix 에서 부모가 죽으면 init/launchd(PID 1)로 재입양된다
+                if os.getppid() != parent_pid:
+                    print(f"[backend] 부모 프로세스({parent_pid}) 종료 감지 — 서버를 종료합니다")
+                    os._exit(0)
+            except Exception:
+                break
+
+    t = threading.Thread(target=watch, daemon=True, name="parent_watchdog")
+    t.start()
+
+
 def main():
     import uvicorn
 
@@ -2919,6 +2942,9 @@ def main():
     ap.add_argument("--port", type=int, default=8770)
     args = ap.parse_args()
     CURRENT_PORT = args.port
+
+    _start_parent_watchdog()
+
     # ★개발 중에는 **파이썬을 고치면 알아서 다시 뜬다** (사용자 지시 2026-08-08).
     #   예전엔 사이드카가 앱과 함께만 떠서, 백엔드를 고치면 앱을 통째로 재실행해야 했다.
     #   ★보는 곳은 `backend/` **하나뿐**이다 — 작업 폴더를 보게 두면 그림이 한 장 생길

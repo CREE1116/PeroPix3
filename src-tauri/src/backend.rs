@@ -212,13 +212,63 @@ fn find_repo_root() -> Option<PathBuf> {
     None
 }
 
-/// 번들된 파이썬 → PATH 의 python 순으로 찾는다.
+/// 번들된 파이썬 → 환경변수 → 주요 시스템/Homebrew 경로 → PATH 순으로 찾는다.
 fn find_python(root: &PathBuf) -> PathBuf {
-    let bundled = inner(root).join("python").join("python.exe");
-    if bundled.exists() {
-        return bundled;
+    let in_dir = inner(root);
+    // 1. 번들된 파이썬 / venv (Windows: python/python.exe, macOS/Linux: python/bin/python3 등)
+    for rel in [
+        "python/python.exe",
+        "python/bin/python3",
+        "python/bin/python",
+        "python/python3",
+        "python/python",
+        ".venv/bin/python3",
+        ".venv/bin/python",
+        ".venv/Scripts/python.exe",
+    ] {
+        let p = in_dir.join(rel);
+        if p.exists() {
+            return p;
+        }
+        let root_p = root.join(rel);
+        if root_p.exists() {
+            return root_p;
+        }
     }
-    PathBuf::from("python")
+
+    // 2. 환경변수 지정
+    for var in ["PEROPIX_PYTHON", "PYTHON"] {
+        if let Ok(v) = std::env::var(var) {
+            let p = PathBuf::from(v);
+            if p.exists() {
+                return p;
+            }
+        }
+    }
+
+    // 3. macOS/Linux 주요 파이썬 설치 경로
+    #[cfg(unix)]
+    {
+        for p in [
+            "/opt/homebrew/bin/python3",
+            "/usr/local/bin/python3",
+            "/usr/bin/python3",
+            "/opt/homebrew/bin/python",
+            "/usr/local/bin/python",
+        ] {
+            let path = PathBuf::from(p);
+            if path.exists() {
+                return path;
+            }
+        }
+    }
+
+    // 4. PATH 에서 검색
+    #[cfg(windows)]
+    return PathBuf::from("python");
+
+    #[cfg(not(windows))]
+    return PathBuf::from("python3");
 }
 
 /// **같은 폴더를 두 번 열지 못하게** 잡아 두는 표식 (사용자 지시 2026-08-26).
@@ -241,7 +291,26 @@ pub fn lock_app_dir() -> Option<File> {
         .ok()
 }
 
-#[cfg(not(windows))]
+#[cfg(unix)]
+pub fn lock_app_dir() -> Option<File> {
+    use std::os::unix::io::AsRawFd;
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(root().join(".instance.lock"))
+        .ok()?;
+    let fd = file.as_raw_fd();
+    // LOCK_EX: 배타 잠금, LOCK_NB: 이미 잡혀있으면 즉시 실패(non-blocking)
+    let rc = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+    if rc == 0 {
+        Some(file)
+    } else {
+        None
+    }
+}
+
+#[cfg(not(any(windows, unix)))]
 pub fn lock_app_dir() -> Option<File> {
     File::create(root().join(".instance.lock")).ok()
 }

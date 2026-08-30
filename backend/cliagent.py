@@ -59,6 +59,7 @@ def agent_of(exe: str) -> str:
 def _extra_dirs() -> list[Path]:
     """PATH 에 늘 있지는 않은 툴체인 폴더 (스튜디오 `engine.rs` 와 같은 자리)."""
     home = Path.home()
+    dirs: list[Path] = []
     if os.name == "nt":
         rel = [
             ("AppData", "Roaming", "npm"),
@@ -66,9 +67,21 @@ def _extra_dirs() -> list[Path]:
             ("scoop", "shims"),
             (".cargo", "bin"),
         ]
+        dirs.extend(home.joinpath(*r) for r in rel)
     else:
         rel = [(".npm-global", "bin"), (".local", "bin"), (".cargo", "bin"), (".bun", "bin")]
-    return [home.joinpath(*r) for r in rel]
+        dirs.extend(home.joinpath(*r) for r in rel)
+        for fixed in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"]:
+            p = Path(fixed)
+            if p.is_dir():
+                dirs.append(p)
+        nvm_dir = home / ".nvm" / "versions" / "node"
+        if nvm_dir.is_dir():
+            for node_v in nvm_dir.iterdir():
+                bin_dir = node_v / "bin"
+                if bin_dir.is_dir():
+                    dirs.append(bin_dir)
+    return dirs
 
 
 def find(bins: list[str]) -> str | None:

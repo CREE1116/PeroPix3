@@ -10,7 +10,7 @@
 [![Release](https://img.shields.io/github/v/release/mrm987/PeroPix3?label=download&color=5865F2)](https://github.com/mrm987/PeroPix3/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/mrm987/PeroPix3/total?color=5865F2)](https://github.com/mrm987/PeroPix3/releases)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-informational)](LICENSE)
-![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-5865F2)
 [![Website](https://img.shields.io/badge/website-peropix.mori--mo.com-5865F2)](https://peropix.mori-mo.com/ko/)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-support-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/morimo_)
 
@@ -36,7 +36,7 @@
 - **NovelAI 의 기능을 같은 자리에서** — 인페인트·강화·바이브 전이·업스케일을 지금 보고
   있는 씬에 그대로 겁니다. 프롬프트와 설정이 이미 들어가 있어, 공홈을 오갈 일이 없습니다.
 - **검열** — 기기 안의 모델이 가릴 곳을 찾아 덮습니다. 밖으로 나가는 것이 없고, 방식과
-  세기는 직접 고릅니다.
+  세기는 직접 고릅니다. Apple Silicon 에서는 CoreML 로 고속 추론합니다.
 - **AI 조수** — 워크스페이스를 맡기고 말로 시키면 프롬프트를 고치고 작업을 걸어 둡니다.
   되돌릴 수 없는 일은 먼저 묻습니다.
 
@@ -46,14 +46,14 @@
   작업대입니다. 토큰은 NovelAI 계정 설정에서 만들며 `pst-` 로 시작합니다.
 - **생성에는 Anlas 가 듭니다.** 요금제의 무료 범위(크기·스텝) 안이면 들지 않고, 생성
   단추가 누르기 전에 늘 지금 값을 보여 줍니다.
-- **Windows 10 또는 11.** WebView2 런타임이 필요하고, 대개 이미 깔려 있습니다.
+- **Windows 10/11 또는 macOS (Apple Silicon / Intel).**
 
 ## 설치
 
 1. [최신 릴리즈](https://github.com/mrm987/PeroPix3/releases/latest)에서
-   `PeroPix-<버전>-win64.zip` 을 받습니다.
-2. **쓰기가 되는 자리**에 풉니다 — 문서 폴더나 다른 드라이브. `Program Files` 안은 안 됩니다.
-3. `PeroPix.exe` 를 켜고 **설정 ▸ 일반**에서 토큰을 붙여 넣습니다.
+   `PeroPix-<버전>-win64.zip` (Windows) 또는 `PeroPix-<버전>-macos-<arch>.zip` (macOS)을 받습니다.
+2. **쓰기가 되는 자리**에 풉니다 — 문서 폴더나 홈 디렉토리.
+3. 실행 파일(`PeroPix.exe` 또는 `PeroPix`)을 켜고 **설정 ▸ 일반**에서 토큰을 붙여 넣습니다.
 
 끝입니다. 파이썬이 꾸러미 안에 들어 있어 따로 깔 것이 없고, 레지스트리에 아무것도 안
 남깁니다. 옮기거나 지우려면 폴더째 옮기거나 지우면 됩니다.

@@ -28,7 +28,12 @@ windows-sys = { version = "0.59", features = [
   "Win32_UI_WindowsAndMessaging",
 ] }
 
+# ★Unix/macOS 동일 폴더 중복 실행 방지 — flock 자물쇠 (backend.rs `lock_app_dir`).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [profile.release]
 codegen-units = 1
 lto = true
 strip = true
+

@@ -301,14 +301,33 @@ def open_dir(p: Path) -> None:
 
 
 def pick_dir(start: str = "") -> str | None:
-    """윈도우 **폴더 찾기** 창을 띄우고 고른 경로를 돌려준다. 취소하면 `None`.
+    """폴더 찾기 창을 띄우고 고른 경로를 돌려준다. 취소하면 `None`.
 
     ★★**자식 프로세스로 띄운다.** Tk 는 자기 루프를 돌고 메인 스레드를 요구해서, 서버 안에서
       열면 창이 뜨는 동안 서버가 통째로 멈춘다 (그 사이 화면의 다른 요청이 전부 밀린다).
     ★★고른 경로는 **아웃풋 루트 밖일 수 있다** — 그게 이 창을 두는 이유다 (사용자 지시
       2026-08-23: 드롭다운 말고 윈도우 폴더 찾기로). 그래서 `under()` 로 가두지 않는다.
       대신 **사용자가 직접 고른 것만** 이 길로 들어온다 — 화면이 적어 보낸 문자열은 못 쓴다.
+    ★macOS 는 Tkinter 의존성 없이 시스템 기본 `osascript` 로 네이티브 창을 띄운다.
     ★맨 앞에 세울 자리(`start`)는 부르는 쪽이 준다 (첫 그림이 있는 폴더)."""
+    if sys.platform == "darwin":
+        prompt = "폴더 선택"
+        start_clause = ""
+        if start and Path(start).is_dir():
+            escaped_start = start.replace('"', '\\"')
+            start_clause = f' default location POSIX file "{escaped_start}"'
+        cmd = [
+            "osascript",
+            "-e",
+            f'try\nset f to choose folder with prompt "{prompt}"{start_clause}\nPOSIX path of f\non error\nreturn ""\nend try',
+        ]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            out = (r.stdout or "").strip()
+            return out or None
+        except Exception:
+            return None
+
     code = "\n".join([
         "import sys, tkinter as tk",
         "from tkinter import filedialog",
