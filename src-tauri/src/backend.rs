@@ -235,6 +235,8 @@ pub fn inner(root: &Path) -> PathBuf {
     let nested = root.join("app");
     if nested.join("backend").join("server.py").exists() {
         nested
+    } else if let Some(repo) = find_repo_root() {
+        repo
     } else {
         root.to_path_buf()
     }
@@ -244,7 +246,7 @@ pub fn inner(root: &Path) -> PathBuf {
 /// ★배포판(`app/backend/server.py`)과 저장소(`backend/server.py`) 둘 다 알아본다.
 fn find_repo_root() -> Option<PathBuf> {
     let mut dir = app_dir();
-    for _ in 0..6 {
+    for _ in 0..12 {
         if dir.join("backend").join("server.py").exists()
             || dir.join("app").join("backend").join("server.py").exists()
         {
@@ -279,7 +281,15 @@ fn find_python(root: &PathBuf) -> PathBuf {
         }
     }
 
-    // 2. 환경변수 지정
+    // 2. 저장소 루트의 .venv (개발 / 로컬 실행)
+    if let Some(repo) = find_repo_root() {
+        let venv_py = repo.join(".venv").join("bin").join("python3");
+        if venv_py.exists() {
+            return venv_py;
+        }
+    }
+
+    // 3. 환경변수 지정
     for var in ["PEROPIX_PYTHON", "PYTHON"] {
         if let Ok(v) = std::env::var(var) {
             let p = PathBuf::from(v);
@@ -289,7 +299,7 @@ fn find_python(root: &PathBuf) -> PathBuf {
         }
     }
 
-    // 3. macOS/Linux 주요 파이썬 설치 경로
+    // 4. macOS/Linux 주요 파이썬 설치 경로
     #[cfg(unix)]
     {
         for p in [
@@ -306,7 +316,7 @@ fn find_python(root: &PathBuf) -> PathBuf {
         }
     }
 
-    // 4. PATH 에서 검색
+    // 5. PATH 에서 검색
     #[cfg(windows)]
     return PathBuf::from("python");
 

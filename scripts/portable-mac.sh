@@ -127,6 +127,12 @@ for user_dir in data gallery logs workspaces; do
     mkdir -p "$PORTABLE_DIR/$user_dir"
 done
 
+# src-tauri 내부 번들에도 리소스 동기화
+if [ -d "$TAURI_APP" ]; then
+    rm -rf "$TAURI_APP/Contents/Resources/app"
+    cp -R "$INNER_DIR" "$TAURI_APP/Contents/Resources/"
+fi
+
 # .zip 압축 생성 (PeroPix.app 포함)
 ZIP_NAME="PeroPix-$VERSION-macos-$ARCH.zip"
 ZIP_PATH="$DIST_DIR/$ZIP_NAME"
@@ -135,18 +141,22 @@ rm -f "$ZIP_PATH"
 cd "$DIST_DIR"
 zip -r -q "$ZIP_NAME" "PeroPix"
 
-# DMG 복사 (Tauri 빌드 산출물이 있는 경우)
-TAURI_DMG=$(ls "$ROOT_DIR/src-tauri/target/release/bundle/dmg/"*.dmg 2>/dev/null | head -n 1 || true)
-if [ -n "$TAURI_DMG" ] && [ -f "$TAURI_DMG" ]; then
-    cp "$TAURI_DMG" "$DIST_DIR/PeroPix-$VERSION-macos-$ARCH.dmg"
-fi
+# DMG 생성 (완성된 PeroPix.app 을 포함하는 디스크 이미지)
+DMG_PATH="$DIST_DIR/PeroPix-$VERSION-macos-$ARCH.dmg"
+rm -f "$DMG_PATH"
+DMG_DIR="$DIST_DIR/_dmg_tmp"
+rm -rf "$DMG_DIR"
+mkdir -p "$DMG_DIR"
+cp -R "$APP_BUNDLE" "$DMG_DIR/"
+ln -s /Applications "$DMG_DIR/Applications"
+hdiutil create -volname "PeroPix" -srcfolder "$DMG_DIR" -ov -format UDZO "$DMG_PATH"
+rm -rf "$DMG_DIR"
 
 ZIP_MB=$(du -h "$ZIP_PATH" | cut -f1)
+DMG_MB=$(du -h "$DMG_PATH" | cut -f1)
 echo ""
 echo "=== [패키징 완료] ==="
 echo "  .app 번들: $APP_BUNDLE"
 echo "  포터블 폴더: $PORTABLE_DIR"
 echo "  ZIP 아카이브: $ZIP_PATH ($ZIP_MB)"
-if [ -f "$DIST_DIR/PeroPix-$VERSION-macos-$ARCH.dmg" ]; then
-    echo "  DMG 이미지: $DIST_DIR/PeroPix-$VERSION-macos-$ARCH.dmg"
-fi
+echo "  DMG 이미지: $DMG_PATH ($DMG_MB)"
