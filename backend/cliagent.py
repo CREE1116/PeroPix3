@@ -99,6 +99,19 @@ def find(bins: list[str]) -> str | None:
     return None
 
 
+def child_env(exe: str) -> dict[str, str]:
+    """CLI wrapper beside its runtime must be able to find that runtime.
+
+    GUI-launched backend often inherits no NVM path.  `codex` is a script with
+    `#!/usr/bin/env node`, so finding its absolute path alone is insufficient.
+    """
+    env = {**os.environ, "MCP_TIMEOUT": "1800000"}
+    bindir = str(Path(exe).parent)
+    path = env.get("PATH", "")
+    env["PATH"] = bindir if not path else bindir + os.pathsep + path
+    return env
+
+
 #: 배치 래퍼 → 진짜 실행 파일. 찾는 데 폴더를 뒤지므로 한 번만 한다
 _REAL: dict[str, str] = {}
 

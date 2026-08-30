@@ -108,7 +108,7 @@ class Rpc:
         self.proc = await asyncio.create_subprocess_exec(
             self.exe, "app-server",
             cwd=str(self.cwd),
-            env={**os.environ, "MCP_TIMEOUT": "1800000"},
+            env=cliagent.child_env(self.exe),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
