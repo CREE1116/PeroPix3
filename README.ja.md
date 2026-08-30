@@ -11,8 +11,12 @@
 [![Downloads](https://img.shields.io/github/downloads/mrm987/PeroPix3/total?color=5865F2)](https://github.com/mrm987/PeroPix3/releases)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-informational)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
+[![Website](https://img.shields.io/badge/website-peropix.mori--mo.com-5865F2)](https://peropix.mori-mo.com/ja/)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-support-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/morimo_)
 
 [English](README.md) · [한국어](README.ko.md) · **日本語**
+
+サイト: [peropix.mori-mo.com](https://peropix.mori-mo.com/ja/)
 
 </div>
 
