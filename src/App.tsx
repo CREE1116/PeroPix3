@@ -7,7 +7,7 @@ import { Shell } from "./app/Shell";
 import { TitleBar } from "./app/TitleBar";
 import { WindowFrame } from "./app/WindowFrame";
 import { Icon } from "./components/Icon";
-import { useUi, applyFont } from "./store/ui";
+import { useUi, applyFont, applyTextScale } from "./store/ui";
 import { useTheme } from "./store/theme";
 import { useDeckPeek } from "./cards/deckPeek";
 import { useGen } from "./store/gen";
@@ -113,6 +113,7 @@ export function App() {
   //   이걸 안 하면 다른 글꼴을 골라 뒀어도 새로 켤 때 Pretendard 로 돌아간다.
   useEffect(() => {
     applyFont(useUi.getState().font);
+    applyTextScale(useUi.getState().textScale);   // 글자 크기 배율도 같은 이유로
   }, []);
 
   /** ★★**Alt 단독 누름이 창의 메뉴 모드를 깨우지 못하게 막는다** (사용자 지적 2026-08-24).
@@ -595,7 +596,7 @@ function Booting({ ready, dead }: { ready: boolean; dead: boolean }) {
           placeItems: "center",
           background: dead ? "var(--err)" : "var(--accent)",
           color: "var(--accent-on)",
-          fontSize: 14,
+          fontSize: "calc(14px * var(--text-scale))",
           fontWeight: "var(--w-bold)",
         }}
       >

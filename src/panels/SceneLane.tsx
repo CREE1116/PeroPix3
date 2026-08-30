@@ -1804,7 +1804,7 @@ function SceneRow(
           {/* ★번호는 **탭 안에서 통째로** 센다 — 파일 이름 앞에 붙는 번호와 같은 값이라야
               한다 (`offsets` 주석 · `gen.ts` 의 `cell_no`). 카드마다 1 로 되돌아가면
               씬을 다른 카드로 옮겼을 때 화면과 저장 이름이 갈린다 */}
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-ghost)" }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: "calc(11px * var(--text-scale))", color: "var(--ink-ghost)" }}>
             {String(p.offset + p.index + 1).padStart(3, "0")}
           </span>
           <NameCell
@@ -1997,7 +1997,7 @@ function SceneRow(
                 backgroundColor: on ? "var(--accent-bg)" : "var(--bg)",
                 display: "grid",
                 placeItems: "center",
-                fontSize: 11,
+                fontSize: "calc(11px * var(--text-scale))",
                 cursor: "pointer",
                 color: on || run ? "var(--accent)" : "var(--ink-faint)",
                 /* ★★**그리는 중인 그림을 칸에 깐다** (사용자 지시 2026-08-26). NAI 가 흘려 준
@@ -2124,7 +2124,7 @@ function SceneRow(
                     padding: "1px 3px",
                     background: "rgba(0,0,0,0.55)",
                     color: "var(--warn)",
-                    fontSize: 10,
+                    fontSize: "calc(10px * var(--text-scale))",
                     lineHeight: 1.4,
                     textAlign: "center",
                     letterSpacing: "0.02em",

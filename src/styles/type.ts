@@ -19,7 +19,7 @@ export const TYPE = {
   /** ★★**카드 이름** — 프롬프트·씬·덱 **세 자리가 같은 것으로 읽혀야 한다.**
    *  ★굵기 상한(`--w-bold`)은 이 크기를 기준으로 잡은 값이다. 크기를 낮추면 그 상한이
    *    과해져 한글 획이 겹친다 (씬 카드에서 실제로 그랬다, 2026-08-25). */
-  cardName: { fontSize: "0.86rem", fontWeight: "var(--w-bold)" },
+  cardName: { fontSize: "calc(0.86rem * var(--text-scale))", fontWeight: "var(--w-bold)" },
 
   /** 라벨·탭 — 고를 수 있는 것의 이름 */
   label: { fontSize: "var(--text-xs)", fontWeight: "var(--w-semi)" },

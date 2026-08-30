@@ -598,6 +598,7 @@ export const ko: Dict = {
     themeLight: "밝게",
     themeDark: "어둡게",
     font: "글꼴",
+    textScale: "글자 크기",
     queue: "생성",
     agentAuto: "조수의 작업을 자동 승인",
     agentAskHard: "단, 되돌릴 수 없는 것은 언제나 묻기",

@@ -633,7 +633,7 @@ const popField: React.CSSProperties = {
 
 const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
   <label style={{ display: "grid", gap: 3 }}>
-    <span style={{ fontSize: "0.58rem", color: "var(--ink-faint)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+    <span style={{ fontSize: "calc(0.58rem * var(--text-scale))", color: "var(--ink-faint)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
       {label}
     </span>
     {children}

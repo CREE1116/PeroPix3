@@ -40,6 +40,8 @@ export function Settings({
   const setTheme = useTheme((s) => s.set);
   const font = useUi((s) => s.font);
   const setFont = useUi((s) => s.setFont);
+  const textScale = useUi((s) => s.textScale);
+  const setTextScale = useUi((s) => s.setTextScale);
   /** 그리는 중인 그림 보기 — ★결과를 바꾸지 않는 **보는 방식**이라 여기 산다 */
   const stream = useUi((s) => s.streamPreview);
   const notify = useUi((s) => s.notifyDone);
@@ -447,6 +449,26 @@ export function Settings({
                       {f.label}
                     </Chip>
                   ))}
+                </Line>
+                {/* ★글자 크기 — 앱 안의 모든 글자 토큰에 곱하는 배율 (사용자 지시 2026-08-29).
+                    80~150%, 5% 눈금. 움직이는 즉시 화면 전체가 따라온다. */}
+                <Line label={t("settings.textScale")}>
+                  <input
+                    type="range"
+                    data-text-scale
+                    min={80}
+                    max={150}
+                    step={5}
+                    value={Math.round(textScale * 100)}
+                    onChange={(e) => setTextScale(Number(e.target.value) / 100)}
+                    style={{ flex: 1 }}
+                  />
+                  <span
+                    data-text-scale-value
+                    style={{ width: 40, textAlign: "right", fontSize: "var(--text-2xs)", color: "var(--ink-faint)", fontVariantNumeric: "tabular-nums" }}
+                  >
+                    {Math.round(textScale * 100)}%
+                  </span>
                 </Line>
               </Group>
             )}

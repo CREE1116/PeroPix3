@@ -31,6 +31,11 @@ export const FONTS: { id: FontId; label: string; stack: string }[] = [
 
 /** 고른 폰트를 `--font-sans` 에 꽂는다. ★폴백은 언제나 뒤에 붙인다 —
  *  번들이 아직 안 실렸을 때 글자가 사라지지 않게. */
+/** 글자 크기 배율을 `<html>` 에 꽂는다 — `--text-*` 토큰 전부가 곱한다 (tokens.css 의 ★주) */
+export function applyTextScale(n: number) {
+  document.documentElement.style.setProperty("--text-scale", String(n));
+}
+
 export function applyFont(id: FontId) {
   const f = FONTS.find((x) => x.id === id) ?? FONTS[0];
   document.documentElement.style.setProperty(
@@ -92,6 +97,8 @@ type Persisted = {
   /** 알림음 크기 1~100 (v2 `notifySoundVolume`, 기본 50) */
   notifyVolume: number;
   font: FontId;
+  /** 글자 크기 배율 (0.8~1.5) — 앱 안의 모든 글자 토큰에 곱한다 (사용자 지시 2026-08-29) */
+  textScale: number;
   /** 태그 자동완성을 켜 두나 (v2 `tagAutocompleteToggle`). 끄면 목록이 아예 안 뜬다 —
    *  Enter·Esc 도 블록 것으로 되돌아간다 (`TagSuggest.onKeyDown`) */
   tagSuggest: boolean;
@@ -187,6 +194,7 @@ const DEFAULTS: Persisted = {
   notifySound: false,
   notifyVolume: 50,
   font: "pretendard",
+  textScale: 1,
   tagSuggest: true,
   artistPrefix: true,
   weightHl: true,
@@ -270,6 +278,7 @@ type S = Persisted & {
   setView: <K extends keyof S["view"]>(kind: K, id: string, v: S["view"][K][string]) => void;
   setLaneWidth: (n: number) => void;
   setFont: (f: FontId) => void;
+  setTextScale: (n: number) => void;
   /** 설정 창 — 열려 있으면 그 탭, 닫혀 있으면 null.
    *  ★상태를 스토어에 두는 이유: 여는 자리가 셋이다 (타이틀바 톱니 · AI 채팅의 엔진 칩 ·
    *    토큰 없이 생성을 누를 때). 프롭으로 내리면 생성 푸터까지 세 겹을 지나야 한다. */
@@ -428,6 +437,12 @@ export const useUi = create<S>((set, get) => ({
     set({ font: f });
     get().commitLayout();
   },
+  setTextScale: (n) => {
+    const v = Math.min(1.5, Math.max(0.8, Math.round(n * 20) / 20));   // 5% 눈금, 80~150%
+    applyTextScale(v);
+    set({ textScale: v });
+    get().commitLayout();
+  },
   settingsTab: null,
   openSettings: (tab) => set({ settingsTab: tab }),
   closeSettings: () => set({ settingsTab: null }),
@@ -469,7 +484,7 @@ export const useUi = create<S>((set, get) => ({
     //   `notifyDone`·`perSlot`·`curated` 가 빠져 있어, 켜 놓아도 껐다 켜면 기본값으로
     //   돌아갔다 (감사 2026-08-16). 필드를 늘리면 **여기에도 더할 것.**
     const { leftWidth, rightWidth, leftCollapsed, rightCollapsed, cols, laneSize, laneHeadW,
-      laneHeight, font, aiWidth, aiCollapsed,
+      laneHeight, font, textScale, aiWidth, aiCollapsed,
       notifyDone, notifySound, notifyVolume, perSlot, curated, agentAuto, agentAskHard,
       tagSuggest, artistPrefix, weightHl, fmView, streamPreview, convertOpenFolder, enhanceLast, convertLast, sizeLast,
       laneSide, laneWidth, laneHeadH, view } = get();
@@ -486,6 +501,7 @@ export const useUi = create<S>((set, get) => ({
           laneHeadW,
           laneHeight,
           font,
+          textScale,
           aiWidth,
           aiCollapsed,
           notifyDone,

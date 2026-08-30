@@ -51,7 +51,7 @@ export function BannerBtn({
         borderRadius: 5,
         background: "rgba(0,0,0,0.42)",
         color: "#fff",
-        fontSize: 11,
+        fontSize: "calc(11px * var(--text-scale))",
         lineHeight: 1,
         opacity: off ? 0.3 : 1,
         cursor: off ? "default" : "pointer",

@@ -448,7 +448,7 @@ function StackPeek({ ch }: { ch: Char }) {
                   background: "rgba(0,0,0,0.4)",
                   borderRadius: 4,
                   padding: "0 5px",
-                  fontSize: "0.56rem",
+                  fontSize: "calc(0.56rem * var(--text-scale))",
                 }}
               >
                 {t("cards.nextUp")}

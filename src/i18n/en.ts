@@ -579,6 +579,7 @@ export const en = {
     themeLight: "Light",
     themeDark: "Dark",
     font: "Font",
+    textScale: "Text size",
     queue: "Generation",
     agentAuto: "Auto-approve assistant actions",
     agentAskHard: "But always ask for what cannot be undone",

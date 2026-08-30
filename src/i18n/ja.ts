@@ -577,6 +577,7 @@ export const ja: Dict = {
     themeLight: "明るく",
     themeDark: "暗く",
     font: "フォント",
+    textScale: "文字サイズ",
     queue: "生成",
     agentAuto: "アシスタントの作業を自動承認",
     agentAskHard: "ただし取り消せないものは必ず確認",

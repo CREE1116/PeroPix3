@@ -160,7 +160,7 @@ export function BlockRow({
           onClick={(e) => e.stopPropagation()}
           style={{
             color: "var(--ink-faint)",
-            fontSize: 11,
+            fontSize: "calc(11px * var(--text-scale))",
             lineHeight: 1,
             padding: "0 4px",
             userSelect: "none",
